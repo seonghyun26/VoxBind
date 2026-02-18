@@ -1,7 +1,7 @@
-import getpass as gt
 import hydra
 import logging
 import math
+from tqdm import tqdm
 import os
 from omegaconf import DictConfig, OmegaConf
 import time
@@ -52,7 +52,7 @@ def main(cfg: DictConfig) -> None:
     if cfg.wandb:
         wandb.init(
             project="voxbind",
-            entity=gt.getuser(),
+            entity="eddy26",
             config=OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True),
             name=cfg.exp_name,
             dir=cfg.output_dir,
@@ -106,7 +106,7 @@ def main(cfg: DictConfig) -> None:
     # -----------------------------------------------------------
     # start training
     logger.info("start training...")
-    for epoch in range(start_epoch, start_epoch + cfg.num_epochs):
+    for epoch in tqdm(range(start_epoch, start_epoch + cfg.num_epochs), desc="Epochs"):
         t0 = time.time()
 
         # train
