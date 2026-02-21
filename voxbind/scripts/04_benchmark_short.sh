@@ -12,9 +12,9 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
-BATCHES="${1:-20}"
+BATCHES="${1:-10}"
 WARMUP="${2:-5}"
-BSZ="${3:-64}"
+BSZ="${3:-16}"
 NUM_WORKERS="${4:-4}"
 GPUS="${5:-${CUDA_VISIBLE_DEVICES:-5,6}}"
 EXTRA_ARGS=("${@:6}")
