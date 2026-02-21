@@ -51,12 +51,12 @@ class DatasetCrossdocked(Dataset):
         self.delta = delta_translate
 
         if split == "train" or split == "val":
-            data = torch.load(os.path.join(data_dir, "data_train.pt"))
+            data = torch.load(os.path.join(data_dir, "data_train.pt"), weights_only=False)
             random.Random(1234).shuffle(data)
             val_sz = 100
             self.data = data[:(len(data) - val_sz)] if split == "train" else data[(len(data) - val_sz):]
         else:
-            self.data = torch.load(os.path.join(data_dir, "data_test.pt"))
+            self.data = torch.load(os.path.join(data_dir, "data_test.pt"), weights_only=False)
 
         # filter dataset
         self.data = self.data[:500] if self.small else self.data

@@ -28,13 +28,21 @@ def create_dataloaders(cfg) -> tuple:
         pocket_radius=cfg.dset.pocket_radius,
     )
 
+    loader_kwargs = {
+        "num_workers": cfg.num_workers,
+        "pin_memory": True,
+        "persistent_workers": cfg.num_workers > 0,
+    }
+    # Keep a deeper worker queue to reduce main-process blocking on next(batch).
+    if cfg.num_workers > 0:
+        loader_kwargs["prefetch_factor"] = int(cfg.get("prefetch_factor", 4))
+
     loader_train = torch.utils.data.DataLoader(
         dset_train,
         batch_size=cfg.bsz,
-        num_workers=cfg.num_workers,
         shuffle=True,
-        pin_memory=True,
         drop_last=True,
+        **loader_kwargs,
     )
 
     # create val loader
@@ -49,20 +57,18 @@ def create_dataloaders(cfg) -> tuple:
     loader_val = torch.utils.data.DataLoader(
         dset_val,
         batch_size=cfg.bsz,
-        num_workers=cfg.num_workers,
         shuffle=False,
-        pin_memory=True,
         drop_last=False,
+        **loader_kwargs,
     )
 
     # create sampling loader
     loader_sampling = torch.utils.data.DataLoader(
         dset_val,
         batch_size=1,
-        num_workers=cfg.num_workers,
         shuffle=False,
-        pin_memory=True,
         drop_last=False,
+        **loader_kwargs,
     )
 
     return loader_train, loader_val, loader_sampling
@@ -91,14 +97,21 @@ def create_sampling_dataloader(cfg, split="val") -> torch.utils.data.DataLoader:
         ligand_radius=cfg.dset.ligand_radius,
         pocket_radius=cfg.dset.pocket_radius,
     )
+    loader_kwargs = {
+        "num_workers": cfg.num_workers,
+        "pin_memory": True,
+        "persistent_workers": cfg.num_workers > 0,
+    }
+    if cfg.num_workers > 0:
+        loader_kwargs["prefetch_factor"] = int(cfg.get("prefetch_factor", 4))
+
     # create sampling loader
     loader_sampling = torch.utils.data.DataLoader(
         dset_val,
         batch_size=1,
-        num_workers=cfg.num_workers,
         shuffle=False,
-        pin_memory=True,
         drop_last=False,
+        **loader_kwargs,
     )
 
     return loader_sampling

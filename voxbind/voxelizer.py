@@ -78,16 +78,19 @@ class Voxelizer(torch.nn.Module):
         # dumb coordinate to center ligand and pocket voxel
         batch = self._add_dumb_coords(batch)
 
-        # to device
-        batch["coords"] = batch["coords"].to(self.device)
-        batch["radius"] = batch["radius"].to(self.device)
-        batch["atoms_channel"] = batch["atoms_channel"].to(self.device)
+        # to device (non_blocking so H2D transfers overlap with GPU compute on the prefetch stream)
+        batch["coords"] = batch["coords"].to(self.device, non_blocking=True)
+        batch["radius"] = batch["radius"].to(self.device, non_blocking=True)
+        batch["atoms_channel"] = batch["atoms_channel"].to(self.device, non_blocking=True)
 
         # voxelize
-        voxels = []
         batch_sz = batch["coords"].shape[0]
         n_chuncks = 4 if batch_sz > 16 else 1
-        chk = batch["coords"].shape[0] // n_chuncks
+        chk = batch_sz // n_chuncks
+        voxels = torch.empty(
+            (batch_sz, num_channels, self.grid_dim, self.grid_dim, self.grid_dim),
+            device=self.device,
+        )
         for i in range(n_chuncks):
             voxels_ = self.vol_maker(
                 batch["coords"][i * chk:(i + 1) * chk],
@@ -101,9 +104,8 @@ class Voxelizer(torch.nn.Module):
             # extract center box (and get rid of dumb coordinates)
             c = voxels_.shape[-1] // 2
             box_min, box_max = c - self.grid_dim // 2, c + self.grid_dim // 2
-            voxels_ = voxels_[:, :, box_min:box_max, box_min:box_max, box_min:box_max]
-            voxels.append(voxels_)
-        voxels = torch.cat(voxels, axis=0)
+            voxels[i * chk:(i + 1) * chk] = voxels_[:, :, box_min:box_max, box_min:box_max, box_min:box_max]
+            del voxels_
 
         return voxels
 

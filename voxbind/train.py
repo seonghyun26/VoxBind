@@ -23,6 +23,56 @@ from voxbind.metrics import create_metrics_for_training
 logger = logging.getLogger("training")
 
 
+class VoxelPrefetcher:
+    """Overlaps GPU voxelization of batch N+1 with model compute on batch N.
+
+    Voxelization runs on a secondary CUDA stream so the GPU is always busy
+    with either model forward/backward or the next voxelization, eliminating
+    the idle-GPU oscillation seen when voxelization and compute are sequential.
+    Augmentation (rotation/translation) still happens in DataLoader workers.
+    """
+
+    def __init__(self, loader, voxelizer, smooth_sigma, training=True):
+        self.loader = loader
+        self.voxelizer = voxelizer
+        self.smooth_sigma = smooth_sigma
+        self.training = training
+        self.stream = torch.cuda.Stream()
+
+    def _voxelize(self, batch):
+        with torch.cuda.stream(self.stream):
+            with torch.no_grad():
+                voxels_lig = self.voxelizer.forward(batch["ligand"], num_channels=7)
+                smooth_voxels_lig = add_noise_vox(voxels_lig, self.smooth_sigma)
+                voxels_poc = self.voxelizer.forward(batch["pocket"], num_channels=4)
+                if self.training:
+                    voxels_poc[:math.ceil(.2 * voxels_poc.shape[0])].zero_()
+        return voxels_lig, smooth_voxels_lig, voxels_poc
+
+    def __iter__(self):
+        loader_it = iter(self.loader)
+        try:
+            next_batch = next(loader_it)
+        except StopIteration:
+            return
+
+        next_voxels = self._voxelize(next_batch)
+
+        for batch in loader_it:
+            torch.cuda.current_stream().wait_stream(self.stream)
+            cur_voxels = next_voxels
+            # kick off next voxelization while model trains on current batch
+            next_voxels = self._voxelize(batch)
+            yield cur_voxels
+
+        # last batch
+        torch.cuda.current_stream().wait_stream(self.stream)
+        yield next_voxels
+
+    def __len__(self):
+        return len(self.loader)
+
+
 @hydra.main(config_path="configs", config_name="config_train", version_base=None)
 def main(cfg: DictConfig) -> None:
     # -----------------------------------------------------------
@@ -41,9 +91,12 @@ def main(cfg: DictConfig) -> None:
     if cfg.resume is not None and os.path.isdir(cfg.resume):
         logger.info(f"resuming from: {cfg.resume}")
         resume = cfg.resume
+        wjs_override = cfg.wjs
+        wandb_override = cfg.wandb
         cfg = OmegaConf.load(os.path.join(cfg.resume, "cfg.yaml"))
         cfg.output_dir, cfg.resume = resume, resume
-        cfg.wandb = False
+        cfg.wandb = wandb_override
+        cfg.wjs = wjs_override
 
     logger.info("cfg:")
     logger.info(OmegaConf.to_yaml(cfg))
@@ -56,6 +109,7 @@ def main(cfg: DictConfig) -> None:
             config=OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True),
             name=cfg.exp_name,
             dir=cfg.output_dir,
+            resume="allow",
             settings=wandb.Settings(code_dir=".")
         )
 
@@ -136,7 +190,6 @@ def main(cfg: DictConfig) -> None:
             "state_dict_ema": model_ema.module.state_dict(),
             "optimizer": optimizer.state_dict(),
         }, save_dir=cfg.output_dir)
-        torch.cuda.empty_cache()
 
 
 def train(
@@ -167,14 +220,8 @@ def train(
     metrics.reset()
     model.train()
 
-    for i, batch in enumerate(loader):
-        # voxelize and add noise
-        with torch.no_grad():
-            voxels_lig = voxelizer.forward(batch["ligand"], num_channels=7)
-            smooth_voxels_lig = add_noise_vox(voxels_lig, cfg.smooth_sigma)
-            voxels_poc = voxelizer.forward(batch["pocket"], num_channels=4)
-            voxels_poc[:math.ceil(.2 * voxels_poc.shape[0])].zero_()  # drop 20% of pockets
-
+    prefetcher = VoxelPrefetcher(loader, voxelizer, cfg.smooth_sigma, training=True)
+    for i, (voxels_lig, smooth_voxels_lig, voxels_poc) in enumerate(prefetcher):
         # fwd
         pred = model(smooth_voxels_lig, voxels_poc)
         loss = criterion(pred, voxels_lig)
@@ -182,7 +229,7 @@ def train(
         # backward
         loss.backward()
         optimizer.step()
-        optimizer.zero_grad()
+        optimizer.zero_grad(set_to_none=True)
 
         # update model EMA
         model_ema.update(model)
@@ -221,13 +268,8 @@ def val(
     model.eval()
 
     with torch.no_grad():
-        for i, batch in enumerate(loader):
-            # voxelize and add noise
-            voxels_lig = voxelizer.forward(batch["ligand"], num_channels=7)
-            smooth_voxels_lig = add_noise_vox(voxels_lig, cfg.smooth_sigma)
-            voxels_poc = voxelizer.forward(batch["pocket"], num_channels=4)
-
-            # fwd and metrics
+        prefetcher = VoxelPrefetcher(loader, voxelizer, cfg.smooth_sigma, training=False)
+        for i, (voxels_lig, smooth_voxels_lig, voxels_poc) in enumerate(prefetcher):
             pred = model(smooth_voxels_lig, voxels_poc)
             loss = criterion(pred, voxels_lig)
             metrics.update(loss, pred, voxels_lig)

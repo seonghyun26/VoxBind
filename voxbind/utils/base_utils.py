@@ -85,7 +85,7 @@ def load_checkpoint(
         epoch (int): The epoch number from the checkpoint.
     """
     chck_name = "best_checkpoint.pth.tar" if best_model else "checkpoint.pth.tar"
-    checkpoint = torch.load(os.path.join(pretrained_path, chck_name))
+    checkpoint = torch.load(os.path.join(pretrained_path, chck_name), weights_only=False)
 
     # little hack to cope with torch.compile and multi-GPU training
     sd = "state_dict_ema" if "state_dict_ema" in checkpoint else "state_dict"
