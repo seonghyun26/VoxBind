@@ -4,10 +4,10 @@ import torch
 
 from torch.utils.data import Dataset
 
-from voxbind.constants import ELEMENTS_HASH_CROSSDOCKED
+from voxbind.constants import ELEMENTS_HASH_CROSSDOCKED, RADIUS_PER_ATOM
 from voxbind.utils.dataset_utils import (
     recenter_structures, pad, rotate_coords, translate_coords,
-    atomChannelsToRadius, filter_atoms_by_distance
+    filter_atoms_by_distance
 )
 
 
@@ -49,6 +49,13 @@ class DatasetCrossdocked(Dataset):
         self.max_len = max_len
         self.verbose = verbose
         self.delta = delta_translate
+        self.pocket_radius_lut = None
+        if self.pocket_radius <= 0:
+            elements = [k for k in ELEMENTS_HASH_CROSSDOCKED.keys()]
+            self.pocket_radius_lut = torch.tensor(
+                [RADIUS_PER_ATOM["MOL"][element] for element in elements],
+                dtype=torch.float32
+            )
 
         if split == "train" or split == "val":
             data = torch.load(os.path.join(data_dir, "data_train.pt"), weights_only=False)
@@ -85,20 +92,21 @@ class DatasetCrossdocked(Dataset):
             "id": ligand_["id"],
             "coords": ligand_["coords"][mask],
             "atoms_channel": ligand_["atoms_channel"][mask],
-            "radius": self.ligand_radius * torch.ones_like(ligand_["atoms_channel"][mask])
+            "radius": torch.full_like(ligand_["atoms_channel"][mask], self.ligand_radius, dtype=torch.float32)
         }
         center_coords = ligand["coords"].mean(axis=0)
 
         # pocket
         mask = pocket_["atoms_channel"] < 4  # pocket only has C, O, N, S
+        pocket_atoms_channel = pocket_["atoms_channel"][mask]
         if self.pocket_radius > 0:
-            radius = self.pocket_radius * torch.ones_like(pocket_["atoms_channel"][mask]).float()
+            radius = torch.full_like(pocket_atoms_channel, self.pocket_radius, dtype=torch.float32)
         else:
-            radius = atomChannelsToRadius(pocket_["atoms_channel"][mask], ELEMENTS_HASH_CROSSDOCKED)
+            radius = self.pocket_radius_lut[pocket_atoms_channel.long()]
         pocket = {
             "id": pocket_["id"],
             "coords": pocket_["coords"][mask],
-            "atoms_channel": pocket_["atoms_channel"][mask],
+            "atoms_channel": pocket_atoms_channel,
             "radius": radius,
             "center_coords": center_coords
         }

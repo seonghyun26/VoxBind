@@ -51,7 +51,13 @@ class MetricsDenoise(torchmetrics.MetricCollection):
         for metric in self.metrics.values():
             metric.reset()
 
-    def update(self, loss: torch.Tensor, pred: torch.Tensor, y: torch.Tensor):
+    def update(
+        self,
+        loss: torch.Tensor,
+        pred: torch.Tensor,
+        y: torch.Tensor,
+        update_miou: bool = True,
+    ):
         """Updates the metrics with the given loss, predicted values, and ground truth values.
 
         Args:
@@ -60,14 +66,12 @@ class MetricsDenoise(torchmetrics.MetricCollection):
             y (torch.Tensor): Ground truth values.
 
         """
-        pred_th = self.apply_threshold(pred)
-        y_th = self.apply_threshold(y)
-
-        for metric_name in self.metrics.keys():
-            if metric_name == "loss":
-                self.metrics["loss"].update(loss)
-            elif metric_name == "miou":
-                self.metrics["miou"].update(pred_th, y_th)
+        if "loss" in self.metrics:
+            self.metrics["loss"].update(loss)
+        if "miou" in self.metrics and update_miou:
+            pred_th = self.apply_threshold(pred)
+            y_th = self.apply_threshold(y)
+            self.metrics["miou"].update(pred_th, y_th)
 
     def compute(self):
         """Computes the computed metrics.
@@ -76,7 +80,8 @@ class MetricsDenoise(torchmetrics.MetricCollection):
             dict: Dictionary containing the computed metrics.
 
         """
-        return {k: v.compute().item() for k, v in self.metrics.items() if not np.isnan(v.compute().item())}
+        computed = {k: v.compute().item() for k, v in self.metrics.items()}
+        return {k: v for k, v in computed.items() if not np.isnan(v)}
 
     def to(self, device: str):
         """Moves all metrics to the specified device.

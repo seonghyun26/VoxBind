@@ -88,17 +88,12 @@ def recenter_structures(
     Returns:
         tuple: A tuple containing the centered ligand and centered target structures.
     """
-    # subtract center of mass from ligand
-    coords = ligand["coords"]
-    center_coords_tiled = center_coords.unsqueeze(0).tile((coords.shape[0], 1))
+    # broadcast subtraction avoids large temporary tiling allocations
     centered_ligand = {k: v for k, v in ligand.items()}
-    centered_ligand["coords"] = coords - center_coords_tiled
+    centered_ligand["coords"] = ligand["coords"] - center_coords
 
-    # subtract center of mass from target
-    coords = target["coords"]
-    center_coords_tiled = center_coords.unsqueeze(0).tile((coords.shape[0], 1))
     centered_target = {k: v for k, v in target.items()}
-    centered_target["coords"] = coords - center_coords_tiled
+    centered_target["coords"] = target["coords"] - center_coords
 
     return centered_ligand, centered_target
 
@@ -121,13 +116,11 @@ def rotate_coords(
     """
     rot_matrix = random_rot_matrix()
 
-    coords_pocket = pocket["coords"]
-    coords_pocket = torch.reshape(coords_pocket, (-1, 3))
-    pocket["coords"] = torch.einsum("ij, kj -> ki", rot_matrix, coords_pocket)
+    coords_pocket = pocket["coords"].reshape(-1, 3)
+    pocket["coords"] = coords_pocket @ rot_matrix.T
 
-    coords_ligand = ligand["coords"]
-    coords_ligand = torch.reshape(coords_ligand, (-1, 3))
-    ligand["coords"] = torch.einsum("ij, kj -> ki", rot_matrix, coords_ligand)
+    coords_ligand = ligand["coords"].reshape(-1, 3)
+    ligand["coords"] = coords_ligand @ rot_matrix.T
 
     return ligand, pocket
 
@@ -140,23 +133,23 @@ def random_rot_matrix() -> torch.Tensor:
         torch.Tensor: return rotation matrix (3x3)
     """
     theta_x = random.uniform(0, 2) * math.pi
-    rot_x = torch.Tensor([
+    rot_x = torch.tensor([
         [1, 0, 0],
         [0, math.cos(theta_x), -math.sin(theta_x)],
         [0, math.sin(theta_x), math.cos(theta_x)],
-    ])
+    ], dtype=torch.float32)
     theta_y = random.uniform(0, 2) * math.pi
-    rot_y = torch.Tensor([
+    rot_y = torch.tensor([
         [math.cos(theta_y), 0, -math.sin(theta_y)],
         [0, 1, 0],
         [math.sin(theta_y), 0, math.cos(theta_y)],
-    ])
+    ], dtype=torch.float32)
     theta_z = random.uniform(0, 2) * math.pi
-    rot_z = torch.Tensor([
+    rot_z = torch.tensor([
         [math.cos(theta_z), -math.sin(theta_z), 0],
         [math.sin(theta_z), math.cos(theta_z), 0],
         [0, 0, 1],
-    ])
+    ], dtype=torch.float32)
 
     return rot_z @ rot_y @ rot_x
 
@@ -177,10 +170,9 @@ def translate_coords(
     Returns:
         tuple: Tuple containing the updated ligand and pocket dictionaries.
     """
-    noise = (torch.rand((1, 3)) - 1 / 2) * 2 * delta
-
-    pocket["coords"] += noise.repeat(pocket["coords"].shape[0], 1)
-    ligand["coords"] += noise.repeat(ligand["coords"].shape[0], 1)
+    noise = (torch.rand((1, 3), dtype=ligand["coords"].dtype) - 0.5) * 2 * delta
+    pocket["coords"].add_(noise)
+    ligand["coords"].add_(noise)
 
     return ligand, pocket
 
@@ -199,15 +191,16 @@ def atomChannelsToRadius(
     Returns:
         torch.Tensor: Tensor containing atomic radii corresponding to the atom channels.
     """
-    radius = []
     element_ids = [k for k in hashing.keys()]
-    for atom_channel in atoms_channel:
-        if atom_channel < len(element_ids):
-            element = element_ids[atom_channel]
-            radius.append(RADIUS_PER_ATOM["MOL"][element])
-        else:
-            radius.append(999)
-    return torch.Tensor(radius)
+    radius_lut = torch.tensor(
+        [RADIUS_PER_ATOM["MOL"][element] for element in element_ids], dtype=torch.float32
+    )
+
+    atom_idx = atoms_channel.to(torch.long)
+    radius = torch.full(atom_idx.shape, 999.0, dtype=torch.float32)
+    valid = torch.logical_and(atom_idx >= 0, atom_idx < radius_lut.numel())
+    radius[valid] = radius_lut[atom_idx[valid]]
+    return radius
 
 
 def filter_atoms_by_distance(
@@ -226,12 +219,7 @@ def filter_atoms_by_distance(
     Returns:
         tuple: A tuple containing the filtered ligand and pocket dictionaries.
     """
-    # ligand
-    ligand["coords"][ligand["coords"] < -max_dim] = -max_dim
-    ligand["coords"][ligand["coords"] > max_dim] = max_dim
-
-    # pocket
-    pocket["coords"][pocket["coords"] < -max_dim] = -max_dim
-    pocket["coords"][pocket["coords"] > max_dim] = max_dim
+    ligand["coords"].clamp_(-max_dim, max_dim)
+    pocket["coords"].clamp_(-max_dim, max_dim)
 
     return ligand, pocket
