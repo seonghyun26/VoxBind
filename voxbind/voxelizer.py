@@ -50,7 +50,7 @@ class Voxelizer(torch.nn.Module):
         elif backend == "torch":
             # Pre-compute neighborhood offsets once; stored as a buffer so they
             # move with the module and are never re-allocated during forward passes.
-            r = torch.arange(-cubes_around, cubes_around + 1, dtype=torch.int32)
+            r = torch.arange(-cubes_around, cubes_around + 1, dtype=torch.int32, device=device)
             dz, dy, dx = torch.meshgrid(r, r, r, indexing="ij")
             offsets = torch.stack([dx.flatten(), dy.flatten(), dz.flatten()], dim=1)
             self.register_buffer("_offsets", offsets)
