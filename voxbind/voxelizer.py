@@ -75,27 +75,33 @@ class Voxelizer(torch.nn.Module):
 
         """
 
-        # dumb coordinate to center ligand and pocket voxel
-        batch = self._add_dumb_coords(batch)
+        # H2D first (non_blocking so transfers overlap with GPU compute on the prefetch stream)
+        batch = {
+            "coords": batch["coords"].to(self.device, non_blocking=True),
+            "radius": batch["radius"].to(self.device, non_blocking=True),
+            "atoms_channel": batch["atoms_channel"].to(self.device, non_blocking=True),
+        }
 
-        # to device (non_blocking so H2D transfers overlap with GPU compute on the prefetch stream)
-        batch["coords"] = batch["coords"].to(self.device, non_blocking=True)
-        batch["radius"] = batch["radius"].to(self.device, non_blocking=True)
-        batch["atoms_channel"] = batch["atoms_channel"].to(self.device, non_blocking=True)
+        # add dumb coords on GPU (avoids a CPU torch.cat before the transfer)
+        batch = self._add_dumb_coords(batch)
 
         # voxelize
         batch_sz = batch["coords"].shape[0]
         n_chuncks = 4 if batch_sz > 16 else 1
-        chk = batch_sz // n_chuncks
+        chk = (batch_sz + n_chuncks - 1) // n_chuncks
         voxels = torch.empty(
             (batch_sz, num_channels, self.grid_dim, self.grid_dim, self.grid_dim),
             device=self.device,
         )
         for i in range(n_chuncks):
+            start = i * chk
+            end = min((i + 1) * chk, batch_sz)
+            if start >= end:
+                break
             voxels_ = self.vol_maker(
-                batch["coords"][i * chk:(i + 1) * chk],
-                batch["radius"][i * chk:(i + 1) * chk],
-                batch["atoms_channel"][i * chk:(i + 1) * chk],
+                batch["coords"][start:end],
+                batch["radius"][start:end],
+                batch["atoms_channel"][start:end],
                 resolution=self.resolution,
                 cubes_around_atoms_dim=self.cubes_around,
                 function="gaussian",
@@ -104,7 +110,7 @@ class Voxelizer(torch.nn.Module):
             # extract center box (and get rid of dumb coordinates)
             c = voxels_.shape[-1] // 2
             box_min, box_max = c - self.grid_dim // 2, c + self.grid_dim // 2
-            voxels[i * chk:(i + 1) * chk] = voxels_[:, :, box_min:box_max, box_min:box_max, box_min:box_max]
+            voxels[start:end] = voxels_[:, :, box_min:box_max, box_min:box_max, box_min:box_max]
             del voxels_
 
         return voxels
@@ -240,16 +246,20 @@ class Voxelizer(torch.nn.Module):
             dict: The modified batch with dumb coordinates.
 
         """
-        bsz = batch['coords'].shape[0]
+        bsz = batch["coords"].shape[0]
+        coords = batch["coords"]
+        atoms_channel = batch["atoms_channel"]
+        radius = batch["radius"]
+
         return {
             "coords": torch.cat(
-                (batch['coords'], torch.Tensor(bsz, 1, 3).fill_(-25), torch.Tensor(bsz, 1, 3).fill_(25)), 1
+                (coords, coords.new_full((bsz, 1, 3), -25), coords.new_full((bsz, 1, 3), 25)), 1
             ),
             "atoms_channel": torch.cat(
-                (batch['atoms_channel'], torch.Tensor(bsz, 2).fill_(0)), 1
+                (atoms_channel, atoms_channel.new_zeros((bsz, 2))), 1
             ),
             "radius": torch.cat(
-                (batch['radius'], torch.Tensor(bsz, 2).fill_(.5), ), 1
+                (radius, radius.new_full((bsz, 2), .5)), 1
             )
         }
 

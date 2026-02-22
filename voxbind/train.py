@@ -8,6 +8,8 @@ import time
 import torch
 import torchmetrics
 import wandb
+import hashlib
+import json
 
 from voxbind.voxelizer import Voxelizer
 from voxbind.models import create_model
@@ -157,6 +159,9 @@ def main(cfg: DictConfig) -> None:
     # metrics
     metrics_denoise, _ = create_metrics_for_training()
 
+    # pre-compute val voxels (deterministic since aug=False)
+    val_cache = precompute_val_voxels(loader_val, voxelizer, cfg)
+
     # -----------------------------------------------------------
     # start training
     logger.info("start training...")
@@ -170,7 +175,8 @@ def main(cfg: DictConfig) -> None:
 
         # val
         val_metrics = val(
-            cfg, loader_val, voxelizer, model_ema.module, criterion, metrics_denoise
+            cfg, loader_val, voxelizer, model_ema.module, criterion, metrics_denoise,
+            val_cache=val_cache,
         )
 
         # sample
@@ -219,6 +225,7 @@ def train(
     """
     metrics.reset()
     model.train()
+    train_miou_interval = max(1, int(cfg.get("train_miou_interval", 8)))
 
     prefetcher = VoxelPrefetcher(loader, voxelizer, cfg.smooth_sigma, training=True)
     for i, (voxels_lig, smooth_voxels_lig, voxels_poc) in enumerate(prefetcher):
@@ -235,7 +242,10 @@ def train(
         model_ema.update(model)
 
         # update metrics
-        metrics.update(loss, pred, voxels_lig)
+        metrics.update(
+            loss.detach(), pred.detach(), voxels_lig,
+            update_miou=(i % train_miou_interval == 0)
+        )
 
         if cfg.debug and i == 10:
             break
@@ -249,7 +259,8 @@ def val(
     voxelizer: Voxelizer,
     model: torch.nn,
     criterion: torch.nn,
-    metrics: torchmetrics.MetricCollection
+    metrics: torchmetrics.MetricCollection,
+    val_cache: dict = None,
 ) -> torch.Tensor:
     """Evaluate model.
 
@@ -260,22 +271,37 @@ def val(
         model (torch.nn): Model to be evaluated.
         criterion (torch.nn): Loss criterion for evaluation.
         metrics (torchmetrics.MetricCollection): Collection of metrics for evaluation.
+        val_cache (dict, optional): Pre-computed val voxels from precompute_val_voxels().
 
     Returns:
         float: Computed metrics for evaluation.
     """
     metrics.reset()
     model.eval()
+    device = next(model.parameters()).device
 
     with torch.no_grad():
-        prefetcher = VoxelPrefetcher(loader, voxelizer, cfg.smooth_sigma, training=False)
-        for i, (voxels_lig, smooth_voxels_lig, voxels_poc) in enumerate(prefetcher):
-            pred = model(smooth_voxels_lig, voxels_poc)
-            loss = criterion(pred, voxels_lig)
-            metrics.update(loss, pred, voxels_lig)
-
-            if cfg.debug and i == 10:
-                break
+        if val_cache is not None:
+            voxels_lig_all = val_cache["voxels_lig"]
+            voxels_poc_all = val_cache["voxels_poc"]
+            n = voxels_lig_all.shape[0]
+            for i, start in enumerate(range(0, n, cfg.bsz)):
+                voxels_lig = voxels_lig_all[start:start + cfg.bsz].to(device)
+                voxels_poc = voxels_poc_all[start:start + cfg.bsz].to(device)
+                smooth_voxels_lig = add_noise_vox(voxels_lig, cfg.smooth_sigma)
+                pred = model(smooth_voxels_lig, voxels_poc)
+                loss = criterion(pred, voxels_lig)
+                metrics.update(loss, pred, voxels_lig)
+                if cfg.debug and i == 10:
+                    break
+        else:
+            prefetcher = VoxelPrefetcher(loader, voxelizer, cfg.smooth_sigma, training=False)
+            for i, (voxels_lig, smooth_voxels_lig, voxels_poc) in enumerate(prefetcher):
+                pred = model(smooth_voxels_lig, voxels_poc)
+                loss = criterion(pred, voxels_lig)
+                metrics.update(loss, pred, voxels_lig)
+                if cfg.debug and i == 10:
+                    break
 
     return metrics.compute()
 
@@ -319,6 +345,50 @@ def sample(
     return None
 
 
+def _val_cache_path(cfg) -> str:
+    """Return a deterministic cache path for val voxels based on voxelizer + dataset params."""
+    key = {
+        "grid_dim": cfg.vox.grid_dim,
+        "resolution": cfg.vox.resolution,
+        "cubes_around": cfg.vox.cubes_around,
+        "ligand_radius": cfg.dset.ligand_radius,
+        "pocket_radius": cfg.dset.pocket_radius,
+    }
+    h = hashlib.md5(json.dumps(key, sort_keys=True).encode()).hexdigest()[:8]
+    return os.path.join(cfg.dset.data_dir, f"val_voxels_{h}.pt")
+
+
+def precompute_val_voxels(
+    loader_val: torch.utils.data.DataLoader,
+    voxelizer: Voxelizer,
+    cfg: DictConfig,
+) -> dict:
+    """Voxelize the entire val set (aug=False, so deterministic) and cache to disk.
+
+    Returns a dict with keys 'voxels_lig' and 'voxels_poc', each a CPU tensor
+    of shape (N, C, grid_dim, grid_dim, grid_dim).
+    """
+    cache_path = _val_cache_path(cfg)
+    if os.path.isfile(cache_path):
+        logger.info(f"loading pre-computed val voxels from {cache_path}")
+        return torch.load(cache_path, weights_only=True)
+
+    logger.info("pre-computing val voxels (will be cached for future runs)...")
+    all_lig, all_poc = [], []
+    with torch.no_grad():
+        for batch in loader_val:
+            all_lig.append(voxelizer.forward(batch["ligand"], num_channels=7).cpu())
+            all_poc.append(voxelizer.forward(batch["pocket"], num_channels=4).cpu())
+
+    cache = {
+        "voxels_lig": torch.cat(all_lig, 0),
+        "voxels_poc": torch.cat(all_poc, 0),
+    }
+    torch.save(cache, cache_path)
+    logger.info(f"saved val voxels to {cache_path}")
+    return cache
+
+
 def add_noise_vox(voxels: torch.Tensor, sigma: float) -> torch.Tensor:
     """
     Adds Gaussian noise to the input voxels.
@@ -331,7 +401,7 @@ def add_noise_vox(voxels: torch.Tensor, sigma: float) -> torch.Tensor:
         torch.Tensor: Noisy voxels.
     """
     if sigma > 0:
-        return voxels + voxels.clone().normal_(0, sigma)
+        return voxels + torch.empty_like(voxels).normal_(0, sigma)
     return voxels
 
 
