@@ -27,8 +27,9 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 SIGMA="${1:-0.9}"
 SPLIT="${2:-test}"
 N_SAMPLES="${3:-10}"
-N_TARGETS="${4:-100}"
+N_TARGETS="${4:-10}"
 PRETRAINED_PATH="exps/exp_sig${SIGMA}"
+GPUS="${CUDA_VISIBLE_DEVICES:-4,5}"
 
 cd "$PROJECT_ROOT/voxbind"
 
@@ -44,7 +45,7 @@ echo "    Split           : ${SPLIT}"
 echo "    Samples/pocket  : ${N_SAMPLES}"
 echo "    Targets         : ${N_TARGETS}"
 
-conda run -n voxbind python sample.py \
+CUDA_VISIBLE_DEVICES="$GPUS" conda run -n voxbind python sample.py \
     pretrained_path="${PRETRAINED_PATH}" \
     wjs.split="${SPLIT}" \
     wjs.n_samples_per_pocket="${N_SAMPLES}" \

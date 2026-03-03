@@ -10,6 +10,7 @@ debug: False
 wandb: True
 num_workers: 4
 resume: null
+resume_epoch: null  # if set, overrides the epoch loaded from checkpoint (useful when resuming)
 exp_dir: exps
 exp_name: exp_sig${smooth_sigma}${hydra.job.override_dirname}
 output_dir: null
@@ -32,7 +33,7 @@ hydra:
         kv_sep: ""
         item_sep: "_"
         exclude_keys: [
-            "exp_dir", "smooth_sigma", "lr", vox.grid_dim, "wd", "resume", "wandb",
+            "exp_dir", "smooth_sigma", "lr", vox.grid_dim, "wd", "resume", "resume_epoch", "wandb",
             "num_workers", "exp_name", "output_dir", "pretrained_path", "out_dir",
             "bsz", "seed", "num_epochs", "aug", "pocket_radius", "grid_dim", "aug"
 ]

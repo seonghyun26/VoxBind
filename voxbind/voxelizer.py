@@ -34,7 +34,8 @@ class Voxelizer(torch.nn.Module):
             resolution: float = 0.25,
             radius: float = 0.5,
             cubes_around: int = 8,
-            device="cuda"
+            device="cuda",
+            backend: str = "pyuul",
     ):
         super(Voxelizer, self).__init__()
         self.grid_dim = grid_dim
@@ -42,11 +43,19 @@ class Voxelizer(torch.nn.Module):
         self.radius = radius
         self.resolution = resolution
         self.cubes_around = cubes_around
+        self.backend = backend
 
-        self.vol_maker = VolumeMaker.Voxels(
-            device=device,
-            sparse=False,
-        )
+        if backend == "pyuul":
+            self.vol_maker = VolumeMaker.Voxels(device=device, sparse=False)
+        elif backend == "torch":
+            # Pre-compute neighborhood offsets once; stored as a buffer so they
+            # move with the module and are never re-allocated during forward passes.
+            r = torch.arange(-cubes_around, cubes_around + 1, dtype=torch.int32, device=device)
+            dz, dy, dx = torch.meshgrid(r, r, r, indexing="ij")
+            offsets = torch.stack([dx.flatten(), dy.flatten(), dz.flatten()], dim=1)
+            self.register_buffer("_offsets", offsets)
+        else:
+            raise ValueError(f"Unknown backend {backend!r}. Choose 'pyuul' or 'torch'.")
 
     def forward(self, batch: list, num_channels: int = 7) -> torch.Tensor:
         """
@@ -82,10 +91,13 @@ class Voxelizer(torch.nn.Module):
             "atoms_channel": batch["atoms_channel"].to(self.device, non_blocking=True),
         }
 
+        if self.backend == "torch":
+            return self._torch_voxelize(batch, num_channels)
+
+        # --- PyUUL backend (original implementation) ---
         # add dumb coords on GPU (avoids a CPU torch.cat before the transfer)
         batch = self._add_dumb_coords(batch)
 
-        # voxelize
         batch_sz = batch["coords"].shape[0]
         n_chuncks = 4 if batch_sz > 16 else 1
         chk = (batch_sz + n_chuncks - 1) // n_chuncks
@@ -114,6 +126,78 @@ class Voxelizer(torch.nn.Module):
             del voxels_
 
         return voxels
+
+    def _torch_voxelize(self, batch: dict, num_channels: int) -> torch.Tensor:
+        """
+        Pure-PyTorch Gaussian voxelizer.
+
+        Writes directly into a (B, C, G, G, G) output grid using scatter_add,
+        avoiding the large intermediate grid that PyUUL allocates internally.
+
+        Each atom contributes a Gaussian blob to its (2*cubes_around+1)^3
+        neighborhood. Sigma (in voxel units) is derived per-atom from its radius:
+            sigma = radius / resolution
+
+        Padded atoms (atoms_channel >= num_channels) are masked out automatically.
+        """
+        coords = batch["coords"]           # (B, N, 3) float, Angstroms
+        radius = batch["radius"]           # (B, N) float
+        atoms_channel = batch["atoms_channel"]  # (B, N) float
+
+        B, N, _ = coords.shape
+        G = self.grid_dim
+        res = self.resolution
+
+        # Convert Angstrom coords → fractional grid voxel coords
+        # Origin (0 Å) maps to grid center (G/2); range [-G/2·res, +G/2·res] Å
+        grid_coords = coords / res + G * 0.5  # (B, N, 3)
+
+        # Nearest voxel center for each atom — serves as the neighborhood anchor
+        atom_cell = grid_coords.round().to(torch.int32)  # (B, N, 3)
+
+        # Per-atom sigma^2 in voxel^2: sigma = radius / resolution
+        sigma_sq = (radius / res).clamp(min=1e-3).pow(2).unsqueeze(2)  # (B, N, 1)
+
+        # Valid atom mask: channel must be in [0, num_channels)
+        atoms_channel_long = atoms_channel.long()
+        valid = (atoms_channel_long >= 0) & (atoms_channel_long < num_channels)  # (B, N)
+
+        offsets = self._offsets  # (K, 3) — pre-computed in __init__
+        K = offsets.shape[0]
+
+        output = torch.zeros(B, num_channels, G * G * G, device=self.device, dtype=coords.dtype)
+
+        # Chunk over offsets to bound peak memory.
+        # With chunk=64: peak ~ (B × N × 64) elements — safe even for large pockets.
+        chunk = 64
+        for k0 in range(0, K, chunk):
+            offs = offsets[k0:k0 + chunk]   # (C, 3)
+            C = offs.shape[0]
+
+            # Neighbor voxel integer coordinates: (B, N, C, 3)
+            nbr = atom_cell.unsqueeze(2) + offs.view(1, 1, C, 3)
+
+            # Squared distance from atom center to each neighbor cell center (voxel units)
+            dist_sq = ((grid_coords.unsqueeze(2) - nbr.float()) ** 2).sum(-1)  # (B, N, C)
+
+            # Gaussian weight; per-atom sigma via broadcasting
+            weights = torch.exp(-dist_sq / (2.0 * sigma_sq))  # (B, N, C)
+
+            # Zero out invalid atoms and out-of-bounds neighbors
+            nx, ny, nz = nbr[..., 0], nbr[..., 1], nbr[..., 2]
+            in_bounds = (nx >= 0) & (nx < G) & (ny >= 0) & (ny < G) & (nz >= 0) & (nz < G)
+            weights = weights * (valid.unsqueeze(2) & in_bounds).to(coords.dtype)
+
+            # Flat linear voxel index (clamped; masked weights are 0 so safe)
+            lin = (nz * G * G + ny * G + nx).to(torch.int64).clamp(0, G * G * G - 1)
+            lin_flat = lin.view(B, N * C)   # (B, N*C)
+
+            # Scatter one channel at a time to keep memory low
+            for c in range(num_channels):
+                chan_w = (weights * (atoms_channel_long == c).unsqueeze(2).to(coords.dtype))
+                output[:, c].scatter_add_(1, lin_flat, chan_w.view(B, N * C))
+
+        return output.view(B, num_channels, G, G, G)
 
     def vox2mol(
         self,

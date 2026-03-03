@@ -95,10 +95,12 @@ def main(cfg: DictConfig) -> None:
         resume = cfg.resume
         wjs_override = cfg.wjs
         wandb_override = cfg.wandb
+        resume_epoch_override = cfg.resume_epoch
         cfg = OmegaConf.load(os.path.join(cfg.resume, "cfg.yaml"))
         cfg.output_dir, cfg.resume = resume, resume
         cfg.wandb = wandb_override
         cfg.wjs = wjs_override
+        cfg.resume_epoch = resume_epoch_override
 
     logger.info("cfg:")
     logger.info(OmegaConf.to_yaml(cfg))
@@ -149,6 +151,9 @@ def main(cfg: DictConfig) -> None:
         os.system(f"cp {os.path.join(cfg.output_dir, 'checkpoint.pth.tar')} "
                   + f"{os.path.join(cfg.output_dir, f'checkpoint_{start_epoch}.pth.tar')}")
         logger.info(f"model trained for {start_epoch} epochs")
+        if cfg.resume_epoch is not None:
+            logger.info(f"overriding start_epoch {start_epoch} → {cfg.resume_epoch} (resume_epoch)")
+            start_epoch = cfg.resume_epoch
 
     # DP/ema (exponential moving average)
     if torch.cuda.device_count() > 1:

@@ -15,15 +15,15 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
 SIGMA="${1:-0.9}"  # default: train both
-GPUS="${CUDA_VISIBLE_DEVICES:-4,5,6,7}"
-RESUME_EPOCH="${2:-13}"
+GPUS="${CUDA_VISIBLE_DEVICES:-4,5}"
+RESUME_EPOCH="${2:-20}"
 
 cd "$PROJECT_ROOT"
 
 train_sigma() {
     local sigma="$1"
     echo "==> Training VoxBind with smooth_sigma=${sigma} on GPUs: ${GPUS} resuming from epoch ${RESUME_EPOCH}"
-    CUDA_VISIBLE_DEVICES="$GPUS" python train.py smooth_sigma="${sigma}" resume="exps/exp_sig${sigma}" wjs.start="${RESUME_EPOCH}"
+    CUDA_VISIBLE_DEVICES="$GPUS" python train.py smooth_sigma="${sigma}" resume="exps/exp_sig${sigma}" resume_epoch="${RESUME_EPOCH}"
     echo "==> Checkpoint saved in exps/exp_sig${sigma}/"
 }
 

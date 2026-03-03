@@ -24,9 +24,9 @@ SHORT_SESSION="${SESSION_ID:0:8}"
 HOSTNAME=$(hostname -s 2>/dev/null || echo "unknown")
 
 MENTION=""
-if [[ -n "$SLACK_USER_ID" ]]; then
-  MENTION="<@$SLACK_USER_ID>"
-fi
+# if [[ -n "$SLACK_USER_ID" ]]; then
+#   MENTION="<@$SLACK_USER_ID>"
+# fi
 
 LAST_MSG=$(echo "$INPUT" | jq -r '.last_assistant_message // empty' | head -c 600)
 
