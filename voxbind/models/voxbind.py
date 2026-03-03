@@ -19,6 +19,7 @@ class VoxBind(torch.nn.Module):
         n_groups: int = 32,
         dropout: float = 0.1,
         smooth_sigma: float = 0.0,
+        with_density: bool = False,
         verbose: bool = False
     ):
         """
@@ -36,6 +37,10 @@ class VoxBind(torch.nn.Module):
             n_groups (int): Number of groups in the ResidualBlock. Defaults to 32.
             dropout (float): Dropout rate. Defaults to 0.1.
             smooth_sigma (float): Sigma value for smoothing. Defaults to 0.0.
+            with_density (bool): If True, add a density_encoder branch that accepts a
+                single-channel Gaussian density map (e.g. from pdb2vol). The branch is
+                summed with the ligand and pocket encodings. Checkpoint-compatible: old
+                checkpoints load fine with with_density=False (default). Defaults to False.
             verbose (bool): Flag to print the number of parameters in the model. Defaults to False.
         """
         super().__init__()
@@ -56,6 +61,7 @@ class VoxBind(torch.nn.Module):
         self.smooth_sigma = smooth_sigma
         self.n_channels_ligand = n_channels_ligand
         self.n_channels_pocket = n_channels_pocket
+        self.with_density = with_density
 
         self.ligand_encoder = ResidualBlock(
             n_channels_ligand, n_channels // 2, n_groups=0, dropout=0
@@ -63,6 +69,10 @@ class VoxBind(torch.nn.Module):
         self.pocket_encoder = ResidualBlock(
             n_channels_pocket, n_channels // 2, n_groups=0, dropout=0
         )
+        if with_density:
+            self.density_encoder = ResidualBlock(
+                1, n_channels // 2, n_groups=0, dropout=0
+            )
 
         self.final_ligand = torch.nn.Conv3d(
             n_channels, n_channels_ligand, kernel_size=(3, 3, 3), padding=(1, 1, 1)
@@ -72,18 +82,28 @@ class VoxBind(torch.nn.Module):
             n_params = sum(p.numel() for p in self.parameters() if p.requires_grad)
             print(f">> model has {(n_params/1e6):.02f}M parameters")
 
-    def forward(self, ligand: torch.Tensor, pocket: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self,
+        ligand: torch.Tensor,
+        pocket: torch.Tensor,
+        density: torch.Tensor = None,
+    ) -> torch.Tensor:
         """
         Forward pass of the VoxBind model.
 
         Args:
-            ligand (torch.Tensor): Input tensor for the ligand.
-            pocket (torch.Tensor): Input tensor for the pocket.
+            ligand (torch.Tensor): Input tensor for the ligand. Shape (B, 7, G, G, G).
+            pocket (torch.Tensor): Input tensor for the pocket. Shape (B, 4, G, G, G).
+            density (torch.Tensor, optional): Single-channel Gaussian density map from
+                pdb2vol, shape (B, 1, G, G, G). Only used when with_density=True.
+                Defaults to None (standard baseline behaviour).
 
         Returns:
             torch.Tensor: Output tensor of the model.
         """
         x = self.ligand_encoder(ligand) + self.pocket_encoder(pocket)
+        if self.with_density and density is not None:
+            x = x + self.density_encoder(density)
 
         x = self.unet3d(x, None)
         x = self.unet3d.act(x)

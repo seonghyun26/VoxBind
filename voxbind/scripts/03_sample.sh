@@ -27,7 +27,7 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 SIGMA="${1:-0.9}"
 SPLIT="${2:-test}"
 N_SAMPLES="${3:-10}"
-N_TARGETS="${4:-100}"
+N_TARGETS="${4:-10}"
 PRETRAINED_PATH="exps/exp_sig${SIGMA}"
 GPUS="${CUDA_VISIBLE_DEVICES:-4,5}"
 
