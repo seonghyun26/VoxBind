@@ -1,0 +1,16 @@
+dset_name: crossdocked_xray
+data_dir: dataset/data
+
+# Density source — set one of the two paths below:
+#   crops_dir  : precomputed float16 crops (fast, run 05_process_xray.py first)
+#   ccp4_dir   : raw CCP4 maps for on-the-fly loading (slower, no preprocessing)
+# crops_dir takes priority when the split sub-directory exists.
+crops_dir: dataset/data/xray_crops   # output of scripts/05_process_xray.py
+ccp4_dir:  dataset/data/ccp4         # fallback: output of scripts/04_download_xray.py
+
+ligand_radius: 0.5
+pocket_radius: -1
+use_xray: true
+cache_size: 32               # CCP4 maps cached per DataLoader worker (on-the-fly only)
+normalize: true              # local ±3σ clip + z-score per crop
+                             # set false when using xray_crops_norm/ (pre-normalized by 05b)
