@@ -27,7 +27,9 @@ import os
 import random
 
 import torch
+import wandb
 from torch.utils.data import DataLoader, Subset
+from tqdm import tqdm
 
 from voxbind.constants import N_LIGAND_ELEMENTS, N_POCKET_ELEMENTS
 from voxbind.dataset.crossdocked_xray import DatasetCrossDockedXray
@@ -129,6 +131,10 @@ def parse_args():
                         "All params use lr_backbone. Default out: finetune_ckpt.pth.tar")
     p.add_argument("--out",          default=None,
                    help="Output checkpoint path (auto-set based on --no_density if not given)")
+    p.add_argument("--no_wandb",     action="store_true",
+                   help="Disable Weights & Biases logging")
+    p.add_argument("--wandb_project", default="voxbind")
+    p.add_argument("--wandb_entity",  default="eddy26")
     return p.parse_args()
 
 
@@ -141,6 +147,17 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Device : {device}")
     print(f"Mode   : {'no-density fine-tune' if args.no_density else 'density-conditioned fine-tune'}\n")
+
+    use_wandb = not args.no_wandb
+    if use_wandb:
+        run_name = ("finetune_no_density" if args.no_density else "finetune_xray_density")
+        wandb.init(
+            project=args.wandb_project,
+            entity=args.wandb_entity,
+            name=run_name,
+            config=vars(args),
+            settings=wandb.Settings(code_dir="."),
+        )
 
     # ── Model ─────────────────────────────────────────────────────────────────
     model, smooth_sigma = load_model(args.pretrained_path, device)
@@ -247,7 +264,8 @@ def main():
     losses = []
     model.train()
 
-    for i in range(1, args.iters + 1):
+    pbar = tqdm(range(1, args.iters + 1), desc="Fine-tuning", dynamic_ncols=True)
+    for i in pbar:
         # Pick a random sample each iteration
         s_idx = random.randrange(n_samples)
         vox_lig, vox_poc, xray, _ = samples_data[s_idx]
@@ -261,12 +279,12 @@ def main():
         optimizer.zero_grad(set_to_none=True)
 
         losses.append(loss.item())
+        ratio = losses[0] / loss.item() if loss.item() > 0 else float("inf")
+        pbar.set_postfix(loss=f"{loss.item():.4f}", reduction=f"{ratio:.2f}x")
 
-        if i % args.log_every == 0 or i == 1:
-            ratio = losses[0] / loss.item() if loss.item() > 0 else float("inf")
-            print(f"{i:6d}  {s_idx:7d}  {loss.item():12.6f}  {ratio:9.2f}x")
+        if (i % args.log_every == 0 or i == 1) and use_wandb:
+            wandb.log({"train/loss": loss.item(), "train/loss_reduction": ratio}, step=i)
 
-    print("-" * 42)
     print(f"Initial loss : {losses[0]:.6f}")
     print(f"Final loss   : {losses[-1]:.6f}")
     print(f"Reduction    : {losses[0] / max(losses[-1], 1e-12):.1f}x")
@@ -284,6 +302,8 @@ def main():
         "losses":       losses,
     }, args.out)
     print(f"\nCheckpoint → {args.out}")
+    if use_wandb:
+        wandb.finish()
 
 
 if __name__ == "__main__":

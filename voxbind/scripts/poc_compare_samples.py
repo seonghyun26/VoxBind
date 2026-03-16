@@ -35,8 +35,10 @@ import math
 import os
 import shutil
 
+import numpy as np
 import torch
 from torch.utils.data import DataLoader, Subset
+from tqdm import tqdm
 
 from voxbind.constants import N_LIGAND_ELEMENTS, N_POCKET_ELEMENTS
 from voxbind.dataset.crossdocked_xray import DatasetCrossDockedXray
@@ -194,11 +196,27 @@ def wjs_sample(
 
     # Warm up
     if warmup > 0:
-        y, v = walk(y, v, warmup)
+        with tqdm(total=warmup, desc="  warmup", leave=False, dynamic_ncols=True) as pbar:
+            def walk_warmup(y_, v_, n):
+                for _ in range(n):
+                    y_ = y_ + delta * v_ / 2
+                    psi  = score(y_)
+                    noise = torch.randn_like(y_)
+                    noise[mask] = 0.
+                    psi[mask]   = 0.
+                    v_ = v_ + u * delta * psi / 2
+                    v_ = zeta1 * v_ + u * delta * psi / 2 \
+                       + math.sqrt(u * (1 - zeta2)) * noise
+                    y_ = y_ + delta * v_ / 2
+                    pbar.update(1)
+                return y_, v_
+            y, v = walk_warmup(y, v, warmup)
 
     # Sample: walk → jump → collect
+    n_jumps = max_steps // steps
     voxels = []
-    for _ in range(0, max_steps, steps):
+    for jump_i in tqdm(range(n_jumps), desc="  sampling", leave=False, dynamic_ncols=True,
+                       unit="jump"):
         y, v = walk(y, v, steps)
         xhat = model.forward(y, poc, density=dens)
         xhat[xhat < threshold] = 0.
@@ -219,35 +237,59 @@ def _vox_stats(vox_mols: torch.Tensor, threshold: float = 0.2) -> str:
             f"above_thr={above}/{total} ({100*above/total:.1f}%)")
 
 
-def save_samples(vox_mols: torch.Tensor, voxelizer: Voxelizer,
-                 center: torch.Tensor, out_dir: str, n_samples: int):
-    print(f"  voxel stats : {_vox_stats(vox_mols)}")
+def sample_until_done(
+    model: VoxBind,
+    voxelizer: Voxelizer,
+    center: torch.Tensor,
+    out_dir: str,
+    n_samples: int,
+    wjs_kw: dict,
+    density: torch.Tensor = None,
+    threshold: float = 0.2,
+    max_attempts: int = 500,
+) -> int:
+    """Mirror the original sample_molecules() while-loop: warmup + walk → reconstruct,
+    repeat until n_samples valid unique molecules are collected or max_attempts reached.
+    pocket_vox and ligand_vox are passed via wjs_kw."""
     makedir(out_dir)
     mols, smiles_seen = [], set()
-    n_none, n_obabel_fail = 0, 0
-    for vox in vox_mols:
-        if len(mols) >= n_samples:
-            break
-        mol_list = voxelizer.vox2mol(
-            vox.detach().unsqueeze(0).cuda(), center_coords=center
-        )
-        if mol_list is None:
-            n_none += 1
-            continue
-        for mol in mol_list:
-            sdf_path = os.path.join(out_dir, f"sample_{len(mols):03d}.sdf")
-            mol = mol2rdkit_obabel(mol, sdf_path)
-            if mol is None:
-                n_obabel_fail += 1
-                continue
-            smi = Chem.MolToSmiles(mol)
-            if smi not in smiles_seen:
-                smiles_seen.add(smi)
-                mols.append(mol)
+    n_no_peaks = n_recon_fail = n_duplicate = n_attempted = 0
 
-    if n_none > 0 or n_obabel_fail > 0:
-        print(f"  vox2mol=None: {n_none}/{len(vox_mols)}  "
-              f"obabel_fail: {n_obabel_fail}")
+    with tqdm(total=n_samples, desc="  valid mols", dynamic_ncols=True) as pbar_valid:
+        while len(mols) < n_samples and n_attempted < max_attempts:
+            vox_mols = wjs_sample(model, density=density, threshold=threshold, **wjs_kw)
+            print(f"  voxel stats : {_vox_stats(vox_mols, threshold)}")
+
+            for vox in vox_mols:
+                if len(mols) >= n_samples or n_attempted >= max_attempts:
+                    break
+                n_attempted += 1
+                mol_list = voxelizer.vox2mol(
+                    vox.detach().unsqueeze(0).cuda(), center_coords=center
+                )
+                if mol_list is None:
+                    n_no_peaks += 1
+                    continue
+                for mol in mol_list:
+                    sdf_path = os.path.join(out_dir, f"sample_{len(mols):03d}.sdf")
+                    mol = mol2rdkit_obabel(mol, sdf_path)
+                    if mol is None:
+                        n_recon_fail += 1
+                        continue
+                    smi = Chem.MolToSmiles(mol)
+                    if smi not in smiles_seen:
+                        smiles_seen.add(smi)
+                        mols.append(mol)
+                        pbar_valid.update(1)
+                    else:
+                        n_duplicate += 1
+
+    n_valid = len(mols)
+    print(f"  Filter breakdown ({n_attempted} voxels attempted):")
+    print(f"    no peaks (vox2mol=None) : {n_no_peaks:4d}  ({100*n_no_peaks/max(n_attempted,1):.1f}%)")
+    print(f"    recon fail (obabel/rdkit): {n_recon_fail:4d}  ({100*n_recon_fail/max(n_attempted,1):.1f}%)")
+    print(f"    duplicate SMILES        : {n_duplicate:4d}  ({100*n_duplicate/max(n_attempted,1):.1f}%)")
+    print(f"    valid & unique          : {n_valid:4d}  ({100*n_valid/max(n_attempted,1):.1f}%)")
 
     if not mols:
         print(f"  WARNING: no valid molecules saved to {out_dir}")
@@ -259,8 +301,91 @@ def save_samples(vox_mols: torch.Tensor, voxelizer: Voxelizer,
                 w.write(mol)
             except Exception:
                 pass
-    print(f"  Saved {len(mols)} molecules → {out_dir}/samples.sdf")
-    return len(mols)
+    print(f"  Saved {n_valid} molecules → {out_dir}/samples.sdf")
+    return n_valid
+
+
+# ── Helpers ────────────────────────────────────────────────────────────────────
+
+def _get_xray_indices(dset: DatasetCrossDockedXray) -> list:
+    """Return dataset indices that have X-ray density available, in order."""
+    if dset._crops_available is not None:
+        return np.where(dset._crops_available)[0].tolist()
+    # CCP4 mode: scan the data list
+    indices = []
+    for i, (pocket_, _) in enumerate(dset.data):
+        pdb_id = dset._get_pdb_id(pocket_["id"])
+        if pdb_id in dset._available_pdbs:
+            indices.append(i)
+    return indices
+
+
+def _sample_pocket(
+    idx: int,
+    dset: DatasetCrossDockedXray,
+    model_base: VoxBind,
+    model_ft,
+    model_xray: VoxBind,
+    voxelizer: Voxelizer,
+    device: torch.device,
+    args,
+    out_dir: str,
+):
+    """Run the three-way comparison for a single pocket and write results to out_dir."""
+    loader = DataLoader(Subset(dset, [idx]), batch_size=1, shuffle=False, num_workers=0)
+    batch = next(iter(loader))
+
+    pocket_id = batch["pocket"]["id"][0]
+    xray_ok   = batch["xray_available"].item()
+    print(f"\n  pocket idx={idx}  id={pocket_id}")
+    print(f"  xray_available: {xray_ok}")
+    if not xray_ok:
+        print("  WARNING: no X-ray density — xray_cond will use zeros.")
+
+    with torch.no_grad():
+        vox_lig = voxelizer(batch["ligand"], num_channels=N_LIGAND_ELEMENTS)
+        vox_poc = voxelizer(batch["pocket"], num_channels=N_POCKET_ELEMENTS)
+        xray    = batch["xray_density"].unsqueeze(1).to(device)
+        center  = batch["pocket"]["center_coords"]
+
+    print(f"  vox_poc non-zero: {vox_poc.gt(0).sum().item()}  xray std: {xray.std():.4f}")
+
+    wjs_kw = dict(
+        pocket_vox=vox_poc,
+        ligand_vox=vox_lig,
+        n_chains=args.n_chains,
+        warmup=args.warmup,
+        steps=args.steps,
+        max_steps=args.max_steps,
+    )
+    sample_kw = dict(voxelizer=voxelizer, center=center,
+                     n_samples=args.n_samples, wjs_kw=wjs_kw)
+
+    n_models = 3 if model_ft is not None else 2
+
+    print(f"  [1/{n_models}] baseline  threshold={args.threshold}")
+    n_base = sample_until_done(model_base, density=None, threshold=args.threshold,
+                               out_dir=os.path.join(out_dir, "baseline"), **sample_kw)
+
+    n_ft = None
+    if model_ft is not None:
+        print(f"  [2/{n_models}] finetuned  threshold={args.threshold}")
+        n_ft = sample_until_done(model_ft, density=None, threshold=args.threshold,
+                                 out_dir=os.path.join(out_dir, "finetuned"), **sample_kw)
+
+    print(f"  [{n_models}/{n_models}] xray_cond  threshold={args.threshold_xray}")
+    n_xray = sample_until_done(model_xray, density=xray, threshold=args.threshold_xray,
+                               out_dir=os.path.join(out_dir, "xray_cond"), **sample_kw)
+
+    # Save reference pocket/ligand files
+    lig_id = batch["ligand"]["id"][0]
+    for ref_id in [pocket_id, lig_id]:
+        src = os.path.join(args.data_dir, "crossdocked_pocket10", ref_id)
+        dst = os.path.join(out_dir, ref_id.replace("/", "__"))
+        if os.path.exists(src):
+            shutil.copyfile(src, dst)
+
+    return n_base, n_ft, n_xray
 
 
 # ── Main ───────────────────────────────────────────────────────────────────────
@@ -282,16 +407,25 @@ def parse_args():
     p.add_argument("--crops_dir",   default=None,
                    help="Precomputed crops dir (faster than ccp4_dir)")
     p.add_argument("--sample_idx",  type=int, default=None,
-                   help="Dataset index to sample from (auto from xray_ckpt if not set)")
+                   help="Dataset index to sample from (auto from xray_ckpt if not set). "
+                        "Ignored when --n_pockets > 1.")
+    p.add_argument("--n_pockets",   type=int, default=1,
+                   help="Number of X-ray available pockets to evaluate. "
+                        "When > 1, iterates through the first N pockets that have X-ray data, "
+                        "writing results to out_dir/pocket_{idx:04d}/.")
     p.add_argument("--out_dir",     default="exps/poc_xray/compare")
-    p.add_argument("--n_samples",   type=int, default=10,
+    p.add_argument("--n_samples",       type=int,   default=40,
                    help="Number of molecules to generate per model")
-    p.add_argument("--n_chains",    type=int, default=10,
+    p.add_argument("--n_chains",        type=int,   default=10,
                    help="WJS chains per iteration")
-    p.add_argument("--warmup",      type=int, default=400)
-    p.add_argument("--steps",       type=int, default=100)
-    p.add_argument("--max_steps",   type=int, default=100)
-    p.add_argument("--seed",        type=int, default=42)
+    p.add_argument("--warmup",          type=int,   default=400)
+    p.add_argument("--steps",           type=int,   default=100)
+    p.add_argument("--max_steps",       type=int,   default=100)
+    p.add_argument("--threshold",       type=float, default=0.2,
+                   help="Voxel threshold for baseline and finetuned sampling")
+    p.add_argument("--threshold_xray",  type=float, default=0.3,
+                   help="Voxel threshold for x-ray density-conditioned sampling")
+    p.add_argument("--seed",            type=int,   default=42)
     return p.parse_args()
 
 
@@ -317,11 +451,7 @@ def main():
     if sigma_ft is not None and sigma_ft != sigma_base:
         print(f"WARNING: sigma mismatch — baseline={sigma_base}, finetuned={sigma_ft}")
 
-    # ── Dataset — find the target sample ─────────────────────────────────────
-    idx = args.sample_idx if args.sample_idx is not None else ckpt_idx
-    if idx is None:
-        raise ValueError("Cannot determine sample index. Pass --sample_idx explicitly.")
-
+    # ── Dataset ───────────────────────────────────────────────────────────────
     dset = DatasetCrossDockedXray(
         data_dir=args.data_dir,
         ccp4_dir=args.ccp4_dir,
@@ -330,89 +460,59 @@ def main():
         aug=False,
         use_xray=True,
     )
-
-    loader = DataLoader(Subset(dset, [idx]), batch_size=1,
-                        shuffle=False, num_workers=0)
-    batch = next(iter(loader))
-
-    print(f"\nSampling pocket : {batch['pocket']['id'][0]}")
-    print(f"xray_available  : {batch['xray_available'].item()}")
-    if not batch["xray_available"].item():
-        print("WARNING: no X-ray density for this sample — xray_cond will use zeros.")
-
-    # ── Voxelize (fixed) ──────────────────────────────────────────────────────
     voxelizer = Voxelizer(grid_dim=64, resolution=0.25, cubes_around=8, device=str(device))
 
-    with torch.no_grad():
-        vox_lig = voxelizer(batch["ligand"], num_channels=N_LIGAND_ELEMENTS)  # (1,7,G,G,G)
-        vox_poc = voxelizer(batch["pocket"], num_channels=N_POCKET_ELEMENTS)  # (1,4,G,G,G)
-        xray    = batch["xray_density"].unsqueeze(1).to(device)               # (1,1,G,G,G)
-        center  = batch["pocket"]["center_coords"]                             # (1,3)
+    # ── Determine pocket indices to evaluate ──────────────────────────────────
+    if args.n_pockets == 1:
+        idx = args.sample_idx if args.sample_idx is not None else ckpt_idx
+        if idx is None:
+            raise ValueError("Cannot determine sample index. Pass --sample_idx explicitly.")
+        pocket_indices = [idx]
+    else:
+        xray_indices = _get_xray_indices(dset)
+        if not xray_indices:
+            raise RuntimeError("No X-ray available indices found in dataset.")
+        pocket_indices = xray_indices[:args.n_pockets]
+        print(f"\nFound {len(xray_indices)} X-ray available pockets "
+              f"— evaluating first {len(pocket_indices)}.")
 
-    print(f"\nvox_poc  non-zero : {vox_poc.gt(0).sum().item()}")
-    print(f"xray     std      : {xray.std():.4f}")
-
-    # ── Run WJS sampling ──────────────────────────────────────────────────────
-    wjs_kw = dict(
-        pocket_vox=vox_poc,
-        ligand_vox=vox_lig,
-        n_chains=args.n_chains,
-        warmup=args.warmup,
-        steps=args.steps,
-        max_steps=args.max_steps,
-    )
-
-    n_models = 3 if model_ft is not None else 2
-
-    print(f"\n[1/{n_models}] Sampling with baseline (original, no density) ...")
-    vox_base = wjs_sample(model_base, density=None, **wjs_kw)
-    print(f"  baseline voxels : {_vox_stats(vox_base)}")
-
-    vox_ft = None
-    if model_ft is not None:
-        print(f"\n[2/{n_models}] Sampling with finetuned (no density) ...")
-        vox_ft = wjs_sample(model_ft, density=None, **wjs_kw)
-        print(f"  finetuned voxels: {_vox_stats(vox_ft)}")
-
-    print(f"\n[{n_models}/{n_models}] Sampling with xray_cond (fine-tuned + density) ...")
-    vox_xray = wjs_sample(model_xray, density=xray, **wjs_kw)
-    print(f"  xray_cond voxels: {_vox_stats(vox_xray)}")
-
-    # ── Save molecules ────────────────────────────────────────────────────────
     makedir(args.out_dir)
-    base_dir = os.path.join(args.out_dir, "baseline")
-    xray_dir = os.path.join(args.out_dir, "xray_cond")
-    ft_dir   = os.path.join(args.out_dir, "finetuned") if model_ft is not None else None
+    results = []  # list of (idx, n_base, n_ft, n_xray)
 
-    print(f"\nSaving molecules ...")
-    n_base = save_samples(vox_base, voxelizer, center, base_dir, args.n_samples)
-    n_ft   = save_samples(vox_ft, voxelizer, center, ft_dir, args.n_samples) \
-             if vox_ft is not None else None
-    n_xray = save_samples(vox_xray, voxelizer, center, xray_dir, args.n_samples)
+    # ── Per-pocket loop ───────────────────────────────────────────────────────
+    for p_i, idx in enumerate(pocket_indices):
+        print(f"\n{'='*60}")
+        print(f"Pocket {p_i+1}/{len(pocket_indices)}  (dataset idx={idx})")
+        print(f"{'='*60}")
 
-    # Save reference pocket/ligand
-    data_dir = args.data_dir
-    poc_id   = batch["pocket"]["id"][0]
-    lig_id   = batch["ligand"]["id"][0]
-    for ref_id in [poc_id, lig_id]:
-        src = os.path.join(data_dir, "crossdocked_pocket10", ref_id)
-        dst = os.path.join(args.out_dir, ref_id.replace("/", "__"))
-        if os.path.exists(src):
-            shutil.copyfile(src, dst)
+        # Output dir: flat for n_pockets=1 (backward compat), subdir otherwise
+        if args.n_pockets == 1:
+            poc_out = args.out_dir
+        else:
+            poc_out = os.path.join(args.out_dir, f"pocket_{idx:04d}")
 
-    print(f"\n{'='*55}")
-    print(f"  {'Condition':<30}  {'Molecules':>9}")
-    print(f"  {'-'*43}")
-    print(f"  {'1. Baseline (original)':<30}  {n_base:>9}")
-    if n_ft is not None:
-        print(f"  {'2. Fine-tuned (no density)':<30}  {n_ft:>9}")
-    print(f"  {'3. Fine-tuned + X-ray density':<30}  {n_xray:>9}")
-    print(f"{'='*55}")
+        n_base, n_ft, n_xray = _sample_pocket(
+            idx=idx,
+            dset=dset,
+            model_base=model_base,
+            model_ft=model_ft,
+            model_xray=model_xray,
+            voxelizer=voxelizer,
+            device=device,
+            args=args,
+            out_dir=poc_out,
+        )
+        results.append((idx, n_base, n_ft, n_xray))
+
+    # ── Summary ───────────────────────────────────────────────────────────────
+    print(f"\n{'='*65}")
+    print(f"  {'idx':>6}  {'Baseline':>10}  {'Finetuned':>10}  {'X-ray cond':>10}")
+    print(f"  {'-'*57}")
+    for idx, n_base, n_ft, n_xray in results:
+        ft_str = f"{n_ft:>10}" if n_ft is not None else f"{'—':>10}"
+        print(f"  {idx:>6}  {n_base:>10}  {ft_str}  {n_xray:>10}")
+    print(f"{'='*65}")
     print(f"\nResults → {args.out_dir}/")
-    print(f"  baseline/samples.sdf")
-    if n_ft is not None:
-        print(f"  finetuned/samples.sdf")
-    print(f"  xray_cond/samples.sdf")
 
 
 if __name__ == "__main__":

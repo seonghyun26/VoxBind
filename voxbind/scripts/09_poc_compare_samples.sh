@@ -12,26 +12,39 @@
 #
 # Environment variables (optional):
 #   CUDA_VISIBLE_DEVICES   GPUs to use (default: 6,7)
-#   FINETUNE_CKPT          path to no-density fine-tuned ckpt (enables three-way comparison)
-#                          default: exps/poc_xray/finetune_ckpt.pth.tar (used only if exists)
-#   N_SAMPLES              molecules to save per model (default: 40)
-#   N_CHAINS               WJS chains per iteration (default: 10)
+#   TRAIN_N                number of training samples used in fine-tuning: 1 | 20 (default: 1)
+#                            1  → exps/poc_xray/{overfit,finetune}_ckpt.pth.tar
+#                            20 → exps/poc_xray/{overfit,finetune}_20/{overfit,finetune}_ckpt.pth.tar
+#   XRAY_CKPT              override path to density-conditioned ckpt (auto-set from TRAIN_N if unset)
+#   FINETUNE_CKPT          override path to no-density fine-tuned ckpt (auto-set from TRAIN_N if unset)
+#                          set to "" to disable the finetuned condition
+#   N_POCKETS              number of X-ray available pockets to evaluate (default: 1)
+#                            1  → flat output: compare/baseline/, compare/xray_cond/, ...
+#                            >1 → per-pocket subdirs: compare/pocket_{idx:04d}/baseline/, ...
+#   N_SAMPLES              molecules to save per model per pocket (default: 10)
+#   N_CHAINS               WJS chains per iteration (default: 50)
 #   WARMUP                 WJS warmup steps (default: 400)
 #   STEPS                  walk steps between each jump (default: 100)
 #   MAX_STEPS              total walk budget; candidates = N_CHAINS*(MAX_STEPS/STEPS) (default: 100)
+#                          increase MAX_STEPS or N_CHAINS to reduce duplicate SMILES
 #
-# Prerequisites:
-#   - exps/exp_sig0.9/checkpoint.pth.tar          (pretrained baseline)
-#   - exps/poc_xray/overfit_ckpt.pth.tar          (density-finetuned)
-#   - exps/poc_xray/finetune_ckpt.pth.tar         (no-density fine-tuned, optional)
-#   - ccp4 mode : dataset/data/ccp4/              (from 06_download_xray.sh)
-#   - crops mode: dataset/data/xray_crops/        (from 07_process_xray.sh)
+# Prerequisites (TRAIN_N=1):
+#   - exps/poc_xray/overfit_ckpt.pth.tar          (from 08_poc_density_overfit.sh)
+#   - exps/poc_xray/finetune_ckpt.pth.tar         (from NO_DENSITY=1 08_poc_density_overfit.sh, optional)
+# Prerequisites (TRAIN_N=20):
+#   - exps/poc_xray/overfit_20/overfit_ckpt.pth.tar    (from 08_density_overfit_20.sh)
+#   - exps/poc_xray/finetune_20/finetune_ckpt.pth.tar  (from 08_density_overfit_20.sh, optional)
 #
 # Outputs:
-#   exps/poc_xray/compare/
+#   exps/poc_xray/compare/      (TRAIN_N=1, N_POCKETS=1)
+#   exps/poc_xray/compare_20/   (TRAIN_N=20, N_POCKETS=1)
 #       baseline/samples.sdf   original model, no density
 #       finetuned/samples.sdf  fine-tuned, no density  (if FINETUNE_CKPT exists)
 #       xray_cond/samples.sdf  fine-tuned + X-ray density
+#   When N_POCKETS > 1, results are written to per-pocket subdirs:
+#       pocket_{idx:04d}/baseline/samples.sdf
+#       pocket_{idx:04d}/finetuned/samples.sdf
+#       pocket_{idx:04d}/xray_cond/samples.sdf
 
 set -e
 
@@ -40,21 +53,44 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
 MODE="${1:-crops}"
 GPUS="${CUDA_VISIBLE_DEVICES:-6,7}"
-N_SAMPLES="${N_SAMPLES:-40}"
-N_CHAINS="${N_CHAINS:-10}"
+TRAIN_N="${TRAIN_N:-1}"
+N_POCKETS="${N_POCKETS:-1}"
+N_SAMPLES="${N_SAMPLES:-10}"
+N_CHAINS="${N_CHAINS:-50}"
 WARMUP="${WARMUP:-400}"
 STEPS="${STEPS:-100}"
 MAX_STEPS="${MAX_STEPS:-100}"
+THRESHOLD="${THRESHOLD:-0.2}"
+THRESHOLD_XRAY="${THRESHOLD_XRAY:-0.3}"
 
 PRETRAINED="${PROJECT_ROOT}/exps/exp_sig0.9"
-XRAY_CKPT="${PROJECT_ROOT}/exps/poc_xray/overfit_ckpt.pth.tar"
-# Use FINETUNE_CKPT env var if set; otherwise auto-detect default path
-DEFAULT_FT_CKPT="${PROJECT_ROOT}/exps/poc_xray/finetune_ckpt.pth.tar"
-FINETUNE_CKPT="${FINETUNE_CKPT:-$DEFAULT_FT_CKPT}"
 DATA_DIR="${PROJECT_ROOT}/dataset/data"
 CCP4_DIR="${PROJECT_ROOT}/dataset/data/ccp4"
 CROPS_DIR="${PROJECT_ROOT}/dataset/data/xray_crops"
-OUT_DIR="${PROJECT_ROOT}/exps/poc_xray/compare"
+
+# ── Resolve checkpoint paths and output dir from TRAIN_N ──────────────────────
+case "$TRAIN_N" in
+    1)
+        DEFAULT_XRAY_CKPT="${PROJECT_ROOT}/exps/poc_xray/overfit_ckpt.pth.tar"
+        DEFAULT_FT_CKPT="${PROJECT_ROOT}/exps/poc_xray/finetune_ckpt.pth.tar"
+        DEFAULT_OUT_DIR="${PROJECT_ROOT}/exps/poc_xray/compare"
+        TRAIN_HINT="bash scripts/08_poc_density_overfit.sh"
+        ;;
+    20)
+        DEFAULT_XRAY_CKPT="${PROJECT_ROOT}/exps/poc_xray/overfit_20/overfit_ckpt.pth.tar"
+        DEFAULT_FT_CKPT="${PROJECT_ROOT}/exps/poc_xray/finetune_20/finetune_ckpt.pth.tar"
+        DEFAULT_OUT_DIR="${PROJECT_ROOT}/exps/poc_xray/compare_20"
+        TRAIN_HINT="bash scripts/08_density_overfit_20.sh"
+        ;;
+    *)
+        echo "ERROR: TRAIN_N must be 1 or 20 (got '${TRAIN_N}')"
+        exit 1
+        ;;
+esac
+
+XRAY_CKPT="${XRAY_CKPT:-$DEFAULT_XRAY_CKPT}"
+FINETUNE_CKPT="${FINETUNE_CKPT:-$DEFAULT_FT_CKPT}"
+OUT_DIR="${OUT_DIR:-$DEFAULT_OUT_DIR}"
 
 cd "$PROJECT_ROOT"
 
@@ -66,7 +102,7 @@ fi
 
 if [ ! -f "$XRAY_CKPT" ]; then
     echo "ERROR: X-ray checkpoint not found at ${XRAY_CKPT}"
-    echo "Run scripts/08_poc_density_overfit.sh first."
+    echo "Run: ${TRAIN_HINT}"
     exit 1
 fi
 
@@ -79,14 +115,15 @@ if [ -f "$FINETUNE_CKPT" ]; then
 else
     echo "==> Two-way comparison  (mode=${MODE})"
     echo "    (no finetune_ckpt found at ${FINETUNE_CKPT} — skipping finetuned condition)"
-    echo "    Run: NO_DENSITY=1 bash scripts/08_poc_density_overfit.sh  to create it"
+    echo "    Run: ${TRAIN_HINT}  to create it"
 fi
 
 echo "    Baseline   : ${PRETRAINED}/checkpoint.pth.tar"
 echo "    X-ray ckpt : ${XRAY_CKPT}"
 echo "    Output     : ${OUT_DIR}"
-echo "    GPUs       : ${GPUS}"
-echo "    n_samples=${N_SAMPLES}  n_chains=${N_CHAINS}  warmup=${WARMUP}  steps=${STEPS}  max_steps=${MAX_STEPS}"
+echo "    GPUs       : ${GPUS}  train_n=${TRAIN_N}"
+echo "    n_pockets=${N_POCKETS}  n_samples=${N_SAMPLES}  n_chains=${N_CHAINS}  warmup=${WARMUP}  steps=${STEPS}  max_steps=${MAX_STEPS}"
+echo "    threshold=${THRESHOLD}  threshold_xray=${THRESHOLD_XRAY}"
 echo
 
 case "$MODE" in
@@ -97,17 +134,20 @@ case "$MODE" in
             exit 1
         fi
         CUDA_VISIBLE_DEVICES="$GPUS" python scripts/poc_compare_samples.py \
-            --pretrained_path "$PRETRAINED" \
-            --xray_ckpt       "$XRAY_CKPT" \
+            --pretrained_path  "$PRETRAINED" \
+            --xray_ckpt        "$XRAY_CKPT" \
             $FINETUNE_FLAG \
-            --data_dir        "$DATA_DIR" \
-            --ccp4_dir        "$CCP4_DIR" \
-            --out_dir         "$OUT_DIR" \
-            --n_samples       "$N_SAMPLES" \
-            --n_chains        "$N_CHAINS" \
-            --warmup          "$WARMUP" \
-            --steps           "$STEPS" \
-            --max_steps       "$MAX_STEPS"
+            --data_dir         "$DATA_DIR" \
+            --ccp4_dir         "$CCP4_DIR" \
+            --out_dir          "$OUT_DIR" \
+            --n_pockets        "$N_POCKETS" \
+            --n_samples        "$N_SAMPLES" \
+            --n_chains         "$N_CHAINS" \
+            --warmup           "$WARMUP" \
+            --steps            "$STEPS" \
+            --max_steps        "$MAX_STEPS" \
+            --threshold        "$THRESHOLD" \
+            --threshold_xray   "$THRESHOLD_XRAY"
         ;;
 
     crops)
@@ -117,17 +157,20 @@ case "$MODE" in
             exit 1
         fi
         CUDA_VISIBLE_DEVICES="$GPUS" python scripts/poc_compare_samples.py \
-            --pretrained_path "$PRETRAINED" \
-            --xray_ckpt       "$XRAY_CKPT" \
+            --pretrained_path  "$PRETRAINED" \
+            --xray_ckpt        "$XRAY_CKPT" \
             $FINETUNE_FLAG \
-            --data_dir        "$DATA_DIR" \
-            --crops_dir       "$CROPS_DIR" \
-            --out_dir         "$OUT_DIR" \
-            --n_samples       "$N_SAMPLES" \
-            --n_chains        "$N_CHAINS" \
-            --warmup          "$WARMUP" \
-            --steps           "$STEPS" \
-            --max_steps       "$MAX_STEPS"
+            --data_dir         "$DATA_DIR" \
+            --crops_dir        "$CROPS_DIR" \
+            --out_dir          "$OUT_DIR" \
+            --n_pockets        "$N_POCKETS" \
+            --n_samples        "$N_SAMPLES" \
+            --n_chains         "$N_CHAINS" \
+            --warmup           "$WARMUP" \
+            --steps            "$STEPS" \
+            --max_steps        "$MAX_STEPS" \
+            --threshold        "$THRESHOLD" \
+            --threshold_xray   "$THRESHOLD_XRAY"
         ;;
 
     *)
