@@ -23,6 +23,7 @@ class DatasetCrossdocked(Dataset):
         max_len: int = 30,
         verbose: bool = False,
         delta_translate: float = 1.,
+        subset_n: int = None,
     ):
         """
         Dataset class for crossdocked data.
@@ -68,6 +69,13 @@ class DatasetCrossdocked(Dataset):
         # filter dataset
         self.data = self.data[:500] if self.small else self.data
         self._filter_by_size(max_len=max_len)
+
+        if split == "train" and subset_n is not None:
+            if subset_n > len(self.data):
+                raise RuntimeError(
+                    f"subset_n={subset_n} exceeds available train samples ({len(self.data)})"
+                )
+            self.data = self.data[:subset_n]
 
     def _filter_by_size(self, max_len: int = 21) -> list:
         """Filter dataset by max_len of molecule.

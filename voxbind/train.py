@@ -6,6 +6,7 @@ import os
 from omegaconf import DictConfig, OmegaConf
 import time
 import torch
+import torch.distributed as dist
 import torchmetrics
 import wandb
 import hashlib
@@ -25,6 +26,27 @@ from voxbind.metrics import create_metrics_for_training
 logger = logging.getLogger("training")
 
 
+# ── DDP helpers ────────────────────────────────────────────────────────────────
+
+def _setup_distributed():
+    """Initialize torch.distributed if launched via torchrun.
+
+    Returns (distributed, rank, world_size, local_rank). When LOCAL_RANK is not
+    set, returns (False, 0, 1, 0) for single-process single-GPU training.
+    """
+    if "LOCAL_RANK" not in os.environ:
+        return False, 0, 1, 0
+    local_rank = int(os.environ["LOCAL_RANK"])
+    torch.cuda.set_device(local_rank)
+    dist.init_process_group(backend="nccl")
+    return True, dist.get_rank(), dist.get_world_size(), local_rank
+
+
+def _unwrap(model):
+    """Return the underlying module if model is wrapped in DDP."""
+    return model.module if hasattr(model, "module") else model
+
+
 class VoxelPrefetcher:
     """Overlaps GPU voxelization of batch N+1 with model compute on batch N.
 
@@ -32,13 +54,19 @@ class VoxelPrefetcher:
     with either model forward/backward or the next voxelization, eliminating
     the idle-GPU oscillation seen when voxelization and compute are sequential.
     Augmentation (rotation/translation) still happens in DataLoader workers.
+
+    When with_density=True, the batch is expected to contain "xray_density"
+    (B,G,G,G) and "xray_available" (B,) — yielded as a (B,1,G,G,G) float tensor
+    masked to zero where availability is False. When with_density=False the
+    density slot in the yielded tuple is None.
     """
 
-    def __init__(self, loader, voxelizer, smooth_sigma, training=True):
+    def __init__(self, loader, voxelizer, smooth_sigma, training=True, with_density=False):
         self.loader = loader
         self.voxelizer = voxelizer
         self.smooth_sigma = smooth_sigma
         self.training = training
+        self.with_density = with_density
         self.stream = torch.cuda.Stream()
 
     def _voxelize(self, batch):
@@ -49,7 +77,17 @@ class VoxelPrefetcher:
                 voxels_poc = self.voxelizer.forward(batch["pocket"], num_channels=4)
                 if self.training:
                     voxels_poc[:math.ceil(.2 * voxels_poc.shape[0])].zero_()
-        return voxels_lig, smooth_voxels_lig, voxels_poc
+                density = None
+                if self.with_density and "xray_density" in batch:
+                    density = batch["xray_density"].to(
+                        self.voxelizer.device, non_blocking=True
+                    ).unsqueeze(1)
+                    if "xray_available" in batch:
+                        avail = batch["xray_available"].to(
+                            self.voxelizer.device, non_blocking=True
+                        )
+                        density = density * avail.view(-1, 1, 1, 1, 1).float()
+        return voxels_lig, smooth_voxels_lig, voxels_poc, density
 
     def __iter__(self):
         loader_it = iter(self.loader)
@@ -58,18 +96,18 @@ class VoxelPrefetcher:
         except StopIteration:
             return
 
-        next_voxels = self._voxelize(next_batch)
+        next_out = self._voxelize(next_batch)
 
         for batch in loader_it:
             torch.cuda.current_stream().wait_stream(self.stream)
-            cur_voxels = next_voxels
+            cur_out = next_out
             # kick off next voxelization while model trains on current batch
-            next_voxels = self._voxelize(batch)
-            yield cur_voxels
+            next_out = self._voxelize(batch)
+            yield cur_out
 
         # last batch
         torch.cuda.current_stream().wait_stream(self.stream)
-        yield next_voxels
+        yield next_out
 
     def __len__(self):
         return len(self.loader)
@@ -78,20 +116,26 @@ class VoxelPrefetcher:
 @hydra.main(config_path="configs", config_name="config_train", version_base=None)
 def main(cfg: DictConfig) -> None:
     # -----------------------------------------------------------
-    # basic inits
+    # basic inits + DDP
     assert torch.cuda.is_available(), "not a good idea to train on cpu..."
+    distributed, rank, world_size, local_rank = _setup_distributed()
+    is_main = (rank == 0)
+    device = torch.device(f"cuda:{local_rank}")
+
     start_epoch = 0
-    create_exp_dir(cfg)
-    logger.info(f"n gpus available: {torch.cuda.device_count()}")
-    logger.info(f"saving experiments in: {cfg.output_dir}")
+    # All ranks resolve cfg.output_dir from Hydra; only rank 0 writes cfg.yaml.
+    create_exp_dir(cfg, write=is_main)
+    if is_main:
+        logger.info(f"distributed={distributed}  world_size={world_size}  rank={rank}  local_rank={local_rank}")
+        logger.info(f"saving experiments in: {cfg.output_dir}")
     torch.set_default_dtype(torch.float32)
-    logger.info("set matmul precision to high")
     torch.set_float32_matmul_precision("high")
     seed_everything(cfg.seed)
 
     # resume?
     if cfg.resume is not None and os.path.isdir(cfg.resume):
-        logger.info(f"resuming from: {cfg.resume}")
+        if is_main:
+            logger.info(f"resuming from: {cfg.resume}")
         resume = cfg.resume
         wjs_override = cfg.wjs
         wandb_override = cfg.wandb
@@ -102,11 +146,11 @@ def main(cfg: DictConfig) -> None:
         cfg.wjs = wjs_override
         cfg.resume_epoch = resume_epoch_override
 
-    logger.info("cfg:")
-    logger.info(OmegaConf.to_yaml(cfg))
+    if is_main:
+        logger.info("cfg:\n" + OmegaConf.to_yaml(cfg))
 
-    # wandb?
-    if cfg.wandb:
+    # wandb (rank 0 only)
+    if cfg.wandb and is_main:
         wandb.init(
             project="voxbind",
             entity="eddy26",
@@ -118,21 +162,26 @@ def main(cfg: DictConfig) -> None:
         )
 
     # -----------------------------------------------------------
-    # create training objects
-    # data loaders
-    loader_train, loader_val, loader_sampling = create_dataloaders(cfg)
-    n_train, n_val = len(loader_train.dataset.data), len(loader_val.dataset.data)
-    logger.info(f"training/val set size: {n_train}/{n_val}")
+    # data loaders (train uses DistributedSampler when distributed)
+    loader_train, loader_val, loader_sampling = create_dataloaders(
+        cfg, distributed=distributed, rank=rank, world_size=world_size,
+    )
+    n_train, n_val = len(loader_train.dataset), len(loader_val.dataset)
+    if is_main:
+        logger.info(f"training/val set size: {n_train}/{n_val}")
+        if distributed:
+            logger.info(
+                f"per-rank batch size: {cfg.bsz}  effective batch: {cfg.bsz * world_size}"
+            )
 
     # model, criterion, optimizer
-    device = torch.device("cuda")
-    model = create_model(cfg)
-    model.to(device)
-    criterion = torch.nn.MSELoss(reduction="sum").to("cuda")
+    model = create_model(cfg, device=device)
+    criterion = torch.nn.MSELoss(reduction="sum").to(device)
     optimizer = AdamW(model.parameters(), lr=cfg.lr, weight_decay=cfg.wd)
     optimizer.zero_grad()
-    n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    logger.info(f"model has {(n_params/1e6):.02f}M parameters")
+    if is_main:
+        n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        logger.info(f"model has {(n_params/1e6):.02f}M parameters")
 
     # voxelizer
     voxelizer = Voxelizer(
@@ -142,65 +191,87 @@ def main(cfg: DictConfig) -> None:
         device=device,
     )
 
-    # optionally reload states of model, optimizer
+    # optionally reload states of model, optimizer (before DDP wrap)
     if cfg.resume is not None:
-        logger.info("reloading states of model, optimizer")
+        if is_main:
+            logger.info("reloading states of model, optimizer")
         model, optimizer, start_epoch = load_checkpoint(
             model, cfg.output_dir, optimizer, best_model=False
         )
-        os.system(f"cp {os.path.join(cfg.output_dir, 'checkpoint.pth.tar')} "
-                  + f"{os.path.join(cfg.output_dir, f'checkpoint_{start_epoch}.pth.tar')}")
-        logger.info(f"model trained for {start_epoch} epochs")
+        if is_main:
+            os.system(f"cp {os.path.join(cfg.output_dir, 'checkpoint.pth.tar')} "
+                      + f"{os.path.join(cfg.output_dir, f'checkpoint_{start_epoch}.pth.tar')}")
+            logger.info(f"model trained for {start_epoch} epochs")
         if cfg.resume_epoch is not None:
-            logger.info(f"overriding start_epoch {start_epoch} → {cfg.resume_epoch} (resume_epoch)")
+            if is_main:
+                logger.info(f"overriding start_epoch {start_epoch} → {cfg.resume_epoch} (resume_epoch)")
             start_epoch = cfg.resume_epoch
 
-    # DP/ema (exponential moving average)
-    if torch.cuda.device_count() > 1:
-        model = torch.nn.parallel.DataParallel(model)
-    model.to(device)
-    model_ema = ModelEma(model, decay=.999)
+    # Wrap with DDP (or fall through for single-GPU). EMA always tracks the
+    # underlying (unwrapped) module so checkpoints are DDP-agnostic.
+    if distributed:
+        model = torch.nn.parallel.DistributedDataParallel(
+            model, device_ids=[local_rank], output_device=local_rank,
+        )
+    model_ema = ModelEma(_unwrap(model), decay=.999)
 
     # metrics
     metrics_denoise, _ = create_metrics_for_training()
 
-    # pre-compute val voxels (deterministic since aug=False)
-    val_cache = precompute_val_voxels(loader_val, voxelizer, cfg)
+    # pre-compute val voxels (rank 0 only — val runs on rank 0 too)
+    val_cache = None
+    if is_main:
+        val_cache = precompute_val_voxels(loader_val, voxelizer, cfg)
 
     # -----------------------------------------------------------
     # start training
-    logger.info("start training...")
-    for epoch in tqdm(range(start_epoch, start_epoch + cfg.num_epochs), desc="Epochs"):
+    if is_main:
+        logger.info("start training...")
+    epoch_iter = range(start_epoch, start_epoch + cfg.num_epochs)
+    if is_main:
+        epoch_iter = tqdm(epoch_iter, desc="Epochs")
+    for epoch in epoch_iter:
         t0 = time.time()
 
-        # train
+        # reshuffle for next epoch (DistributedSampler)
+        if distributed and hasattr(loader_train.sampler, "set_epoch"):
+            loader_train.sampler.set_epoch(epoch)
+
+        # train (all ranks)
         train_metrics = train(
-            cfg, loader_train, voxelizer, model, criterion, optimizer, metrics_denoise, model_ema
+            cfg, loader_train, voxelizer, model, criterion, optimizer,
+            metrics_denoise, model_ema,
         )
 
-        # val
-        val_metrics = val(
-            cfg, loader_val, voxelizer, model_ema.module, criterion, metrics_denoise,
-            val_cache=val_cache,
-        )
+        # val + sample (rank 0 only — small set, simpler than sharding val)
+        val_metrics = None
+        if is_main:
+            val_metrics = val(
+                cfg, loader_val, voxelizer, model_ema.module, criterion, metrics_denoise,
+                val_cache=val_cache,
+            )
+            if epoch > 0 and (epoch % 50 == 0 or epoch == cfg.num_epochs - 1):
+                sample(cfg, loader_sampling, voxelizer, model_ema.module, epoch)
 
-        # sample
-        if epoch > 0 and (epoch % 50 == 0 or epoch == cfg.num_epochs - 1):
-            sample(cfg, loader_sampling, voxelizer, model_ema.module, epoch)
+            # log
+            log_metrics(epoch, train_metrics, val_metrics, time.time() - t0)
+            if cfg.wandb:
+                wandb.log({"train": train_metrics, "val": val_metrics})
 
-        # log and wandb
-        log_metrics(epoch, train_metrics, val_metrics, time.time() - t0)
-        if cfg.wandb:
-            wandb.log({"train": train_metrics, "val": val_metrics})
+            # save model
+            save_checkpoint({
+                "epoch": epoch,
+                "metrics": {"train": train_metrics, "val": val_metrics},
+                "cfg": cfg,
+                "state_dict_ema": model_ema.module.state_dict(),
+                "optimizer": optimizer.state_dict(),
+            }, save_dir=cfg.output_dir)
 
-        # save model
-        save_checkpoint({
-            "epoch": epoch,
-            "metrics": {"train": train_metrics, "val": val_metrics},
-            "cfg": cfg,
-            "state_dict_ema": model_ema.module.state_dict(),
-            "optimizer": optimizer.state_dict(),
-        }, save_dir=cfg.output_dir)
+        if distributed:
+            dist.barrier()
+
+    if distributed:
+        dist.destroy_process_group()
 
 
 def train(
@@ -232,10 +303,14 @@ def train(
     model.train()
     train_miou_interval = max(1, int(cfg.get("train_miou_interval", 8)))
 
-    prefetcher = VoxelPrefetcher(loader, voxelizer, cfg.smooth_sigma, training=True)
-    for i, (voxels_lig, smooth_voxels_lig, voxels_poc) in enumerate(prefetcher):
+    with_density = bool(cfg.model.get("with_density", False))
+    prefetcher = VoxelPrefetcher(
+        loader, voxelizer, cfg.smooth_sigma,
+        training=True, with_density=with_density,
+    )
+    for i, (voxels_lig, smooth_voxels_lig, voxels_poc, density) in enumerate(prefetcher):
         # fwd
-        pred = model(smooth_voxels_lig, voxels_poc)
+        pred = model(smooth_voxels_lig, voxels_poc, density=density)
         loss = criterion(pred, voxels_lig)
 
         # backward
@@ -243,8 +318,8 @@ def train(
         optimizer.step()
         optimizer.zero_grad(set_to_none=True)
 
-        # update model EMA
-        model_ema.update(model)
+        # update model EMA (always tracks the unwrapped module)
+        model_ema.update(_unwrap(model))
 
         # update metrics
         metrics.update(
@@ -284,25 +359,31 @@ def val(
     metrics.reset()
     model.eval()
     device = next(model.parameters()).device
+    with_density = bool(cfg.model.get("with_density", False))
 
     with torch.no_grad():
         if val_cache is not None:
             voxels_lig_all = val_cache["voxels_lig"]
             voxels_poc_all = val_cache["voxels_poc"]
+            density_all = val_cache.get("density") if with_density else None
             n = voxels_lig_all.shape[0]
             for i, start in enumerate(range(0, n, cfg.bsz)):
                 voxels_lig = voxels_lig_all[start:start + cfg.bsz].to(device)
                 voxels_poc = voxels_poc_all[start:start + cfg.bsz].to(device)
+                density = density_all[start:start + cfg.bsz].to(device) if density_all is not None else None
                 smooth_voxels_lig = add_noise_vox(voxels_lig, cfg.smooth_sigma)
-                pred = model(smooth_voxels_lig, voxels_poc)
+                pred = model(smooth_voxels_lig, voxels_poc, density=density)
                 loss = criterion(pred, voxels_lig)
                 metrics.update(loss, pred, voxels_lig)
                 if cfg.debug and i == 10:
                     break
         else:
-            prefetcher = VoxelPrefetcher(loader, voxelizer, cfg.smooth_sigma, training=False)
-            for i, (voxels_lig, smooth_voxels_lig, voxels_poc) in enumerate(prefetcher):
-                pred = model(smooth_voxels_lig, voxels_poc)
+            prefetcher = VoxelPrefetcher(
+                loader, voxelizer, cfg.smooth_sigma,
+                training=False, with_density=with_density,
+            )
+            for i, (voxels_lig, smooth_voxels_lig, voxels_poc, density) in enumerate(prefetcher):
+                pred = model(smooth_voxels_lig, voxels_poc, density=density)
                 loss = criterion(pred, voxels_lig)
                 metrics.update(loss, pred, voxels_lig)
                 if cfg.debug and i == 10:
@@ -358,6 +439,8 @@ def _val_cache_path(cfg) -> str:
         "cubes_around": cfg.vox.cubes_around,
         "ligand_radius": cfg.dset.ligand_radius,
         "pocket_radius": cfg.dset.pocket_radius,
+        "dset_name": cfg.dset.dset_name,
+        "with_density": bool(cfg.model.get("with_density", False)),
     }
     h = hashlib.md5(json.dumps(key, sort_keys=True).encode()).hexdigest()[:8]
     return os.path.join(cfg.dset.data_dir, f"val_voxels_{h}.pt")
@@ -370,25 +453,33 @@ def precompute_val_voxels(
 ) -> dict:
     """Voxelize the entire val set (aug=False, so deterministic) and cache to disk.
 
-    Returns a dict with keys 'voxels_lig' and 'voxels_poc', each a CPU tensor
-    of shape (N, C, grid_dim, grid_dim, grid_dim).
+    Returns a dict with keys 'voxels_lig' and 'voxels_poc' (always) and 'density'
+    (only when cfg.model.with_density). Each is a CPU tensor.
     """
     cache_path = _val_cache_path(cfg)
     if os.path.isfile(cache_path):
         logger.info(f"loading pre-computed val voxels from {cache_path}")
         return torch.load(cache_path, weights_only=True)
 
-    logger.info("pre-computing val voxels (will be cached for future runs)...")
-    all_lig, all_poc = [], []
+    with_density = bool(cfg.model.get("with_density", False))
+    logger.info(f"pre-computing val voxels (with_density={with_density}); will cache for future runs...")
+    all_lig, all_poc, all_dens = [], [], []
     with torch.no_grad():
         for batch in loader_val:
             all_lig.append(voxelizer.forward(batch["ligand"], num_channels=7).cpu())
             all_poc.append(voxelizer.forward(batch["pocket"], num_channels=4).cpu())
+            if with_density and "xray_density" in batch:
+                d = batch["xray_density"].unsqueeze(1)
+                if "xray_available" in batch:
+                    d = d * batch["xray_available"].view(-1, 1, 1, 1, 1).float()
+                all_dens.append(d.cpu())
 
     cache = {
         "voxels_lig": torch.cat(all_lig, 0),
         "voxels_poc": torch.cat(all_poc, 0),
     }
+    if all_dens:
+        cache["density"] = torch.cat(all_dens, 0)
     torch.save(cache, cache_path)
     logger.info(f"saved val voxels to {cache_path}")
     return cache

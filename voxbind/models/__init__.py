@@ -23,6 +23,7 @@ def create_model(cfg, device="cuda") -> VoxBind:
         n_groups=cfg.model.n_groups,
         dropout=cfg.model.dropout,
         smooth_sigma=cfg.smooth_sigma,
+        with_density=cfg.model.get("with_density", False),
     )
     model.to(device)
     return model

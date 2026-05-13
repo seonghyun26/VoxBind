@@ -5,7 +5,7 @@ density map as an additional input channel.
 
 Design
 ------
-- CCP4 maps (downloaded by scripts/04_download_xray.py) are loaded lazily
+- CCP4 maps (downloaded by dataset/00a_data_density_download.py) are loaded lazily
   and cached per worker process (one OrderedDict per DataLoader worker).
 - The density box is cropped at the ligand centroid (PDB Cartesian frame),
   matching the VoxBind 64³ × 0.25 Å grid convention exactly.
@@ -223,7 +223,7 @@ class DatasetCrossDockedXray(Dataset):
     Two density loading modes (mutually exclusive, crops_dir takes priority):
 
     crops_dir (preferred for training)
-        Load precomputed float16 numpy arrays produced by scripts/05_process_xray.py.
+        Load precomputed float16 numpy arrays produced by dataset/00b_data_density_preprocess.py.
         Fast — no CCP4 I/O at training time. Rotation is still applied on-the-fly.
 
     ccp4_dir (on-the-fly, no preprocessing required)
@@ -233,7 +233,7 @@ class DatasetCrossDockedXray(Dataset):
     Parameters
     ----------
     data_dir      : directory containing data_train.pt / data_test.pt
-    crops_dir     : directory of precomputed crops (output of 05_process_xray.py).
+    crops_dir     : directory of precomputed crops (output of dataset/00b_data_density_preprocess.py).
                     When set, ccp4_dir is ignored.
     ccp4_dir      : directory containing {pdb_id}.map CCP4 files (on-the-fly mode)
     split         : "train", "val", or "test"
@@ -241,7 +241,7 @@ class DatasetCrossDockedXray(Dataset):
     cache_size    : CCP4 grids kept in per-worker memory (on-the-fly mode only)
     normalize     : if True (default), apply local ±3σ clip + z-score to each
                     density crop via normalize_crop(). Set False when crops_dir
-                    already contains pre-normalized crops (from 05b_renormalize_crops.py).
+                    already contains pre-normalized crops.
     aug           : apply random rotation + translation augmentation
     small         : load only the first 500 samples (debug)
     ligand_radius : Gaussian blob radius for ligand atoms
@@ -267,6 +267,8 @@ class DatasetCrossDockedXray(Dataset):
         delta_translate: float = 1.0,
         normalize: bool = True,
         verbose: bool = False,
+        subset_n: Optional[int] = None,
+        subset_xray_only: bool = False,
     ):
         assert split in ("train", "val", "test")
 
@@ -284,7 +286,7 @@ class DatasetCrossDockedXray(Dataset):
         self.normalize = normalize
         self.verbose = verbose
 
-        # Precomputed crops mode: load float16 .npy files produced by 05_process_xray.py
+        # Precomputed crops mode: load float16 .npy files produced by dataset/00b_data_density_preprocess.py
         _crops_path = Path(crops_dir) if crops_dir else None
         if use_xray and _crops_path and (_crops_path / split).exists():
             self._crops_dir = _crops_path / split
@@ -327,6 +329,34 @@ class DatasetCrossDockedXray(Dataset):
             self._available_pdbs = {p.stem for p in self.ccp4_dir.glob("*.map")}
         else:
             self._available_pdbs = set()
+
+        # Optional subset for the train split: pick first N indices (optionally
+        # filtered to those with x-ray density). Stored as new_index → original_index
+        # so __getitem__ can still load crops by their original position.
+        self._subset_indices: Optional[list] = None
+        if split == "train" and subset_n is not None:
+            n_total = len(self.data)
+            if subset_xray_only:
+                if self._crops_available is None:
+                    raise RuntimeError(
+                        "subset_xray_only=True requires precomputed crops with "
+                        f"{split}_available.npy in crops_dir={crops_dir}"
+                    )
+                avail = self._crops_available
+                if len(avail) != n_total:
+                    raise RuntimeError(
+                        f"crops_available length ({len(avail)}) != filtered dataset "
+                        f"size ({n_total}); preprocessing is misaligned."
+                    )
+                kept = [i for i in range(n_total) if bool(avail[i])][:subset_n]
+            else:
+                kept = list(range(min(subset_n, n_total)))
+            if len(kept) < subset_n:
+                raise RuntimeError(
+                    f"requested subset_n={subset_n} but only {len(kept)} samples match "
+                    f"(subset_xray_only={subset_xray_only}, n_total={n_total})"
+                )
+            self._subset_indices = kept
 
         if verbose:
             mode = "crops" if self._use_crops else "on-the-fly CCP4"
@@ -371,9 +401,13 @@ class DatasetCrossDockedXray(Dataset):
     # ── Public API ──────────────────────────────────────────────────────────────
 
     def __len__(self) -> int:
+        if self._subset_indices is not None:
+            return len(self._subset_indices)
         return len(self.data)
 
     def __getitem__(self, index: int) -> dict:
+        if self._subset_indices is not None:
+            index = self._subset_indices[index]
         pocket_, ligand_ = self.data[index]
 
         # ── Ligand ────────────────────────────────────────────────────────────

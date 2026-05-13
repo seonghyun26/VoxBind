@@ -5,3 +5,4 @@ is_attn: [False, False, True, True]
 n_blocks: 2
 n_groups: 16
 dropout: .1
+with_density: false  # add density_encoder branch (requires dset with xray_density field)

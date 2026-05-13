@@ -36,17 +36,22 @@ def makedir(path: str) -> None:
         os.makedirs(path)
 
 
-def create_exp_dir(cfg: OmegaConf) -> None:
-    """Create the directory for the experiment/run
+def create_exp_dir(cfg: OmegaConf, write: bool = True) -> None:
+    """Resolve cfg.output_dir / cfg.exp_name from Hydra; optionally write cfg.yaml.
 
     Args:
-        cfg (OmegaConf): config file for experiment
+        cfg: config file for the experiment.
+        write: when True (default), create the output dir and dump cfg.yaml.
+            DDP callers should set write=False on non-main ranks so only rank 0
+            performs the filesystem side-effects, while all ranks still get the
+            correct cfg.output_dir / cfg.exp_name set on cfg.
     """
     cfg.output_dir = hydra.core.hydra_config.HydraConfig.get().runtime.output_dir
     cfg.exp_name = os.path.basename(cfg.output_dir)
-    makedir(cfg.output_dir)
-    with open(os.path.join(cfg.output_dir, 'cfg.yaml'), 'w') as f:
-        yaml.dump(OmegaConf.to_yaml(cfg), f)
+    if write:
+        makedir(cfg.output_dir)
+        with open(os.path.join(cfg.output_dir, 'cfg.yaml'), 'w') as f:
+            yaml.dump(OmegaConf.to_yaml(cfg), f)
 
 
 def save_checkpoint(
