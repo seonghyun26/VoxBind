@@ -293,7 +293,7 @@ def sample_until_done(
 
     if not mols:
         print(f"  WARNING: no valid molecules saved to {out_dir}")
-        return 0
+        return 0, smiles_seen
 
     with Chem.SDWriter(os.path.join(out_dir, "samples.sdf")) as w:
         for mol in mols:
@@ -302,7 +302,7 @@ def sample_until_done(
             except Exception:
                 pass
     print(f"  Saved {n_valid} molecules → {out_dir}/samples.sdf")
-    return n_valid
+    return n_valid, smiles_seen
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -326,6 +326,8 @@ def _sample_pocket(
     model_base: VoxBind,
     model_ft,
     model_xray: VoxBind,
+    model_rand,
+    random_densities,
     voxelizer: Voxelizer,
     device: torch.device,
     args,
@@ -361,31 +363,92 @@ def _sample_pocket(
     sample_kw = dict(voxelizer=voxelizer, center=center,
                      n_samples=args.n_samples, wjs_kw=wjs_kw)
 
-    n_models = 3 if model_ft is not None else 2
+    # Load reference ligand SMILES from the source SDF
+    lig_id  = batch["ligand"]["id"][0]
+    ref_smi = None
+    lig_src = os.path.join(args.data_dir, "crossdocked_pocket10", lig_id)
+    if os.path.exists(lig_src):
+        suppl = Chem.SDMolSupplier(lig_src, removeHs=True)
+        ref_mol = next((m for m in suppl if m is not None), None)
+        if ref_mol is not None:
+            ref_smi = Chem.MolToSmiles(ref_mol)
+    if ref_smi:
+        print(f"  ref ligand SMILES : {ref_smi}")
+    else:
+        print(f"  ref ligand SMILES : (could not load {lig_src})")
 
-    print(f"  [1/{n_models}] baseline  threshold={args.threshold}")
-    n_base = sample_until_done(model_base, density=None, threshold=args.threshold,
-                               out_dir=os.path.join(out_dir, "baseline"), **sample_kw)
-
-    n_ft = None
+    n_models = 2  # baseline + xray_cond + random_density (inference)
+    n_models += 1  # random_density always runs
     if model_ft is not None:
-        print(f"  [2/{n_models}] finetuned  threshold={args.threshold}")
-        n_ft = sample_until_done(model_ft, density=None, threshold=args.threshold,
-                                 out_dir=os.path.join(out_dir, "finetuned"), **sample_kw)
+        n_models += 1
+    if model_rand is not None:
+        n_models += 1
 
-    print(f"  [{n_models}/{n_models}] xray_cond  threshold={args.threshold_xray}")
-    n_xray = sample_until_done(model_xray, density=xray, threshold=args.threshold_xray,
-                               out_dir=os.path.join(out_dir, "xray_cond"), **sample_kw)
+    step = 0
+
+    step += 1
+    print(f"  [{step}/{n_models}] baseline  threshold={args.threshold}")
+    n_base, smi_base = sample_until_done(model_base, density=None, threshold=args.threshold,
+                                         out_dir=os.path.join(out_dir, "baseline"), **sample_kw)
+
+    n_ft, smi_ft = None, None
+    if model_ft is not None:
+        step += 1
+        print(f"  [{step}/{n_models}] finetuned  threshold={args.threshold}")
+        n_ft, smi_ft = sample_until_done(model_ft, density=None, threshold=args.threshold,
+                                         out_dir=os.path.join(out_dir, "finetuned"), **sample_kw)
+
+    step += 1
+    print(f"  [{step}/{n_models}] xray_cond  threshold={args.threshold_xray}")
+    n_xray, smi_xray = sample_until_done(model_xray, density=xray, threshold=args.threshold_xray,
+                                         out_dir=os.path.join(out_dir, "xray_cond"), **sample_kw)
+
+    step += 1
+    print(f"  [{step}/{n_models}] random_density  threshold={args.threshold_xray}")
+    random_dens = torch.randn_like(xray)
+    n_rand, smi_rand = sample_until_done(model_xray, density=random_dens, threshold=args.threshold_xray,
+                                         out_dir=os.path.join(out_dir, "random_density"), **sample_kw)
+
+    n_rand_trained, smi_rand_trained = None, None
+    if model_rand is not None:
+        step += 1
+        # Use the same fixed random tensor from training if available
+        if random_densities is not None:
+            # Find the matching density by sample index position
+            rand_dens_trained = random_densities[0]  # primary training sample
+            if rand_dens_trained.dim() == 3:
+                rand_dens_trained = rand_dens_trained.unsqueeze(0).unsqueeze(0)
+        else:
+            rand_dens_trained = torch.randn_like(xray)
+        print(f"  [{step}/{n_models}] random_trained  threshold={args.threshold_xray}")
+        n_rand_trained, smi_rand_trained = sample_until_done(
+            model_rand, density=rand_dens_trained, threshold=args.threshold_xray,
+            out_dir=os.path.join(out_dir, "random_trained"), **sample_kw)
+
+    # Reference SMILES recovery check
+    if ref_smi:
+        hit_base  = ref_smi in smi_base
+        hit_ft    = ref_smi in smi_ft   if smi_ft   is not None else None
+        hit_xray  = ref_smi in smi_xray
+        hit_rand  = ref_smi in smi_rand
+        hit_rt    = ref_smi in smi_rand_trained if smi_rand_trained is not None else None
+        print(f"\n  Reference SMILES recovery:")
+        print(f"    baseline       : {'HIT' if hit_base else 'miss'}")
+        if hit_ft is not None:
+            print(f"    finetuned      : {'HIT' if hit_ft else 'miss'}")
+        print(f"    xray_cond      : {'HIT' if hit_xray else 'miss'}")
+        print(f"    random_density : {'HIT' if hit_rand else 'miss'}")
+        if hit_rt is not None:
+            print(f"    random_trained : {'HIT' if hit_rt else 'miss'}")
 
     # Save reference pocket/ligand files
-    lig_id = batch["ligand"]["id"][0]
     for ref_id in [pocket_id, lig_id]:
         src = os.path.join(args.data_dir, "crossdocked_pocket10", ref_id)
         dst = os.path.join(out_dir, ref_id.replace("/", "__"))
         if os.path.exists(src):
             shutil.copyfile(src, dst)
 
-    return n_base, n_ft, n_xray
+    return n_base, n_ft, n_xray, n_rand, n_rand_trained
 
 
 # ── Main ───────────────────────────────────────────────────────────────────────
@@ -402,10 +465,16 @@ def parse_args():
                         "Optional — enables three-way comparison when given.")
     p.add_argument("--xray_ckpt",       required=True,
                    help="Density-finetuned checkpoint (overfit_ckpt.pth.tar)")
+    p.add_argument("--random_ckpt",     default=None,
+                   help="Random-density-trained checkpoint (negative control). "
+                        "Optional — adds random_trained condition when given.")
     p.add_argument("--data_dir",    default="dataset/data")
     p.add_argument("--ccp4_dir",    default="dataset/data/ccp4")
     p.add_argument("--crops_dir",   default=None,
                    help="Precomputed crops dir (faster than ccp4_dir)")
+    p.add_argument("--split",       default="train",
+                   choices=["train", "val", "test"],
+                   help="Dataset split to draw evaluation pockets from")
     p.add_argument("--sample_idx",  type=int, default=None,
                    help="Dataset index to sample from (auto from xray_ckpt if not set). "
                         "Ignored when --n_pockets > 1.")
@@ -445,6 +514,18 @@ def main():
 
     model_xray, sigma_xray, ckpt_idx, pocket_id = load_xray_model(args.xray_ckpt, device)
 
+    model_rand, random_densities = None, None
+    if args.random_ckpt:
+        model_rand, sigma_rand, _, _ = load_xray_model(args.random_ckpt, device)
+        # Load the fixed random tensors that were used during training
+        rand_chkp = torch.load(args.random_ckpt, map_location=device, weights_only=False)
+        random_densities = rand_chkp.get("random_densities", None)
+        if random_densities is not None:
+            random_densities = [d.to(device) for d in random_densities]
+            print(f"[random_trained] loaded {len(random_densities)} fixed random density tensor(s)")
+        else:
+            print("[random_trained] WARNING: no saved random_densities in checkpoint — will use fresh randn")
+
     for tag, s in [("baseline", sigma_base), ("xray_cond", sigma_xray)]:
         if s != sigma_base:
             print(f"WARNING: sigma mismatch — baseline={sigma_base}, {tag}={s}")
@@ -456,7 +537,7 @@ def main():
         data_dir=args.data_dir,
         ccp4_dir=args.ccp4_dir,
         crops_dir=args.crops_dir,
-        split="train",
+        split=args.split,
         aug=False,
         use_xray=True,
     )
@@ -477,7 +558,7 @@ def main():
               f"— evaluating first {len(pocket_indices)}.")
 
     makedir(args.out_dir)
-    results = []  # list of (idx, n_base, n_ft, n_xray)
+    results = []  # list of (idx, n_base, n_ft, n_xray, n_rand, n_rt)
 
     # ── Per-pocket loop ───────────────────────────────────────────────────────
     for p_i, idx in enumerate(pocket_indices):
@@ -491,27 +572,37 @@ def main():
         else:
             poc_out = os.path.join(args.out_dir, f"pocket_{idx:04d}")
 
-        n_base, n_ft, n_xray = _sample_pocket(
+        n_base, n_ft, n_xray, n_rand, n_rt = _sample_pocket(
             idx=idx,
             dset=dset,
             model_base=model_base,
             model_ft=model_ft,
             model_xray=model_xray,
+            model_rand=model_rand,
+            random_densities=random_densities,
             voxelizer=voxelizer,
             device=device,
             args=args,
             out_dir=poc_out,
         )
-        results.append((idx, n_base, n_ft, n_xray))
+        results.append((idx, n_base, n_ft, n_xray, n_rand, n_rt))
 
     # ── Summary ───────────────────────────────────────────────────────────────
-    print(f"\n{'='*65}")
-    print(f"  {'idx':>6}  {'Baseline':>10}  {'Finetuned':>10}  {'X-ray cond':>10}")
-    print(f"  {'-'*57}")
-    for idx, n_base, n_ft, n_xray in results:
+    has_rt = model_rand is not None
+    hdr = f"  {'idx':>6}  {'Baseline':>10}  {'Finetuned':>10}  {'X-ray cond':>10}  {'Rand dens':>10}"
+    if has_rt:
+        hdr += f"  {'Rand train':>11}"
+    print(f"\n{'='*len(hdr)}")
+    print(hdr)
+    print(f"  {'-'*(len(hdr)-2)}")
+    for idx, n_base, n_ft, n_xray, n_rand, n_rt in results:
         ft_str = f"{n_ft:>10}" if n_ft is not None else f"{'—':>10}"
-        print(f"  {idx:>6}  {n_base:>10}  {ft_str}  {n_xray:>10}")
-    print(f"{'='*65}")
+        line = f"  {idx:>6}  {n_base:>10}  {ft_str}  {n_xray:>10}  {n_rand:>10}"
+        if has_rt:
+            rt_str = f"{n_rt:>11}" if n_rt is not None else f"{'—':>11}"
+            line += f"  {rt_str}"
+        print(line)
+    print(f"{'='*len(hdr)}")
     print(f"\nResults → {args.out_dir}/")
 
 

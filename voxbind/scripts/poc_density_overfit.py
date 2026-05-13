@@ -129,8 +129,14 @@ def parse_args():
     p.add_argument("--no_density",   action="store_true",
                    help="Fine-tune without density conditioning (with_density=False). "
                         "All params use lr_backbone. Default out: finetune_ckpt.pth.tar")
+    p.add_argument("--random_density", action="store_true",
+                   help="Replace real X-ray density with a fixed random tensor (N(0,1)). "
+                        "Trains with_density=True on noise — negative control for density signal.")
     p.add_argument("--out",          default=None,
                    help="Output checkpoint path (auto-set based on --no_density if not given)")
+    p.add_argument("--split",        default="train",
+                   choices=["train", "val", "test"],
+                   help="Dataset split to sample overfitting data from")
     p.add_argument("--no_wandb",     action="store_true",
                    help="Disable Weights & Biases logging")
     p.add_argument("--wandb_project", default="voxbind")
@@ -146,11 +152,22 @@ def main():
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Device : {device}")
-    print(f"Mode   : {'no-density fine-tune' if args.no_density else 'density-conditioned fine-tune'}\n")
+    if args.no_density:
+        mode_str = "no-density fine-tune"
+    elif args.random_density:
+        mode_str = "random-density fine-tune (negative control)"
+    else:
+        mode_str = "density-conditioned fine-tune"
+    print(f"Mode   : {mode_str}\n")
 
     use_wandb = not args.no_wandb
     if use_wandb:
-        run_name = ("finetune_no_density" if args.no_density else "finetune_xray_density")
+        if args.no_density:
+            run_name = "finetune_no_density"
+        elif args.random_density:
+            run_name = "finetune_random_density"
+        else:
+            run_name = "finetune_xray_density"
         wandb.init(
             project=args.wandb_project,
             entity=args.wandb_entity,
@@ -196,7 +213,7 @@ def main():
         data_dir=args.data_dir,
         ccp4_dir=args.ccp4_dir,
         crops_dir=args.crops_dir,
-        split="train",
+        split=args.split,
         aug=False,      # fixed sample → no augmentation
         use_xray=True,
         normalize=args.normalize,
@@ -230,6 +247,15 @@ def main():
             xray    = batch["xray_density"].unsqueeze(1).to(device)
 
         samples_data.append((vox_lig, vox_poc, xray, pocket_id))
+
+    # Replace real density with fixed random noise (negative control)
+    if args.random_density:
+        print("\n  --random_density: replacing all X-ray tensors with fixed N(0,1) noise")
+        torch.manual_seed(args.iters)  # deterministic but different from training RNG
+        samples_data = [
+            (vl, vp, torch.randn_like(xr), pid)
+            for vl, vp, xr, pid in samples_data
+        ]
 
     print(f"\nPrecomputed {len(samples_data)} sample(s) on {device}")
 
@@ -291,7 +317,7 @@ def main():
 
     # ── Save ──────────────────────────────────────────────────────────────────
     os.makedirs(os.path.dirname(args.out), exist_ok=True)
-    torch.save({
+    save_dict = {
         "state_dict":   model.state_dict(),
         "smooth_sigma": smooth_sigma,
         "args":         vars(args),
@@ -300,7 +326,11 @@ def main():
         "sample_indices": indices,
         "pocket_id":    samples_data[0][3],
         "losses":       losses,
-    }, args.out)
+    }
+    if args.random_density:
+        # Save the fixed random tensors so sampling can reproduce them
+        save_dict["random_densities"] = [xr.cpu() for _, _, xr, _ in samples_data]
+    torch.save(save_dict, args.out)
     print(f"\nCheckpoint → {args.out}")
     if use_wandb:
         wandb.finish()

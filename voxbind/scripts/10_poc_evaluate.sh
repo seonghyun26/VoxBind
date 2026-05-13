@@ -30,7 +30,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
 DOCKING_MODE="${1:-none}"
-GPUS="${CUDA_VISIBLE_DEVICES:-6,7}"
+GPUS="${CUDA_VISIBLE_DEVICES:-7}"
 COMPARE_DIR="${COMPARE_DIR:-${PROJECT_ROOT}/exps/poc_xray/compare}"
 TARGETDIFF_ROOT="${PROJECT_ROOT}/../../targetdiff"
 # Default to VoxBind's crossdocked_pocket10 (pocket-only PDBs, always available).
@@ -59,11 +59,19 @@ if [ ! -d "$TARGETDIFF_ROOT" ]; then
     exit 1
 fi
 
-# Auto-detect conditions (always baseline + xray_cond; add finetuned if present)
+# Auto-detect conditions (always baseline + xray_cond; add finetuned/random_density if present)
 CONDITIONS="baseline xray_cond"
 if [ -f "${COMPARE_DIR}/finetuned/samples.sdf" ]; then
     CONDITIONS="baseline finetuned xray_cond"
     echo "==> Three-way evaluation  (finetuned/ found)"
+fi
+if [ -f "${COMPARE_DIR}/random_density/samples.sdf" ]; then
+    CONDITIONS="${CONDITIONS} random_density"
+    echo "    (random_density/ found — adding to evaluation)"
+fi
+if [ -f "${COMPARE_DIR}/random_trained/samples.sdf" ]; then
+    CONDITIONS="${CONDITIONS} random_trained"
+    echo "    (random_trained/ found — adding to evaluation)"
 fi
 
 echo "==> Evaluating PoC samples  (docking_mode=${DOCKING_MODE})"
