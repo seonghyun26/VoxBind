@@ -70,9 +70,24 @@ class VoxBind(torch.nn.Module):
             n_channels_pocket, n_channels // 2, n_groups=0, dropout=0
         )
         if with_density:
-            self.density_encoder = ResidualBlock(
-                1, n_channels // 2, n_groups=0, dropout=0
+            # Lift 1-channel density to C/2, then a full ResidualBlock with GroupNorm.
+            # GroupNorm can't be applied to 1 input channel, so we use a plain conv first.
+            _dens_groups = min(n_groups, n_channels // 2) if n_groups > 0 else 0
+            self.density_encoder = torch.nn.Sequential(
+                torch.nn.Conv3d(1, n_channels // 2, kernel_size=3, padding=1),
+                torch.nn.SiLU(),
+                ResidualBlock(n_channels // 2, n_channels // 2,
+                              n_groups=_dens_groups, dropout=dropout),
             )
+            # Projects cat([ligand+pocket, density], dim=1) → C/2.
+            # Zero-init so initial output is 0: x = x_backbone + 0 = x_backbone.
+            # Training grows the density correction from zero, keeping early
+            # iterations stable and identical to the baseline.
+            self.density_proj = torch.nn.Conv3d(
+                n_channels, n_channels // 2, kernel_size=1
+            )
+            torch.nn.init.zeros_(self.density_proj.weight)
+            torch.nn.init.zeros_(self.density_proj.bias)
 
         self.final_ligand = torch.nn.Conv3d(
             n_channels, n_channels_ligand, kernel_size=(3, 3, 3), padding=(1, 1, 1)
@@ -103,7 +118,8 @@ class VoxBind(torch.nn.Module):
         """
         x = self.ligand_encoder(ligand) + self.pocket_encoder(pocket)
         if self.with_density and density is not None:
-            x = x + self.density_encoder(density)
+            x_dens = self.density_encoder(density)
+            x = x + self.density_proj(torch.cat([x, x_dens], dim=1))
 
         x = self.unet3d(x, None)
         x = self.unet3d.act(x)
@@ -111,18 +127,20 @@ class VoxBind(torch.nn.Module):
 
         return x
 
-    def score(self, y: torch.Tensor, pocket: torch.Tensor) -> torch.Tensor:
+    def score(self, y: torch.Tensor, pocket: torch.Tensor,
+              density: torch.Tensor = None) -> torch.Tensor:
         """
         Calculates the score function.
 
         Args:
             y (torch.Tensor): The y tensor.
             pocket (torch.Tensor): The pocket tensor.
+            density (torch.Tensor, optional): X-ray density map (B,1,G,G,G). Defaults to None.
 
         Returns:
             torch.Tensor: The calculated base score tensor.
         """
-        xhat = self.forward(y, pocket)
+        xhat = self.forward(y, pocket, density=density)
         return (xhat - y) / (self.smooth_sigma ** 2)
 
     ####################################################################################
@@ -166,18 +184,20 @@ class VoxBind(torch.nn.Module):
         return y, torch.zeros_like(y)
 
     @torch.no_grad()
-    def wjs_jump_step(self, y: torch.Tensor, pocket: torch.Tensor) -> torch.Tensor:
+    def wjs_jump_step(self, y: torch.Tensor, pocket: torch.Tensor,
+                      density: torch.Tensor = None) -> torch.Tensor:
         """
         Performs the jump step of the walk-jump sampling.
 
         Args:
             y (torch.Tensor): The y tensor.
             pocket (torch.Tensor): The pocket tensor.
+            density (torch.Tensor, optional): X-ray density map (B,1,G,G,G). Defaults to None.
 
         Returns:
             torch.Tensor: The estimated "clean" samples xhats.
         """
-        return self.forward(y, pocket)
+        return self.forward(y, pocket, density=density)
 
     @torch.no_grad()
     def wjs_walk_steps(
@@ -189,6 +209,7 @@ class VoxBind(torch.nn.Module):
         n_steps: int = 100,
         friction: float = 1.,
         lipschitz: float = 1.,
+        density: torch.Tensor = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Performs `n_steps` walk steps of the walk-jump sampling.
@@ -199,10 +220,9 @@ class VoxBind(torch.nn.Module):
             pocket (torch.Tensor): The pocket tensor.
             mask (torch.Tensor, optional): The mask tensor. Defaults to None.
             n_steps (int, optional): The number of steps. Defaults to 100.
-            score_type (str, optional): The score type. Defaults to None.
-            delta (float, optional): The delta value. Defaults to .5.
             friction (float, optional): The friction value. Defaults to 1..
             lipschitz (float, optional): The lipschitz value. Defaults to 1..
+            density (torch.Tensor, optional): X-ray density map (B,1,G,G,G). Defaults to None.
 
         Returns:
             torch.Tensor: The updated y tensor.
@@ -217,7 +237,7 @@ class VoxBind(torch.nn.Module):
         for _ in range(n_steps):
             with torch.no_grad():
                 y += delta * v / 2
-            psi = self.score(y, pocket)
+            psi = self.score(y, pocket, density=density)
             with torch.no_grad():
                 noise = torch.randn_like(y)
                 if mask is not None:
@@ -240,6 +260,7 @@ class VoxBind(torch.nn.Module):
             mask_pocket: bool = True,
             n_chains: int = 48,
             threshold: float = .2,
+            density: torch.Tensor = None,
     ) -> torch.Tensor:
         """
         Performs the walk-jump sampling.
@@ -247,14 +268,13 @@ class VoxBind(torch.nn.Module):
         Args:
             pocket (torch.Tensor): The pocket tensor.
             ligand (torch.Tensor): The ligand tensor.
-            smooth_sigma (float): The smooth_sigma value.
             warmup_wjs (int, optional): The number of warmup wjs steps. Defaults to 0.
             steps (int, optional): The number of steps per iteration. Defaults to 100.
             max_steps (int, optional): The maximum number of steps. Defaults to 100.
             chain_init (str, optional): The chain initialization method. Defaults to "denovo".
             mask_pocket (bool, optional): Whether to mask the pocket. Defaults to True.
             threshold (float, optional): The threshold value. Defaults to .2.
-            score_type (str, optional): The score type. Defaults to "grad_free_guidance".
+            density (torch.Tensor, optional): X-ray density map (1,1,G,G,G). Defaults to None.
 
         Returns:
             torch.Tensor: The generated voxels.
@@ -268,6 +288,8 @@ class VoxBind(torch.nn.Module):
         assert n_chains % N == 0, "n_chains must be divisible by N"
         pocket = pocket.repeat(N, 1, 1, 1, 1)
         ligand = ligand.repeat(N, 1, 1, 1, 1)
+        if density is not None:
+            density = density.repeat(N, 1, 1, 1, 1)
         rand_rots = [
             [random.choice([[2, 3], [3, 4], [2, 4], [3, 2], [4, 3], [4, 2], None]) for _ in range(N)],
             [random.randint(1, 4) for _ in range(N)]
@@ -280,9 +302,12 @@ class VoxBind(torch.nn.Module):
         # warm up
         if warmup_wjs > 0:
             mask_warmup = get_pocket_mask(pocket, n_channels=N_LIGAND_ELEMENTS)
-            y, v = self.wjs_walk_steps(y, v, pocket, mask_warmup, warmup_wjs)
+            y, v = self.wjs_walk_steps(y, v, pocket, mask_warmup, warmup_wjs,
+                                       density=density)
         y, v = y.repeat(n_chains // N, 1, 1, 1, 1), v.repeat(n_chains // N, 1, 1, 1, 1)
         pocket, ligand = pocket.repeat(n_chains // N, 1, 1, 1, 1), ligand.repeat(n_chains // N, 1, 1, 1, 1)
+        if density is not None:
+            density = density.repeat(n_chains // N, 1, 1, 1, 1)
         rand_rots[0] = rand_rots[0] * (n_chains // N)
         rand_rots[1] = rand_rots[1] * (n_chains // N)
 
@@ -295,11 +320,22 @@ class VoxBind(torch.nn.Module):
         voxels = []
         for _ in range(0, max_steps, steps):
             # walk `steps` steps
-            y, v = self.wjs_walk_steps(y, v, pocket, mask, steps)
+            y, v = self.wjs_walk_steps(y, v, pocket, mask, steps, density=density)
 
             # jump step
-            xhats = self.wjs_jump_step(y, pocket)
+            xhats = self.wjs_jump_step(y, pocket, density=density)
 
+            nz = (xhats > 0).float().mean().item()
+            print(
+                f"[sample] xhats stats before threshold={threshold:.2f}: "
+                f"min={xhats.min():.4f}  max={xhats.max():.4f}  "
+                f"mean={xhats.mean():.4f}  "
+                f"p25={xhats.quantile(0.25):.4f}  p50={xhats.quantile(0.50):.4f}  "
+                f"p75={xhats.quantile(0.75):.4f}  p90={xhats.quantile(0.90):.4f}  "
+                f"p95={xhats.quantile(0.95):.4f}  p99={xhats.quantile(0.99):.4f}  "
+                f"frac>0={nz:.4f}  "
+                f"frac>{threshold:.2f}={(xhats > threshold).float().mean().item():.4f}"
+            )
             xhats[xhats < threshold] = 0
             xhats = unrotate_voxel_grids(xhats, rand_rots)
             voxels.append(xhats)

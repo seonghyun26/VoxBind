@@ -26,12 +26,12 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
 SIGMA="${1:-0.9}"
 SPLIT="${2:-test}"
-N_SAMPLES="${3:-10}"
+N_SAMPLES="${3:-4}"
 N_TARGETS="${4:-10}"
 PRETRAINED_PATH="exps/exp_sig${SIGMA}"
 GPUS="${CUDA_VISIBLE_DEVICES:-4,5}"
 
-cd "$PROJECT_ROOT/voxbind"
+cd "$PROJECT_ROOT"
 
 if [ ! -d "$PRETRAINED_PATH" ]; then
     echo "ERROR: Pretrained checkpoint not found at voxbind/${PRETRAINED_PATH}"

@@ -12,10 +12,14 @@ notebooks/
 *.pt
 *.pkl
 
-# Cryo data
+# Density data
 *.cif
 *.map
 *.pdb
+*.ccp4
 
 *.env
+*/tmp/*
+.claude/
+.omc/
 CLAUDE.md

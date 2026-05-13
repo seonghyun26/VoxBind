@@ -1,6 +1,37 @@
 import torch
 
 from voxbind.dataset.crossdocked import DatasetCrossdocked
+from voxbind.dataset.crossdocked_xray import DatasetCrossDockedXray
+
+
+def _make_dataset(cfg, split: str, aug: bool):
+    """Instantiate the correct dataset class from cfg.dset.dset_name."""
+    name = cfg.dset.dset_name
+    if name == "crossdocked":
+        return DatasetCrossdocked(
+            data_dir=cfg.dset.data_dir,
+            split=split,
+            aug=aug,
+            small=cfg.debug,
+            ligand_radius=cfg.dset.ligand_radius,
+            pocket_radius=cfg.dset.pocket_radius,
+        )
+    elif name == "crossdocked_xray":
+        return DatasetCrossDockedXray(
+            data_dir=cfg.dset.data_dir,
+            crops_dir=cfg.dset.get("crops_dir", ""),
+            ccp4_dir=cfg.dset.get("ccp4_dir", "dataset/data/ccp4"),
+            split=split,
+            use_xray=cfg.dset.get("use_xray", True),
+            cache_size=cfg.dset.get("cache_size", 32),
+            aug=aug,
+            small=cfg.debug,
+            ligand_radius=cfg.dset.ligand_radius,
+            pocket_radius=cfg.dset.pocket_radius,
+            normalize=cfg.dset.get("normalize", True),
+        )
+    else:
+        raise NotImplementedError(f"Dataset '{name}' not implemented")
 
 
 def create_dataloaders(cfg) -> tuple:
@@ -13,20 +44,8 @@ def create_dataloaders(cfg) -> tuple:
     Returns:
         tuple: A tuple containing the training data loader, validation data loader, and sampling data loader.
     """
-    if cfg.dset.dset_name == "crossdocked":
-        Dataset = DatasetCrossdocked
-    else:
-        NotImplementedError(f"{cfg.dset.dset_name} Not implemented yet")
-
     # create train loader
-    dset_train = Dataset(
-        data_dir=cfg.dset.data_dir,
-        split="train",
-        aug=cfg.aug,
-        small=cfg.debug,
-        ligand_radius=cfg.dset.ligand_radius,
-        pocket_radius=cfg.dset.pocket_radius,
-    )
+    dset_train = _make_dataset(cfg, split="train", aug=cfg.aug)
 
     loader_kwargs = {
         "num_workers": cfg.num_workers,
@@ -46,14 +65,7 @@ def create_dataloaders(cfg) -> tuple:
     )
 
     # create val loader
-    dset_val = Dataset(
-        data_dir=cfg.dset.data_dir,
-        split="val",
-        aug=False,
-        small=cfg.debug,
-        ligand_radius=cfg.dset.ligand_radius,
-        pocket_radius=cfg.dset.pocket_radius,
-    )
+    dset_val = _make_dataset(cfg, split="val", aug=False)
     loader_val = torch.utils.data.DataLoader(
         dset_val,
         batch_size=cfg.bsz,
@@ -85,18 +97,7 @@ def create_sampling_dataloader(cfg, split="val") -> torch.utils.data.DataLoader:
     Returns:
         torch.utils.data.DataLoader: Data loader for sampling.
     """
-    if cfg.dset.dset_name == "crossdocked":
-        Dataset = DatasetCrossdocked
-    else:
-        NotImplementedError(f"{cfg['dataset']['dset_name']} Not implemented yet")
-    dset_val = Dataset(
-        data_dir=cfg.dset.data_dir,
-        split=split,
-        aug=False,
-        small=cfg.debug,
-        ligand_radius=cfg.dset.ligand_radius,
-        pocket_radius=cfg.dset.pocket_radius,
-    )
+    dset_val = _make_dataset(cfg, split=split, aug=False)
     loader_kwargs = {
         "num_workers": cfg.num_workers,
         "pin_memory": True,
