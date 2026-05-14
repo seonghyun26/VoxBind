@@ -326,13 +326,20 @@ class VoxBind(torch.nn.Module):
             xhats = self.wjs_jump_step(y, pocket, density=density)
 
             nz = (xhats > 0).float().mean().item()
+            # quantile() rejects tensors > ~16M elements; subsample for stats.
+            flat = xhats.flatten()
+            if flat.numel() > 1_000_000:
+                idx = torch.randint(flat.numel(), (1_000_000,), device=flat.device)
+                stat_sample = flat[idx]
+            else:
+                stat_sample = flat
             print(
                 f"[sample] xhats stats before threshold={threshold:.2f}: "
                 f"min={xhats.min():.4f}  max={xhats.max():.4f}  "
                 f"mean={xhats.mean():.4f}  "
-                f"p25={xhats.quantile(0.25):.4f}  p50={xhats.quantile(0.50):.4f}  "
-                f"p75={xhats.quantile(0.75):.4f}  p90={xhats.quantile(0.90):.4f}  "
-                f"p95={xhats.quantile(0.95):.4f}  p99={xhats.quantile(0.99):.4f}  "
+                f"p25={stat_sample.quantile(0.25):.4f}  p50={stat_sample.quantile(0.50):.4f}  "
+                f"p75={stat_sample.quantile(0.75):.4f}  p90={stat_sample.quantile(0.90):.4f}  "
+                f"p95={stat_sample.quantile(0.95):.4f}  p99={stat_sample.quantile(0.99):.4f}  "
                 f"frac>0={nz:.4f}  "
                 f"frac>{threshold:.2f}={(xhats > threshold).float().mean().item():.4f}"
             )

@@ -1,47 +1,78 @@
-import hydra
-import logging
-import math
-from tqdm import tqdm
-import os
-from omegaconf import DictConfig, OmegaConf
-import time
-import torch
-import torchmetrics
-import wandb
+"""DDP variant of train.py.
+
+Differences vs train.py (all additive — math is preserved):
+  * torch.distributed.init_process_group(backend="nccl") from torchrun env vars
+  * DataParallel -> DistributedDataParallel
+  * create_dataloaders(..., distributed=True, rank, world_size)
+  * train_sampler.set_epoch(epoch) each epoch (shuffle correctness)
+  * Rank-0 only: wandb.init, create_exp_dir write, save_checkpoint, sample(),
+    val_cache file write (others barrier+load).
+  * cfg.bsz is interpreted PER-RANK in DDP (matches dataset/__init__.py contract
+    and the comment in scripts/01a_train_xray100.sh). Effective batch
+    size across the world is cfg.bsz * world_size.
+
+Launch:
+    torchrun --nproc_per_node=<W> train_ddp.py <hydra overrides>
+"""
 import hashlib
 import json
+import logging
+import math
+import os
+import time
 
-from voxbind.voxelizer import Voxelizer
-from voxbind.models import create_model
-from voxbind.utils.base_utils import (
-    create_exp_dir, makedir, seed_everything, save_checkpoint, load_checkpoint
-)
-from voxbind.utils.sampling_utils import sample_molecules
+import hydra
+import torch
+import torch.distributed as dist
+import torchmetrics
+import wandb
+from omegaconf import DictConfig, OmegaConf
+from tqdm import tqdm
+
 from voxbind.dataset import create_dataloaders
+from voxbind.metrics import create_metrics_for_training
+from voxbind.models import create_model
 from voxbind.models.adamw import AdamW
 from voxbind.models.ema import ModelEma
-from voxbind.metrics import create_metrics_for_training
+from voxbind.utils.base_utils import (
+    create_exp_dir, load_checkpoint, makedir, save_checkpoint, seed_everything,
+)
+from voxbind.utils.sampling_utils import sample_molecules
+from voxbind.voxelizer import Voxelizer
 
-logger = logging.getLogger("training")
+logger = logging.getLogger("training-ddp")
 
 
 def _unwrap(model):
-    """Return the underlying module if model is wrapped in DataParallel."""
+    """Return the underlying module if model is wrapped in DP/DDP."""
     return model.module if hasattr(model, "module") else model
+
+
+def _setup_ddp() -> tuple:
+    """Initialize the default process group from torchrun env vars.
+
+    Returns:
+        (rank, local_rank, world_size)
+    """
+    rank = int(os.environ["RANK"])
+    local_rank = int(os.environ["LOCAL_RANK"])
+    world_size = int(os.environ["WORLD_SIZE"])
+    torch.cuda.set_device(local_rank)
+    dist.init_process_group(backend="nccl", init_method="env://")
+    return rank, local_rank, world_size
+
+
+def _cleanup_ddp() -> None:
+    if dist.is_initialized():
+        dist.destroy_process_group()
 
 
 class VoxelPrefetcher:
     """Overlaps GPU voxelization of batch N+1 with model compute on batch N.
 
-    Voxelization runs on a secondary CUDA stream so the GPU is always busy
-    with either model forward/backward or the next voxelization, eliminating
-    the idle-GPU oscillation seen when voxelization and compute are sequential.
-    Augmentation (rotation/translation) still happens in DataLoader workers.
-
-    When with_density=True, the batch is expected to contain "xray_density"
-    (B,G,G,G) and "xray_available" (B,) — yielded as a (B,1,G,G,G) float tensor
-    masked to zero where availability is False. When with_density=False the
-    density slot in the yielded tuple is None.
+    Identical to train.py.VoxelPrefetcher — duplicated here only to keep this
+    file self-contained for the smoke test (no cross-imports of private
+    helpers from train.py).
     """
 
     def __init__(self, loader, voxelizer, smooth_sigma, training=True, with_density=False):
@@ -84,11 +115,9 @@ class VoxelPrefetcher:
         for batch in loader_it:
             torch.cuda.current_stream().wait_stream(self.stream)
             cur_out = next_out
-            # kick off next voxelization while model trains on current batch
             next_out = self._voxelize(batch)
             yield cur_out
 
-        # last batch
         torch.cuda.current_stream().wait_stream(self.stream)
         yield next_out
 
@@ -99,15 +128,40 @@ class VoxelPrefetcher:
 @hydra.main(config_path="configs", config_name="config_train", version_base=None)
 def main(cfg: DictConfig) -> None:
     # -----------------------------------------------------------
-    # basic inits
+    # DDP init
     assert torch.cuda.is_available(), "not a good idea to train on cpu..."
-    start_epoch = 0
+    rank, local_rank, world_size = _setup_ddp()
+    is_main = (rank == 0)
+    device = torch.device(f"cuda:{local_rank}")
 
-    # Resume? Load saved cfg BEFORE create_exp_dir so we don't clobber it when
-    # output_dir == resume_dir.
-    is_resume = cfg.resume is not None and os.path.isdir(cfg.resume)
-    if is_resume:
-        logger.info(f"resuming from: {cfg.resume}")
+    start_epoch = 0
+    create_exp_dir(cfg, write=is_main)
+    # Sync after create_exp_dir so non-main ranks don't race ahead and read
+    # cfg.yaml from disk while rank 0 is mid-write. This bites the resume
+    # path specifically: cfg.resume and cfg.output_dir resolve to the same
+    # directory, so OmegaConf.load(cfg.resume/cfg.yaml) below races with
+    # rank 0's create_exp_dir write. Without this barrier, ranks 1..W-1
+    # see a half-written YAML (e.g. missing top-level keys like `aug`) and
+    # crash at the first cfg attribute access.
+    if world_size > 1:
+        dist.barrier()
+    # Every rank logs its DDP identity once — lets downstream tooling verify
+    # that all expected ranks actually came up (rank-0-only log gives a false
+    # negative for "all ranks initialized?").
+    logger.info(f"DDP: world_size={world_size} rank={rank} local_rank={local_rank}")
+    if is_main:
+        logger.info(f"n gpus visible to this rank: {torch.cuda.device_count()}")
+        logger.info(f"saving experiments in: {cfg.output_dir}")
+    torch.set_default_dtype(torch.float32)
+    torch.set_float32_matmul_precision("high")
+    # Aug differs per rank (different shard + worker init); model init seed is
+    # re-set below so all ranks build identical weights.
+    seed_everything(cfg.seed + rank)
+
+    # resume?
+    if cfg.resume is not None and os.path.isdir(cfg.resume):
+        if is_main:
+            logger.info(f"resuming from: {cfg.resume}")
         resume = cfg.resume
         wjs_override = cfg.wjs
         wandb_override = cfg.wandb
@@ -117,19 +171,12 @@ def main(cfg: DictConfig) -> None:
         cfg.wandb = wandb_override
         cfg.wjs = wjs_override
         cfg.resume_epoch = resume_epoch_override
-    else:
-        # Fresh run: resolve output_dir from Hydra + write cfg.yaml
-        create_exp_dir(cfg)
-    logger.info(f"n gpus available: {torch.cuda.device_count()}")
-    logger.info(f"saving experiments in: {cfg.output_dir}")
-    torch.set_default_dtype(torch.float32)
-    torch.set_float32_matmul_precision("high")
-    seed_everything(cfg.seed)
 
-    logger.info("cfg:\n" + OmegaConf.to_yaml(cfg))
+    if is_main:
+        logger.info("cfg:\n" + OmegaConf.to_yaml(cfg))
 
-    # wandb
-    if cfg.wandb:
+    # wandb (rank 0 only)
+    if is_main and cfg.wandb:
         wandb.init(
             project="voxbind",
             entity="eddy26",
@@ -141,21 +188,31 @@ def main(cfg: DictConfig) -> None:
         )
 
     # -----------------------------------------------------------
-    # data loaders
-    loader_train, loader_val, loader_sampling = create_dataloaders(cfg)
+    # data loaders (train uses DistributedSampler; val/sampling are not sharded)
+    loader_train, loader_val, loader_sampling = create_dataloaders(
+        cfg, distributed=True, rank=rank, world_size=world_size
+    )
     n_train, n_val = len(loader_train.dataset), len(loader_val.dataset)
-    logger.info(f"training/val set size: {n_train}/{n_val}")
+    if is_main:
+        logger.info(f"training/val set size: {n_train}/{n_val}")
+        logger.info(f"train batches per rank: {len(loader_train)} "
+                    f"(effective batch = {cfg.bsz * world_size})")
 
-    # model, criterion, optimizer
-    device = torch.device("cuda")
+    # model, criterion, optimizer — identical init across ranks (DDP also
+    # broadcasts rank-0 params on wrap, but matching seeds keeps the pre-wrap
+    # state identical too).
+    torch.manual_seed(cfg.seed)
+    torch.cuda.manual_seed(cfg.seed)
+
     model = create_model(cfg, device=device)
     criterion = torch.nn.MSELoss(reduction="sum").to(device)
     optimizer = AdamW(model.parameters(), lr=cfg.lr, weight_decay=cfg.wd)
     optimizer.zero_grad()
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    logger.info(f"model has {(n_params/1e6):.02f}M parameters")
+    if is_main:
+        logger.info(f"model has {(n_params/1e6):.02f}M parameters")
 
-    # voxelizer
+    # voxelizer (per-rank, on local device)
     voxelizer = Voxelizer(
         grid_dim=cfg.vox.grid_dim,
         resolution=cfg.vox.resolution,
@@ -163,68 +220,119 @@ def main(cfg: DictConfig) -> None:
         device=device,
     )
 
-    # optionally reload states of model, optimizer (before DP wrap)
+    # resume model+optimizer state (before DDP wrap)
     if cfg.resume is not None:
-        logger.info("reloading states of model, optimizer")
+        if is_main:
+            logger.info("reloading states of model, optimizer")
         model, optimizer, start_epoch = load_checkpoint(
             model, cfg.output_dir, optimizer, best_model=False
         )
-        os.system(f"cp {os.path.join(cfg.output_dir, 'checkpoint.pth.tar')} "
-                  + f"{os.path.join(cfg.output_dir, f'checkpoint_{start_epoch}.pth.tar')}")
-        logger.info(f"model trained for {start_epoch} epochs")
+        if is_main:
+            os.system(
+                f"cp {os.path.join(cfg.output_dir, 'checkpoint.pth.tar')} "
+                f"{os.path.join(cfg.output_dir, f'checkpoint_{start_epoch}.pth.tar')}"
+            )
+            logger.info(f"model trained for {start_epoch} epochs")
         if cfg.resume_epoch is not None:
-            logger.info(f"overriding start_epoch {start_epoch} → {cfg.resume_epoch} (resume_epoch)")
+            if is_main:
+                logger.info(
+                    f"overriding start_epoch {start_epoch} -> {cfg.resume_epoch} (resume_epoch)"
+                )
             start_epoch = cfg.resume_epoch
 
-    # DP/EMA. cfg.bsz is the TOTAL batch (split across visible GPUs by DP).
-    if torch.cuda.device_count() > 1:
-        model = torch.nn.parallel.DataParallel(model)
+    # DDP wrap. find_unused_parameters=True because VoxBind has params that
+    # don't receive grad on every forward (the UNet3D time-embedding MLP is
+    # called with t=None, plus a few attn-block biases). Cleaner long-term
+    # fix is to gate the time-embed MLP creation on whether t is ever passed,
+    # but for the smoke test we just enable the runtime check.
     model.to(device)
+    if world_size > 1:
+        model = torch.nn.parallel.DistributedDataParallel(
+            model,
+            device_ids=[local_rank],
+            output_device=local_rank,
+            find_unused_parameters=True,
+            gradient_as_bucket_view=True,
+        )
     model_ema = ModelEma(_unwrap(model), decay=.999)
 
-    # metrics
-    metrics_denoise, _ = create_metrics_for_training()
+    # metrics (torchmetrics auto-syncs across ranks on .compute())
+    metrics_denoise, _ = create_metrics_for_training(device=device)
 
-    # pre-compute val voxels (deterministic since aug=False)
-    val_cache = precompute_val_voxels(loader_val, voxelizer, cfg)
+    # pre-compute val voxels — rank 0 writes the disk cache, others wait+load
+    if is_main:
+        val_cache = precompute_val_voxels(loader_val, voxelizer, cfg)
+    if world_size > 1:
+        dist.barrier()
+    if not is_main:
+        val_cache = precompute_val_voxels(loader_val, voxelizer, cfg)
 
     # -----------------------------------------------------------
     # start training
-    logger.info("start training...")
-    for epoch in tqdm(range(start_epoch, start_epoch + cfg.num_epochs), desc="Epochs"):
+    if is_main:
+        logger.info("start training...")
+    epochs_iter = tqdm(
+        range(start_epoch, start_epoch + cfg.num_epochs),
+        desc="Epochs", disable=not is_main,
+    )
+    for epoch in epochs_iter:
         t0 = time.time()
 
-        # train
+        # DistributedSampler needs set_epoch for proper shuffling
+        if hasattr(loader_train.sampler, "set_epoch"):
+            loader_train.sampler.set_epoch(epoch)
+
+        # train (all ranks)
         train_metrics = train(
-            cfg, loader_train, voxelizer, model, criterion, optimizer, metrics_denoise, model_ema
+            cfg, loader_train, voxelizer, model, criterion, optimizer,
+            metrics_denoise, model_ema,
         )
 
-        # val
+        # val (all ranks — val_cache is identical, metrics auto-sync. Wasteful
+        # but avoids the rank-0-only / sync_dist plumbing for a smoke test.)
         val_metrics = val(
             cfg, loader_val, voxelizer, model_ema.module, criterion, metrics_denoise,
             val_cache=val_cache,
         )
 
-        # sample
-        if epoch > 0 and (epoch % 50 == 0 or epoch == cfg.num_epochs - 1):
+        # sample (rank 0 only — wjs is not parallelized)
+        if is_main and epoch > 0 and (epoch % 50 == 0 or epoch == cfg.num_epochs - 1):
             sample(cfg, loader_sampling, voxelizer, model_ema.module, epoch)
 
-        # log
-        log_metrics(epoch, train_metrics, val_metrics, time.time() - t0)
-        if cfg.wandb:
-            # step=epoch so resumed runs keep the real epoch on the x-axis
-            # instead of restarting at 0.
-            wandb.log({"epoch": epoch, "train": train_metrics, "val": val_metrics}, step=epoch)
+        # log + save (rank 0)
+        if is_main:
+            log_metrics(epoch, train_metrics, val_metrics, time.time() - t0)
+            if cfg.wandb:
+                wandb.log({"train": train_metrics, "val": val_metrics})
+            save_checkpoint({
+                "epoch": epoch,
+                "metrics": {"train": train_metrics, "val": val_metrics},
+                "cfg": cfg,
+                "state_dict_ema": model_ema.module.state_dict(),
+                "optimizer": optimizer.state_dict(),
+            }, save_dir=cfg.output_dir)
 
-        # save model
-        save_checkpoint({
-            "epoch": epoch,
-            "metrics": {"train": train_metrics, "val": val_metrics},
-            "cfg": cfg,
-            "state_dict_ema": model_ema.module.state_dict(),
-            "optimizer": optimizer.state_dict(),
-        }, save_dir=cfg.output_dir)
+        # Wait for rank 0 to finish save_checkpoint before any rank advances.
+        # Without this, ranks 1..W-1 race past the save into the next
+        # iteration (or, on the last epoch, into _cleanup_ddp), and on the
+        # last epoch destroy_process_group ends up waiting on rank 0 for
+        # potentially minutes of disk I/O. If that exceeds the NCCL watchdog
+        # timeout (default 600s) the watchdog SIGABRTs the ranks — exactly
+        # the T4 hang we saw at 600s post-training.
+        if world_size > 1:
+            # device_ids tells NCCL which CUDA device to issue the barrier
+            # collective on; without it the first-ever barrier emits a noisy
+            # "using GPU N to perform barrier as devices used by this
+            # process are currently unknown" W-level warning per rank.
+            dist.barrier(device_ids=[local_rank])
+
         torch.cuda.empty_cache()
+
+    # Defense in depth: explicit final barrier so all ranks reach the same
+    # point before tearing down the process group.
+    if world_size > 1:
+        dist.barrier()
+    _cleanup_ddp()
 
 
 def train(
@@ -236,22 +344,8 @@ def train(
     optimizer: torch.optim,
     metrics: torchmetrics.MetricCollection,
     model_ema: torch.nn,
-) -> torch.Tensor:
-    """Train one epoch of the model.
-
-    Args:
-        cfg (DictConfig): Configuration parameters for training.
-        loader (torch.utils.data.DataLoader): Data loader for training data.
-        voxelizer (Voxelizer): Voxelizer object for voxelizing input data.
-        model (torch.nn): Model to be trained.
-        criterion (torch.nn): Loss criterion for training.
-        optimizer (torch.optim): Optimizer for updating model parameters.
-        metrics (torchmetrics.MetricCollection): Metrics for evaluating model performance.
-        model_ema (torch.nn): Exponential moving average model for model updates.
-
-    Returns:
-        torch.Tensor: Computed metrics for the epoch.
-    """
+) -> dict:
+    """Train one epoch — body identical to train.py.train()."""
     metrics.reset()
     model.train()
     train_miou_interval = max(1, int(cfg.get("train_miou_interval", 8)))
@@ -262,19 +356,15 @@ def train(
         training=True, with_density=with_density,
     )
     for i, (voxels_lig, smooth_voxels_lig, voxels_poc, density) in enumerate(prefetcher):
-        # fwd
         pred = model(smooth_voxels_lig, voxels_poc, density=density)
         loss = criterion(pred, voxels_lig)
 
-        # backward
         loss.backward()
         optimizer.step()
         optimizer.zero_grad(set_to_none=True)
 
-        # update model EMA (always tracks the unwrapped module)
         model_ema.update(_unwrap(model))
 
-        # update metrics
         metrics.update(
             loss.detach(), pred.detach(), voxels_lig,
             update_miou=(i % train_miou_interval == 0)
@@ -294,21 +384,8 @@ def val(
     criterion: torch.nn,
     metrics: torchmetrics.MetricCollection,
     val_cache: dict = None,
-) -> torch.Tensor:
-    """Evaluate model.
-
-    Args:
-        cfg (DictConfig): Configuration dictionary.
-        loader (torch.utils.data.DataLoader): Data loader for evaluation dataset.
-        voxelizer (Voxelizer): Voxelizer object for voxelizing input data.
-        model (torch.nn): Model to be evaluated.
-        criterion (torch.nn): Loss criterion for evaluation.
-        metrics (torchmetrics.MetricCollection): Collection of metrics for evaluation.
-        val_cache (dict, optional): Pre-computed val voxels from precompute_val_voxels().
-
-    Returns:
-        float: Computed metrics for evaluation.
-    """
+) -> dict:
+    """Evaluate — body identical to train.py.val()."""
     metrics.reset()
     model.eval()
     device = next(model.parameters()).device
@@ -350,22 +427,10 @@ def sample(
     loader: torch.utils.data.DataLoader,
     voxelizer: Voxelizer,
     model: torch.nn,
-    epoch: int
+    epoch: int,
 ) -> None:
-    """Sample ligands with WJS
-
-    Args:
-        cfg (DictConfig): Configuration settings for the sampling process.
-        loader (torch.utils.data.DataLoader): DataLoader for loading the data.
-        voxelizer (Voxelizer): Voxelizer object for voxelizing the input data.
-        model (torch.nn): Model for generating samples.
-        epoch (int): Current epoch number.
-
-    Returns:
-        None
-    """
-    if torch.cuda.device_count() > 1:
-        model = model.module
+    """Rank-0-only WJS sampling."""
+    model = _unwrap(model)
     model.eval()
 
     dirname = os.path.join(cfg.output_dir, f"samples_training/{epoch:02d}")
@@ -376,16 +441,12 @@ def sample(
             break
         logger.info(f"| sampling pocket {pocket_id}")
         target_dirname = os.path.join(dirname, f"target_{pocket_id:02d}")
-
-        # generate samples
         pocket, ligand_gt = batch["pocket"], batch["ligand"]
         sample_molecules(model, pocket, ligand_gt, voxelizer, target_dirname, cfg)
 
-    return None
-
 
 def _val_cache_path(cfg) -> str:
-    """Return a deterministic cache path for val voxels based on voxelizer + dataset params."""
+    """Cache path for val voxels — keyed by voxelizer + dataset params."""
     key = {
         "grid_dim": cfg.vox.grid_dim,
         "resolution": cfg.vox.resolution,
@@ -404,18 +465,16 @@ def precompute_val_voxels(
     voxelizer: Voxelizer,
     cfg: DictConfig,
 ) -> dict:
-    """Voxelize the entire val set (aug=False, so deterministic) and cache to disk.
-
-    Returns a dict with keys 'voxels_lig' and 'voxels_poc' (always) and 'density'
-    (only when cfg.model.with_density). Each is a CPU tensor.
-    """
+    """Voxelize the val set once and cache to disk."""
     cache_path = _val_cache_path(cfg)
     if os.path.isfile(cache_path):
         logger.info(f"loading pre-computed val voxels from {cache_path}")
         return torch.load(cache_path, weights_only=True)
 
     with_density = bool(cfg.model.get("with_density", False))
-    logger.info(f"pre-computing val voxels (with_density={with_density}); will cache for future runs...")
+    logger.info(
+        f"pre-computing val voxels (with_density={with_density}); will cache for future runs..."
+    )
     all_lig, all_poc, all_dens = [], [], []
     with torch.no_grad():
         for batch in loader_val:
@@ -439,56 +498,21 @@ def precompute_val_voxels(
 
 
 def add_noise_vox(voxels: torch.Tensor, sigma: float) -> torch.Tensor:
-    """
-    Adds Gaussian noise to the input voxels.
-
-    Args:
-        voxels (torch.Tensor): Input voxels.
-        sigma (float): Standard deviation of the Gaussian noise.
-
-    Returns:
-        torch.Tensor: Noisy voxels.
-    """
     if sigma > 0:
         return voxels + torch.empty_like(voxels).normal_(0, sigma)
     return voxels
 
 
-def log_metrics(
-    epoch: int,
-    train_metrics: dict,
-    val_metrics: dict,
-    time: float
-) -> None:
-    """
-    Logs the metrics for each epoch.
-
-    Args:
-        logger (logging.Logger): The logger object used for logging.
-        epoch (int): The current epoch number.
-        train_metrics (dict): The metrics for the training set.
-        val_metrics (dict): The metrics for the validation set.
-        sample_metrics (dict): The metrics for the sample set.
-        time (float): The time taken for the epoch.
-
-    Returns:
-        None
-    """
-
+def log_metrics(epoch: int, train_metrics: dict, val_metrics: dict, time: float) -> None:
     all_metrics = [train_metrics, val_metrics]
     metrics_names = ["train", "val"]
-
     logger.info(f"epoch: {epoch} ({time:.2f}s)")
-    for (split, metric) in zip(metrics_names, all_metrics):
+    for split, metric in zip(metrics_names, all_metrics):
         if metric is None:
             continue
-        # str_ += "\n"
         str_ = f"[{split}]"
         for k, v in metric.items():
-            if k == "loss":
-                str_ += f" | {k}: {v:.2f}"
-            else:
-                str_ += f" | {k}: {v:.4f}"
+            str_ += f" | {k}: {v:.2f}" if k == "loss" else f" | {k}: {v:.4f}"
         logger.info(str_)
 
 

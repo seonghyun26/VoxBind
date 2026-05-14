@@ -1,0 +1,173 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>VoxBind DDP smoke test</title>
+<style>
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica,
+       Arial, sans-serif; margin: 0; padding: 24px; background: #fafafa;
+       color: #222; max-width: 1100px; margin-left: auto; margin-right: auto; }
+h1 { margin-bottom: 4px; }
+h2 { margin-top: 36px; border-bottom: 1px solid #ddd; padding-bottom: 6px; }
+h3 { margin-top: 24px; }
+.subtitle { color: #666; margin-bottom: 24px; }
+.hypothesis { background: #f0f7ff; border-left: 4px solid #3b82f6;
+              padding: 12px 16px; margin: 16px 0; border-radius: 4px; }
+table { border-collapse: collapse; width: 100%; margin: 12px 0;
+        background: white; font-size: 13px; }
+th, td { border: 1px solid #e5e5e5; padding: 8px 10px; text-align: left;
+         vertical-align: top; }
+th { background: #f5f5f5; font-weight: 600; }
+tr:nth-child(even) td { background: #fafafa; }
+.pass { color: #15803d; font-weight: 600; }
+.fail { color: #b91c1c; font-weight: 600; }
+.warn { color: #b45309; font-weight: 600; }
+.kbd { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+       background: #f1f3f5; padding: 2px 5px; border-radius: 3px;
+       font-size: 12px; }
+.bar-row { display: flex; align-items: center; margin: 4px 0; }
+.bar-label { width: 110px; font-size: 13px; }
+.bar-track { flex: 1; background: #eef; height: 18px; border-radius: 3px;
+             position: relative; overflow: hidden; }
+.bar-fill { background: #3b82f6; height: 100%; }
+.bar-value { width: 90px; padding-left: 8px; font-size: 12px; color: #555; }
+details { background: white; border: 1px solid #ddd; border-radius: 4px;
+          padding: 10px 14px; margin: 8px 0; }
+details summary { cursor: pointer; font-weight: 600; }
+pre { background: #1e1e1e; color: #d4d4d4; padding: 12px; border-radius: 4px;
+      overflow-x: auto; font-size: 12px; line-height: 1.45; }
+code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.footer { color: #888; font-size: 12px; margin-top: 48px; border-top: 1px solid #ddd;
+          padding-top: 12px; }
+.svg-plot { background: white; border: 1px solid #e5e5e5; border-radius: 4px;
+            padding: 8px; }
+</style></head><body>
+<h1>DDP smoke test — VoxBind</h1>
+<div class="subtitle">Generated 2026-05-14 06:57:10 · trials live in <code>voxbind/log/smoke_ddp/</code></div>
+
+<div class="hypothesis">
+  <b>Hypothesis.</b> Replacing <code>DataParallel</code> with
+  <code>DistributedDataParallel</code> in the training loop (via <code>voxbind/train_ddp.py</code>)
+  preserves end-to-end functionality: training launches, all ranks contribute, the
+  forward/backward all-reduce produces finite losses, and a checkpoint is written.
+  This is a <em>functional</em> smoke test only — not a convergence test.
+</div>
+
+<h2>Overall</h2>
+<p>Status: <span class="fail">FAIL</span>
+   &nbsp;&nbsp; (all checks PASS across every trial)</p>
+
+<h2>Trial summary</h2>
+<table><tr><th>trial</th><th>mode</th><th>gpus</th><th>nproc</th><th>bsz</th><th>eff. batch</th><th>n_params</th><th>wall_s</th><th>epoch[0] s</th><th>train_loss[last]</th><th>val_loss[last]</th><th>checks</th></tr><tr><td><b>ddp_w4</b></td><td>ddp</td><td><span class='kbd'>4,5,6,7</span></td><td>4</td><td>2</td><td>8</td><td>111.57M</td><td>63</td><td>18.76</td><td>44586.7</td><td>44340.78</td><td class='pass'>6/6</td></tr><tr><td><b>docker_ddp_w4</b></td><td>ddp</td><td><span class='kbd'>0,1,2,3 (docker)</span></td><td>4</td><td>2</td><td>8</td><td>111.57M</td><td>58</td><td>—</td><td>—</td><td>—</td><td class='fail'>3/6</td></tr><tr><td><b>dp_1gpu</b></td><td>dp</td><td><span class='kbd'>4</span></td><td>1</td><td>2</td><td>—</td><td>111.57M</td><td>55</td><td>13.27</td><td>42663.26</td><td>44327.68</td><td class='pass'>5/5</td></tr><tr><td><b>dp_w4</b></td><td>dp</td><td><span class='kbd'>4,5,6,7</span></td><td>4</td><td>8</td><td>—</td><td>111.57M</td><td>66</td><td>24.42</td><td>177927.38</td><td>170533.5</td><td class='pass'>5/5</td></tr><tr><td><b>t3_converge</b></td><td>ddp</td><td><span class='kbd'>4,5,6,7</span></td><td>4</td><td>2</td><td>8</td><td>111.57M</td><td>107</td><td>22.56</td><td>20863.8</td><td>43323.02</td><td class='pass'>7/7</td></tr><tr><td><b>t4_resume</b></td><td>ddp</td><td><span class='kbd'>4,5,6,7</span></td><td>4</td><td>2</td><td>8</td><td>111.57M</td><td>77</td><td>19.73</td><td>33820.85</td><td>43206.81</td><td class='pass'>8/8</td></tr><tr><td><b>t5_100samples</b></td><td>ddp</td><td><span class='kbd'>4,5,6,7</span></td><td>4</td><td>4</td><td>16</td><td>111.57M</td><td>149</td><td>17.25</td><td>28747.76</td><td>84618.12</td><td class='pass'>7/7</td></tr></table>
+
+<h2>Epoch-0 wall-clock (lower is better)</h2>
+<p>First-epoch time on the same effective batch (lets you eyeball DP vs DDP overhead under contention).</p>
+<div class="bar-row"><div class="bar-label">ddp_w4</div><div class="bar-track"><div class="bar-fill" style="width:76.8%"></div></div><div class="bar-value">18.76s</div></div>
+<div class="bar-row"><div class="bar-label">dp_1gpu</div><div class="bar-track"><div class="bar-fill" style="width:54.3%"></div></div><div class="bar-value">13.27s</div></div>
+<div class="bar-row"><div class="bar-label">dp_w4</div><div class="bar-track"><div class="bar-fill" style="width:100.0%"></div></div><div class="bar-value">24.42s</div></div>
+<div class="bar-row"><div class="bar-label">t3_converge</div><div class="bar-track"><div class="bar-fill" style="width:92.4%"></div></div><div class="bar-value">22.56s</div></div>
+<div class="bar-row"><div class="bar-label">t4_resume</div><div class="bar-track"><div class="bar-fill" style="width:80.8%"></div></div><div class="bar-value">19.73s</div></div>
+<div class="bar-row"><div class="bar-label">t5_100samples</div><div class="bar-track"><div class="bar-fill" style="width:70.6%"></div></div><div class="bar-value">17.25s</div></div>
+
+<h2>Train loss per epoch</h2>
+<svg class="svg-plot" width="700" height="280" xmlns="http://www.w3.org/2000/svg">
+<line x1="60" y1="20" x2="60" y2="244" stroke="#999"/>
+<line x1="60" y1="244" x2="560" y2="244" stroke="#999"/>
+<line x1="57" y1="244.0" x2="60" y2="244.0" stroke="#999"/>
+<text x="54" y="248.0" font-size="10" text-anchor="end" fill="#555">2.1e+04</text>
+<line x1="57" y1="188.0" x2="60" y2="188.0" stroke="#999"/>
+<text x="54" y="192.0" font-size="10" text-anchor="end" fill="#555">6e+04</text>
+<line x1="57" y1="132.0" x2="60" y2="132.0" stroke="#999"/>
+<text x="54" y="136.0" font-size="10" text-anchor="end" fill="#555">9.9e+04</text>
+<line x1="57" y1="76.0" x2="60" y2="76.0" stroke="#999"/>
+<text x="54" y="80.0" font-size="10" text-anchor="end" fill="#555">1.4e+05</text>
+<line x1="57" y1="20.0" x2="60" y2="20.0" stroke="#999"/>
+<text x="54" y="24.0" font-size="10" text-anchor="end" fill="#555">1.8e+05</text>
+<line x1="60.0" y1="244" x2="60.0" y2="247" stroke="#999"/>
+<text x="60.0" y="260" font-size="10" text-anchor="middle" fill="#555">0</text>
+<line x1="115.55555555555554" y1="244" x2="115.55555555555554" y2="247" stroke="#999"/>
+<text x="115.55555555555554" y="260" font-size="10" text-anchor="middle" fill="#555">1</text>
+<line x1="171.1111111111111" y1="244" x2="171.1111111111111" y2="247" stroke="#999"/>
+<text x="171.1111111111111" y="260" font-size="10" text-anchor="middle" fill="#555">2</text>
+<line x1="226.66666666666666" y1="244" x2="226.66666666666666" y2="247" stroke="#999"/>
+<text x="226.66666666666666" y="260" font-size="10" text-anchor="middle" fill="#555">3</text>
+<line x1="282.2222222222222" y1="244" x2="282.2222222222222" y2="247" stroke="#999"/>
+<text x="282.2222222222222" y="260" font-size="10" text-anchor="middle" fill="#555">4</text>
+<line x1="337.77777777777777" y1="244" x2="337.77777777777777" y2="247" stroke="#999"/>
+<text x="337.77777777777777" y="260" font-size="10" text-anchor="middle" fill="#555">5</text>
+<line x1="393.3333333333333" y1="244" x2="393.3333333333333" y2="247" stroke="#999"/>
+<text x="393.3333333333333" y="260" font-size="10" text-anchor="middle" fill="#555">6</text>
+<line x1="448.8888888888889" y1="244" x2="448.8888888888889" y2="247" stroke="#999"/>
+<text x="448.8888888888889" y="260" font-size="10" text-anchor="middle" fill="#555">7</text>
+<line x1="504.4444444444444" y1="244" x2="504.4444444444444" y2="247" stroke="#999"/>
+<text x="504.4444444444444" y="260" font-size="10" text-anchor="middle" fill="#555">8</text>
+<line x1="560.0" y1="244" x2="560.0" y2="247" stroke="#999"/>
+<text x="560.0" y="260" font-size="10" text-anchor="middle" fill="#555">9</text>
+<text x="310.0" y="274" font-size="11" text-anchor="middle" fill="#333">epoch</text>
+<text x="14" y="132.0" font-size="11" text-anchor="middle" fill="#333" transform="rotate(-90 14,132.0)">train loss</text>
+<path d="M 60.0 210.2" stroke="#3b82f6" stroke-width="2" fill="none"/>
+<circle cx="60.0" cy="210.2" r="3" fill="#3b82f6"/>
+<line x1="574" y1="34" x2="594" y2="34" stroke="#3b82f6" stroke-width="2"/>
+<text x="598" y="38" font-size="11" fill="#333">ddp_w4</text>
+<path d="M 60.0 212.9" stroke="#ef4444" stroke-width="2" fill="none"/>
+<circle cx="60.0" cy="212.9" r="3" fill="#ef4444"/>
+<line x1="574" y1="52" x2="594" y2="52" stroke="#ef4444" stroke-width="2"/>
+<text x="598" y="56" font-size="11" fill="#333">dp_1gpu</text>
+<path d="M 60.0 20.0" stroke="#10b981" stroke-width="2" fill="none"/>
+<circle cx="60.0" cy="20.0" r="3" fill="#10b981"/>
+<line x1="574" y1="70" x2="594" y2="70" stroke="#10b981" stroke-width="2"/>
+<text x="598" y="74" font-size="11" fill="#333">dp_w4</text>
+<path d="M 60.0 216.1 L 115.6 226.7 L 171.1 233.9 L 226.7 239.5 L 282.2 244.0" stroke="#a855f7" stroke-width="2" fill="none"/>
+<circle cx="60.0" cy="216.1" r="3" fill="#a855f7"/>
+<circle cx="115.6" cy="226.7" r="3" fill="#a855f7"/>
+<circle cx="171.1" cy="233.9" r="3" fill="#a855f7"/>
+<circle cx="226.7" cy="239.5" r="3" fill="#a855f7"/>
+<circle cx="282.2" cy="244.0" r="3" fill="#a855f7"/>
+<line x1="574" y1="88" x2="594" y2="88" stroke="#a855f7" stroke-width="2"/>
+<text x="598" y="92" font-size="11" fill="#333">t3_converge</text>
+<path d="M 282.2 215.6 L 337.8 225.5" stroke="#f59e0b" stroke-width="2" fill="none"/>
+<circle cx="282.2" cy="215.6" r="3" fill="#f59e0b"/>
+<circle cx="337.8" cy="225.5" r="3" fill="#f59e0b"/>
+<line x1="574" y1="106" x2="594" y2="106" stroke="#f59e0b" stroke-width="2"/>
+<text x="598" y="110" font-size="11" fill="#333">t4_resume</text>
+<path d="M 60.0 155.9 L 115.6 173.3 L 171.1 186.0 L 226.7 196.0 L 282.2 204.4 L 337.8 211.6 L 393.3 217.7 L 448.9 223.1 L 504.4 228.1 L 560.0 232.8" stroke="#3b82f6" stroke-width="2" fill="none"/>
+<circle cx="60.0" cy="155.9" r="3" fill="#3b82f6"/>
+<circle cx="115.6" cy="173.3" r="3" fill="#3b82f6"/>
+<circle cx="171.1" cy="186.0" r="3" fill="#3b82f6"/>
+<circle cx="226.7" cy="196.0" r="3" fill="#3b82f6"/>
+<circle cx="282.2" cy="204.4" r="3" fill="#3b82f6"/>
+<circle cx="337.8" cy="211.6" r="3" fill="#3b82f6"/>
+<circle cx="393.3" cy="217.7" r="3" fill="#3b82f6"/>
+<circle cx="448.9" cy="223.1" r="3" fill="#3b82f6"/>
+<circle cx="504.4" cy="228.1" r="3" fill="#3b82f6"/>
+<circle cx="560.0" cy="232.8" r="3" fill="#3b82f6"/>
+<line x1="574" y1="124" x2="594" y2="124" stroke="#3b82f6" stroke-width="2"/>
+<text x="598" y="128" font-size="11" fill="#333">t5_100samples</text>
+</svg>
+
+<h2>Per-trial detail</h2>
+<details><summary>ddp_w4  (mode=ddp, gpus=4,5,6,7)</summary><h4>Validation checks</h4><table><tr><th>check</th><th>status</th><th>detail</th></tr><tr><td>process_exit_clean</td><td><span class="pass">PASS</span></td><td>exit_code=0</td></tr><tr><td>at_least_one_epoch</td><td><span class="pass">PASS</span></td><td>completed 1 epoch(s)</td></tr><tr><td>losses_finite</td><td><span class="pass">PASS</span></td><td>no NaN/Inf detected</td></tr><tr><td>all_ddp_ranks_initialized</td><td><span class="pass">PASS</span></td><td>expected ranks 0..3, saw [0, 1, 2, 3]</td></tr><tr><td>no_error_keywords</td><td><span class="pass">PASS</span></td><td>clean</td></tr><tr><td>checkpoint_written</td><td><span class="pass">PASS</span></td><td>/home/shpark/prj-denovo/VoxBind/voxbind/exps/smoke_ddp_ddp_w4/checkpoint.pth.tar</td></tr></table><h4>Per-epoch metrics</h4><table><tr><th>epoch</th><th>time_s</th><th>train_loss</th><th>train_miou</th><th>val_loss</th><th>val_miou</th></tr><tr><td>0</td><td>18.76</td><td>44586.7</td><td>0.0</td><td>44340.78</td><td>0.0</td></tr></table><h4>pre-launch</h4><table><tr><th>idx</th><th>mem_used</th><th>util</th></tr><tr><td>4</td><td>1/24576 MiB</td><td>35%</td></tr><tr><td>5</td><td>1/24576 MiB</td><td>6%</td></tr><tr><td>6</td><td>1/24576 MiB</td><td>6%</td></tr><tr><td>7</td><td>1/24576 MiB</td><td>6%</td></tr></table><h4>post-finish</h4><table><tr><th>idx</th><th>mem_used</th><th>util</th></tr><tr><td>4</td><td>1/24576 MiB</td><td>0%</td></tr><tr><td>5</td><td>1/24576 MiB</td><td>0%</td></tr><tr><td>6</td><td>1/24576 MiB</td><td>0%</td></tr><tr><td>7</td><td>1/24576 MiB</td><td>0%</td></tr></table></details><details><summary>docker_ddp_w4  (mode=ddp, gpus=0,1,2,3 (docker))</summary><h4>Validation checks</h4><table><tr><th>check</th><th>status</th><th>detail</th></tr><tr><td>process_exit_clean</td><td><span class="fail">FAIL</span></td><td>exit_code=1</td></tr><tr><td>at_least_one_epoch</td><td><span class="fail">FAIL</span></td><td>completed 0 epoch(s)</td></tr><tr><td>losses_finite</td><td><span class="pass">PASS</span></td><td>no NaN/Inf detected</td></tr><tr><td>all_ddp_ranks_initialized</td><td><span class="pass">PASS</span></td><td>expected ranks 0..3, saw [0, 1, 2, 3]</td></tr><tr><td>no_error_keywords</td><td><span class="fail">FAIL</span></td><td>22 suspicious line(s)</td></tr><tr><td>checkpoint_written</td><td><span class="pass">PASS</span></td><td>voxbind/exps/260514_docker_ddp_w4/checkpoint.pth.tar</td></tr></table><h4>Per-epoch metrics</h4><table><tr><th>epoch</th><th>time_s</th><th>train_loss</th><th>train_miou</th><th>val_loss</th><th>val_miou</th></tr></table><h4>Suspicious log lines</h4><pre>Error executing job with overrides: [&#x27;dset=crossdocked&#x27;, &#x27;dset.data_dir=dataset/data&#x27;, &#x27;dset.subset_n=8&#x27;, &#x27;model.with_density=false&#x27;, &#x27;num_epochs=1&#x27;, &#x27;num_workers=2&#x27;, &#x27;bsz=2&#x27;, &#x27;wandb=false&#x27;, &#x27;wjs.n_targets=0&#x27;, &#x27;seed=42&#x27;, &#x27;exp_name=260514_docker_ddp_w4&#x27;, &#x27;output_dir=exps/260514_docker_ddp_w4&#x27;]
+Traceback (most recent call last):
+torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 128.00 MiB. GPU 0 has a total capacity of 23.69 GiB of which 62.94 MiB is free. Process 4190965 has 620.00 MiB memory in use. Process 10490 has 18.34 GiB memory in use. Process 15929 has 4.67 GiB memory in use. Of the allocated memory 4.21 GiB is allocated by PyTorch, and 39.92 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)
+Set the environment variable HYDRA_FULL_ERROR=1 for a complete stack trace.
+Error executing job with overrides: [&#x27;dset=crossdocked&#x27;, &#x27;dset.data_dir=dataset/data&#x27;, &#x27;dset.subset_n=8&#x27;, &#x27;model.with_density=false&#x27;, &#x27;num_epochs=1&#x27;, &#x27;num_workers=2&#x27;, &#x27;bsz=2&#x27;, &#x27;wandb=false&#x27;, &#x27;wjs.n_targets=0&#x27;, &#x27;seed=42&#x27;, &#x27;exp_name=260514_docker_ddp_w4&#x27;, &#x27;output_dir=exps/260514_docker_ddp_w4&#x27;]
+Error executing job with overrides: [&#x27;dset=crossdocked&#x27;, &#x27;dset.data_dir=dataset/data&#x27;, &#x27;dset.subset_n=8&#x27;, &#x27;model.with_density=false&#x27;, &#x27;num_epochs=1&#x27;, &#x27;num_workers=2&#x27;, &#x27;bsz=2&#x27;, &#x27;wandb=false&#x27;, &#x27;wjs.n_targets=0&#x27;, &#x27;seed=42&#x27;, &#x27;exp_name=260514_docker_ddp_w4&#x27;, &#x27;output_dir=exps/260514_docker_ddp_w4&#x27;]
+Traceback (most recent call last):
+Traceback (most recent call last):
+torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 64.00 MiB. GPU 2 has a total capacity of 23.69 GiB of which 23.88 MiB is free. Process 10662 has 18.34 GiB memory in use. Process 15931 has 5.31 GiB memory in use. Of the allocated memory 4.33 GiB is allocated by PyTorch, and 573.92 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)
+Set the environment variable HYDRA_FULL_ERROR=1 for a complete stack trace.
+torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 64.00 MiB. GPU 3 has a total capacity of 23.69 GiB of which 19.88 MiB is free. Process 10663 has 18.34 GiB memory in use. Process 15932 has 5.32 GiB memory in use. Of the allocated memory 4.33 GiB is allocated by PyTorch, and 577.92 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)
+Set the environment variable HYDRA_FULL_ERROR=1 for a complete stack trace.
+Error executing job with overrides: [&#x27;dset=crossdocked&#x27;, &#x27;dset.data_dir=dataset/data&#x27;, &#x27;dset.subset_n=8&#x27;, &#x27;model.with_density=false&#x27;, &#x27;num_epochs=1&#x27;, &#x27;num_workers=2&#x27;, &#x27;bsz=2&#x27;, &#x27;wandb=false&#x27;, &#x27;wjs.n_targets=0&#x27;, &#x27;seed=42&#x27;, &#x27;exp_name=260514_docker_ddp_w4&#x27;, &#x27;output_dir=exps/260514_docker_ddp_w4&#x27;]
+Traceback (most recent call last):
+torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 128.00 MiB. GPU 1 has a total capacity of 23.69 GiB of which 101.88 MiB is free. Process 10661 has 18.34 GiB memory in use. Process 15930 has 5.24 GiB memory in use. Of the allocated memory 4.60 GiB is allocated by PyTorch, and 223.92 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)
+Set the environment variable HYDRA_FULL_ERROR=1 for a complete stack trace.
+Traceback (most recent call last):
+  File &quot;/opt/conda/lib/python3.12/site-packages/torch/distributed/elastic/multiprocessing/errors/__init__.py&quot;, line 355, in wrapper
+    raise ChildFailedError(
+torch.distributed.elastic.multiprocessing.errors.ChildFailedError: 
+  error_file: &lt;N/A&gt;
+  traceback : To enable traceback see: https://pytorch.org/docs/stable/elastic/errors.html</pre></details><details><summary>dp_1gpu  (mode=dp, gpus=4)</summary><h4>Validation checks</h4><table><tr><th>check</th><th>status</th><th>detail</th></tr><tr><td>process_exit_clean</td><td><span class="pass">PASS</span></td><td>exit_code=0</td></tr><tr><td>at_least_one_epoch</td><td><span class="pass">PASS</span></td><td>completed 1 epoch(s)</td></tr><tr><td>losses_finite</td><td><span class="pass">PASS</span></td><td>no NaN/Inf detected</td></tr><tr><td>no_error_keywords</td><td><span class="pass">PASS</span></td><td>clean</td></tr><tr><td>checkpoint_written</td><td><span class="pass">PASS</span></td><td>/home/shpark/prj-denovo/VoxBind/voxbind/exps/smoke_ddp_dp_1gpu/checkpoint.pth.tar</td></tr></table><h4>Per-epoch metrics</h4><table><tr><th>epoch</th><th>time_s</th><th>train_loss</th><th>train_miou</th><th>val_loss</th><th>val_miou</th></tr><tr><td>0</td><td>13.27</td><td>42663.26</td><td>0.0</td><td>44327.68</td><td>0.0</td></tr></table><h4>pre-launch</h4><table><tr><th>idx</th><th>mem_used</th><th>util</th></tr><tr><td>4</td><td>1/24576 MiB</td><td>0%</td></tr></table><h4>post-finish</h4><table><tr><th>idx</th><th>mem_used</th><th>util</th></tr><tr><td>4</td><td>1/24576 MiB</td><td>0%</td></tr></table></details><details><summary>dp_w4  (mode=dp, gpus=4,5,6,7)</summary><h4>Validation checks</h4><table><tr><th>check</th><th>status</th><th>detail</th></tr><tr><td>process_exit_clean</td><td><span class="pass">PASS</span></td><td>exit_code=0</td></tr><tr><td>at_least_one_epoch</td><td><span class="pass">PASS</span></td><td>completed 1 epoch(s)</td></tr><tr><td>losses_finite</td><td><span class="pass">PASS</span></td><td>no NaN/Inf detected</td></tr><tr><td>no_error_keywords</td><td><span class="pass">PASS</span></td><td>clean</td></tr><tr><td>checkpoint_written</td><td><span class="pass">PASS</span></td><td>/home/shpark/prj-denovo/VoxBind/voxbind/exps/smoke_ddp_dp_w4/checkpoint.pth.tar</td></tr></table><h4>Per-epoch metrics</h4><table><tr><th>epoch</th><th>time_s</th><th>train_loss</th><th>train_miou</th><th>val_loss</th><th>val_miou</th></tr><tr><td>0</td><td>24.42</td><td>177927.38</td><td>0.0</td><td>170533.5</td><td>0.0</td></tr></table><h4>pre-launch</h4><table><tr><th>idx</th><th>mem_used</th><th>util</th></tr><tr><td>4</td><td>1/24576 MiB</td><td>30%</td></tr><tr><td>5</td><td>1/24576 MiB</td><td>0%</td></tr><tr><td>6</td><td>1/24576 MiB</td><td>0%</td></tr><tr><td>7</td><td>1/24576 MiB</td><td>0%</td></tr></table><h4>post-finish</h4><table><tr><th>idx</th><th>mem_used</th><th>util</th></tr><tr><td>4</td><td>1/24576 MiB</td><td>1%</td></tr><tr><td>5</td><td>1/24576 MiB</td><td>6%</td></tr><tr><td>6</td><td>1/24576 MiB</td><td>6%</td></tr><tr><td>7</td><td>1/24576 MiB</td><td>6%</td></tr></table></details><details><summary>t3_converge  (mode=ddp, gpus=4,5,6,7)</summary><h4>Validation checks</h4><table><tr><th>check</th><th>status</th><th>detail</th></tr><tr><td>process_exit_clean</td><td><span class="pass">PASS</span></td><td>exit_code=0</td></tr><tr><td>at_least_one_epoch</td><td><span class="pass">PASS</span></td><td>completed 5 epoch(s)</td></tr><tr><td>losses_finite</td><td><span class="pass">PASS</span></td><td>no NaN/Inf detected</td></tr><tr><td>all_ddp_ranks_initialized</td><td><span class="pass">PASS</span></td><td>expected ranks 0..3, saw [0, 1, 2, 3]</td></tr><tr><td>no_error_keywords</td><td><span class="pass">PASS</span></td><td>clean</td></tr><tr><td>checkpoint_written</td><td><span class="pass">PASS</span></td><td>/home/shpark/prj-denovo/VoxBind/voxbind/exps/smoke_ddp_t3_converge/checkpoint.pth.tar</td></tr><tr><td>loss_decreased</td><td><span class="pass">PASS</span></td><td>epoch[0].train_loss=40428.50 -&gt; epoch[-1].train_loss=20863.80</td></tr></table><h4>Per-epoch metrics</h4><table><tr><th>epoch</th><th>time_s</th><th>train_loss</th><th>train_miou</th><th>val_loss</th><th>val_miou</th></tr><tr><td>0</td><td>22.56</td><td>40428.5</td><td>0.0</td><td>44284.7</td><td>0.0</td></tr><tr><td>1</td><td>7.52</td><td>33010.27</td><td>0.0</td><td>44156.61</td><td>0.0</td></tr><tr><td>2</td><td>7.53</td><td>27928.0</td><td>0.0</td><td>43937.88</td><td>0.0</td></tr><tr><td>3</td><td>7.51</td><td>23997.08</td><td>0.0</td><td>43667.76</td><td>0.0</td></tr><tr><td>4</td><td>7.66</td><td>20863.8</td><td>0.0</td><td>43323.02</td><td>0.0</td></tr></table><h4>pre-launch</h4><table><tr><th>idx</th><th>mem_used</th><th>util</th></tr><tr><td>4</td><td>3/24576 MiB</td><td>0%</td></tr><tr><td>5</td><td>3/24576 MiB</td><td>0%</td></tr><tr><td>6</td><td>3/24576 MiB</td><td>0%</td></tr><tr><td>7</td><td>3/24576 MiB</td><td>0%</td></tr></table><h4>post-finish</h4><table><tr><th>idx</th><th>mem_used</th><th>util</th></tr><tr><td>4</td><td>3/24576 MiB</td><td>0%</td></tr><tr><td>5</td><td>3/24576 MiB</td><td>0%</td></tr><tr><td>6</td><td>3/24576 MiB</td><td>0%</td></tr><tr><td>7</td><td>3/24576 MiB</td><td>0%</td></tr></table></details><details><summary>t4_resume  (mode=ddp, gpus=4,5,6,7)</summary><h4>Validation checks</h4><table><tr><th>check</th><th>status</th><th>detail</th></tr><tr><td>process_exit_clean</td><td><span class="pass">PASS</span></td><td>exit_code=0</td></tr><tr><td>at_least_one_epoch</td><td><span class="pass">PASS</span></td><td>completed 2 epoch(s)</td></tr><tr><td>losses_finite</td><td><span class="pass">PASS</span></td><td>no NaN/Inf detected</td></tr><tr><td>all_ddp_ranks_initialized</td><td><span class="pass">PASS</span></td><td>expected ranks 0..3, saw [0, 1, 2, 3]</td></tr><tr><td>no_error_keywords</td><td><span class="pass">PASS</span></td><td>clean</td></tr><tr><td>checkpoint_written</td><td><span class="pass">PASS</span></td><td>/home/shpark/prj-denovo/VoxBind/voxbind/exps/smoke_ddp_t4_resume/checkpoint.pth.tar</td></tr><tr><td>loss_decreased</td><td><span class="pass">PASS</span></td><td>epoch[0].train_loss=40773.77 -&gt; epoch[-1].train_loss=33820.85</td></tr><tr><td>resume_detected</td><td><span class="pass">PASS</span></td><td>resume_observed=True resumed_from_epoch=4</td></tr></table><h4>Per-epoch metrics</h4><table><tr><th>epoch</th><th>time_s</th><th>train_loss</th><th>train_miou</th><th>val_loss</th><th>val_miou</th></tr><tr><td>4</td><td>19.73</td><td>40773.77</td><td>0.0</td><td>43283.91</td><td>0.0</td></tr><tr><td>5</td><td>7.38</td><td>33820.85</td><td>0.0</td><td>43206.81</td><td>0.0</td></tr></table><h4>pre-launch</h4><table><tr><th>idx</th><th>mem_used</th><th>util</th></tr><tr><td>4</td><td>1/24576 MiB</td><td>0%</td></tr><tr><td>5</td><td>1/24576 MiB</td><td>0%</td></tr><tr><td>6</td><td>1/24576 MiB</td><td>0%</td></tr><tr><td>7</td><td>1/24576 MiB</td><td>0%</td></tr></table><h4>post-finish</h4><table><tr><th>idx</th><th>mem_used</th><th>util</th></tr><tr><td>4</td><td>1/24576 MiB</td><td>0%</td></tr><tr><td>5</td><td>1/24576 MiB</td><td>0%</td></tr><tr><td>6</td><td>1/24576 MiB</td><td>0%</td></tr><tr><td>7</td><td>1/24576 MiB</td><td>0%</td></tr></table></details><details><summary>t5_100samples  (mode=ddp, gpus=4,5,6,7)</summary><h4>Validation checks</h4><table><tr><th>check</th><th>status</th><th>detail</th></tr><tr><td>process_exit_clean</td><td><span class="pass">PASS</span></td><td>exit_code=0</td></tr><tr><td>at_least_one_epoch</td><td><span class="pass">PASS</span></td><td>completed 10 epoch(s)</td></tr><tr><td>losses_finite</td><td><span class="pass">PASS</span></td><td>no NaN/Inf detected</td></tr><tr><td>all_ddp_ranks_initialized</td><td><span class="pass">PASS</span></td><td>expected ranks 0..3, saw [0, 1, 2, 3]</td></tr><tr><td>no_error_keywords</td><td><span class="pass">PASS</span></td><td>clean</td></tr><tr><td>checkpoint_written</td><td><span class="pass">PASS</span></td><td>/home/shpark/prj-denovo/VoxBind/voxbind/exps/smoke_ddp_t5_100samples/checkpoint.pth.tar</td></tr><tr><td>loss_decreased</td><td><span class="pass">PASS</span></td><td>epoch[0].train_loss=82644.57 -&gt; epoch[-1].train_loss=28747.76</td></tr></table><h4>Per-epoch metrics</h4><table><tr><th>epoch</th><th>time_s</th><th>train_loss</th><th>train_miou</th><th>val_loss</th><th>val_miou</th></tr><tr><td>0</td><td>17.25</td><td>82644.57</td><td>0.0</td><td>88617.84</td><td>0.0</td></tr><tr><td>1</td><td>7.68</td><td>70461.85</td><td>0.0</td><td>88452.28</td><td>0.0</td></tr><tr><td>2</td><td>7.65</td><td>61511.03</td><td>0.0</td><td>88207.9</td><td>0.0</td></tr><tr><td>3</td><td>7.67</td><td>54489.79</td><td>0.0</td><td>87868.43</td><td>0.0</td></tr><tr><td>4</td><td>7.68</td><td>48602.75</td><td>0.0</td><td>87478.48</td><td>0.0</td></tr><tr><td>5</td><td>7.68</td><td>43602.82</td><td>0.0</td><td>86992.76</td><td>0.0</td></tr><tr><td>6</td><td>7.69</td><td>39326.54</td><td>0.0</td><td>86457.26</td><td>0.0</td></tr><tr><td>7</td><td>7.68</td><td>35521.3</td><td>0.0</td><td>85882.64</td><td>0.0</td></tr><tr><td>8</td><td>7.69</td><td>32031.35</td><td>0.0</td><td>85259.06</td><td>0.0</td></tr><tr><td>9</td><td>7.85</td><td>28747.76</td><td>0.0</td><td>84618.12</td><td>0.0</td></tr></table><h4>pre-launch</h4><table><tr><th>idx</th><th>mem_used</th><th>util</th></tr><tr><td>4</td><td>1/24576 MiB</td><td>0%</td></tr><tr><td>5</td><td>1/24576 MiB</td><td>0%</td></tr><tr><td>6</td><td>1/24576 MiB</td><td>0%</td></tr><tr><td>7</td><td>1/24576 MiB</td><td>0%</td></tr></table><h4>post-finish</h4><table><tr><th>idx</th><th>mem_used</th><th>util</th></tr><tr><td>4</td><td>1/24576 MiB</td><td>0%</td></tr><tr><td>5</td><td>1/24576 MiB</td><td>0%</td></tr><tr><td>6</td><td>1/24576 MiB</td><td>0%</td></tr><tr><td>7</td><td>1/24576 MiB</td><td>0%</td></tr></table></details>
+
+<div class="footer">
+Trial configs: dset=crossdocked, with_density=false, subset_n=8, num_epochs=2.
+Generated by <code>voxbind/scripts/04a_test_ddp_to_html.py</code>.
+</div>
+</body></html>

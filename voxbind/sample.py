@@ -36,13 +36,13 @@ def main(cfg: DictConfig) -> None:
     logger.info(f"model trained for {n_epochs} epochs")
 
     voxelizer = Voxelizer(
-        grid_dim=cfg_model.vox.grid_dim,
-        resolution=cfg_model.vox.resolution,
-        cubes_around=cfg_model.vox.cubes_around,
+        grid_dim=cfg.vox.grid_dim,
+        resolution=cfg.vox.resolution,
+        cubes_around=cfg.vox.cubes_around,
         device=device,
     )
 
-    loader = create_sampling_dataloader(cfg_model, split=cfg.wjs.split)
+    loader = create_sampling_dataloader(cfg, split=cfg.wjs.split)
     logger.info(f"test set size: {len(loader.dataset.data)}")
 
     # ----------------------

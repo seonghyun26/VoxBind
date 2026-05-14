@@ -15,7 +15,7 @@
 #   - wjs.n_targets=0 (skip WJS sampling — sampling pipeline isn't density-aware yet)
 #
 # Usage:
-#   bash scripts/11_train_xray100_compare.sh [parallel|seq|with|without]
+#   bash scripts/01a_train_xray100.sh [parallel|seq|with|without]
 #     parallel (default) — both arms simultaneously, NPROC GPUs each
 #     seq                — with-density first, then without (one at a time)
 #     with               — only the with-density arm
@@ -40,11 +40,13 @@ REPO_ROOT="$(dirname "$VOXBIND_DIR")"    # .../VoxBind            (where dataset
 cd "$VOXBIND_DIR"
 
 MODE="${1:-parallel}"
+# DataParallel across NPROC_PER_NODE GPUs per arm (matches upstream voxbind).
+# cfg.bsz is the TOTAL batch per arm — DP splits it across visible GPUs.
 GPUS_WITH="${GPUS_WITH:-0,1,2,3}"
 GPUS_WITHOUT="${GPUS_WITHOUT:-4,5,6,7}"
 NPROC_PER_NODE="${NPROC_PER_NODE:-4}"
 EPOCHS="${EPOCHS:-350}"
-BSZ="${BSZ:-4}"
+BSZ="${BSZ:-16}"  # total batch (DP splits across NPROC_PER_NODE GPUs → 4/GPU at default)
 SEED="${SEED:-42}"
 MASTER_PORT_A="${MASTER_PORT_A:-29500}"
 MASTER_PORT_B="${MASTER_PORT_B:-29501}"
@@ -78,17 +80,13 @@ COMMON_OVERRIDES=(
 run_arm() {
     local arm="$1"            # "density" or "nodensity"
     local with_density="$2"   # "true" or "false"
-    local gpus="$3"
-    local port="$4"
+    local gpus="$3"           # comma-separated GPU ids for DataParallel
+    local port="$4"           # unused (kept for back-compat)
     local exp_name="xray100_${arm}"
     local out_dir="exps/${exp_name}"
 
-    echo "==> [${arm}] with_density=${with_density}  GPUs=${gpus}  nproc=${NPROC_PER_NODE}  port=${port}  out=${out_dir}"
-    CUDA_VISIBLE_DEVICES="$gpus" torchrun \
-        --standalone \
-        --nproc_per_node="$NPROC_PER_NODE" \
-        --rdzv-endpoint="localhost:${port}" \
-        train.py \
+    echo "==> [${arm}] with_density=${with_density}  GPUs=${gpus}  out=${out_dir}"
+    CUDA_VISIBLE_DEVICES="$gpus" python train.py \
         "${COMMON_OVERRIDES[@]}" \
         "model.with_density=${with_density}" \
         "exp_name=${exp_name}" \
@@ -98,12 +96,15 @@ run_arm() {
 case "$MODE" in
     parallel)
         echo "==> Launching both arms in parallel (DDP, ${NPROC_PER_NODE} GPUs each)"
-        run_arm density   true  "$GPUS_WITH"    "$MASTER_PORT_A" > exps_xray100_density.log   2>&1 &
+        mkdir -p log
+        run_arm density   true  "$GPUS_WITH"    "$MASTER_PORT_A" > log/exps_xray100_density.log   2>&1 &
         PID_WITH=$!
-        run_arm nodensity false "$GPUS_WITHOUT" "$MASTER_PORT_B" > exps_xray100_nodensity.log 2>&1 &
+        # Stagger by 15s so the two wandb.init() calls don't race the same backend
+        sleep 15
+        run_arm nodensity false "$GPUS_WITHOUT" "$MASTER_PORT_B" > log/exps_xray100_nodensity.log 2>&1 &
         PID_WITHOUT=$!
-        echo "    with-density   : PID $PID_WITH    (log: exps_xray100_density.log)"
-        echo "    without-density: PID $PID_WITHOUT (log: exps_xray100_nodensity.log)"
+        echo "    with-density   : PID $PID_WITH    (log: log/exps_xray100_density.log)"
+        echo "    without-density: PID $PID_WITHOUT (log: log/exps_xray100_nodensity.log)"
         wait $PID_WITH    && echo "==> with-density arm done"
         wait $PID_WITHOUT && echo "==> without-density arm done"
         ;;

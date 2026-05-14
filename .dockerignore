@@ -1,0 +1,43 @@
+# --- VCS / editor ---
+.git/
+.gitignore
+.vscode/
+.idea/
+.DS_Store
+
+# --- Python build artifacts ---
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+
+# --- envs ---
+.venv/
+venv/
+.env
+
+# --- Data / experiment outputs (mount at runtime) ---
+dataset/data/
+voxbind/exps/
+voxbind/log/
+voxbind/notebooks/
+notebook/
+
+# --- Heavy / unrelated artifacts ---
+multinodetraining.pdf
+figures/
+*.ckpt
+*.pt
+*.tar.gz
+*.zip
+
+# --- One-off shell scripts that don't belong in image ---
+sync_to_svr7.sh
+
+# --- The Dockerfile itself doesn't need to be inside the build context copy ---
+Dockerfile
+.dockerignore

@@ -50,8 +50,12 @@ def create_exp_dir(cfg: OmegaConf, write: bool = True) -> None:
     cfg.exp_name = os.path.basename(cfg.output_dir)
     if write:
         makedir(cfg.output_dir)
+        # OmegaConf.to_yaml already returns a YAML string — write it directly.
+        # Upstream wrapped it in yaml.dump() which double-encodes (saves a
+        # string containing escaped newlines), making the file unloadable by
+        # OmegaConf.load() during resume.
         with open(os.path.join(cfg.output_dir, 'cfg.yaml'), 'w') as f:
-            yaml.dump(OmegaConf.to_yaml(cfg), f)
+            f.write(OmegaConf.to_yaml(cfg))
 
 
 def save_checkpoint(
