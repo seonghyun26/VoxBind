@@ -166,11 +166,13 @@ def main(cfg: DictConfig) -> None:
         wjs_override = cfg.wjs
         wandb_override = cfg.wandb
         resume_epoch_override = cfg.resume_epoch
+        num_epochs_override = cfg.num_epochs   # let CLI extend training
         cfg = OmegaConf.load(os.path.join(cfg.resume, "cfg.yaml"))
         cfg.output_dir, cfg.resume = resume, resume
         cfg.wandb = wandb_override
         cfg.wjs = wjs_override
         cfg.resume_epoch = resume_epoch_override
+        cfg.num_epochs = num_epochs_override
 
     if is_main:
         logger.info("cfg:\n" + OmegaConf.to_yaml(cfg))

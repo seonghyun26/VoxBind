@@ -1,3 +1,5 @@
+import os
+
 import numpy as np
 import torch
 
@@ -384,16 +386,18 @@ def find_peaks(voxel: torch.Tensor) -> torch.Tensor:
     Returns:
         torch.Tensor: Peaks found in the voxel.
     """
+    # default 0.25 (upstream); override at runtime via env var for diagnostics
+    threshold = float(os.environ.get("VOXBIND_FIND_PEAKS_THRESHOLD", 0.25))
     print(
-        f"[find_peaks] voxel stats before threshold=0.25: "
+        f"[find_peaks] voxel stats before threshold={threshold}: "
         f"min={voxel.min():.4f}  max={voxel.max():.4f}  "
         f"mean={voxel.mean():.4f}  "
         f"p50={voxel.quantile(0.50):.4f}  p90={voxel.quantile(0.90):.4f}  "
         f"p95={voxel.quantile(0.95):.4f}  p99={voxel.quantile(0.99):.4f}  "
-        f"frac>0.25={(voxel > 0.25).float().mean().item():.4f}  "
-        f"n_voxels_above={(voxel > 0.25).sum().item()}"
+        f"frac>{threshold}={(voxel > threshold).float().mean().item():.4f}  "
+        f"n_voxels_above={(voxel > threshold).sum().item()}"
     )
-    voxel[voxel < .25] = 0
+    voxel[voxel < threshold] = 0
     voxel = voxel.squeeze().clone()
     peaks = []
     for channel_idx in range(voxel.shape[0]):
