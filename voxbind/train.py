@@ -206,7 +206,7 @@ def main(cfg: DictConfig) -> None:
         )
 
         # sample
-        if epoch > 0 and (epoch % 50 == 0 or epoch == cfg.num_epochs - 1):
+        if epoch > 0 and (epoch % 100 == 0 or epoch == cfg.num_epochs - 1):
             sample(cfg, loader_sampling, voxelizer, model_ema.module, epoch)
 
         # log
@@ -369,11 +369,11 @@ def sample(
     model.eval()
 
     dirname = os.path.join(cfg.output_dir, f"samples_training/{epoch:02d}")
-    makedir(dirname)
 
     for pocket_id, batch in enumerate(loader):
         if pocket_id == cfg.wjs.n_targets:
             break
+        makedir(dirname)  # after the guard — skip empty dirs when n_targets=0
         logger.info(f"| sampling pocket {pocket_id}")
         target_dirname = os.path.join(dirname, f"target_{pocket_id:02d}")
 

@@ -55,13 +55,25 @@ def main(cfg: DictConfig) -> None:
             continue
         if pocket_id > cfg.wjs.end:
             break
-        logger.info(f"| sampling pocket {pocket_id}")
-        target_dirname = os.path.join(cfg.save_dir, f"target_{pocket_id:02d}")
-
         # generate samples
         pocket, ligand_gt = batch["pocket"], batch["ligand"]
+        # X-ray density conditioning. When the model has the density branch,
+        # feed this pocket's X-ray density map. Pockets without a map are
+        # skipped, so every sampled pocket is genuinely density-conditioned.
+        density = None
+        with_density = cfg.model.get("with_density", False)
+        if with_density and "xray_density" in batch:
+            avail = batch.get("xray_available")
+            if avail is None or bool(avail.flatten()[0].item()):
+                density = batch["xray_density"]
+        if with_density and density is None:
+            logger.info(f"| pocket {pocket_id}: no x-ray density -> skipped")
+            continue
+
+        logger.info(f"| sampling pocket {pocket_id}")
+        target_dirname = os.path.join(cfg.save_dir, f"target_{pocket_id:02d}")
         t0 = time.time()
-        sample_molecules(model, pocket, ligand_gt, voxelizer, target_dirname, cfg)
+        sample_molecules(model, pocket, ligand_gt, voxelizer, target_dirname, cfg, density=density)
         logger.info(f"| sampling took {(time.time() - t0):.2f}s")
 
         if pocket_id == cfg.wjs.n_targets:

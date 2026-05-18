@@ -32,6 +32,7 @@ def _make_dataset(cfg, split: str, aug: bool):
             normalize=cfg.dset.get("normalize", True),
             subset_n=cfg.dset.get("subset_n", None),
             subset_xray_only=cfg.dset.get("subset_xray_only", False),
+            subset_val_n=cfg.dset.get("subset_val_n", None),
         )
     else:
         raise NotImplementedError(f"Dataset '{name}' not implemented")

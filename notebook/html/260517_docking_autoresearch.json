@@ -1,0 +1,1982 @@
+{
+  "meta": {
+    "date": "2026-05-17 13:59",
+    "host": "svr7",
+    "cpu_count": 64,
+    "vina_version": "1.2.7",
+    "minutes": 18.741027694474905,
+    "target": "voxbind/exps/260514_voxbind_100ep340/samples/res_ep5007_test/target_00",
+    "receptor": "BSD_ASPTE_1_130_0__2z3h_A_rec_1wn6_bst_lig_tt_docked_3_pocket10.pdb",
+    "n_search": 3,
+    "n_verify": 6,
+    "exh_ref": 16,
+    "passes": 2,
+    "json_name": "260517_docking_autoresearch.json"
+  },
+  "result": {
+    "journal": [
+      {
+        "id": 1,
+        "phase": "baseline",
+        "knob": "-",
+        "hypothesis": "metrics.py's current default docking config \u2014 the reference every later experiment is hill-climbed against.",
+        "config": {
+          "mode": "dock",
+          "exhaustiveness": 8,
+          "cpu": 8,
+          "buffer": 5.0,
+          "size_factor": 1.0
+        },
+        "sec": 6.510924329981208,
+        "ratio": null,
+        "inc_sec": null,
+        "aff": -7.975333333333334,
+        "decision": "baseline",
+        "note": "starting incumbent",
+        "extra": {}
+      },
+      {
+        "id": 2,
+        "phase": "baseline",
+        "knob": "exhaustiveness",
+        "hypothesis": "A thorough exh=16 dock pins the affinity reference; a faster config is accepted only within 0.6 kcal/mol of it.",
+        "config": {
+          "mode": "dock",
+          "exhaustiveness": 16,
+          "cpu": 8,
+          "buffer": 5.0,
+          "size_factor": 1.0
+        },
+        "sec": 12.230384884402156,
+        "ratio": null,
+        "inc_sec": null,
+        "aff": -8.022666666666668,
+        "decision": "reference",
+        "note": "affinity reference = -8.02 kcal/mol",
+        "extra": {}
+      },
+      {
+        "id": 3,
+        "phase": "pass 1",
+        "knob": "cpu",
+        "hypothesis": "More CPU threads parallelise Vina's Monte-Carlo search \u2014 expect a speedup until the search saturates the available cores.",
+        "config": {
+          "mode": "dock",
+          "exhaustiveness": 8,
+          "cpu": 4,
+          "buffer": 5.0,
+          "size_factor": 1.0
+        },
+        "sec": 12.376739427447319,
+        "ratio": 1.848359977462541,
+        "inc_sec": 7.33980068936944,
+        "aff": -7.975333333333334,
+        "decision": "rejected: slower",
+        "note": "85% slower (paired)",
+        "extra": {
+          "n_faster": 0,
+          "n_pairs": 3,
+          "pairs": [
+            {
+              "mol": 0,
+              "inc_sec": 7.33980068936944,
+              "inc_aff": -6.793,
+              "cand_sec": 12.376739427447319,
+              "cand_aff": -6.793,
+              "error": null
+            },
+            {
+              "mol": 1,
+              "inc_sec": 6.518515324220061,
+              "inc_aff": -9.464,
+              "cand_sec": 12.04856283776462,
+              "cand_aff": -9.464,
+              "error": null
+            },
+            {
+              "mol": 2,
+              "inc_sec": 9.007464794442058,
+              "inc_aff": -7.669,
+              "cand_sec": 17.183543652296066,
+              "cand_aff": -7.669,
+              "error": null
+            }
+          ]
+        }
+      },
+      {
+        "id": 4,
+        "phase": "pass 1",
+        "knob": "cpu",
+        "hypothesis": "More CPU threads parallelise Vina's Monte-Carlo search \u2014 expect a speedup until the search saturates the available cores.",
+        "config": {
+          "mode": "dock",
+          "exhaustiveness": 8,
+          "cpu": 16,
+          "buffer": 5.0,
+          "size_factor": 1.0
+        },
+        "sec": 7.443366726860404,
+        "ratio": 0.9931959799336109,
+        "inc_sec": 7.38376209884882,
+        "aff": -7.975333333333334,
+        "decision": "rejected: within noise",
+        "note": "only 1% faster (< 5% margin)",
+        "extra": {
+          "n_faster": 2,
+          "n_pairs": 3,
+          "pairs": [
+            {
+              "mol": 0,
+              "inc_sec": 7.38376209884882,
+              "inc_aff": -6.793,
+              "cand_sec": 7.443366726860404,
+              "cand_aff": -6.793,
+              "error": null
+            },
+            {
+              "mol": 1,
+              "inc_sec": 6.930081721395254,
+              "inc_aff": -9.464,
+              "cand_sec": 6.358798002824187,
+              "cand_aff": -9.464,
+              "error": null
+            },
+            {
+              "mol": 2,
+              "inc_sec": 9.575315261259675,
+              "inc_aff": -7.669,
+              "cand_sec": 9.510164624080062,
+              "cand_aff": -7.669,
+              "error": null
+            }
+          ]
+        }
+      },
+      {
+        "id": 5,
+        "phase": "pass 1",
+        "knob": "cpu",
+        "hypothesis": "More CPU threads parallelise Vina's Monte-Carlo search \u2014 expect a speedup until the search saturates the available cores.",
+        "config": {
+          "mode": "dock",
+          "exhaustiveness": 8,
+          "cpu": 32,
+          "buffer": 5.0,
+          "size_factor": 1.0
+        },
+        "sec": 6.644647611305118,
+        "ratio": 0.9480682245602496,
+        "inc_sec": 7.164348371326923,
+        "aff": -7.975333333333334,
+        "decision": "NEW BEST",
+        "note": "5% faster than the incumbent (3/3 ligands)",
+        "extra": {
+          "n_faster": 3,
+          "n_pairs": 3,
+          "pairs": [
+            {
+              "mol": 0,
+              "inc_sec": 7.164348371326923,
+              "inc_aff": -6.793,
+              "cand_sec": 6.644647611305118,
+              "cand_aff": -6.793,
+              "error": null
+            },
+            {
+              "mol": 1,
+              "inc_sec": 6.3627627938985825,
+              "inc_aff": -9.464,
+              "cand_sec": 6.342692097648978,
+              "cand_aff": -9.464,
+              "error": null
+            },
+            {
+              "mol": 2,
+              "inc_sec": 9.476527219638228,
+              "inc_aff": -7.669,
+              "cand_sec": 8.984394336119294,
+              "cand_aff": -7.669,
+              "error": null
+            }
+          ]
+        }
+      },
+      {
+        "id": 6,
+        "phase": "pass 1",
+        "knob": "cpu",
+        "hypothesis": "More CPU threads parallelise Vina's Monte-Carlo search \u2014 expect a speedup until the search saturates the available cores.",
+        "config": {
+          "mode": "dock",
+          "exhaustiveness": 8,
+          "cpu": 64,
+          "buffer": 5.0,
+          "size_factor": 1.0
+        },
+        "sec": 7.048517432063818,
+        "ratio": 1.0167539114436843,
+        "inc_sec": 6.626989575102925,
+        "aff": -7.975333333333334,
+        "decision": "rejected: slower",
+        "note": "2% slower (paired)",
+        "extra": {
+          "n_faster": 1,
+          "n_pairs": 3,
+          "pairs": [
+            {
+              "mol": 0,
+              "inc_sec": 6.626989575102925,
+              "inc_aff": -6.793,
+              "cand_sec": 6.548030098900199,
+              "cand_aff": -6.793,
+              "error": null
+            },
+            {
+              "mol": 1,
+              "inc_sec": 6.354797912761569,
+              "inc_aff": -9.464,
+              "cand_sec": 7.048517432063818,
+              "cand_aff": -9.464,
+              "error": null
+            },
+            {
+              "mol": 2,
+              "inc_sec": 9.065695060417056,
+              "inc_aff": -7.669,
+              "cand_sec": 9.21758091263473,
+              "cand_aff": -7.669,
+              "error": null
+            }
+          ]
+        }
+      },
+      {
+        "id": 7,
+        "phase": "pass 1",
+        "knob": "exhaustiveness",
+        "hypothesis": "Lower exhaustiveness runs fewer Monte-Carlo searches \u2014 expect a speedup; accept it only if the affinity holds.",
+        "config": {
+          "mode": "dock",
+          "exhaustiveness": 1,
+          "cpu": 32,
+          "buffer": 5.0,
+          "size_factor": 1.0
+        },
+        "sec": 6.208181472495198,
+        "ratio": 0.9283825798998355,
+        "inc_sec": 7.115038814023137,
+        "aff": -7.959,
+        "decision": "NEW BEST",
+        "note": "7% faster than the incumbent (3/3 ligands)",
+        "extra": {
+          "n_faster": 3,
+          "n_pairs": 3,
+          "pairs": [
+            {
+              "mol": 0,
+              "inc_sec": 6.558017643168569,
+              "inc_aff": -6.793,
+              "cand_sec": 6.208181472495198,
+              "cand_aff": -6.633,
+              "error": null
+            },
+            {
+              "mol": 1,
+              "inc_sec": 7.115038814023137,
+              "inc_aff": -9.464,
+              "cand_sec": 5.245777750387788,
+              "cand_aff": -9.575,
+              "error": null
+            },
+            {
+              "mol": 2,
+              "inc_sec": 9.704126119613647,
+              "inc_aff": -7.669,
+              "cand_sec": 9.009141642600298,
+              "cand_aff": -7.669,
+              "error": null
+            }
+          ]
+        }
+      },
+      {
+        "id": 8,
+        "phase": "pass 1",
+        "knob": "exhaustiveness",
+        "hypothesis": "Lower exhaustiveness runs fewer Monte-Carlo searches \u2014 expect a speedup; accept it only if the affinity holds.",
+        "config": {
+          "mode": "dock",
+          "exhaustiveness": 2,
+          "cpu": 32,
+          "buffer": 5.0,
+          "size_factor": 1.0
+        },
+        "sec": 6.1728434432297945,
+        "ratio": 1.0085223992443317,
+        "inc_sec": 6.184597576037049,
+        "aff": -7.972,
+        "decision": "rejected: slower",
+        "note": "1% slower (paired)",
+        "extra": {
+          "n_faster": 1,
+          "n_pairs": 3,
+          "pairs": [
+            {
+              "mol": 0,
+              "inc_sec": 6.184597576037049,
+              "inc_aff": -6.633,
+              "cand_sec": 6.1728434432297945,
+              "cand_aff": -6.633,
+              "error": null
+            },
+            {
+              "mol": 1,
+              "inc_sec": 5.269273094832897,
+              "inc_aff": -9.575,
+              "cand_sec": 5.314179943874478,
+              "cand_aff": -9.614,
+              "error": null
+            },
+            {
+              "mol": 2,
+              "inc_sec": 8.968073714524508,
+              "inc_aff": -7.669,
+              "cand_sec": 9.08460490591824,
+              "cand_aff": -7.669,
+              "error": null
+            }
+          ]
+        }
+      },
+      {
+        "id": 9,
+        "phase": "pass 1",
+        "knob": "exhaustiveness",
+        "hypothesis": "Lower exhaustiveness runs fewer Monte-Carlo searches \u2014 expect a speedup; accept it only if the affinity holds.",
+        "config": {
+          "mode": "dock",
+          "exhaustiveness": 4,
+          "cpu": 32,
+          "buffer": 5.0,
+          "size_factor": 1.0
+        },
+        "sec": 7.083635196089745,
+        "ratio": 1.0681140273923473,
+        "inc_sec": 6.14506440423429,
+        "aff": -8.085666666666667,
+        "decision": "rejected: slower",
+        "note": "7% slower (paired)",
+        "extra": {
+          "n_faster": 0,
+          "n_pairs": 3,
+          "pairs": [
+            {
+              "mol": 0,
+              "inc_sec": 6.14506440423429,
+              "inc_aff": -6.633,
+              "cand_sec": 6.563629489392042,
+              "cand_aff": -6.974,
+              "error": null
+            },
+            {
+              "mol": 1,
+              "inc_sec": 5.268819173797965,
+              "inc_aff": -9.575,
+              "cand_sec": 7.083635196089745,
+              "cand_aff": -9.614,
+              "error": null
+            },
+            {
+              "mol": 2,
+              "inc_sec": 8.980287998914719,
+              "inc_aff": -7.669,
+              "cand_sec": 9.05456406623125,
+              "cand_aff": -7.669,
+              "error": null
+            }
+          ]
+        }
+      },
+      {
+        "id": 10,
+        "phase": "pass 1",
+        "knob": "exhaustiveness",
+        "hypothesis": "Lower exhaustiveness runs fewer Monte-Carlo searches \u2014 expect a speedup; accept it only if the affinity holds.",
+        "config": {
+          "mode": "dock",
+          "exhaustiveness": 8,
+          "cpu": 32,
+          "buffer": 5.0,
+          "size_factor": 1.0
+        },
+        "sec": 7.2319579143077135,
+        "ratio": 1.1308850707646803,
+        "inc_sec": 6.2048851400613785,
+        "aff": -7.975333333333334,
+        "decision": "rejected: slower",
+        "note": "13% slower (paired)",
+        "extra": {
+          "n_faster": 0,
+          "n_pairs": 3,
+          "pairs": [
+            {
+              "mol": 0,
+              "inc_sec": 6.2048851400613785,
+              "inc_aff": -6.633,
+              "cand_sec": 6.543508032336831,
+              "cand_aff": -6.793,
+              "error": null
+            },
+            {
+              "mol": 1,
+              "inc_sec": 5.300478920340538,
+              "inc_aff": -9.575,
+              "cand_sec": 7.2319579143077135,
+              "cand_aff": -9.464,
+              "error": null
+            },
+            {
+              "mol": 2,
+              "inc_sec": 8.97336757183075,
+              "inc_aff": -7.669,
+              "cand_sec": 10.147847421467304,
+              "cand_aff": -7.669,
+              "error": null
+            }
+          ]
+        }
+      },
+      {
+        "id": 11,
+        "phase": "pass 1",
+        "knob": "exhaustiveness",
+        "hypothesis": "Lower exhaustiveness runs fewer Monte-Carlo searches \u2014 expect a speedup; accept it only if the affinity holds.",
+        "config": {
+          "mode": "dock",
+          "exhaustiveness": 16,
+          "cpu": 32,
+          "buffer": 5.0,
+          "size_factor": 1.0
+        },
+        "sec": 7.345911862328649,
+        "ratio": 1.1786123665756902,
+        "inc_sec": 6.182248253375292,
+        "aff": -8.022666666666668,
+        "decision": "rejected: slower",
+        "note": "18% slower (paired)",
+        "extra": {
+          "n_faster": 0,
+          "n_pairs": 3,
+          "pairs": [
+            {
+              "mol": 0,
+              "inc_sec": 6.182248253375292,
+              "inc_aff": -6.633,
+              "cand_sec": 7.28647424466908,
+              "cand_aff": -6.793,
+              "error": null
+            },
+            {
+              "mol": 1,
+              "inc_sec": 5.276824692264199,
+              "inc_aff": -9.575,
+              "cand_sec": 7.345911862328649,
+              "cand_aff": -9.464,
+              "error": null
+            },
+            {
+              "mol": 2,
+              "inc_sec": 9.041870502755046,
+              "inc_aff": -7.669,
+              "cand_sec": 9.478781666606665,
+              "cand_aff": -7.811,
+              "error": null
+            }
+          ]
+        }
+      },
+      {
+        "id": 12,
+        "phase": "pass 1",
+        "knob": "buffer",
+        "hypothesis": "A smaller search box has fewer affinity-grid points to compute \u2014 expect a modest speedup, but a box too tight to hold the ligand slows the search down and corrupts the affinity.",
+        "config": {
+          "mode": "dock",
+          "exhaustiveness": 1,
+          "cpu": 32,
+          "buffer": 2.0,
+          "size_factor": 1.0
+        },
+        "sec": 7.564219595864415,
+        "ratio": 1.220928505057022,
+        "inc_sec": 6.195464815944433,
+        "aff": -7.711333333333333,
+        "decision": "rejected: slower",
+        "note": "22% slower (paired)",
+        "extra": {
+          "n_faster": 0,
+          "n_pairs": 3,
+          "pairs": [
+            {
+              "mol": 0,
+              "inc_sec": 6.195464815944433,
+              "inc_aff": -6.633,
+              "cand_sec": 7.564219595864415,
+              "cand_aff": -6.643,
+              "error": null
+            },
+            {
+              "mol": 1,
+              "inc_sec": 5.274944670498371,
+              "inc_aff": -9.575,
+              "cand_sec": 6.747308636084199,
+              "cand_aff": -9.506,
+              "error": null
+            },
+            {
+              "mol": 2,
+              "inc_sec": 8.955125557258725,
+              "inc_aff": -7.669,
+              "cand_sec": 10.462509907782078,
+              "cand_aff": -6.985,
+              "error": null
+            }
+          ]
+        }
+      },
+      {
+        "id": 13,
+        "phase": "pass 1",
+        "knob": "buffer",
+        "hypothesis": "A smaller search box has fewer affinity-grid points to compute \u2014 expect a modest speedup, but a box too tight to hold the ligand slows the search down and corrupts the affinity.",
+        "config": {
+          "mode": "dock",
+          "exhaustiveness": 1,
+          "cpu": 32,
+          "buffer": 4.0,
+          "size_factor": 1.0
+        },
+        "sec": 7.227213531732559,
+        "ratio": 1.1193588098023584,
+        "inc_sec": 6.201258718967438,
+        "aff": -7.9206666666666665,
+        "decision": "rejected: slower",
+        "note": "12% slower (paired)",
+        "extra": {
+          "n_faster": 1,
+          "n_pairs": 3,
+          "pairs": [
+            {
+              "mol": 0,
+              "inc_sec": 6.201258718967438,
+              "inc_aff": -6.633,
+              "cand_sec": 7.227213531732559,
+              "cand_aff": -6.866,
+              "error": null
+            },
+            {
+              "mol": 1,
+              "inc_sec": 5.26862033829093,
+              "inc_aff": -9.575,
+              "cand_sec": 5.897476591169834,
+              "cand_aff": -9.604,
+              "error": null
+            },
+            {
+              "mol": 2,
+              "inc_sec": 8.959273332729936,
+              "inc_aff": -7.669,
+              "cand_sec": 8.66779481433332,
+              "cand_aff": -7.292,
+              "error": null
+            }
+          ]
+        }
+      },
+      {
+        "id": 14,
+        "phase": "pass 1",
+        "knob": "buffer",
+        "hypothesis": "A smaller search box has fewer affinity-grid points to compute \u2014 expect a modest speedup, but a box too tight to hold the ligand slows the search down and corrupts the affinity.",
+        "config": {
+          "mode": "dock",
+          "exhaustiveness": 1,
+          "cpu": 32,
+          "buffer": 6.0,
+          "size_factor": 1.0
+        },
+        "sec": 6.023155219852924,
+        "ratio": 0.9102798283656779,
+        "inc_sec": 6.164355652406812,
+        "aff": -7.885666666666666,
+        "decision": "NEW BEST",
+        "note": "9% faster than the incumbent (2/3 ligands)",
+        "extra": {
+          "n_faster": 2,
+          "n_pairs": 3,
+          "pairs": [
+            {
+              "mol": 0,
+              "inc_sec": 6.164355652406812,
+              "inc_aff": -6.633,
+              "cand_sec": 5.611288605257869,
+              "cand_aff": -6.854,
+              "error": null
+            },
+            {
+              "mol": 1,
+              "inc_sec": 5.2767101638019085,
+              "inc_aff": -9.575,
+              "cand_sec": 6.023155219852924,
+              "cand_aff": -9.291,
+              "error": null
+            },
+            {
+              "mol": 2,
+              "inc_sec": 8.950837479904294,
+              "inc_aff": -7.669,
+              "cand_sec": 8.1018439643085,
+              "cand_aff": -7.512,
+              "error": null
+            }
+          ]
+        }
+      },
+      {
+        "id": 15,
+        "phase": "pass 1",
+        "knob": "buffer",
+        "hypothesis": "A smaller search box has fewer affinity-grid points to compute \u2014 expect a modest speedup, but a box too tight to hold the ligand slows the search down and corrupts the affinity.",
+        "config": {
+          "mode": "dock",
+          "exhaustiveness": 1,
+          "cpu": 32,
+          "buffer": 8.0,
+          "size_factor": 1.0
+        },
+        "sec": 5.588980222120881,
+        "ratio": 0.9838399194386781,
+        "inc_sec": 6.030515395104885,
+        "aff": -7.932333333333332,
+        "decision": "rejected: within noise",
+        "note": "only 2% faster (< 5% margin)",
+        "extra": {
+          "n_faster": 3,
+          "n_pairs": 3,
+          "pairs": [
+            {
+              "mol": 0,
+              "inc_sec": 5.680782118812203,
+              "inc_aff": -6.854,
+              "cand_sec": 5.588980222120881,
+              "cand_aff": -6.66,
+              "error": null
+            },
+            {
+              "mol": 1,
+              "inc_sec": 6.030515395104885,
+              "inc_aff": -9.291,
+              "cand_sec": 5.52020987868309,
+              "cand_aff": -9.432,
+              "error": null
+            },
+            {
+              "mol": 2,
+              "inc_sec": 8.068558603525162,
+              "inc_aff": -7.512,
+              "cand_sec": 7.97264477238059,
+              "cand_aff": -7.705,
+              "error": null
+            }
+          ]
+        }
+      },
+      {
+        "id": 16,
+        "phase": "pass 1",
+        "knob": "buffer",
+        "hypothesis": "A smaller search box has fewer affinity-grid points to compute \u2014 expect a modest speedup, but a box too tight to hold the ligand slows the search down and corrupts the affinity.",
+        "config": {
+          "mode": "dock",
+          "exhaustiveness": 1,
+          "cpu": 32,
+          "buffer": 12.0,
+          "size_factor": 1.0
+        },
+        "sec": 5.420954316854477,
+        "ratio": 0.9394959491746646,
+        "inc_sec": 6.045395052060485,
+        "aff": -7.928999999999999,
+        "decision": "NEW BEST",
+        "note": "6% faster than the incumbent (3/3 ligands)",
+        "extra": {
+          "n_faster": 3,
+          "n_pairs": 3,
+          "pairs": [
+            {
+              "mol": 0,
+              "inc_sec": 5.6525918655097485,
+              "inc_aff": -6.854,
+              "cand_sec": 5.420954316854477,
+              "cand_aff": -6.994,
+              "error": null
+            },
+            {
+              "mol": 1,
+              "inc_sec": 6.045395052060485,
+              "inc_aff": -9.291,
+              "cand_sec": 5.3387353252619505,
+              "cand_aff": -8.544,
+              "error": null
+            },
+            {
+              "mol": 2,
+              "inc_sec": 8.077846687287092,
+              "inc_aff": -7.512,
+              "cand_sec": 7.589104240760207,
+              "cand_aff": -8.249,
+              "error": null
+            }
+          ]
+        }
+      },
+      {
+        "id": 17,
+        "phase": "pass 2",
+        "knob": "exhaustiveness",
+        "hypothesis": "Lower exhaustiveness runs fewer Monte-Carlo searches \u2014 expect a speedup; accept it only if the affinity holds.",
+        "config": {
+          "mode": "dock",
+          "exhaustiveness": 2,
+          "cpu": 32,
+          "buffer": 12.0,
+          "size_factor": 1.0
+        },
+        "sec": 6.06591559946537,
+        "ratio": 1.1048082932593775,
+        "inc_sec": 5.350690118968487,
+        "aff": -7.928999999999999,
+        "decision": "rejected: slower",
+        "note": "10% slower (paired)",
+        "extra": {
+          "n_faster": 1,
+          "n_pairs": 3,
+          "pairs": [
+            {
+              "mol": 0,
+              "inc_sec": 5.350269425660372,
+              "inc_aff": -6.994,
+              "cand_sec": 5.317397916689515,
+              "cand_aff": -6.994,
+              "error": null
+            },
+            {
+              "mol": 1,
+              "inc_sec": 5.350690118968487,
+              "inc_aff": -8.544,
+              "cand_sec": 6.06591559946537,
+              "cand_aff": -8.544,
+              "error": null
+            },
+            {
+              "mol": 2,
+              "inc_sec": 7.586880741640925,
+              "inc_aff": -8.249,
+              "cand_sec": 8.382048763334751,
+              "cand_aff": -8.249,
+              "error": null
+            }
+          ]
+        }
+      },
+      {
+        "id": 18,
+        "phase": "pass 2",
+        "knob": "exhaustiveness",
+        "hypothesis": "Lower exhaustiveness runs fewer Monte-Carlo searches \u2014 expect a speedup; accept it only if the affinity holds.",
+        "config": {
+          "mode": "dock",
+          "exhaustiveness": 4,
+          "cpu": 32,
+          "buffer": 12.0,
+          "size_factor": 1.0
+        },
+        "sec": 6.108205191791058,
+        "ratio": 1.0762942255987291,
+        "inc_sec": 5.330786507576704,
+        "aff": -7.928999999999999,
+        "decision": "rejected: slower",
+        "note": "8% slower (paired)",
+        "extra": {
+          "n_faster": 0,
+          "n_pairs": 3,
+          "pairs": [
+            {
+              "mol": 0,
+              "inc_sec": 5.312805164605379,
+              "inc_aff": -6.994,
+              "cand_sec": 5.718141520395875,
+              "cand_aff": -6.994,
+              "error": null
+            },
+            {
+              "mol": 1,
+              "inc_sec": 5.330786507576704,
+              "inc_aff": -8.544,
+              "cand_sec": 6.108205191791058,
+              "cand_aff": -8.544,
+              "error": null
+            },
+            {
+              "mol": 2,
+              "inc_sec": 7.589629415422678,
+              "inc_aff": -8.249,
+              "cand_sec": 7.911580938845873,
+              "cand_aff": -8.249,
+              "error": null
+            }
+          ]
+        }
+      },
+      {
+        "id": 19,
+        "phase": "pass 2",
+        "knob": "exhaustiveness",
+        "hypothesis": "Lower exhaustiveness runs fewer Monte-Carlo searches \u2014 expect a speedup; accept it only if the affinity holds.",
+        "config": {
+          "mode": "dock",
+          "exhaustiveness": 8,
+          "cpu": 32,
+          "buffer": 12.0,
+          "size_factor": 1.0
+        },
+        "sec": 7.100968049839139,
+        "ratio": 1.147704137192022,
+        "inc_sec": 5.341351825743914,
+        "aff": -8.247333333333332,
+        "decision": "rejected: slower",
+        "note": "15% slower (paired)",
+        "extra": {
+          "n_faster": 0,
+          "n_pairs": 3,
+          "pairs": [
+            {
+              "mol": 0,
+              "inc_sec": 5.332916645333171,
+              "inc_aff": -6.994,
+              "cand_sec": 7.100968049839139,
+              "cand_aff": -7.024,
+              "error": null
+            },
+            {
+              "mol": 1,
+              "inc_sec": 5.341351825743914,
+              "inc_aff": -8.544,
+              "cand_sec": 6.13029158860445,
+              "cand_aff": -9.469,
+              "error": null
+            },
+            {
+              "mol": 2,
+              "inc_sec": 7.596790874376893,
+              "inc_aff": -8.249,
+              "cand_sec": 8.398254917934537,
+              "cand_aff": -8.249,
+              "error": null
+            }
+          ]
+        }
+      },
+      {
+        "id": 20,
+        "phase": "pass 2",
+        "knob": "exhaustiveness",
+        "hypothesis": "Lower exhaustiveness runs fewer Monte-Carlo searches \u2014 expect a speedup; accept it only if the affinity holds.",
+        "config": {
+          "mode": "dock",
+          "exhaustiveness": 16,
+          "cpu": 32,
+          "buffer": 12.0,
+          "size_factor": 1.0
+        },
+        "sec": 6.336471676826477,
+        "ratio": 1.1631377993937746,
+        "inc_sec": 5.446243511512876,
+        "aff": -8.199333333333334,
+        "decision": "rejected: slower",
+        "note": "16% slower (paired)",
+        "extra": {
+          "n_faster": 0,
+          "n_pairs": 3,
+          "pairs": [
+            {
+              "mol": 0,
+              "inc_sec": 5.446243511512876,
+              "inc_aff": -6.994,
+              "cand_sec": 6.336471676826477,
+              "cand_aff": -7.024,
+              "error": null
+            },
+            {
+              "mol": 1,
+              "inc_sec": 5.317655727267265,
+              "inc_aff": -8.544,
+              "cand_sec": 6.118016984313726,
+              "cand_aff": -9.469,
+              "error": null
+            },
+            {
+              "mol": 2,
+              "inc_sec": 7.629686852917075,
+              "inc_aff": -8.249,
+              "cand_sec": 8.87437717616558,
+              "cand_aff": -8.105,
+              "error": null
+            }
+          ]
+        }
+      },
+      {
+        "id": 21,
+        "phase": "pass 2",
+        "knob": "buffer",
+        "hypothesis": "A smaller search box has fewer affinity-grid points to compute \u2014 expect a modest speedup, but a box too tight to hold the ligand slows the search down and corrupts the affinity.",
+        "config": {
+          "mode": "dock",
+          "exhaustiveness": 1,
+          "cpu": 32,
+          "buffer": 2.0,
+          "size_factor": 1.0
+        },
+        "sec": 7.553692042827606,
+        "ratio": 1.372006203609607,
+        "inc_sec": 5.453780595213175,
+        "aff": -7.711333333333333,
+        "decision": "rejected: slower",
+        "note": "37% slower (paired)",
+        "extra": {
+          "n_faster": 0,
+          "n_pairs": 3,
+          "pairs": [
+            {
+              "mol": 0,
+              "inc_sec": 5.34896057471633,
+              "inc_aff": -6.994,
+              "cand_sec": 7.553692042827606,
+              "cand_aff": -6.643,
+              "error": null
+            },
+            {
+              "mol": 1,
+              "inc_sec": 5.453780595213175,
+              "inc_aff": -8.544,
+              "cand_sec": 6.718933740630746,
+              "cand_aff": -9.506,
+              "error": null
+            },
+            {
+              "mol": 2,
+              "inc_sec": 7.646765615791082,
+              "inc_aff": -8.249,
+              "cand_sec": 10.491409862414002,
+              "cand_aff": -6.985,
+              "error": null
+            }
+          ]
+        }
+      },
+      {
+        "id": 22,
+        "phase": "pass 2",
+        "knob": "buffer",
+        "hypothesis": "A smaller search box has fewer affinity-grid points to compute \u2014 expect a modest speedup, but a box too tight to hold the ligand slows the search down and corrupts the affinity.",
+        "config": {
+          "mode": "dock",
+          "exhaustiveness": 1,
+          "cpu": 32,
+          "buffer": 4.0,
+          "size_factor": 1.0
+        },
+        "sec": 7.2118721306324005,
+        "ratio": 1.1338695718202394,
+        "inc_sec": 5.374194372445345,
+        "aff": -7.9206666666666665,
+        "decision": "rejected: slower",
+        "note": "13% slower (paired)",
+        "extra": {
+          "n_faster": 0,
+          "n_pairs": 3,
+          "pairs": [
+            {
+              "mol": 0,
+              "inc_sec": 5.374194372445345,
+              "inc_aff": -6.994,
+              "cand_sec": 7.2118721306324005,
+              "cand_aff": -6.866,
+              "error": null
+            },
+            {
+              "mol": 1,
+              "inc_sec": 5.344748381525278,
+              "inc_aff": -8.544,
+              "cand_sec": 5.859393008053303,
+              "cand_aff": -9.604,
+              "error": null
+            },
+            {
+              "mol": 2,
+              "inc_sec": 7.619997998699546,
+              "inc_aff": -8.249,
+              "cand_sec": 8.640083868056536,
+              "cand_aff": -7.292,
+              "error": null
+            }
+          ]
+        }
+      },
+      {
+        "id": 23,
+        "phase": "pass 2",
+        "knob": "buffer",
+        "hypothesis": "A smaller search box has fewer affinity-grid points to compute \u2014 expect a modest speedup, but a box too tight to hold the ligand slows the search down and corrupts the affinity.",
+        "config": {
+          "mode": "dock",
+          "exhaustiveness": 1,
+          "cpu": 32,
+          "buffer": 6.0,
+          "size_factor": 1.0
+        },
+        "sec": 6.064703274518251,
+        "ratio": 1.0716974556074987,
+        "inc_sec": 5.377982785925269,
+        "aff": -7.885666666666666,
+        "decision": "rejected: slower",
+        "note": "7% slower (paired)",
+        "extra": {
+          "n_faster": 0,
+          "n_pairs": 3,
+          "pairs": [
+            {
+              "mol": 0,
+              "inc_sec": 5.377982785925269,
+              "inc_aff": -6.994,
+              "cand_sec": 5.694972625002265,
+              "cand_aff": -6.854,
+              "error": null
+            },
+            {
+              "mol": 1,
+              "inc_sec": 5.360729893669486,
+              "inc_aff": -8.544,
+              "cand_sec": 6.064703274518251,
+              "cand_aff": -9.291,
+              "error": null
+            },
+            {
+              "mol": 2,
+              "inc_sec": 7.567332053557038,
+              "inc_aff": -8.249,
+              "cand_sec": 8.109890507534146,
+              "cand_aff": -7.512,
+              "error": null
+            }
+          ]
+        }
+      },
+      {
+        "id": 24,
+        "phase": "pass 2",
+        "knob": "buffer",
+        "hypothesis": "A smaller search box has fewer affinity-grid points to compute \u2014 expect a modest speedup, but a box too tight to hold the ligand slows the search down and corrupts the affinity.",
+        "config": {
+          "mode": "dock",
+          "exhaustiveness": 1,
+          "cpu": 32,
+          "buffer": 8.0,
+          "size_factor": 1.0
+        },
+        "sec": 5.550467539578676,
+        "ratio": 1.0452486146840507,
+        "inc_sec": 5.327014442533255,
+        "aff": -7.932333333333332,
+        "decision": "rejected: slower",
+        "note": "5% slower (paired)",
+        "extra": {
+          "n_faster": 0,
+          "n_pairs": 3,
+          "pairs": [
+            {
+              "mol": 0,
+              "inc_sec": 5.310188850387931,
+              "inc_aff": -6.994,
+              "cand_sec": 5.550467539578676,
+              "cand_aff": -6.66,
+              "error": null
+            },
+            {
+              "mol": 1,
+              "inc_sec": 5.327014442533255,
+              "inc_aff": -8.544,
+              "cand_sec": 5.5202729888260365,
+              "cand_aff": -9.432,
+              "error": null
+            },
+            {
+              "mol": 2,
+              "inc_sec": 7.58248907327652,
+              "inc_aff": -8.249,
+              "cand_sec": 7.970053423196077,
+              "cand_aff": -7.705,
+              "error": null
+            }
+          ]
+        }
+      },
+      {
+        "id": 25,
+        "phase": "verify",
+        "knob": "-",
+        "hypothesis": "Paired re-measurement of the optimum against the baseline on fresh held-out ligands \u2014 the drift-free ground-truth speedup.",
+        "config": {
+          "mode": "dock",
+          "exhaustiveness": 1,
+          "cpu": 32,
+          "buffer": 12.0,
+          "size_factor": 1.0
+        },
+        "sec": 8.116913876496255,
+        "ratio": 0.7719691182453916,
+        "inc_sec": 10.880408358760178,
+        "aff": -7.738333333333333,
+        "decision": "verify-optimum",
+        "note": "1.30x faster than baseline (5/6 ligands)",
+        "extra": {
+          "n_faster": 5,
+          "n_pairs": 6,
+          "pairs": [
+            {
+              "mol": 0,
+              "inc_sec": 14.516932802274823,
+              "inc_aff": -8.043,
+              "cand_sec": 10.185049425810575,
+              "cand_aff": -7.843,
+              "error": null
+            },
+            {
+              "mol": 1,
+              "inc_sec": 1.925951024517417,
+              "inc_aff": -6.307,
+              "cand_sec": 2.097003985196352,
+              "cand_aff": -6.607,
+              "error": null
+            },
+            {
+              "mol": 2,
+              "inc_sec": 15.871445832774043,
+              "inc_aff": -6.715,
+              "cand_sec": 11.650027200579643,
+              "cand_aff": -6.592,
+              "error": null
+            },
+            {
+              "mol": 3,
+              "inc_sec": 23.174972891807556,
+              "inc_aff": -8.149,
+              "cand_sec": 18.33389250561595,
+              "cand_aff": -8.231,
+              "error": null
+            },
+            {
+              "mol": 4,
+              "inc_sec": 6.868434412404895,
+              "inc_aff": -9.53,
+              "cand_sec": 6.048778327181935,
+              "cand_aff": -9.463,
+              "error": null
+            },
+            {
+              "mol": 5,
+              "inc_sec": 7.243883915245533,
+              "inc_aff": -8.199,
+              "cand_sec": 5.453419201076031,
+              "cand_aff": -7.694,
+              "error": null
+            }
+          ]
+        }
+      }
+    ],
+    "baseline": {
+      "mode": "dock",
+      "exhaustiveness": 8,
+      "cpu": 8,
+      "buffer": 5.0,
+      "size_factor": 1.0
+    },
+    "optimum": {
+      "mode": "dock",
+      "exhaustiveness": 1,
+      "cpu": 32,
+      "buffer": 12.0,
+      "size_factor": 1.0
+    },
+    "aff_ref": -8.022666666666668,
+    "cum_speedup": 1.3285062299559127,
+    "sweeps": {
+      "cpu": [
+        {
+          "id": 3,
+          "phase": "pass 1",
+          "knob": "cpu",
+          "hypothesis": "More CPU threads parallelise Vina's Monte-Carlo search \u2014 expect a speedup until the search saturates the available cores.",
+          "config": {
+            "mode": "dock",
+            "exhaustiveness": 8,
+            "cpu": 4,
+            "buffer": 5.0,
+            "size_factor": 1.0
+          },
+          "sec": 12.376739427447319,
+          "ratio": 1.848359977462541,
+          "inc_sec": 7.33980068936944,
+          "aff": -7.975333333333334,
+          "decision": "rejected: slower",
+          "note": "85% slower (paired)",
+          "extra": {
+            "n_faster": 0,
+            "n_pairs": 3,
+            "pairs": [
+              {
+                "mol": 0,
+                "inc_sec": 7.33980068936944,
+                "inc_aff": -6.793,
+                "cand_sec": 12.376739427447319,
+                "cand_aff": -6.793,
+                "error": null
+              },
+              {
+                "mol": 1,
+                "inc_sec": 6.518515324220061,
+                "inc_aff": -9.464,
+                "cand_sec": 12.04856283776462,
+                "cand_aff": -9.464,
+                "error": null
+              },
+              {
+                "mol": 2,
+                "inc_sec": 9.007464794442058,
+                "inc_aff": -7.669,
+                "cand_sec": 17.183543652296066,
+                "cand_aff": -7.669,
+                "error": null
+              }
+            ]
+          }
+        },
+        {
+          "id": 4,
+          "phase": "pass 1",
+          "knob": "cpu",
+          "hypothesis": "More CPU threads parallelise Vina's Monte-Carlo search \u2014 expect a speedup until the search saturates the available cores.",
+          "config": {
+            "mode": "dock",
+            "exhaustiveness": 8,
+            "cpu": 16,
+            "buffer": 5.0,
+            "size_factor": 1.0
+          },
+          "sec": 7.443366726860404,
+          "ratio": 0.9931959799336109,
+          "inc_sec": 7.38376209884882,
+          "aff": -7.975333333333334,
+          "decision": "rejected: within noise",
+          "note": "only 1% faster (< 5% margin)",
+          "extra": {
+            "n_faster": 2,
+            "n_pairs": 3,
+            "pairs": [
+              {
+                "mol": 0,
+                "inc_sec": 7.38376209884882,
+                "inc_aff": -6.793,
+                "cand_sec": 7.443366726860404,
+                "cand_aff": -6.793,
+                "error": null
+              },
+              {
+                "mol": 1,
+                "inc_sec": 6.930081721395254,
+                "inc_aff": -9.464,
+                "cand_sec": 6.358798002824187,
+                "cand_aff": -9.464,
+                "error": null
+              },
+              {
+                "mol": 2,
+                "inc_sec": 9.575315261259675,
+                "inc_aff": -7.669,
+                "cand_sec": 9.510164624080062,
+                "cand_aff": -7.669,
+                "error": null
+              }
+            ]
+          }
+        },
+        {
+          "id": 5,
+          "phase": "pass 1",
+          "knob": "cpu",
+          "hypothesis": "More CPU threads parallelise Vina's Monte-Carlo search \u2014 expect a speedup until the search saturates the available cores.",
+          "config": {
+            "mode": "dock",
+            "exhaustiveness": 8,
+            "cpu": 32,
+            "buffer": 5.0,
+            "size_factor": 1.0
+          },
+          "sec": 6.644647611305118,
+          "ratio": 0.9480682245602496,
+          "inc_sec": 7.164348371326923,
+          "aff": -7.975333333333334,
+          "decision": "NEW BEST",
+          "note": "5% faster than the incumbent (3/3 ligands)",
+          "extra": {
+            "n_faster": 3,
+            "n_pairs": 3,
+            "pairs": [
+              {
+                "mol": 0,
+                "inc_sec": 7.164348371326923,
+                "inc_aff": -6.793,
+                "cand_sec": 6.644647611305118,
+                "cand_aff": -6.793,
+                "error": null
+              },
+              {
+                "mol": 1,
+                "inc_sec": 6.3627627938985825,
+                "inc_aff": -9.464,
+                "cand_sec": 6.342692097648978,
+                "cand_aff": -9.464,
+                "error": null
+              },
+              {
+                "mol": 2,
+                "inc_sec": 9.476527219638228,
+                "inc_aff": -7.669,
+                "cand_sec": 8.984394336119294,
+                "cand_aff": -7.669,
+                "error": null
+              }
+            ]
+          }
+        },
+        {
+          "id": 6,
+          "phase": "pass 1",
+          "knob": "cpu",
+          "hypothesis": "More CPU threads parallelise Vina's Monte-Carlo search \u2014 expect a speedup until the search saturates the available cores.",
+          "config": {
+            "mode": "dock",
+            "exhaustiveness": 8,
+            "cpu": 64,
+            "buffer": 5.0,
+            "size_factor": 1.0
+          },
+          "sec": 7.048517432063818,
+          "ratio": 1.0167539114436843,
+          "inc_sec": 6.626989575102925,
+          "aff": -7.975333333333334,
+          "decision": "rejected: slower",
+          "note": "2% slower (paired)",
+          "extra": {
+            "n_faster": 1,
+            "n_pairs": 3,
+            "pairs": [
+              {
+                "mol": 0,
+                "inc_sec": 6.626989575102925,
+                "inc_aff": -6.793,
+                "cand_sec": 6.548030098900199,
+                "cand_aff": -6.793,
+                "error": null
+              },
+              {
+                "mol": 1,
+                "inc_sec": 6.354797912761569,
+                "inc_aff": -9.464,
+                "cand_sec": 7.048517432063818,
+                "cand_aff": -9.464,
+                "error": null
+              },
+              {
+                "mol": 2,
+                "inc_sec": 9.065695060417056,
+                "inc_aff": -7.669,
+                "cand_sec": 9.21758091263473,
+                "cand_aff": -7.669,
+                "error": null
+              }
+            ]
+          }
+        }
+      ],
+      "exhaustiveness": [
+        {
+          "id": 7,
+          "phase": "pass 1",
+          "knob": "exhaustiveness",
+          "hypothesis": "Lower exhaustiveness runs fewer Monte-Carlo searches \u2014 expect a speedup; accept it only if the affinity holds.",
+          "config": {
+            "mode": "dock",
+            "exhaustiveness": 1,
+            "cpu": 32,
+            "buffer": 5.0,
+            "size_factor": 1.0
+          },
+          "sec": 6.208181472495198,
+          "ratio": 0.9283825798998355,
+          "inc_sec": 7.115038814023137,
+          "aff": -7.959,
+          "decision": "NEW BEST",
+          "note": "7% faster than the incumbent (3/3 ligands)",
+          "extra": {
+            "n_faster": 3,
+            "n_pairs": 3,
+            "pairs": [
+              {
+                "mol": 0,
+                "inc_sec": 6.558017643168569,
+                "inc_aff": -6.793,
+                "cand_sec": 6.208181472495198,
+                "cand_aff": -6.633,
+                "error": null
+              },
+              {
+                "mol": 1,
+                "inc_sec": 7.115038814023137,
+                "inc_aff": -9.464,
+                "cand_sec": 5.245777750387788,
+                "cand_aff": -9.575,
+                "error": null
+              },
+              {
+                "mol": 2,
+                "inc_sec": 9.704126119613647,
+                "inc_aff": -7.669,
+                "cand_sec": 9.009141642600298,
+                "cand_aff": -7.669,
+                "error": null
+              }
+            ]
+          }
+        },
+        {
+          "id": 8,
+          "phase": "pass 1",
+          "knob": "exhaustiveness",
+          "hypothesis": "Lower exhaustiveness runs fewer Monte-Carlo searches \u2014 expect a speedup; accept it only if the affinity holds.",
+          "config": {
+            "mode": "dock",
+            "exhaustiveness": 2,
+            "cpu": 32,
+            "buffer": 5.0,
+            "size_factor": 1.0
+          },
+          "sec": 6.1728434432297945,
+          "ratio": 1.0085223992443317,
+          "inc_sec": 6.184597576037049,
+          "aff": -7.972,
+          "decision": "rejected: slower",
+          "note": "1% slower (paired)",
+          "extra": {
+            "n_faster": 1,
+            "n_pairs": 3,
+            "pairs": [
+              {
+                "mol": 0,
+                "inc_sec": 6.184597576037049,
+                "inc_aff": -6.633,
+                "cand_sec": 6.1728434432297945,
+                "cand_aff": -6.633,
+                "error": null
+              },
+              {
+                "mol": 1,
+                "inc_sec": 5.269273094832897,
+                "inc_aff": -9.575,
+                "cand_sec": 5.314179943874478,
+                "cand_aff": -9.614,
+                "error": null
+              },
+              {
+                "mol": 2,
+                "inc_sec": 8.968073714524508,
+                "inc_aff": -7.669,
+                "cand_sec": 9.08460490591824,
+                "cand_aff": -7.669,
+                "error": null
+              }
+            ]
+          }
+        },
+        {
+          "id": 9,
+          "phase": "pass 1",
+          "knob": "exhaustiveness",
+          "hypothesis": "Lower exhaustiveness runs fewer Monte-Carlo searches \u2014 expect a speedup; accept it only if the affinity holds.",
+          "config": {
+            "mode": "dock",
+            "exhaustiveness": 4,
+            "cpu": 32,
+            "buffer": 5.0,
+            "size_factor": 1.0
+          },
+          "sec": 7.083635196089745,
+          "ratio": 1.0681140273923473,
+          "inc_sec": 6.14506440423429,
+          "aff": -8.085666666666667,
+          "decision": "rejected: slower",
+          "note": "7% slower (paired)",
+          "extra": {
+            "n_faster": 0,
+            "n_pairs": 3,
+            "pairs": [
+              {
+                "mol": 0,
+                "inc_sec": 6.14506440423429,
+                "inc_aff": -6.633,
+                "cand_sec": 6.563629489392042,
+                "cand_aff": -6.974,
+                "error": null
+              },
+              {
+                "mol": 1,
+                "inc_sec": 5.268819173797965,
+                "inc_aff": -9.575,
+                "cand_sec": 7.083635196089745,
+                "cand_aff": -9.614,
+                "error": null
+              },
+              {
+                "mol": 2,
+                "inc_sec": 8.980287998914719,
+                "inc_aff": -7.669,
+                "cand_sec": 9.05456406623125,
+                "cand_aff": -7.669,
+                "error": null
+              }
+            ]
+          }
+        },
+        {
+          "id": 10,
+          "phase": "pass 1",
+          "knob": "exhaustiveness",
+          "hypothesis": "Lower exhaustiveness runs fewer Monte-Carlo searches \u2014 expect a speedup; accept it only if the affinity holds.",
+          "config": {
+            "mode": "dock",
+            "exhaustiveness": 8,
+            "cpu": 32,
+            "buffer": 5.0,
+            "size_factor": 1.0
+          },
+          "sec": 7.2319579143077135,
+          "ratio": 1.1308850707646803,
+          "inc_sec": 6.2048851400613785,
+          "aff": -7.975333333333334,
+          "decision": "rejected: slower",
+          "note": "13% slower (paired)",
+          "extra": {
+            "n_faster": 0,
+            "n_pairs": 3,
+            "pairs": [
+              {
+                "mol": 0,
+                "inc_sec": 6.2048851400613785,
+                "inc_aff": -6.633,
+                "cand_sec": 6.543508032336831,
+                "cand_aff": -6.793,
+                "error": null
+              },
+              {
+                "mol": 1,
+                "inc_sec": 5.300478920340538,
+                "inc_aff": -9.575,
+                "cand_sec": 7.2319579143077135,
+                "cand_aff": -9.464,
+                "error": null
+              },
+              {
+                "mol": 2,
+                "inc_sec": 8.97336757183075,
+                "inc_aff": -7.669,
+                "cand_sec": 10.147847421467304,
+                "cand_aff": -7.669,
+                "error": null
+              }
+            ]
+          }
+        },
+        {
+          "id": 11,
+          "phase": "pass 1",
+          "knob": "exhaustiveness",
+          "hypothesis": "Lower exhaustiveness runs fewer Monte-Carlo searches \u2014 expect a speedup; accept it only if the affinity holds.",
+          "config": {
+            "mode": "dock",
+            "exhaustiveness": 16,
+            "cpu": 32,
+            "buffer": 5.0,
+            "size_factor": 1.0
+          },
+          "sec": 7.345911862328649,
+          "ratio": 1.1786123665756902,
+          "inc_sec": 6.182248253375292,
+          "aff": -8.022666666666668,
+          "decision": "rejected: slower",
+          "note": "18% slower (paired)",
+          "extra": {
+            "n_faster": 0,
+            "n_pairs": 3,
+            "pairs": [
+              {
+                "mol": 0,
+                "inc_sec": 6.182248253375292,
+                "inc_aff": -6.633,
+                "cand_sec": 7.28647424466908,
+                "cand_aff": -6.793,
+                "error": null
+              },
+              {
+                "mol": 1,
+                "inc_sec": 5.276824692264199,
+                "inc_aff": -9.575,
+                "cand_sec": 7.345911862328649,
+                "cand_aff": -9.464,
+                "error": null
+              },
+              {
+                "mol": 2,
+                "inc_sec": 9.041870502755046,
+                "inc_aff": -7.669,
+                "cand_sec": 9.478781666606665,
+                "cand_aff": -7.811,
+                "error": null
+              }
+            ]
+          }
+        }
+      ],
+      "buffer": [
+        {
+          "id": 12,
+          "phase": "pass 1",
+          "knob": "buffer",
+          "hypothesis": "A smaller search box has fewer affinity-grid points to compute \u2014 expect a modest speedup, but a box too tight to hold the ligand slows the search down and corrupts the affinity.",
+          "config": {
+            "mode": "dock",
+            "exhaustiveness": 1,
+            "cpu": 32,
+            "buffer": 2.0,
+            "size_factor": 1.0
+          },
+          "sec": 7.564219595864415,
+          "ratio": 1.220928505057022,
+          "inc_sec": 6.195464815944433,
+          "aff": -7.711333333333333,
+          "decision": "rejected: slower",
+          "note": "22% slower (paired)",
+          "extra": {
+            "n_faster": 0,
+            "n_pairs": 3,
+            "pairs": [
+              {
+                "mol": 0,
+                "inc_sec": 6.195464815944433,
+                "inc_aff": -6.633,
+                "cand_sec": 7.564219595864415,
+                "cand_aff": -6.643,
+                "error": null
+              },
+              {
+                "mol": 1,
+                "inc_sec": 5.274944670498371,
+                "inc_aff": -9.575,
+                "cand_sec": 6.747308636084199,
+                "cand_aff": -9.506,
+                "error": null
+              },
+              {
+                "mol": 2,
+                "inc_sec": 8.955125557258725,
+                "inc_aff": -7.669,
+                "cand_sec": 10.462509907782078,
+                "cand_aff": -6.985,
+                "error": null
+              }
+            ]
+          }
+        },
+        {
+          "id": 13,
+          "phase": "pass 1",
+          "knob": "buffer",
+          "hypothesis": "A smaller search box has fewer affinity-grid points to compute \u2014 expect a modest speedup, but a box too tight to hold the ligand slows the search down and corrupts the affinity.",
+          "config": {
+            "mode": "dock",
+            "exhaustiveness": 1,
+            "cpu": 32,
+            "buffer": 4.0,
+            "size_factor": 1.0
+          },
+          "sec": 7.227213531732559,
+          "ratio": 1.1193588098023584,
+          "inc_sec": 6.201258718967438,
+          "aff": -7.9206666666666665,
+          "decision": "rejected: slower",
+          "note": "12% slower (paired)",
+          "extra": {
+            "n_faster": 1,
+            "n_pairs": 3,
+            "pairs": [
+              {
+                "mol": 0,
+                "inc_sec": 6.201258718967438,
+                "inc_aff": -6.633,
+                "cand_sec": 7.227213531732559,
+                "cand_aff": -6.866,
+                "error": null
+              },
+              {
+                "mol": 1,
+                "inc_sec": 5.26862033829093,
+                "inc_aff": -9.575,
+                "cand_sec": 5.897476591169834,
+                "cand_aff": -9.604,
+                "error": null
+              },
+              {
+                "mol": 2,
+                "inc_sec": 8.959273332729936,
+                "inc_aff": -7.669,
+                "cand_sec": 8.66779481433332,
+                "cand_aff": -7.292,
+                "error": null
+              }
+            ]
+          }
+        },
+        {
+          "id": 14,
+          "phase": "pass 1",
+          "knob": "buffer",
+          "hypothesis": "A smaller search box has fewer affinity-grid points to compute \u2014 expect a modest speedup, but a box too tight to hold the ligand slows the search down and corrupts the affinity.",
+          "config": {
+            "mode": "dock",
+            "exhaustiveness": 1,
+            "cpu": 32,
+            "buffer": 6.0,
+            "size_factor": 1.0
+          },
+          "sec": 6.023155219852924,
+          "ratio": 0.9102798283656779,
+          "inc_sec": 6.164355652406812,
+          "aff": -7.885666666666666,
+          "decision": "NEW BEST",
+          "note": "9% faster than the incumbent (2/3 ligands)",
+          "extra": {
+            "n_faster": 2,
+            "n_pairs": 3,
+            "pairs": [
+              {
+                "mol": 0,
+                "inc_sec": 6.164355652406812,
+                "inc_aff": -6.633,
+                "cand_sec": 5.611288605257869,
+                "cand_aff": -6.854,
+                "error": null
+              },
+              {
+                "mol": 1,
+                "inc_sec": 5.2767101638019085,
+                "inc_aff": -9.575,
+                "cand_sec": 6.023155219852924,
+                "cand_aff": -9.291,
+                "error": null
+              },
+              {
+                "mol": 2,
+                "inc_sec": 8.950837479904294,
+                "inc_aff": -7.669,
+                "cand_sec": 8.1018439643085,
+                "cand_aff": -7.512,
+                "error": null
+              }
+            ]
+          }
+        },
+        {
+          "id": 15,
+          "phase": "pass 1",
+          "knob": "buffer",
+          "hypothesis": "A smaller search box has fewer affinity-grid points to compute \u2014 expect a modest speedup, but a box too tight to hold the ligand slows the search down and corrupts the affinity.",
+          "config": {
+            "mode": "dock",
+            "exhaustiveness": 1,
+            "cpu": 32,
+            "buffer": 8.0,
+            "size_factor": 1.0
+          },
+          "sec": 5.588980222120881,
+          "ratio": 0.9838399194386781,
+          "inc_sec": 6.030515395104885,
+          "aff": -7.932333333333332,
+          "decision": "rejected: within noise",
+          "note": "only 2% faster (< 5% margin)",
+          "extra": {
+            "n_faster": 3,
+            "n_pairs": 3,
+            "pairs": [
+              {
+                "mol": 0,
+                "inc_sec": 5.680782118812203,
+                "inc_aff": -6.854,
+                "cand_sec": 5.588980222120881,
+                "cand_aff": -6.66,
+                "error": null
+              },
+              {
+                "mol": 1,
+                "inc_sec": 6.030515395104885,
+                "inc_aff": -9.291,
+                "cand_sec": 5.52020987868309,
+                "cand_aff": -9.432,
+                "error": null
+              },
+              {
+                "mol": 2,
+                "inc_sec": 8.068558603525162,
+                "inc_aff": -7.512,
+                "cand_sec": 7.97264477238059,
+                "cand_aff": -7.705,
+                "error": null
+              }
+            ]
+          }
+        },
+        {
+          "id": 16,
+          "phase": "pass 1",
+          "knob": "buffer",
+          "hypothesis": "A smaller search box has fewer affinity-grid points to compute \u2014 expect a modest speedup, but a box too tight to hold the ligand slows the search down and corrupts the affinity.",
+          "config": {
+            "mode": "dock",
+            "exhaustiveness": 1,
+            "cpu": 32,
+            "buffer": 12.0,
+            "size_factor": 1.0
+          },
+          "sec": 5.420954316854477,
+          "ratio": 0.9394959491746646,
+          "inc_sec": 6.045395052060485,
+          "aff": -7.928999999999999,
+          "decision": "NEW BEST",
+          "note": "6% faster than the incumbent (3/3 ligands)",
+          "extra": {
+            "n_faster": 3,
+            "n_pairs": 3,
+            "pairs": [
+              {
+                "mol": 0,
+                "inc_sec": 5.6525918655097485,
+                "inc_aff": -6.854,
+                "cand_sec": 5.420954316854477,
+                "cand_aff": -6.994,
+                "error": null
+              },
+              {
+                "mol": 1,
+                "inc_sec": 6.045395052060485,
+                "inc_aff": -9.291,
+                "cand_sec": 5.3387353252619505,
+                "cand_aff": -8.544,
+                "error": null
+              },
+              {
+                "mol": 2,
+                "inc_sec": 8.077846687287092,
+                "inc_aff": -7.512,
+                "cand_sec": 7.589104240760207,
+                "cand_aff": -8.249,
+                "error": null
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "verify": {
+      "ratio": 0.7719691182453916,
+      "cand_sec": 8.116913876496255,
+      "inc_sec": 10.880408358760178,
+      "cand_aff": -7.738333333333333,
+      "n_faster": 5,
+      "n_pairs": 6,
+      "n_fail": 0,
+      "pairs": [
+        {
+          "mol": 0,
+          "inc_sec": 14.516932802274823,
+          "inc_aff": -8.043,
+          "cand_sec": 10.185049425810575,
+          "cand_aff": -7.843,
+          "error": null
+        },
+        {
+          "mol": 1,
+          "inc_sec": 1.925951024517417,
+          "inc_aff": -6.307,
+          "cand_sec": 2.097003985196352,
+          "cand_aff": -6.607,
+          "error": null
+        },
+        {
+          "mol": 2,
+          "inc_sec": 15.871445832774043,
+          "inc_aff": -6.715,
+          "cand_sec": 11.650027200579643,
+          "cand_aff": -6.592,
+          "error": null
+        },
+        {
+          "mol": 3,
+          "inc_sec": 23.174972891807556,
+          "inc_aff": -8.149,
+          "cand_sec": 18.33389250561595,
+          "cand_aff": -8.231,
+          "error": null
+        },
+        {
+          "mol": 4,
+          "inc_sec": 6.868434412404895,
+          "inc_aff": -9.53,
+          "cand_sec": 6.048778327181935,
+          "cand_aff": -9.463,
+          "error": null
+        },
+        {
+          "mol": 5,
+          "inc_sec": 7.243883915245533,
+          "inc_aff": -8.199,
+          "cand_sec": 5.453419201076031,
+          "cand_aff": -7.694,
+          "error": null
+        }
+      ],
+      "speedup": 1.2953886060531796
+    },
+    "n_experiments": 25
+  }
+}

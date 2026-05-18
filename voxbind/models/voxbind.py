@@ -296,6 +296,10 @@ class VoxBind(torch.nn.Module):
         ]
         pocket = rotate_batch_voxel_grids(pocket, rand_rots)
         ligand = rotate_batch_voxel_grids(ligand, rand_rots)
+        if density is not None:
+            # density must follow the same per-chain rotation as the pocket,
+            # else the conditioning is spatially misaligned during sampling.
+            density = rotate_batch_voxel_grids(density, rand_rots)
 
         y, v = self.initialize_y_v(pocket, ligand, self.smooth_sigma, chain_init)
 

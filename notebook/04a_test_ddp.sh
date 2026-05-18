@@ -21,9 +21,9 @@
 
 set -u  # error on unset vars; do NOT set -e so we can capture per-trial failures
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-VOXBIND_DIR="$(dirname "$SCRIPT_DIR")"      # .../VoxBind/voxbind
-REPO_ROOT="$(dirname "$VOXBIND_DIR")"        # .../VoxBind
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"   # .../VoxBind/notebook
+REPO_ROOT="$(dirname "$SCRIPT_DIR")"         # .../VoxBind
+VOXBIND_DIR="${REPO_ROOT}/voxbind"           # .../VoxBind/voxbind
 cd "$VOXBIND_DIR"
 
 # Use the voxbind conda env explicitly so we don't accidentally run on
@@ -215,7 +215,7 @@ run_trial "t5_100samples" "ddp" "4,5,6,7" "4" "4" "dset.subset_n=100 num_epochs=
 # -------- post-process: parse logs, write results.json + HTML --------
 
 "$PYBIN" "${SCRIPT_DIR}/04a_test_ddp_to_html.py" --log-root "$LOG_ROOT" \
-    --out-html "${REPO_ROOT}/notebook/ddp_smoke_test.html" \
+    --out-html "${REPO_ROOT}/notebook/html/ddp_smoke_test.html" \
     --out-json "${LOG_ROOT}/results.json"
 
-echo "==> All trials done. Report: ${VOXBIND_DIR}/notebooks/ddp_smoke_test.html"
+echo "==> All trials done. Report: ${REPO_ROOT}/notebook/html/ddp_smoke_test.html"

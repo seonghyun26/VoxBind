@@ -14,6 +14,8 @@ use_xray: true
 cache_size: 32               # CCP4 maps cached per DataLoader worker (on-the-fly only)
 normalize: true              # local ±3σ clip + z-score per crop
 
-# Optional subset filtering (train split only — val/test are untouched):
-subset_n: null               # keep only the first N samples (after subset_xray_only filter)
+# Optional subset filtering:
+subset_n: null               # train split: keep only the first N samples (after subset_xray_only filter)
 subset_xray_only: false      # if true, keep only samples with xray_available=True before applying subset_n
+subset_val_n: null           # val split: keep N x-ray samples held out from the train pool, disjoint
+                             # from subset_n (reuses xray_crops/train/). null = default last-100 val.

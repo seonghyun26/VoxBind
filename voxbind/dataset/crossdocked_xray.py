@@ -269,6 +269,7 @@ class DatasetCrossDockedXray(Dataset):
         verbose: bool = False,
         subset_n: Optional[int] = None,
         subset_xray_only: bool = False,
+        subset_val_n: Optional[int] = None,
     ):
         assert split in ("train", "val", "test")
 
@@ -286,11 +287,19 @@ class DatasetCrossDockedXray(Dataset):
         self.normalize = normalize
         self.verbose = verbose
 
+        # When subset_val_n is set, the val split is carved from the TRAIN
+        # slice's x-ray pool — held out after the train subset (so train and
+        # val are disjoint) and reusing the train crops. `phys_split` is the
+        # split whose data + crops are physically read from disk; `split`
+        # stays "val" for the DataLoader / augmentation semantics.
+        self._val_from_train_pool = (split == "val" and subset_val_n is not None)
+        phys_split = "train" if self._val_from_train_pool else split
+
         # Precomputed crops mode: load float16 .npy files produced by dataset/00b_data_density_preprocess.py
         _crops_path = Path(crops_dir) if crops_dir else None
-        if use_xray and _crops_path and (_crops_path / split).exists():
-            self._crops_dir = _crops_path / split
-            avail_path = _crops_path / f"{split}_available.npy"
+        if use_xray and _crops_path and (_crops_path / phys_split).exists():
+            self._crops_dir = _crops_path / phys_split
+            avail_path = _crops_path / f"{phys_split}_available.npy"
             self._crops_available = np.load(str(avail_path)) if avail_path.exists() else None
             self._use_crops = True
         else:
@@ -310,14 +319,16 @@ class DatasetCrossDockedXray(Dataset):
                 dtype=torch.float32,
             )
 
-        # Load data splits (same logic as DatasetCrossdocked)
+        # Load data splits (same logic as DatasetCrossdocked). When the val
+        # split is carved from the train pool, phys_split == "train" so it
+        # reads the train slice of data_train.pt.
         import os
-        if split in ("train", "val"):
+        if phys_split in ("train", "val"):
             import random as _random
             data = torch.load(os.path.join(data_dir, "data_train.pt"), weights_only=False)
             _random.Random(1234).shuffle(data)
             val_sz = 100
-            self.data = data[: len(data) - val_sz] if split == "train" else data[len(data) - val_sz :]
+            self.data = data[: len(data) - val_sz] if phys_split == "train" else data[len(data) - val_sz :]
         else:
             self.data = torch.load(os.path.join(data_dir, "data_test.pt"), weights_only=False)
 
@@ -330,17 +341,20 @@ class DatasetCrossDockedXray(Dataset):
         else:
             self._available_pdbs = set()
 
-        # Optional subset for the train split: pick first N indices (optionally
-        # filtered to those with x-ray density). Stored as new_index → original_index
-        # so __getitem__ can still load crops by their original position.
+        # Optional subset selection. Train split: keep the first subset_n
+        # samples (optionally x-ray-only). Val split with subset_val_n set
+        # (_val_from_train_pool): keep subset_val_n samples held out from the
+        # SAME x-ray pool, starting after the train subset — so train and val
+        # are disjoint and val reuses the train crops. Stored as
+        # new_index → original_index so __getitem__ loads crops by position.
         self._subset_indices: Optional[list] = None
-        if split == "train" and subset_n is not None:
+        if (split == "train" and subset_n is not None) or self._val_from_train_pool:
             n_total = len(self.data)
             if subset_xray_only:
                 if self._crops_available is None:
                     raise RuntimeError(
                         "subset_xray_only=True requires precomputed crops with "
-                        f"{split}_available.npy in crops_dir={crops_dir}"
+                        f"{phys_split}_available.npy in crops_dir={crops_dir}"
                     )
                 avail = self._crops_available
                 if len(avail) != n_total:
@@ -348,13 +362,23 @@ class DatasetCrossDockedXray(Dataset):
                         f"crops_available length ({len(avail)}) != filtered dataset "
                         f"size ({n_total}); preprocessing is misaligned."
                     )
-                kept = [i for i in range(n_total) if bool(avail[i])][:subset_n]
+                pool = [i for i in range(n_total) if bool(avail[i])]
             else:
-                kept = list(range(min(subset_n, n_total)))
-            if len(kept) < subset_n:
+                pool = list(range(n_total))
+
+            if self._val_from_train_pool:
+                # held-out val: skip the first subset_n (train) pool entries
+                start = subset_n or 0
+                kept = pool[start: start + subset_val_n]
+                want, label = subset_val_n, "subset_val_n"
+            else:
+                kept = pool[:subset_n]
+                want, label = subset_n, "subset_n"
+
+            if len(kept) < want:
                 raise RuntimeError(
-                    f"requested subset_n={subset_n} but only {len(kept)} samples match "
-                    f"(subset_xray_only={subset_xray_only}, n_total={n_total})"
+                    f"requested {label}={want} but only {len(kept)} samples match "
+                    f"(subset_xray_only={subset_xray_only}, n_total={n_total}, split={split})"
                 )
             self._subset_indices = kept
 

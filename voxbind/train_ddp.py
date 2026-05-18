@@ -14,12 +14,15 @@ Differences vs train.py (all additive — math is preserved):
 Launch:
     torchrun --nproc_per_node=<W> train_ddp.py <hydra overrides>
 """
+import copy
 import hashlib
 import json
 import logging
 import math
 import os
+import threading
 import time
+from datetime import timedelta
 
 import hydra
 import torch
@@ -58,13 +61,66 @@ def _setup_ddp() -> tuple:
     local_rank = int(os.environ["LOCAL_RANK"])
     world_size = int(os.environ["WORLD_SIZE"])
     torch.cuda.set_device(local_rank)
-    dist.init_process_group(backend="nccl", init_method="env://")
+    # 2-hour NCCL timeout (default is 10 min). Transient rank-0 stalls (slow
+    # disk write, wandb hiccup) won't trip the watchdog and kill training.
+    dist.init_process_group(
+        backend="nccl", init_method="env://", timeout=timedelta(hours=2)
+    )
     return rank, local_rank, world_size
 
 
 def _cleanup_ddp() -> None:
     if dist.is_initialized():
         dist.destroy_process_group()
+
+
+class AsyncCheckpointSaver:
+    """Atomic + threaded checkpoint writer (rank 0 only).
+
+    Each `save()` deep-copies the in-memory state, kicks off a background
+    thread that writes to `<path>.tmp` and then renames to `<path>` (atomic
+    on POSIX). The next `save()` first joins the previous thread, so we
+    never have two writes stacked, and the latest call always reflects the
+    final on-disk file. `wait()` blocks until the in-flight save completes.
+    """
+
+    def __init__(self):
+        self._thread = None
+        self._lock = threading.Lock()
+
+    @staticmethod
+    def _write(state: dict, save_dir: str, chkp_name: str) -> None:
+        tmp = os.path.join(save_dir, chkp_name + ".tmp")
+        final = os.path.join(save_dir, chkp_name)
+        try:
+            torch.save(state, tmp)
+            os.replace(tmp, final)  # atomic on POSIX
+        except Exception as e:
+            logger.warning(f"checkpoint write failed: {e}")
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+
+    def save(self, state: dict, save_dir: str, chkp_name: str = "checkpoint.pth.tar") -> None:
+        # Wait for any in-flight save first; ensures linear write order.
+        self.wait()
+        # Deep-copy so the main thread is free to mutate model/optimizer state
+        # while the background thread serializes a frozen snapshot.
+        frozen = copy.deepcopy(state)
+        with self._lock:
+            self._thread = threading.Thread(
+                target=self._write,
+                args=(frozen, save_dir, chkp_name),
+                daemon=False,  # don't drop the write if main exits
+            )
+            self._thread.start()
+
+    def wait(self) -> None:
+        with self._lock:
+            t = self._thread
+        if t is not None:
+            t.join()
 
 
 class VoxelPrefetcher:
@@ -223,18 +279,29 @@ def main(cfg: DictConfig) -> None:
     )
 
     # resume model+optimizer state (before DDP wrap)
+    global_step = 0
     if cfg.resume is not None:
         if is_main:
             logger.info("reloading states of model, optimizer")
         model, optimizer, start_epoch = load_checkpoint(
-            model, cfg.output_dir, optimizer, best_model=False
+            model, cfg.output_dir, optimizer, best_model=False,
+            map_location=device,   # avoid ghost CUDA contexts on rank-0's GPU
         )
+        # Re-read the raw checkpoint to recover global_step (load_checkpoint
+        # only returns model/optimizer/epoch). Falls back to 0 for older ckpts.
+        _ckpt_path = os.path.join(cfg.output_dir, "checkpoint.pth.tar")
+        try:
+            _ckpt = torch.load(_ckpt_path, map_location="cpu", weights_only=False)
+            global_step = int(_ckpt.get("global_step", 0))
+            del _ckpt
+        except Exception:
+            global_step = 0
         if is_main:
             os.system(
                 f"cp {os.path.join(cfg.output_dir, 'checkpoint.pth.tar')} "
                 f"{os.path.join(cfg.output_dir, f'checkpoint_{start_epoch}.pth.tar')}"
             )
-            logger.info(f"model trained for {start_epoch} epochs")
+            logger.info(f"model trained for {start_epoch} epochs (global_step={global_step})")
         if cfg.resume_epoch is not None:
             if is_main:
                 logger.info(
@@ -277,6 +344,7 @@ def main(cfg: DictConfig) -> None:
         range(start_epoch, start_epoch + cfg.num_epochs),
         desc="Epochs", disable=not is_main,
     )
+    ckpt_saver = AsyncCheckpointSaver() if is_main else None
     for epoch in epochs_iter:
         t0 = time.time()
 
@@ -285,50 +353,57 @@ def main(cfg: DictConfig) -> None:
             loader_train.sampler.set_epoch(epoch)
 
         # train (all ranks)
-        train_metrics = train(
+        train_metrics, global_step = train(
             cfg, loader_train, voxelizer, model, criterion, optimizer,
             metrics_denoise, model_ema,
+            global_step=global_step,
         )
 
-        # val (all ranks — val_cache is identical, metrics auto-sync. Wasteful
-        # but avoids the rank-0-only / sync_dist plumbing for a smoke test.)
+        # val (ALL ranks — torchmetrics auto-syncs at .compute(), so rank-0-only
+        # val deadlocks the all-reduce. Each rank reruns the same val_cache;
+        # wasteful but the deterministic data + cheap per-batch math make this
+        # cost negligible vs the deadlock risk.)
         val_metrics = val(
             cfg, loader_val, voxelizer, model_ema.module, criterion, metrics_denoise,
             val_cache=val_cache,
         )
 
-        # sample (rank 0 only — wjs is not parallelized)
-        if is_main and epoch > 0 and (epoch % 50 == 0 or epoch == cfg.num_epochs - 1):
-            sample(cfg, loader_sampling, voxelizer, model_ema.module, epoch)
-
-        # log + save (rank 0)
+        # sample + log + save (rank 0 only — no torchmetrics here, no NCCL.)
         if is_main:
+            if epoch > 0 and (epoch % 100 == 0 or epoch == cfg.num_epochs - 1):
+                sample(cfg, loader_sampling, voxelizer, model_ema.module, epoch)
+
             log_metrics(epoch, train_metrics, val_metrics, time.time() - t0)
             if cfg.wandb:
-                wandb.log({"train": train_metrics, "val": val_metrics})
-            save_checkpoint({
+                try:
+                    wandb.log(
+                        {"train": train_metrics, "val": val_metrics, "epoch": epoch},
+                        step=global_step,
+                    )
+                except Exception as e:
+                    logger.warning(f"wandb.log failed: {e}")
+
+            ckpt_saver.save({
                 "epoch": epoch,
+                "global_step": global_step,
                 "metrics": {"train": train_metrics, "val": val_metrics},
                 "cfg": cfg,
                 "state_dict_ema": model_ema.module.state_dict(),
                 "optimizer": optimizer.state_dict(),
             }, save_dir=cfg.output_dir)
 
-        # Wait for rank 0 to finish save_checkpoint before any rank advances.
-        # Without this, ranks 1..W-1 race past the save into the next
-        # iteration (or, on the last epoch, into _cleanup_ddp), and on the
-        # last epoch destroy_process_group ends up waiting on rank 0 for
-        # potentially minutes of disk I/O. If that exceeds the NCCL watchdog
-        # timeout (default 600s) the watchdog SIGABRTs the ranks — exactly
-        # the T4 hang we saw at 600s post-training.
+        # Sync ranks per epoch. With async checkpoint save, rank 0 reaches
+        # this barrier almost immediately after kicking off the save thread,
+        # so the barrier no longer blocks on disk I/O. The 2-hour NCCL
+        # timeout (see _setup_ddp) is the final safety net.
         if world_size > 1:
-            # device_ids tells NCCL which CUDA device to issue the barrier
-            # collective on; without it the first-ever barrier emits a noisy
-            # "using GPU N to perform barrier as devices used by this
-            # process are currently unknown" W-level warning per rank.
             dist.barrier(device_ids=[local_rank])
 
         torch.cuda.empty_cache()
+
+    # Make sure the final checkpoint is fully on disk before we exit.
+    if is_main and ckpt_saver is not None:
+        ckpt_saver.wait()
 
     # Defense in depth: explicit final barrier so all ranks reach the same
     # point before tearing down the process group.
@@ -346,8 +421,13 @@ def train(
     optimizer: torch.optim,
     metrics: torchmetrics.MetricCollection,
     model_ema: torch.nn,
-) -> dict:
-    """Train one epoch — body identical to train.py.train()."""
+    global_step: int = 0,
+) -> tuple:
+    """Train one epoch. Returns (metrics_dict, new_global_step).
+
+    `global_step` is incremented once per optimizer step so callers can use
+    it as a wandb x-axis that stays monotonic across resumes.
+    """
     metrics.reset()
     model.train()
     train_miou_interval = max(1, int(cfg.get("train_miou_interval", 8)))
@@ -366,6 +446,7 @@ def train(
         optimizer.zero_grad(set_to_none=True)
 
         model_ema.update(_unwrap(model))
+        global_step += 1
 
         metrics.update(
             loss.detach(), pred.detach(), voxels_lig,
@@ -375,7 +456,7 @@ def train(
         if cfg.debug and i == 10:
             break
 
-    return metrics.compute()
+    return metrics.compute(), global_step
 
 
 def val(
@@ -436,11 +517,11 @@ def sample(
     model.eval()
 
     dirname = os.path.join(cfg.output_dir, f"samples_training/{epoch:02d}")
-    makedir(dirname)
 
     for pocket_id, batch in enumerate(loader):
         if pocket_id == cfg.wjs.n_targets:
             break
+        makedir(dirname)  # after the guard — skip empty dirs when n_targets=0
         logger.info(f"| sampling pocket {pocket_id}")
         target_dirname = os.path.join(dirname, f"target_{pocket_id:02d}")
         pocket, ligand_gt = batch["pocket"], batch["ligand"]
@@ -457,6 +538,15 @@ def _val_cache_path(cfg) -> str:
         "pocket_radius": cfg.dset.pocket_radius,
         "dset_name": cfg.dset.dset_name,
         "with_density": bool(cfg.model.get("with_density", False)),
+        # val-set identity — without these a changed val subset would silently
+        # reuse a stale cache (e.g. the old all-zero-density val voxels).
+        # crops_dir is part of that identity: the noise-control run reuses the
+        # same subset_* config but a different crop source, so without it the
+        # noise run would silently load the real-density val cache.
+        "subset_n": cfg.dset.get("subset_n", None),
+        "subset_val_n": cfg.dset.get("subset_val_n", None),
+        "subset_xray_only": bool(cfg.dset.get("subset_xray_only", False)),
+        "crops_dir": cfg.dset.get("crops_dir", ""),
     }
     h = hashlib.md5(json.dumps(key, sort_keys=True).encode()).hexdigest()[:8]
     return os.path.join(cfg.dset.data_dir, f"val_voxels_{h}.pt")

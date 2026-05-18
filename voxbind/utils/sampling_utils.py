@@ -27,7 +27,8 @@ def sample_molecules(
     ligand_gt: dict,
     voxelizer: torch.nn.Module,
     target_dirname: str,
-    cfg: dict
+    cfg: dict,
+    density: torch.Tensor = None,
 ) -> int:
     """
     Sample molecules using a generative model.
@@ -48,6 +49,13 @@ def sample_molecules(
     ligands_gt_vox = voxelizer.forward(ligands_gt, num_channels=7)
     pockets_vox = voxelizer.forward(pockets, num_channels=4)
 
+    # X-ray density map (optional) -> (1, 1, G, G, G) on the voxel device
+    density_vox = None
+    if density is not None:
+        density_vox = density.to(pockets_vox.device).float()
+        if density_vox.dim() == 4:
+            density_vox = density_vox.unsqueeze(1)
+
     n_valid_mol, n_mol = 0, 0
     rdkmols, list_smiles = [], []
     while n_valid_mol < cfg.wjs.n_samples_per_pocket and n_mol < 500:
@@ -61,6 +69,7 @@ def sample_molecules(
             chain_init=cfg.wjs.chain_init,
             mask_pocket=cfg.wjs.mask_pocket > 0,
             n_chains=cfg.wjs.n_samples_per_pocket,
+            density=density_vox,
         )
         mols = voxelizer.vox2mol(gen_vox_mols, center_coords=pocket["center_coords"])
 

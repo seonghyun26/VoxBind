@@ -78,7 +78,8 @@ def load_checkpoint(
     model: torch.nn.Module,
     pretrained_path: str,
     optimizer: torch.optim.Optimizer = None,
-    best_model: bool = True
+    best_model: bool = True,
+    map_location=None,
 ):
     """Load a model checkpoint.
 
@@ -87,6 +88,10 @@ def load_checkpoint(
         pretrained_path (str): The path to the pretrained experiment.
         optimizer (torch.optim.Optimizer, optional): The optimizer. Defaults to None.
         best_model (bool, optional): Whether to load the best model checkpoint. Defaults to True.
+        map_location: Forwarded to torch.load. In DDP, pass the rank's device
+            (or "cpu") so checkpoint tensors don't get materialised on
+            cuda:0 of every rank — that's what creates the ~250 MB ghost
+            CUDA contexts on physical GPU 4 when CUDA_VISIBLE_DEVICES=4-7.
 
     Returns:
         model (torch.nn.Module): The model with pretrained weights loaded.
@@ -94,7 +99,11 @@ def load_checkpoint(
         epoch (int): The epoch number from the checkpoint.
     """
     chck_name = "best_checkpoint.pth.tar" if best_model else "checkpoint.pth.tar"
-    checkpoint = torch.load(os.path.join(pretrained_path, chck_name), weights_only=False)
+    checkpoint = torch.load(
+        os.path.join(pretrained_path, chck_name),
+        weights_only=False,
+        map_location=map_location,
+    )
 
     # little hack to cope with torch.compile and multi-GPU training
     sd = "state_dict_ema" if "state_dict_ema" in checkpoint else "state_dict"
