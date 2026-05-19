@@ -128,21 +128,31 @@ def _delta_str(sample_val, ref_val, prec: int = 2) -> str | None:
     return f"{sample_val - ref_val:+.{prec}f} vs ref"
 
 
-# Per-metric "good direction" for the sample-vs-reference comparison table:
-# +1 higher-is-better, -1 lower-is-better, 0 no preferred direction (uncoloured).
+# Per-metric "good direction" for the Mean-vs-Reference colouring:
+# +1 higher-is-better, -1 lower-is-better, 0 no preferred direction.
 _METRIC_DIR = {
     "QED": 1, "SA": 1, "LogP": 0, "Lipinski": 1, "HAtoms": 0,
     "Vina Score": -1, "Vina Min": -1, "Vina Dock": -1,
 }
+# Display formats for the comparison table's metric columns.
 _TABLE_FMT = {
     "QED": "{:.3f}", "SA": "{:.2f}", "LogP": "{:.2f}",
     "Lipinski": "{:.1f}", "HAtoms": "{:.0f}",
     "Vina Score": "{:.2f}", "Vina Min": "{:.2f}", "Vina Dock": "{:.2f}",
 }
 
+# Comparison-table cell backgrounds, per Streamlit theme. Light values are the
+# original pastels; dark values are muted so light theme text stays readable.
+_COMPARE_PALETTE = {
+    "light": {"ref": "#e6e6e6", "better": "#d6efd9",
+              "worse": "#f6d9da", "equal": "#ededed"},
+    "dark":  {"ref": "#3a3f4b", "better": "#1f4a32",
+              "worse": "#5c2b30", "equal": "#33373f"},
+}
+
 
 def _comparison_df(metrics: dict) -> pd.DataFrame:
-    """Two-row comparison table: the reference ligand and the sample mean.
+    """Comparison table: the reference ligand, the sample mean, then every sample.
 
     One column per metric; the Vina Score / Vina Min / Vina Dock columns
     appear only when docking was run. The Mean row averages each column over
@@ -183,48 +193,53 @@ def _comparison_df(metrics: dict) -> pd.DataFrame:
             if vals:
                 mean_row[c] = sum(vals) / len(vals)
         rows.append(mean_row)
+    rows.extend(sample_rows)
     return pd.DataFrame(rows)
 
 
-def _style_comparison(df: pd.DataFrame) -> pd.DataFrame:
-    """Colour the Mean row green/red vs the Reference row.
+def _theme_is_dark() -> bool:
+    """True when Streamlit's active theme is dark (defaults to light)."""
+    try:
+        return st.context.theme.type == "dark"
+    except Exception:  # noqa: BLE001
+        return False
 
-    The Reference row is shaded; the Mean row is bold.
+
+def _style_comparison(df: pd.DataFrame, palette: dict) -> pd.DataFrame:
+    """Shade the Reference row grey; colour each Mean cell vs the Reference.
+
+    A Mean cell is green when the sample mean beats the reference on that
+    metric, red when worse, grey when equal (or for direction-less metrics).
+    Per-sample rows stay plain so the two summary rows stand out. `palette`
+    holds the theme-specific ref/better/worse/equal background colours.
     """
     css = pd.DataFrame("", index=df.index, columns=df.columns)
     if "Ligand" not in df.columns:
         return css
-    mean_idx = set(df.index[df["Ligand"] == "Mean"])
-    for mi in mean_idx:
-        css.loc[mi, :] = "font-weight: 600"
     ref_hits = df.index[df["Ligand"] == "Reference"]
-    if len(ref_hits) == 0:
-        return css
-    ri = ref_hits[0]
-    css.loc[ri, :] = "background-color: #eef1f7; font-weight: 600"
+    mean_hits = df.index[df["Ligand"] == "Mean"]
+    for ri in ref_hits:
+        css.loc[ri, :] = f"background-color: {palette['ref']}; font-weight: 600"
     numeric = (int, float, np.number)
-    for col in df.columns:
-        direction = _METRIC_DIR.get(col, 0)
-        if direction == 0:
-            continue
-        rv = df.at[ri, col]
-        if not isinstance(rv, numeric) or pd.isna(rv):
-            continue
-        for idx in df.index:
-            if idx == ri:
+    have_ref = len(ref_hits) > 0
+    for mi in mean_hits:
+        css.loc[mi, :] = "font-weight: 600"
+        for col in df.columns:
+            if col == "Ligand":
                 continue
-            v = df.at[idx, col]
-            if not isinstance(v, numeric) or pd.isna(v):
-                continue
-            diff = (v - rv) * direction
-            if diff > 0:
-                color = "#d6efd9"
-            elif diff < 0:
-                color = "#f6d9da"
+            direction = _METRIC_DIR.get(col, 0)
+            rv = df.at[ref_hits[0], col] if have_ref else None
+            mv = df.at[mi, col]
+            if (not have_ref or direction == 0
+                    or not isinstance(rv, numeric) or pd.isna(rv)
+                    or not isinstance(mv, numeric) or pd.isna(mv)):
+                color = palette["equal"]
             else:
-                continue
-            weight = "; font-weight: 600" if idx in mean_idx else ""
-            css.at[idx, col] = f"background-color: {color}{weight}"
+                diff = (mv - rv) * direction
+                color = (palette["better"] if diff > 0
+                         else palette["worse"] if diff < 0
+                         else palette["equal"])
+            css.at[mi, col] = f"background-color: {color}; font-weight: 600"
     return css
 
 
@@ -679,22 +694,31 @@ else:
                         help=f"{agg['n_valid']} valid / {agg['n_total']} raw")
         scols[1].metric("Uniqueness", _fmt(agg.get("uniqueness")))
         scols[2].metric("Diversity", _fmt(agg.get("diversity")))
+        ha = agg.get("high_affinity")
+        if ha is not None:
+            scols[3].metric(
+                "High Affinity", f"{ha * 100:.1f}%",
+                help=f"{agg.get('high_affinity_n', 0)}/"
+                     f"{agg.get('high_affinity_total', 0)} samples beat the "
+                     "reference Vina Dock score · needs vina_dock",
+            )
 
         # The reference ligand vs the sample mean. A Mean cell is green when
         # the sample mean beats the reference on that metric, red when worse;
         # the shaded row is the reference.
-        st.markdown("##### Reference vs sample mean")
+        st.markdown("##### Reference, mean & per-sample metrics")
         cmp_df = _comparison_df(metrics)
         cmp_fmt = {k: v for k, v in _TABLE_FMT.items() if k in cmp_df.columns}
+        pal = _COMPARE_PALETTE["dark" if _theme_is_dark() else "light"]
         st.dataframe(
-            cmp_df.style.apply(_style_comparison, axis=None)
+            cmp_df.style.apply(_style_comparison, palette=pal, axis=None)
                   .format(cmp_fmt, na_rep="—"),
             width="stretch",
             hide_index=True,
-            height=36 * (len(cmp_df) + 1) + 3,
+            height=min(36 * (len(cmp_df) + 1) + 3, 560),
         )
-        st.caption("green = sample mean beats the reference · red = worse · "
-                   "shaded row = reference ligand")
+        st.caption("grey row = reference ligand · Mean cells: green = beats "
+                   "the reference · red = worse · grey = equal / no direction")
         ref = metrics.get("reference")
         if isinstance(ref, dict) and "error" in ref:
             st.caption(f"⚠ reference ligand not scored — {ref['error']}")

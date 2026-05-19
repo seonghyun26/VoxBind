@@ -227,8 +227,39 @@ def _prepare_receptor(receptor_cached: Path) -> None:
         prot.get_pdbqt(pdbqt)
 
 
-def _aggregate_vina(sample_rows: list[dict]) -> dict:
-    """Mean Vina affinities over samples that docked successfully."""
+def _high_affinity(sample_rows: list[dict], reference: dict | None) -> dict:
+    """High Affinity — share of samples whose Vina Dock score beats the reference.
+
+    A sample is "high affinity" when its Vina Dock affinity is lower (more
+    negative) than the crystal reference ligand's. Returns {} unless both the
+    reference and at least one sample carry a finite `dock` score — i.e. it is
+    only defined when docking ran in `vina_dock` mode.
+    """
+    ref_vina = reference.get("vina") if isinstance(reference, dict) else None
+    ref_dock = ref_vina.get("dock") if isinstance(ref_vina, dict) else None
+    if not isinstance(ref_dock, (int, float)):
+        return {}
+    dock_vals = [
+        s["vina"]["dock"] for s in sample_rows
+        if isinstance(s.get("vina"), dict) and "error" not in s["vina"]
+        and isinstance(s["vina"].get("dock"), (int, float))
+    ]
+    if not dock_vals:
+        return {}
+    n_better = sum(1 for v in dock_vals if v < ref_dock)
+    return {
+        "high_affinity": n_better / len(dock_vals),
+        "high_affinity_n": n_better,
+        "high_affinity_total": len(dock_vals),
+    }
+
+
+def _aggregate_vina(sample_rows: list[dict], reference: dict | None = None) -> dict:
+    """Mean Vina affinities over samples that docked successfully.
+
+    When the reference ligand also has a Vina Dock score, the High Affinity
+    fraction (samples beating the reference) is added too.
+    """
     out: dict = {}
     for src, dst in (("score_only", "vina_score_mean"),
                      ("minimize", "vina_min_mean"),
@@ -246,6 +277,7 @@ def _aggregate_vina(sample_rows: list[dict]) -> dict:
     )
     out["vina_n_docked"] = n_ok
     out["vina_n_failed"] = len(sample_rows) - n_ok
+    out.update(_high_affinity(sample_rows, reference))
     return out
 
 
@@ -407,7 +439,7 @@ def compute_target_metrics(
             "lipinski_mean": float(np.mean([s["lipinski"] for s in sample_rows])),
         }
         if dock_on:
-            aggregates.update(_aggregate_vina(sample_rows))
+            aggregates.update(_aggregate_vina(sample_rows, reference))
     else:
         aggregates = {
             "n_total": n_raw,
@@ -468,8 +500,22 @@ def compute_reference(
             ref_mol, receptor_cached, mode=docking,
             exhaustiveness=exhaustiveness, tmp_dir=cache_dir, cpu=cpu,
         )
+    elif reference is not None:
+        # Chem-only recompute (docking="none"): preserve any docking the
+        # previous reference had, so High Affinity — measured against the
+        # reference's Vina Dock score — is not silently dropped.
+        prev = data.get("reference")
+        if isinstance(prev, dict) and isinstance(prev.get("vina"), dict):
+            reference["vina"] = prev["vina"]
 
     data["reference"] = reference
+    # High Affinity is measured against the reference's Vina Dock score, which
+    # may have just changed — recompute it so the cached aggregates stay valid.
+    agg = data.get("aggregates")
+    if isinstance(agg, dict):
+        for k in ("high_affinity", "high_affinity_n", "high_affinity_total"):
+            agg.pop(k, None)
+        agg.update(_high_affinity(data.get("samples", []), reference))
     mp.write_text(
         json.dumps(_sanitize_for_json(data), indent=2, allow_nan=False)
     )
@@ -566,6 +612,9 @@ def _cli() -> None:
                     if isinstance(vs, (int, float)) else "  vina: n/a")
             if agg.get("vina_n_failed"):
                 msg += f" ({agg['vina_n_failed']} failed)"
+            hf = agg.get("high_affinity")
+            if isinstance(hf, (int, float)):
+                msg += f"  HF={hf * 100:.1f}%"
             ref_vina = (data.get("reference") or {}).get("vina")
             if isinstance(ref_vina, dict) and isinstance(
                     ref_vina.get("score_only"), (int, float)):
