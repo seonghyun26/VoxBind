@@ -250,77 +250,83 @@ def _mol_to_pil(mol: Chem.Mol, size: tuple[int, int] = (380, 300)) -> Image.Imag
     return Image.open(BytesIO(drawer.GetDrawingText()))
 
 
-def _run_target_eval(target: Path, docking: str = "none", exhaustiveness: int = 8):
-    pdb = find_pocket_pdb(target)
-    if pdb is None:
-        st.error(f"No pocket PDB in {target.name}; cannot evaluate.")
-        return
-    coords, elems = parse_pocket_pdb(pdb)
-    label = "metrics" if docking == "none" else f"metrics + {docking}"
-    with st.spinner(f"Computing {label} for {target.name}…"):
-        compute_target_metrics(target, coords, elems,
-                               docking=docking, receptor_pdb=pdb,
-                               exhaustiveness=exhaustiveness)
-    st.cache_data.clear()
-    st.rerun()
+@st.dialog("Computing metrics…")
+def _progress_dialog(kind: str, args: tuple) -> None:
+    """Run a (re)compute inside a modal so the page dims behind a live bar.
 
+    Streamlit dims the whole page whenever a dialog is open. The compute runs
+    here synchronously; its progress callback streams per-molecule updates into
+    the bar, and the dialog closes via st.rerun() once the compute finishes.
 
-def _run_reference_eval(target: Path, docking: str = "none",
-                        exhaustiveness: int = 8) -> None:
-    """Recompute only the reference-ligand row of an existing metrics.json."""
-    pdb = find_pocket_pdb(target)
-    label = "reference ligand" if docking == "none" else f"reference + {docking}"
-    try:
-        with st.spinner(f"Computing {label} for {target.name}…"):
-            compute_reference(target, docking=docking, receptor_pdb=pdb,
-                              exhaustiveness=exhaustiveness)
-    except Exception as e:  # noqa: BLE001
-        st.sidebar.error(f"Reference compute failed — {e}")
-        return
-    st.cache_data.clear()
-    st.rerun()
+    `kind` is one of "target" | "ref" | "all" | "all_ref"; `args` is the tuple
+    stashed in session_state by the triggering button / confirm dialog.
+    """
+    st.caption("Working — this window closes when the compute finishes.")
 
+    if kind in ("target", "ref"):
+        target, docking, exh = args
+        st.markdown(f"##### {target.name}")
+        bar = st.progress(0.0, text="Starting…")
 
-def _compute_all_targets(targets: list[Path], docking: str,
-                         exhaustiveness: int) -> None:
-    """Compute metrics.json for every target, with an inline progress bar."""
-    pbar = st.progress(0.0, text="Starting…")
-    for i, t in enumerate(targets):
-        pdb = find_pocket_pdb(t)
-        if (t / "samples.sdf").exists() and pdb is not None:
-            coords, elems = parse_pocket_pdb(pdb)
+        def _cb(done: int, total: int, label: str) -> None:
+            frac = done / total if total else 1.0
+            bar.progress(min(frac, 1.0), text=f"{label} — {done}/{total}")
+
+        pdb = find_pocket_pdb(target)
+        try:
+            if kind == "target":
+                if pdb is None:
+                    st.error(f"No pocket PDB in {target.name}; cannot evaluate.")
+                    return
+                coords, elems = parse_pocket_pdb(pdb)
+                compute_target_metrics(target, coords, elems, docking=docking,
+                                       receptor_pdb=pdb, exhaustiveness=exh,
+                                       progress_cb=_cb)
+            else:  # "ref"
+                compute_reference(target, docking=docking, receptor_pdb=pdb,
+                                  exhaustiveness=exh, progress_cb=_cb)
+        except Exception as e:  # noqa: BLE001
+            st.error(f"Compute failed — {e}")
+            return
+    else:  # "all" | "all_ref" — batch over every target
+        targets, docking, exh = args
+        if kind == "all_ref":
+            # compute_reference merges into an existing metrics.json, so
+            # targets without one are skipped (run a target compute first).
+            eligible = [t for t in targets if metrics_path(t).exists()]
+            empty_msg = ("No targets have a metrics.json yet — run a target "
+                         "compute first.")
+        else:
+            eligible = [t for t in targets
+                        if (t / "samples.sdf").exists()
+                        and find_pocket_pdb(t) is not None]
+            empty_msg = "No targets have both samples.sdf and a pocket PDB."
+        if not eligible:
+            st.warning(empty_msg)
+            return
+
+        outer = st.progress(0.0, text=f"0/{len(eligible)} targets")
+        inner = st.progress(0.0, text="Starting…")
+        for i, t in enumerate(eligible):
+            def _cb(done: int, total: int, label: str, _t: Path = t) -> None:
+                frac = done / total if total else 1.0
+                inner.progress(min(frac, 1.0),
+                               text=f"{_t.name}: {label} — {done}/{total}")
+            pdb = find_pocket_pdb(t)
             try:
-                compute_target_metrics(t, coords, elems, docking=docking,
-                                       receptor_pdb=pdb,
-                                       exhaustiveness=exhaustiveness)
+                if kind == "all":
+                    coords, elems = parse_pocket_pdb(pdb)
+                    compute_target_metrics(t, coords, elems, docking=docking,
+                                           receptor_pdb=pdb, exhaustiveness=exh,
+                                           progress_cb=_cb)
+                else:  # "all_ref"
+                    compute_reference(t, docking=docking, receptor_pdb=pdb,
+                                      exhaustiveness=exh, progress_cb=_cb)
             except Exception as e:  # noqa: BLE001
                 st.warning(f"{t.name}: {e}")
-        pbar.progress((i + 1) / len(targets), text=f"{i + 1}/{len(targets)}")
-    st.cache_data.clear()
-    st.rerun()
+            outer.progress((i + 1) / len(eligible),
+                           text=f"{i + 1}/{len(eligible)} targets")
 
-
-def _compute_all_references(targets: list[Path], docking: str,
-                            exhaustiveness: int) -> None:
-    """Recompute the reference-ligand row for every target with a metrics.json.
-
-    Targets without a metrics.json are skipped — compute_reference needs an
-    existing one to merge into (run a target compute first).
-    """
-    eligible = [t for t in targets if metrics_path(t).exists()]
-    if not eligible:
-        st.warning("No targets have a metrics.json yet — run a target "
-                   "compute first.")
-        return
-    pbar = st.progress(0.0, text="Starting…")
-    for i, t in enumerate(eligible):
-        pdb = find_pocket_pdb(t)
-        try:
-            compute_reference(t, docking=docking, receptor_pdb=pdb,
-                              exhaustiveness=exhaustiveness)
-        except Exception as e:  # noqa: BLE001
-            st.warning(f"{t.name}: {e}")
-        pbar.progress((i + 1) / len(eligible), text=f"{i + 1}/{len(eligible)}")
     st.cache_data.clear()
     st.rerun()
 
@@ -330,8 +336,8 @@ def _confirm_target_eval(target: Path, docking: str,
                          exhaustiveness: int) -> None:
     """Confirm before overwriting a target's existing metrics.json.
 
-    Confirming stashes the request and reruns, so the compute runs in the main
-    page flow — its spinner shows out in the page, not inside this modal.
+    Confirming stashes the request and reruns; the compute then runs in
+    `_progress_dialog` — a modal that dims the page behind a live bar.
     """
     st.warning(f"`{target.name}` already has cached metrics — recomputing "
                "overwrites its `metrics.json`.")
@@ -351,8 +357,8 @@ def _confirm_all_eval(targets: list[Path], docking: str,
                       exhaustiveness: int) -> None:
     """Confirm before a batch compute that would overwrite cached metrics.
 
-    Confirming stashes the request and reruns, so the progress bar shows out in
-    the main page rather than inside this modal.
+    Confirming stashes the request and reruns; the batch then runs in
+    `_progress_dialog` — a modal that dims the page behind a live bar.
     """
     n_cached = sum(1 for t in targets if metrics_path(t).exists())
     st.warning(f"This computes metrics for all {len(targets)} targets — "
@@ -478,15 +484,21 @@ if st.sidebar.button("Compute metrics for all targets", width="stretch"):
     if any(metrics_path(t).exists() for t in targets):
         _confirm_all_eval(targets, docking_mode, docking_exh)
     else:
-        _compute_all_targets(targets, docking_mode, docking_exh)
+        st.session_state["_pending_compute"] = (
+            "all", (targets, docking_mode, docking_exh))
+        st.rerun()
 if st.sidebar.button(f"Compute metrics for {target.name}", width="stretch"):
     if metrics_path(target).exists():
         _confirm_target_eval(target, docking_mode, docking_exh)
     else:
-        _run_target_eval(target, docking_mode, docking_exh)
+        st.session_state["_pending_compute"] = (
+            "target", (target, docking_mode, docking_exh))
+        st.rerun()
 if st.sidebar.button("Compute reference ligand", width="stretch"):
     if metrics_path(target).exists():
-        _run_reference_eval(target, docking_mode, docking_exh)
+        st.session_state["_pending_compute"] = (
+            "ref", (target, docking_mode, docking_exh))
+        st.rerun()
     else:
         st.sidebar.warning("Run a target compute first — the reference "
                            "is stored in its metrics.json.")
@@ -507,17 +519,12 @@ gt_sdf = find_gt_sdf(target)
 
 st.title(f"{exp.name} · {target.name}")
 
-# A (re)compute confirmed in a dialog runs here, in the main page flow, so its
-# spinner / progress bar shows out in the page instead of inside the modal.
+# A compute request — from a sidebar button or a confirm dialog — is stashed
+# in session_state and runs here on the next rerun, inside `_progress_dialog`:
+# a modal that dims the page while a live bar tracks scoring / docking.
 _pending = st.session_state.pop("_pending_compute", None)
 if _pending is not None:
-    _kind, _args = _pending
-    if _kind == "target":
-        _run_target_eval(*_args)
-    elif _kind == "all":
-        _compute_all_targets(*_args)
-    elif _kind == "all_ref":
-        _compute_all_references(*_args)
+    _progress_dialog(*_pending)
 
 if pocket_pdb is None:
     st.error("No `*_pocket10.pdb` in this target directory.")

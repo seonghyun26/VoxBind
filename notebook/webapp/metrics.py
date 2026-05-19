@@ -24,7 +24,8 @@ import os
 import shutil
 import sys
 import time
-from concurrent.futures import ProcessPoolExecutor
+from collections.abc import Callable
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from copy import deepcopy
 from datetime import datetime
 from functools import partial
@@ -48,6 +49,10 @@ METRICS_VERSION = 2
 # vina_min   -> + score_only & minimize  (local optimisation; no pose search)
 # vina_dock  -> + score_only, minimize & full re-docking — all three paper scores
 DOCKING_MODES = ("none", "vina_score", "vina_min", "vina_dock")
+
+# An optional progress callback: progress_cb(done, total, stage_label). Called
+# during the chemical-scoring and docking phases so a UI can show a live bar.
+ProgressCb = Callable[[int, int, str], None]
 
 
 def metrics_path(target_dir: Path) -> Path:
@@ -318,6 +323,7 @@ def compute_target_metrics(
     exhaustiveness: int = 8,
     cpu: int = 8,
     workers: int | None = None,
+    progress_cb: ProgressCb | None = None,
 ) -> dict:
     """Score every valid sample under `target_dir` and write metrics.json.
 
@@ -332,6 +338,9 @@ def compute_target_metrics(
 
     The crystal reference ligand is scored the same way under the top-level
     `reference` key — a baseline to read the generated samples against.
+
+    progress_cb: optional progress_cb(done, total, stage_label) — called once
+                 per molecule for the chemical-scoring and docking phases.
     """
     sdf = target_dir / "samples.sdf"
     if not sdf.exists():
@@ -362,7 +371,9 @@ def compute_target_metrics(
     # ── chemical metrics — cheap, computed serially ──────────────────────────
     valid_mols: list[Chem.Mol] = []
     sample_rows: list[dict] = []
-    for m in Chem.SDMolSupplier(str(sdf), sanitize=True):
+    for i, m in enumerate(Chem.SDMolSupplier(str(sdf), sanitize=True)):
+        if progress_cb is not None:
+            progress_cb(i + 1, n_raw, "Scoring molecules")
         if m is None:
             continue
         try:
@@ -414,11 +425,26 @@ def compute_target_metrics(
                 run_vina_docking, receptor_pdb=receptor_cached, mode=docking,
                 exhaustiveness=exhaustiveness, tmp_dir=cache_dir, cpu=cpu,
             )
+            n_dock = len(dock_mols)
+            vina_results: list = [None] * n_dock
+            if progress_cb is not None:
+                progress_cb(0, n_dock, "Docking molecules")
             if n_workers <= 1:
-                vina_results = [dock_one(m) for m in dock_mols]
+                for i, m in enumerate(dock_mols):
+                    vina_results[i] = dock_one(m)
+                    if progress_cb is not None:
+                        progress_cb(i + 1, n_dock, "Docking molecules")
             else:
+                # submit + as_completed (not pool.map) so the progress bar
+                # advances as each dock finishes; futs maps each future back
+                # to its slot, keeping vina_results in submission order.
                 with ProcessPoolExecutor(max_workers=n_workers) as pool:
-                    vina_results = list(pool.map(dock_one, dock_mols))
+                    futs = {pool.submit(dock_one, m): i
+                            for i, m in enumerate(dock_mols)}
+                    for done, fut in enumerate(as_completed(futs), 1):
+                        vina_results[futs[fut]] = fut.result()
+                        if progress_cb is not None:
+                            progress_cb(done, n_dock, "Docking molecules")
             for row, res in zip(sample_rows, vina_results):
                 row["vina"] = res
             if ref_mol is not None:
@@ -467,12 +493,16 @@ def compute_reference(
     receptor_pdb: Path | None = None,
     exhaustiveness: int = 8,
     cpu: int = 8,
+    progress_cb: ProgressCb | None = None,
 ) -> dict:
     """(Re)compute only the reference-ligand row and merge it into metrics.json.
 
     A fast, samples-untouched update — get the reference baseline (or its Vina
     docking) without re-scoring every generated sample. Requires an existing
     metrics.json, i.e. compute_target_metrics must have been run first.
+
+    progress_cb: optional progress_cb(done, total, stage_label), called around
+                 the single reference dock so a UI can show a live bar.
     """
     mp = metrics_path(target_dir)
     if not mp.exists():
@@ -496,10 +526,14 @@ def compute_reference(
         receptor_cached = cache_dir / Path(receptor_pdb).name
         if not receptor_cached.exists():
             shutil.copy(receptor_pdb, receptor_cached)
+        if progress_cb is not None:
+            progress_cb(0, 1, "Docking reference")
         reference["vina"] = run_vina_docking(
             ref_mol, receptor_cached, mode=docking,
             exhaustiveness=exhaustiveness, tmp_dir=cache_dir, cpu=cpu,
         )
+        if progress_cb is not None:
+            progress_cb(1, 1, "Docking reference")
     elif reference is not None:
         # Chem-only recompute (docking="none"): preserve any docking the
         # previous reference had, so High Affinity — measured against the
