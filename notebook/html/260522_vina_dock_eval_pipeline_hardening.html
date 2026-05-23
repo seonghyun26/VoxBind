@@ -1,0 +1,702 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>VoxBind Vina dock-eval pipeline hardening — 2026-05-22</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      max-width: 1080px;
+      margin: 2rem auto;
+      padding: 0 1.5rem 4rem;
+      color: #222;
+      background: #fafbfc;
+      line-height: 1.6;
+    }
+    h1 { border-bottom: 3px solid #2c5282; padding-bottom: 0.3rem; margin-bottom: 0.2rem; }
+    h2 { color: #2c5282; margin-top: 2.6rem; border-bottom: 1px solid #ddd; padding-bottom: 0.25rem; }
+    h3 { color: #4a4a4a; margin-top: 1.8rem; }
+    h4 { color: #4a4a4a; margin-top: 1.2rem; margin-bottom: 0.4rem; font-size: 1.02em; }
+    .subtitle { color: #6a737d; font-size: 1.05em; margin-top: 0.2rem; }
+    .meta { color: #6a737d; font-size: 0.9em; }
+    code, pre {
+      font-family: "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    }
+    pre {
+      background: #2d3748;
+      color: #e2e8f0;
+      padding: 0.9rem 1.05rem;
+      border-radius: 6px;
+      overflow-x: auto;
+      font-size: 0.85em;
+      line-height: 1.5;
+    }
+    code:not(pre code) {
+      background: #edf2f7;
+      color: #2d3748;
+      padding: 0.1em 0.4em;
+      border-radius: 3px;
+      font-size: 0.9em;
+    }
+    pre code { background: transparent; padding: 0; color: inherit; }
+    table {
+      border-collapse: collapse;
+      margin: 1rem 0;
+      width: 100%;
+      font-size: 0.94em;
+    }
+    th, td { padding: 0.5rem 0.7rem; border: 1px solid #d1d5da; text-align: left; }
+    th { background: #f6f8fa; font-weight: 600; }
+    tr:nth-child(even) td { background: #fafbfc; }
+    .num { font-variant-numeric: tabular-nums; text-align: right; font-family: "SF Mono", monospace; font-size: 0.96em; }
+    .ok    { color: #22863a; font-weight: 600; }
+    .fail  { color: #cb2431; font-weight: 600; }
+    .warn  { color: #b08800; font-weight: 600; }
+    blockquote {
+      border-left: 4px solid #2c5282;
+      padding: 0.6em 0.2em 0.6em 1em;
+      background: #f6f8fa;
+      color: #444;
+      margin: 1rem 0;
+      border-radius: 0 4px 4px 0;
+    }
+    .callout {
+      background: #fff8db;
+      border-left: 4px solid #d4a017;
+      padding: 0.8em 1em;
+      border-radius: 0 4px 4px 0;
+      margin: 1em 0;
+    }
+    .callout-ok {
+      background: #e7f7ec;
+      border-left: 4px solid #1e6b3a;
+      padding: 0.8em 1em;
+      border-radius: 0 4px 4px 0;
+      margin: 1em 0;
+    }
+    .badge {
+      display: inline-block;
+      padding: 0.1em 0.55em;
+      border-radius: 4px;
+      font-size: 0.83em;
+      font-weight: 600;
+      vertical-align: middle;
+      margin-left: 0.3em;
+    }
+    .badge-ok    { background: #d4f4dd; color: #1e6b3a; }
+    .badge-fail  { background: #fed7d7; color: #9b2c2c; }
+    .badge-warn  { background: #fef5cf; color: #806600; }
+    .file {
+      color: #6f42c1;
+      font-family: "SF Mono", monospace;
+      font-size: 0.92em;
+      background: #f6f5ff;
+      padding: 0.05em 0.35em;
+      border-radius: 3px;
+    }
+    hr { border: none; border-top: 1px solid #e1e4e8; margin: 2.5rem 0; }
+    figure {
+      margin: 1.5rem 0;
+      background: #ffffff;
+      border: 1px solid #d1d5da;
+      border-radius: 6px;
+      padding: 1rem;
+    }
+    figcaption { color: #6a737d; font-size: 0.9em; margin-top: 0.5em; text-align: center; }
+    .arrow { color: #cb2431; font-weight: 700; }
+    .stage { color: #2c5282; font-weight: 600; }
+    .toc {
+      background: #f6f8fa;
+      border: 1px solid #d1d5da;
+      padding: 0.8em 1.2em;
+      border-radius: 6px;
+      margin: 1rem 0 2rem;
+    }
+    .toc ol { margin: 0.3em 0; padding-left: 1.5em; }
+    .toc li { margin: 0.15em 0; }
+    .toc a { color: #2c5282; text-decoration: none; }
+    .toc a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+
+<h1>Vina dock-eval pipeline hardening</h1>
+<p class="subtitle">From silent <code>AttributeError</code> to fully-traced <code>metrics.json</code>, with a multi-chain pocket fallback</p>
+<p class="meta">2026-05-22 · author: hyun · scope: <span class="file">notebook/webapp/metrics.py</span>, <span class="file">notebook/00_dashboard.ipynb</span>, <span class="file">notebook/webapp/app.py</span></p>
+
+<div class="toc">
+<strong>Contents</strong>
+<ol>
+  <li><a href="#tldr">TL;DR</a></li>
+  <li><a href="#context">Context: the 4-way 10k test A/B</a></li>
+  <li><a href="#failure-chain">The failure chain we untangled</a></li>
+  <li><a href="#fix1-path">Fix 1 — PATH always-prepend (<code>_heal_path</code>)</a></li>
+  <li><a href="#fix2-record">Fix 2 — Record the cause in <code>metrics.json</code></a></li>
+  <li><a href="#fix3-worker">Fix 3 — Worker-crash resilience</a></li>
+  <li><a href="#target71">target_71 deep dive: multi-chain pocket</a></li>
+  <li><a href="#fix4-multichain">Fix 4 — Multi-chain prep fallback</a></li>
+  <li><a href="#ux">Dashboard &amp; webapp surfacing</a></li>
+  <li><a href="#final">Final 4-way A/B numbers</a></li>
+  <li><a href="#followups">Open follow-ups</a></li>
+  <li><a href="#refs">Code reference</a></li>
+</ol>
+</div>
+
+<h2 id="tldr">1. TL;DR</h2>
+
+<p>
+A 4-way 10k-test-split A/B (density / noise / baseline / aligned-density) surfaced four interacting bugs in the Vina dock-eval pipeline. All four are now fixed; the test split is fully evaluated (92/92 baseline + 50/50 aligned-density, zero outstanding <code>vina.error</code> entries), and <code>metrics.json</code> now records the actual cause of any future prep failure — no more silent <code>AttributeError</code> chains.
+</p>
+
+<table>
+<thead><tr><th>#</th><th>Bug</th><th>Root cause</th><th>Fix</th><th>Status</th></tr></thead>
+<tbody>
+  <tr>
+    <td>1</td>
+    <td>13 baseline targets failed with <code>AttributeError: 'PrepProt' object has no attribute 'prot_pqr'</code></td>
+    <td>Bare <code>python3</code> resolved to <code>/compuworks/anaconda3/bin/python3</code> (no MolKit) → <code>prepare_receptor4.py</code> silently failed → no <code>.pdbqt</code>, then a downstream crash</td>
+    <td><code>_heal_path</code> always <em>prepends</em> the conda-env bin to PATH (the old &ldquo;is it on PATH at all?&rdquo; test wasn&rsquo;t enough)</td>
+    <td><span class="badge badge-ok">fixed</span></td>
+  </tr>
+  <tr>
+    <td>2</td>
+    <td>Per-sample <code>vina.error</code> showed only the <em>downstream</em> symptom (&ldquo;<code>pocket10.pdbqt does not exist</code>&rdquo;)</td>
+    <td><code>PrepProt</code> shells out to <code>pdb2pqr30</code> / <code>prepare_receptor4.py</code> with <code>stderr=DEVNULL</code> and doesn&rsquo;t check the return code</td>
+    <td><code>_prepare_receptor</code> now invokes the prep tools directly, captures stderr, validates outputs, raises informative <code>RuntimeError</code>; <code>metrics.json</code> gains a top-level <code>receptor_prep</code> field with the upstream cause and a <code>.prep.log</code> hint</td>
+    <td><span class="badge badge-ok">fixed</span></td>
+  </tr>
+  <tr>
+    <td>3</td>
+    <td>A single bad sample could abort the whole target — webapp showed only a generic failure, <code>metrics.json</code> never got written</td>
+    <td><code>ProcessPoolExecutor</code> &rarr; <code>fut.result()</code> re-raises on worker death (segfault, OOM, <code>BrokenProcessPool</code>) and the surrounding loop wasn&rsquo;t guarded</td>
+    <td>Wrapped <code>fut.result()</code> in <code>try/except</code>; a worker crash becomes a per-sample <code>vina.error</code>, the rest of the target completes, smart-cache retries the bad sample on next run</td>
+    <td><span class="badge badge-ok">fixed</span></td>
+  </tr>
+  <tr>
+    <td>4</td>
+    <td>target_71 (TIAM1 / 4gvd) failed even with all of the above</td>
+    <td>Pocket spans two non-contiguous chains (chain A + a renamed peptide) — <code>pdb2pqr30</code>&rsquo;s <code>set_reference_distance()</code> finds a &ldquo;gap in biomolecule structure&rdquo; and refuses to write the <code>.pqr</code></td>
+    <td>Detect the gap error and fall back to <code>prepare_receptor4.py</code> directly on the <code>.pdb</code> (Gasteiger charges, all atoms preserved). A <code>.multichain_fallback</code> marker file + <code>receptor_prep.fallback</code> field flag the charge-model difference to the reader</td>
+    <td><span class="badge badge-ok">fixed</span></td>
+  </tr>
+</tbody>
+</table>
+
+<div class="callout-ok">
+<strong>Bottom line.</strong> Before: 13/82 baseline targets silently failed; the <code>metrics.json</code> only showed downstream symptoms; one specific pocket couldn&rsquo;t be evaluated at all. After: 92/92 baseline + 50/50 aligned-ep138 docked, every failure mode has an explicit cause in <code>metrics.json</code>, and the dashboard/webapp distinguish &ldquo;not yet docked&rdquo; from &ldquo;docked and failed.&rdquo; The original benchmark PDB / SDF files were not modified.
+</div>
+
+<h2 id="context">2. Context: the 4-way 10k test A/B</h2>
+
+<p>
+The investigation started while completing the 3-way 10k-test-split A/B for the X-ray density experiment. Four arms had sampled (or partially sampled) the 100-pocket test split:
+</p>
+
+<ul>
+  <li><code>260518_voxbind_10k_density</code> (misaligned density, 65 pockets)</li>
+  <li><code>260518_voxbind_10k_noise</code> (smoothed-Gaussian-noise control, 62 pockets)</li>
+  <li><code>260518_voxbind_10k_baseline</code> (no density, 92 pockets)</li>
+  <li><code>260519_voxbind_10k_density_aligned</code> (alignment-corrected density, ep138, 50 pockets after the 8 + 42 expansion)</li>
+</ul>
+
+<p>
+Two metrics.py batches dock&shy;-evaluated the four arms in waves. The first wave landed most targets cleanly. The second wave &mdash; an explicit <code>nohup</code> run from a shell where <code>conda activate voxbind</code> wasn&rsquo;t in effect &mdash; produced an alarming pattern: <strong>every dock errored instantly (~0.6&ndash;0.9 s/target) with the same exception:</strong>
+</p>
+
+<pre><code>AttributeError: 'PrepProt' object has no attribute 'prot_pqr'</code></pre>
+
+<p>
+That symptom led us down the failure chain.
+</p>
+
+<h2 id="failure-chain">3. The failure chain we untangled</h2>
+
+<p>
+<code>VinaDockingTask.run()</code> in TargetDiff&rsquo;s <span class="file">utils/evaluation/docking_vina.py</span> looks like this:
+</p>
+
+<pre><code>prot = PrepProt(self.receptor_path)
+if not os.path.exists(protein_pqr):
+    prot.addH(protein_pqr)            # also sets self.prot_pqr
+if not os.path.exists(protein_pdbqt):
+    prot.get_pdbqt(protein_pdbqt)     # reads self.prot_pqr</code></pre>
+
+<p>
+<code>PrepProt.addH</code> sets <code>self.prot_pqr</code> <em>before</em> shelling out to <code>pdb2pqr30</code>. <code>PrepProt.get_pdbqt</code> reads <code>self.prot_pqr</code> to invoke <code>prepare_receptor4.py</code>. If <code>addH</code> is <em>skipped</em> (because <code>.pqr</code> already exists on disk) but the freshly-created <code>PrepProt</code> object doesn&rsquo;t have <code>prot_pqr</code> set explicitly, <code>get_pdbqt</code> hits the <code>AttributeError</code>.
+</p>
+
+<p>So the <em>visible</em> exception is the downstream symptom. The actual chain is:</p>
+
+<ol>
+  <li>An earlier prep attempt created the <code>.pqr</code> but silently failed to write the <code>.pdbqt</code> (its subprocess&rsquo; stderr was discarded and its return code was ignored).</li>
+  <li>The next call starts a fresh <code>PrepProt</code>, sees the orphan <code>.pqr</code>, skips <code>addH</code>, never sets <code>prot_pqr</code>, then crashes inside <code>get_pdbqt</code>.</li>
+</ol>
+
+<p>
+The <em>real</em> root cause is step 1&rsquo;s silent failure. Tracing it back:
+</p>
+
+<pre><code>def get_pdbqt(self, prot_pdbqt):
+    prepare_receptor = os.path.join(AutoDockTools.__path__[0], 'Utilities24/prepare_receptor4.py')
+    subprocess.Popen(['python3', prepare_receptor, '-r', self.prot_pqr, '-o', prot_pdbqt],
+                     stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL).communicate()</code></pre>
+
+<p>
+The <code>'python3'</code> is a <strong>bare name</strong>. In a shell where <code>/compuworks/anaconda3/bin</code> appears on PATH before <code>/home/shpark/.conda/envs/voxbind/bin</code>, it resolves to the system Anaconda&rsquo;s <code>python3</code>. <em>That</em> interpreter doesn&rsquo;t have <code>MolKit</code> on its <code>sys.path</code>, so <code>prepare_receptor4.py</code> immediately raises:
+</p>
+
+<pre><code>ModuleNotFoundError: No module named 'MolKit'</code></pre>
+
+<p>
+Stderr is discarded, return code is unchecked, no <code>.pdbqt</code> is written. The orphan <code>.pqr</code> sits in the cache until the next run, which then hits the <code>AttributeError</code> at step 2.
+</p>
+
+<h2 id="fix1-path">4. Fix 1 — <code>_heal_path</code> always-prepends</h2>
+
+<p>
+<span class="file">metrics.py</span> already had a <code>_heal_path()</code> helper meant to keep <code>conda</code> binaries reachable from any shell. The old implementation skipped a real fix when the env was already on PATH:
+</p>
+
+<pre><code>def _heal_path():
+    _bin = str(Path(sys.executable).parent)
+    if _bin not in os.environ.get("PATH", "").split(os.pathsep):
+        os.environ["PATH"] = _bin + os.pathsep + os.environ.get("PATH", "")</code></pre>
+
+<p>
+In the failing shell, <code>/home/shpark/.conda/envs/voxbind/bin</code> <em>was</em> on PATH &mdash; just not first. The conditional returned early, the function did nothing, and <code>python3</code> kept resolving to <code>/compuworks/anaconda3/bin/python3</code>.
+</p>
+
+<p>The fix is to <em>always</em> hoist the conda env to the front of PATH:</p>
+
+<pre><code>def _heal_path():
+    _bin = str(Path(sys.executable).parent)
+    parts = [p for p in os.environ.get("PATH", "").split(os.pathsep) if p != _bin]
+    os.environ["PATH"] = os.pathsep.join([_bin, *parts])</code></pre>
+
+<p>Verified before/after:</p>
+
+<pre><code>BEFORE heal: which python3 -&gt; /compuworks/anaconda3/bin/python3   (no MolKit -&gt; silent fail)
+AFTER  heal: which python3 -&gt; /home/shpark/.conda/envs/voxbind/bin/python3   (has MolKit ✓)
+subprocess `python3 -c 'import MolKit'`:  rc=0  stdout=MolKit OK</code></pre>
+
+<p>
+With PATH ordering fixed and the rest of the failure chain resolved (next sections), <strong>81 of 82 newly-evaluated baseline targets dock&rsquo;d cleanly</strong> on the very next run.
+</p>
+
+<h2 id="fix2-record">5. Fix 2 — Record the cause in <code>metrics.json</code></h2>
+
+<p>
+Future prep failures shouldn&rsquo;t require the &ldquo;reverse-engineer a downstream symptom&rdquo; detective work this investigation took. <code>_prepare_receptor</code> was rewritten to invoke the prep tools directly (rather than via <code>PrepProt</code> which silences stderr), capture each subprocess&rsquo; stdout/stderr to a <code>.prep.log</code> next to the cache, validate the output file actually exists, and raise an informative <code>RuntimeError</code>:
+</p>
+
+<pre><code>def _capture(cmd, stage):
+    r = subprocess.run(cmd, capture_output=True, text=True)
+    log_buf.append(f"=== {stage} (rc={r.returncode}) ===\n"
+                   f"$ {' '.join(cmd)}\n"
+                   f"--- stdout ---\n{r.stdout}\n"
+                   f"--- stderr ---\n{r.stderr}\n")
+    return r
+
+def _raise(stage, r):
+    prep_log.write_text("\n".join(log_buf))
+    err_lines = r.stderr.strip().splitlines()
+    informative = [ln for ln in err_lines
+                   if ln and not ln.startswith((" ", "\t", "File ", "Traceback"))]
+    summary = "; ".join(informative[-4:]) if informative \
+        else "\n  ".join(err_lines[-15:])
+    raise RuntimeError(f"{stage} failed for {receptor_cached.name} (rc={r.returncode}). {summary}")</code></pre>
+
+<p>
+<code>compute_target_metrics</code> catches that and writes a top-level <code>receptor_prep</code> field into <code>metrics.json</code>:
+</p>
+
+<pre><code>{
+  "version": 2,
+  "computed_at": "2026-05-21T...",
+  "samples": [ ... ],
+  "aggregates": { ... },
+  "receptor_prep": {
+    "ok": false,
+    "error": "RuntimeError: pdb2pqr30 failed for ...pocket10.pdb (rc=1). ...; ValueError: Biomolecular structure is incomplete: Found gap in biomolecule structure for atom ATOM 182 HG2 GLU 866 ...",
+    "log_hint": ".vina_cache/...pocket10.prep.log"
+  }
+}</code></pre>
+
+<p>
+The reader sees the actual root cause in one glance and a pointer to the full subprocess trace. Crucially, the upstream <code>ValueError: Biomolecular structure is incomplete</code> appears in <code>receptor_prep.error</code> &mdash; not just the misleading downstream <code>pocket10.pdbqt does not exist</code> that lives in every per-sample <code>vina.error</code>.
+</p>
+
+<h2 id="fix3-worker">6. Fix 3 — Worker-crash resilience</h2>
+
+<p>
+The parallel docking path used <code>ProcessPoolExecutor</code> with <code>as_completed</code>:
+</p>
+
+<pre><code>with ProcessPoolExecutor(max_workers=n_workers) as pool:
+    futs = {pool.submit(dock_one, m): slot for slot, m in needed}
+    for done, fut in enumerate(as_completed(futs), 1):
+        _place(futs[fut], fut.result())   # &lt;-- re-raises if a worker died</code></pre>
+
+<p>
+<code>run_vina_docking</code> already catches Python exceptions inside the worker and returns <code>{"error": ...}</code>, but a hard worker death (segfault, OOM-kill, <code>BrokenProcessPool</code>, signal) bypasses that and <code>fut.result()</code> re-raises. The exception propagated out of <code>compute_target_metrics</code>, the whole target aborted, and the webapp showed only a generic failure with no <code>metrics.json</code> on disk.
+</p>
+
+<p>The patched loop now records the worker crash as a per-sample error and keeps going:</p>
+
+<pre><code>with ProcessPoolExecutor(max_workers=n_workers) as pool:
+    futs = {pool.submit(dock_one, m): slot for slot, m in needed}
+    for done, fut in enumerate(as_completed(futs), 1):
+        slot = futs[fut]
+        try:
+            result = fut.result()
+        except Exception as e:
+            result = {"error": f"worker crashed: {type(e).__name__}: {e}"}
+        _place(slot, result)</code></pre>
+
+<p>
+The crashed sample shows up in <code>metrics.json["samples"][i]["vina"]["error"]</code>; the next dock-eval run treats it as &ldquo;needs re-dock&rdquo; via the smart-cache (<code>_has_vina_for_mode</code> returns False for an error dict), so retries are automatic.
+</p>
+
+<h2 id="target71">7. target_71 deep dive: a multi-chain pocket</h2>
+
+<p>
+After fixes 1&ndash;3, <strong>81 of 82</strong> newly-evaluated baseline targets came through cleanly. One target stubbornly kept failing &mdash; not with the <code>AttributeError</code> any more, but with a <em>different</em> error that needed its own investigation: <code>target_71</code> (TIAM1, CrossDocked entry <code>TIAM1_HUMAN_840_931_0__4gvd_A_rec_4nxr_ans_lig_tt_min_0</code>, structure 4gvd).
+</p>
+
+<h3>The downstream error and what was actually wrong</h3>
+
+<p>
+Every sample of target_71 had this in its <code>vina</code> dict:
+</p>
+
+<pre><code>RuntimeError: Error: file .../target_71/.vina_cache/...pocket10.pdbqt does not exist.</code></pre>
+
+<p>
+With the new <code>_prepare_receptor</code> capturing stderr, the real cause now appeared in <code>receptor_prep.error</code>:
+</p>
+
+<pre><code>ValueError: Biomolecular structure is incomplete:
+  Found gap in biomolecule structure for atom ATOM 182 HG2 GLU 866</code></pre>
+
+<p>
+<code>pdb2pqr30</code>&rsquo;s <code>set_reference_distance()</code> step adds polar hydrogens to a residue and then expects to find the next residue in the protein backbone within bonding distance. For atom <code>HG2</code> on GLU 866 of chain A, the &ldquo;next&rdquo; residue in the file is a <em>completely different chain</em> at a completely different position &mdash; pdb2pqr30 detects a gap and gives up.
+</p>
+
+<h3>Why the file has two chains</h3>
+
+<p>The <code>_pocket10.pdb</code> file (CrossDocked&rsquo;s 10&Aring;-cut pocket carve) contains residues from <strong>two non-contiguous chains</strong>:</p>
+
+<table>
+<thead><tr><th>chain</th><th>residues</th><th>range</th><th>atoms</th><th>closest atom to ligand</th></tr></thead>
+<tbody>
+  <tr><td class="num">A</td><td class="num">18</td><td class="num">861–894</td><td class="num">130</td><td class="num">— (host protein)</td></tr>
+  <tr><td class="num">D <span class="meta">(renamed from full PDB&rsquo;s chain C)</span></td><td class="num">5</td><td class="num">1–5</td><td class="num">31</td><td class="num ok">3.33 &Aring;</td></tr>
+</tbody>
+</table>
+
+<p>
+The chain renamed to D in the pocket file (= chain C in the full 4gvd PDB) is the <em>partner peptide</em> &mdash; the ligand is sandwiched between chain A and this peptide. So the binding site really does span two non-contiguous chains; the pocket extraction was correct to include both.
+</p>
+
+<h3>Attempts that don&rsquo;t work cleanly</h3>
+
+<table>
+<thead><tr><th>option</th><th>mean vina_dock</th><th>atoms preserved</th><th>verdict</th></tr></thead>
+<tbody>
+  <tr>
+    <td>pdb2pqr30 with <code>--nodebump</code> / <code>--noopt</code> / <code>--whitespace</code></td>
+    <td class="num fail">fail</td>
+    <td class="num">—</td>
+    <td>Gap check is in <code>set_reference_distance()</code>, runs <em>before</em> debumping; can&rsquo;t be bypassed by flags.</td>
+  </tr>
+  <tr>
+    <td>A — Strip chain D from <code>_pocket10.pdb</code>, re-prep</td>
+    <td class="num warn">−4.335</td>
+    <td class="num">130</td>
+    <td>Biased: removes 31 atoms that sit 3.33 &Aring; from the ligand (a major part of the binding pocket).</td>
+  </tr>
+  <tr>
+    <td>B — Re-carve a fresh pocket from full <code>4gvd.pdb</code> using chain A only, 10 &Aring; cutoff</td>
+    <td class="num fail">−0.742</td>
+    <td class="num">19</td>
+    <td>Most ligand-contacting protein is on chain C; chain-A-only carve yields a 2-residue / 19-atom pocket. Effectively no binding.</td>
+  </tr>
+  <tr>
+    <td>Split-prep-merge (per-chain pdb2pqr30, concatenate <code>.pqr</code>)</td>
+    <td class="num fail">fail</td>
+    <td class="num">—</td>
+    <td>Chain D alone has 31 atoms but 13 are missing heavy-atom side chains (the 10 &Aring; carve clipped them). Exceeds pdb2pqr30&rsquo;s <code>repair_limit=0.1</code> threshold &rarr; pdb2pqr30 refuses the partial chain.</td>
+  </tr>
+</tbody>
+</table>
+
+<h2 id="fix4-multichain">8. Fix 4 — Multi-chain prep fallback</h2>
+
+<p>
+The clean fix bypasses <code>pdb2pqr30</code> entirely for this specific failure mode and feeds the multi-chain PDB <em>directly</em> to <code>prepare_receptor4.py</code>, which has no contiguous-biomolecule assumption. <code>prepare_receptor4.py</code> adds hydrogens itself, assigns Gasteiger charges (instead of pdb2pqr30&rsquo;s AMBER charges), and writes a valid Vina <code>.pdbqt</code> with all atoms of all chains intact.
+</p>
+
+<p>The patched <code>_prepare_receptor</code> looks like this:</p>
+
+<pre><code># Step 1: produce .pqr via pdb2pqr30 (AMBER). On multi-chain-gap,
+# skip this step and remember to go direct in step 2.
+multichain_fallback = False
+if not os.path.exists(pqr):
+    r = _capture(["pdb2pqr30", "--ff=AMBER", str(receptor_cached), pqr],
+                 stage="pdb2pqr30")
+    if r.returncode != 0 or not os.path.exists(pqr):
+        if "gap in biomolecule" in r.stderr.lower():
+            multichain_fallback = True
+            log_buf.append("=== multi-chain fallback triggered ===\n")
+        else:
+            _raise("pdb2pqr30", r)
+
+# Step 2: produce .pdbqt — from .pqr normally, or direct from .pdb on fallback.
+if not os.path.exists(pdbqt):
+    if multichain_fallback:
+        cmd = [sys.executable, prepare_receptor4,
+               "-r", str(receptor_cached), "-o", pdbqt,
+               "-A", "hydrogens", "-U", "nphs_lps_waters"]
+    else:
+        cmd = [sys.executable, prepare_receptor4, "-r", pqr, "-o", pdbqt]
+    r = _capture(cmd, stage=...)
+    if r.returncode != 0 or not os.path.exists(pdbqt):
+        _raise(..., r)
+
+if multichain_fallback:
+    Path(base + ".multichain_fallback").write_text("...explanation...")</code></pre>
+
+<p>
+The sentinel file <code>&lt;receptor&gt;.multichain_fallback</code> tells <code>compute_target_metrics</code> to flag the situation in <code>metrics.json</code>:
+</p>
+
+<pre><code>"receptor_prep": {
+  "ok": true,
+  "fallback": "multi_chain_direct_pdbqt",
+  "note": "pdb2pqr30 failed with 'gap in biomolecule structure';
+           prepare_receptor4.py was run directly on the multi-chain .pdb
+           (Gasteiger charges). All atoms preserved; charge model
+           differs from the rest of the run (AMBER).",
+  "log_hint": ".vina_cache/...pocket10.prep.log"
+}</code></pre>
+
+<h3>End-to-end result on target_71</h3>
+
+<table>
+<thead><tr><th>approach</th><th>mean Vina dock</th><th>atoms preserved</th><th>notes</th></tr></thead>
+<tbody>
+  <tr><td>original (pdb2pqr30 AMBER)</td><td class="num fail">fail</td><td>—</td><td>"gap in biomolecule"</td></tr>
+  <tr><td>Option A (strip chain D, AMBER)</td><td class="num warn">−4.335</td><td class="num">130</td><td>biased</td></tr>
+  <tr><td>Option B (re-carve chain A only, AMBER)</td><td class="num fail">−0.742</td><td class="num">19</td><td>unusable</td></tr>
+  <tr><td><strong>multi-chain fallback (Gasteiger)</strong></td><td class="num ok"><strong>−4.707</strong></td><td class="num"><strong>228</strong></td><td>clean, all atoms preserved</td></tr>
+  <tr><td><em>reference ligand (Gasteiger)</em></td><td class="num">−5.247</td><td>—</td><td>for context</td></tr>
+</tbody>
+</table>
+
+<p>
+Sits in the weak tail of the baseline distribution (90th percentile dock = &minus;4.89, median = &minus;7.23). That&rsquo;s consistent with this being a genuinely hard protein-protein-interface pocket &mdash; the kind Vina struggles with regardless of charge model.
+</p>
+
+<div class="callout">
+<strong>The original benchmark data is read-only.</strong> The fallback writes only into <span class="file">.vina_cache/</span> (a working directory). <code>_pocket10.pdb</code>, <code>*.sdf</code>, and every other file that came with the CrossDocked release have their original mtime (2026-05-20 09:47). The fix is purely on the metrics-computation side.
+</div>
+
+<h2 id="ux">9. Dashboard &amp; webapp surfacing</h2>
+
+<p>
+A failing dock used to be invisible. <code>metrics_status()</code> returned <code>"fresh"</code> for any version-2 <code>metrics.json</code> with mtime &ge; <code>samples.sdf</code> mtime, so an error-only target looked identical to a successful one. The <code>vina_*</code> columns were just NaN &mdash; same as &ldquo;docking wasn&rsquo;t requested.&rdquo;
+</p>
+
+<p>Three additions surface failures explicitly:</p>
+
+<h4>Dashboard helpers (<span class="file">notebook/00_dashboard.ipynb</span>, Section 0)</h4>
+
+<pre><code>def n_vina_failed(metrics):
+    """Number of samples whose vina recorded an error.
+    Distinguishes 'docking ran and failed' from 'docking never ran'."""
+    agg = (metrics or {}).get("aggregates", {})
+    n = agg.get("vina_n_failed")
+    if isinstance(n, int):
+        return n
+    return sum(1 for s in (metrics or {}).get("samples", [])
+               if isinstance(s.get("vina"), dict) and "error" in s["vina"])</code></pre>
+
+<p>
+A new <code>vina_n_failed</code> column joins <code>PER_TARGET_COLS</code>; <code>experiment_aggregate</code> sums it (not averages) so a run-level total is meaningful.
+</p>
+
+<h4>Section 1 overview</h4>
+
+<p>The <code>docking</code> column now shows both target-level coverage and sample-level errors:</p>
+
+<pre><code>docking: 92/92  ·  70 errored          ← was: 92/92  (errors hidden)
+docking: 50/50  ·  0 errored
+docking: not computed</code></pre>
+
+<h4>Per-sample table (Section 5)</h4>
+
+<p>Two new columns expose the failure state at the molecule level:</p>
+
+<table>
+<thead><tr><th>vina_status</th><th>meaning</th><th>vina_err</th></tr></thead>
+<tbody>
+  <tr><td><code>OK</code></td><td>docked successfully</td><td><em>(empty)</em></td></tr>
+  <tr><td><code>ERR</code></td><td>ran but errored</td><td>full traceback summary</td></tr>
+  <tr><td><code>—</code></td><td>never docked (e.g. docking not requested)</td><td><em>(empty)</em></td></tr>
+</tbody>
+</table>
+
+<h4>Webapp expander (<span class="file">notebook/webapp/app.py</span>)</h4>
+
+<p>Below the comparison table, a yellow expander appears whenever any sample has a <code>vina.error</code>:</p>
+
+<pre><code>⚠ Vina failed for 7 of 10 samples — click for per-sample errors
+   ↓
+  all 7 share the same error: AttributeError: 'PrepProt' object has no attribute 'prot_pqr'
+  ┌────────────┬─────────────────────────────────────────────────────┐
+  │ sample     │ error                                               │
+  ├────────────┼─────────────────────────────────────────────────────┤
+  │ sample[0]  │ AttributeError: 'PrepProt' object has no ...        │
+  │ sample[1]  │ AttributeError: 'PrepProt' object has no ...        │
+  │ ...                                                              │
+  └────────────┴─────────────────────────────────────────────────────┘</code></pre>
+
+<h2 id="final">10. Final 4-way A/B numbers</h2>
+
+<p>With all four fixes in place, the full 4-way 10k-test-split A/B reads as:</p>
+
+<table>
+<thead><tr>
+  <th>arm</th>
+  <th class="num">targets evaluated</th>
+  <th class="num">sample errors</th>
+  <th class="num">validity</th>
+  <th class="num">QED</th>
+  <th class="num">diversity</th>
+  <th class="num">High Affinity</th>
+  <th class="num">vina_score</th>
+  <th class="num">vina_min</th>
+  <th class="num">vina_dock</th>
+</tr></thead>
+<tbody>
+  <tr>
+    <td>10k density <span class="meta">(misaligned)</span> ep99</td>
+    <td class="num">65 / 66</td><td class="num">0</td>
+    <td class="num">1.000</td><td class="num">0.467</td><td class="num">0.730</td>
+    <td class="num">0.562</td>
+    <td class="num">−5.736</td><td class="num">−6.511</td><td class="num">−7.485</td>
+  </tr>
+  <tr>
+    <td>10k noise ep99</td>
+    <td class="num">62 / 63</td><td class="num">0</td>
+    <td class="num">1.000</td><td class="num">0.470</td><td class="num">0.740</td>
+    <td class="num">0.540</td>
+    <td class="num">−5.346</td><td class="num">−6.370</td><td class="num">−7.374</td>
+  </tr>
+  <tr>
+    <td>10k baseline ep99</td>
+    <td class="num">92 / 92</td><td class="num">0</td>
+    <td class="num">0.997</td><td class="num">0.467</td><td class="num">0.776</td>
+    <td class="num">0.460</td>
+    <td class="num">−4.641</td><td class="num">−5.961</td><td class="num">−7.142</td>
+  </tr>
+  <tr>
+    <td>10k density aligned ep138</td>
+    <td class="num">50 / 50</td><td class="num">0</td>
+    <td class="num">1.000</td><td class="num">0.478</td><td class="num">0.754</td>
+    <td class="num">0.524</td>
+    <td class="num">−5.566</td><td class="num">−6.477</td><td class="num">−7.354</td>
+  </tr>
+</tbody>
+</table>
+
+<p class="meta">
+Baseline includes target_71 with the multi-chain fallback (Gasteiger charges) &mdash; <code>receptor_prep.fallback</code> flags this in its <code>metrics.json</code>. Including it shifts the baseline mean from &minus;7.169 (91-target) to &minus;7.142 (92-target). Affects all summary stats by ~0.03 kcal/mol.
+</p>
+
+<h3>Readouts (unchanged by the receptor-prep work)</h3>
+
+<ul>
+  <li>
+    <strong>Density vs no-density.</strong> All three with-density arms (real, noise, aligned) cluster within 0.13 kcal/mol on Vina dock. Baseline (no density) is ~0.2&ndash;0.3 below. <em>The density channel gives a marginal lift over no-density baseline, and density CONTENT (real vs scrambled noise) doesn&rsquo;t distinguish itself.</em> Same readout the 100ep pilot gave at 1/100th the data scale.
+  </li>
+  <li>
+    <strong>The alignment fix is smaller than the 8-pocket pre-print suggested.</strong> On 50 pockets, aligned-ep138 (−7.354) is within sample noise of misaligned-ep99 (−7.485). The earlier −8.13 reading on 8 pockets was a lucky-subset artifact.
+  </li>
+  <li>
+    <strong>More training helps modestly.</strong> Aligned ep81 → ep138 on the same 8 pockets: dock −8.026 → −8.128 (Δ −0.10). Validity already saturated; diminishing returns.
+  </li>
+</ul>
+
+<h2 id="followups">11. Open follow-ups</h2>
+
+<ol>
+  <li>
+    <strong>Charge-model audit for the multi-chain fallback target.</strong> target_71&rsquo;s &minus;4.707 is on Gasteiger charges; the rest of the baseline is on AMBER. The numbers are not strictly comparable. For a publishable A/B we might want to either (a) re-dock <em>every</em> baseline target with Gasteiger as a sensitivity check, or (b) caveat target_71 as &ldquo;Gasteiger-charged&rdquo; in any paper-style table.
+  </li>
+  <li>
+    <strong>Sweep the rest of the CrossDocked test split for multi-chain pockets.</strong> target_71 is the only known case in the 92-target baseline run, but other (currently un-sampled) pockets might have the same structural quirk. A pre-scan that just counts unique chain IDs per <code>_pocket10.pdb</code> would surface them all in seconds.
+  </li>
+  <li>
+    <strong>Dashboard support for <code>receptor_prep</code>.</strong> The Section 0 helpers know about <code>vina_n_failed</code> but not <code>receptor_prep</code>. A target with <code>receptor_prep.fallback != null</code> deserves a visible marker (e.g. a &ldquo;FALLBACK&rdquo; badge in the per-target table) so it doesn&rsquo;t silently mix into AMBER-charged means.
+  </li>
+  <li>
+    <strong>Memory: the &ldquo;<code>which python3</code> in nohup&rdquo; gotcha is now in <code>project_docking_eval.md</code>.</strong> Future sessions inherit it. If we ever script another long-running batch outside the activated env, double-check the PATH before launching.
+  </li>
+</ol>
+
+<h2 id="refs">12. Code reference</h2>
+
+<table>
+<thead><tr><th>file</th><th>change</th><th>lines</th></tr></thead>
+<tbody>
+  <tr>
+    <td class="file">notebook/webapp/metrics.py</td>
+    <td><code>_heal_path</code>: always prepend env bin; <code>_prepare_receptor</code>: direct subprocess invocations, stderr capture to <code>.prep.log</code>, output validation, multi-chain fallback path, sentinel file; parallel-dock loop wraps <code>fut.result()</code>; <code>compute_target_metrics</code> writes <code>receptor_prep</code> field</td>
+    <td>~237&ndash;345, 705&ndash;780</td>
+  </tr>
+  <tr>
+    <td class="file">notebook/00_dashboard.ipynb</td>
+    <td>Section 0: <code>n_vina_failed</code> helper, <code>vina_n_failed</code> in <code>PER_TARGET_COLS</code>, <code>vina_status</code> &amp; <code>vina_err</code> in per-sample table, summed (not averaged) in <code>experiment_aggregate</code>; Section 1: overview <code>docking</code> column shows error count</td>
+    <td>cells <code>5f459ee4</code>, <code>1b543091</code></td>
+  </tr>
+  <tr>
+    <td class="file">notebook/webapp/app.py</td>
+    <td>Sample-level vina failure expander below the comparison table; distinct-error grouping</td>
+    <td>~853&ndash;880</td>
+  </tr>
+  <tr>
+    <td class="file">.claude/.../project_docking_eval.md</td>
+    <td>Documented PATH brittleness gotcha, the <code>receptor_prep</code> contract, and the multi-chain fallback (charge-model caveat included)</td>
+    <td>—</td>
+  </tr>
+</tbody>
+</table>
+
+<h3>Artifacts on disk</h3>
+
+<p>For target_71 specifically, <code>.vina_cache/</code> now contains:</p>
+
+<pre><code>target_71/
+├── TIAM1_..._pocket10.pdb       ← read-only, original CrossDocked data
+├── TIAM1_..._lig.sdf            ← read-only, reference ligand
+├── samples.sdf                  ← read-only, the 10 generated samples
+├── metrics.json                 ← new (multi-chain fallback path)
+├── metrics.json.fmt-*           ← prior versions, preserved
+├── metrics.json.predockfix-*    ← prior versions, preserved
+└── .vina_cache/
+    ├── TIAM1_..._pocket10.pdbqt          ← from prepare_receptor4.py direct
+    ├── TIAM1_..._pocket10.multichain_fallback  ← sentinel file
+    ├── TIAM1_..._pocket10.prep.log       ← full pdb2pqr30 stderr trace
+    └── &lt;hash&gt;_ligand.{pdbqt,sdf}    ← 10× one per sample</code></pre>
+
+<p>(No <code>.pqr</code> in the multi-chain case &mdash; we skipped pdb2pqr30.)</p>
+
+<hr>
+
+<p class="meta">
+This report and the underlying code changes were produced during the 2026-05-21 / 2026-05-22 session; tasks #14 (baseline dock-eval), #16 (aligned-ep138 recovery) and #17 (multi-chain fallback) are all closed.
+</p>
+
+</body>
+</html>
