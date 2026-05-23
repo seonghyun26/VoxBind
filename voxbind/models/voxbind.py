@@ -4,6 +4,7 @@ import torch
 from typing import Tuple, Union, List
 
 from voxbind.constants import N_POCKET_ELEMENTS, N_LIGAND_ELEMENTS
+from voxbind.models.density_vit import DensityViT
 from voxbind.models.unet3d import UNet3D, ResidualBlock
 
 
@@ -20,6 +21,15 @@ class VoxBind(torch.nn.Module):
         dropout: float = 0.1,
         smooth_sigma: float = 0.0,
         with_density: bool = False,
+        density_encoder_type: str = "cnn",
+        density_encoder_blocks: int = 1,
+        density_grid_dim: int = 64,
+        density_vit_patch: int = 8,
+        density_vit_dim: int = 192,
+        density_vit_depth: int = 6,
+        density_vit_heads: int = 6,
+        density_vit_mlp_ratio: int = 4,
+        density_vit_dropout: float = 0.1,
         verbose: bool = False
     ):
         """
@@ -41,6 +51,17 @@ class VoxBind(torch.nn.Module):
                 single-channel Gaussian density map (e.g. from pdb2vol). The branch is
                 summed with the ligand and pocket encodings. Checkpoint-compatible: old
                 checkpoints load fine with with_density=False (default). Defaults to False.
+            density_encoder_type (str): "cnn" (default; Conv3d + N×ResidualBlock, matches
+                the 260521 density-MAE pretrained encoder) or "vit" (pure 3D ViT, matches
+                the 260522 density-ViT-MAE pretrained encoder; see `models/density_vit.py`).
+                Output shape is `(B, n_channels//2, G, G, G)` in both cases, so the
+                downstream zero-init `density_proj` fusion is unchanged.
+            density_encoder_blocks (int): cnn-only — ResidualBlocks in the density_encoder.
+                Set to 4 to match the 260521 cnn-MAE pretrained encoder.
+            density_grid_dim (int): vit-only — input grid dim (G). Must divide
+                `density_vit_patch`. Defaults to 64 (matches voxbind default).
+            density_vit_patch, density_vit_dim, density_vit_depth, density_vit_heads,
+            density_vit_mlp_ratio, density_vit_dropout: vit-only hyperparameters.
             verbose (bool): Flag to print the number of parameters in the model. Defaults to False.
         """
         super().__init__()
@@ -70,19 +91,49 @@ class VoxBind(torch.nn.Module):
             n_channels_pocket, n_channels // 2, n_groups=0, dropout=0
         )
         if with_density:
-            # Lift 1-channel density to C/2, then a full ResidualBlock with GroupNorm.
-            # GroupNorm can't be applied to 1 input channel, so we use a plain conv first.
-            _dens_groups = min(n_groups, n_channels // 2) if n_groups > 0 else 0
-            self.density_encoder = torch.nn.Sequential(
-                torch.nn.Conv3d(1, n_channels // 2, kernel_size=3, padding=1),
-                torch.nn.SiLU(),
-                ResidualBlock(n_channels // 2, n_channels // 2,
-                              n_groups=_dens_groups, dropout=dropout),
-            )
+            if density_encoder_type == "vit":
+                # Pure 3D ViT — patch_embed (Conv3d k=p s=p) → L pre-LN MHSA+MLP
+                # → Linear(D → C/2·p³) + pixel-shuffle3D back to full resolution.
+                # Output shape (B, C/2, G, G, G) matches the CNN branch so the
+                # `density_proj` fusion below is unchanged. State_dict layout
+                # matches DensityViTMAE.encoder.* so the 260522 pretrained
+                # encoder loads drop-in via `density_pretrained_path`.
+                self.density_encoder = DensityViT(
+                    grid_dim=density_grid_dim,
+                    patch_size=density_vit_patch,
+                    c_out=n_channels // 2,
+                    dim=density_vit_dim,
+                    depth=density_vit_depth,
+                    n_heads=density_vit_heads,
+                    mlp_ratio=density_vit_mlp_ratio,
+                    dropout=density_vit_dropout,
+                )
+            elif density_encoder_type == "cnn":
+                # Lift 1-channel density to C/2, then N ResidualBlocks with GroupNorm.
+                # GroupNorm can't be applied to 1 input channel, so we use a plain conv first.
+                # N controlled by `density_encoder_blocks` so the 260521 pretrained encoder
+                # (N=4) loads drop-in via `density_pretrained_path` in create_model.
+                _dens_groups = min(n_groups, n_channels // 2) if n_groups > 0 else 0
+                _enc_layers = [
+                    torch.nn.Conv3d(1, n_channels // 2, kernel_size=3, padding=1),
+                    torch.nn.SiLU(),
+                ]
+                for _ in range(density_encoder_blocks):
+                    _enc_layers.append(
+                        ResidualBlock(n_channels // 2, n_channels // 2,
+                                      n_groups=_dens_groups, dropout=dropout)
+                    )
+                self.density_encoder = torch.nn.Sequential(*_enc_layers)
+            else:
+                raise ValueError(
+                    f"density_encoder_type must be 'cnn' or 'vit', got {density_encoder_type!r}"
+                )
+            self.density_encoder_type = density_encoder_type
             # Projects cat([ligand+pocket, density], dim=1) → C/2.
             # Zero-init so initial output is 0: x = x_backbone + 0 = x_backbone.
             # Training grows the density correction from zero, keeping early
-            # iterations stable and identical to the baseline.
+            # iterations stable and identical to the baseline. Identical for
+            # cnn and vit branches since both output (B, C/2, G, G, G).
             self.density_proj = torch.nn.Conv3d(
                 n_channels, n_channels // 2, kernel_size=1
             )

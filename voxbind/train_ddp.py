@@ -14,6 +14,7 @@ Differences vs train.py (all additive — math is preserved):
 Launch:
     torchrun --nproc_per_node=<W> train_ddp.py <hydra overrides>
 """
+import contextlib
 import copy
 import hashlib
 import json
@@ -235,11 +236,14 @@ def main(cfg: DictConfig) -> None:
 
     # wandb (rank 0 only)
     if is_main and cfg.wandb:
+        _tags = cfg.get("wandb_tags", None)
+        _tags = list(_tags) if _tags else None
         wandb.init(
             project="voxbind",
             entity="eddy26",
             config=OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True),
             name=cfg.exp_name,
+            tags=_tags,
             dir=cfg.output_dir,
             resume="allow",
             settings=wandb.Settings(code_dir=".", init_timeout=300),
@@ -253,8 +257,10 @@ def main(cfg: DictConfig) -> None:
     n_train, n_val = len(loader_train.dataset), len(loader_val.dataset)
     if is_main:
         logger.info(f"training/val set size: {n_train}/{n_val}")
+        _accum = max(1, int(cfg.get("accum_steps", 1)))
         logger.info(f"train batches per rank: {len(loader_train)} "
-                    f"(effective batch = {cfg.bsz * world_size})")
+                    f"(effective batch = {cfg.bsz * world_size * _accum}, "
+                    f"accum_steps={_accum})")
 
     # model, criterion, optimizer — identical init across ranks (DDP also
     # broadcasts rank-0 params on wrap, but matching seeds keeps the pre-wrap
@@ -431,22 +437,38 @@ def train(
     metrics.reset()
     model.train()
     train_miou_interval = max(1, int(cfg.get("train_miou_interval", 8)))
+    accum_steps = max(1, int(cfg.get("accum_steps", 1)))
 
     with_density = bool(cfg.model.get("with_density", False))
     prefetcher = VoxelPrefetcher(
         loader, voxelizer, cfg.smooth_sigma,
         training=True, with_density=with_density,
     )
+    # Gradient accumulation: forward/backward on `accum_steps` micro-batches,
+    # then a single optimizer step -> effective batch = bsz * world_size *
+    # accum_steps at the memory cost of one micro-batch. accum_steps=1 (default)
+    # steps every batch -> an exact no-op vs. the pre-accumulation loop.
+    n_batches = len(prefetcher)
+    optimizer.zero_grad(set_to_none=True)
     for i, (voxels_lig, smooth_voxels_lig, voxels_poc, density) in enumerate(prefetcher):
-        pred = model(smooth_voxels_lig, voxels_poc, density=density)
-        loss = criterion(pred, voxels_lig)
+        # last micro-batch of an accumulation group, or of the epoch -> step now
+        is_step = ((i + 1) % accum_steps == 0) or ((i + 1) == n_batches)
 
-        loss.backward()
-        optimizer.step()
-        optimizer.zero_grad(set_to_none=True)
+        # On non-step micro-batches, skip the DDP gradient all-reduce: grads
+        # accumulate locally; the step micro-batch's backward syncs the sum.
+        sync_ctx = contextlib.nullcontext()
+        if not is_step and hasattr(model, "no_sync"):
+            sync_ctx = model.no_sync()
+        with sync_ctx:
+            pred = model(smooth_voxels_lig, voxels_poc, density=density)
+            loss = criterion(pred, voxels_lig)
+            loss.backward()
 
-        model_ema.update(_unwrap(model))
-        global_step += 1
+        if is_step:
+            optimizer.step()
+            optimizer.zero_grad(set_to_none=True)
+            model_ema.update(_unwrap(model))
+            global_step += 1
 
         metrics.update(
             loss.detach(), pred.detach(), voxels_lig,

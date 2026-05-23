@@ -1,0 +1,65 @@
+defaults:
+  - dset: crossdocked          # density is SYNTHESIZED from atom voxels; no x-ray needed
+  - model: density_mae
+  - vox: default
+  - override hydra/job_logging: custom
+  - _self_
+
+debug: False
+wandb: True
+wandb_tags: []          # list of strings, e.g. [pretrain, density_mae, stage_a]
+num_workers: 4
+resume: null
+resume_epoch: null
+exp_dir: exps
+exp_name: density_mae${hydra.job.override_dirname}
+output_dir: null
+
+seed: 42
+num_epochs: 100
+aug: True
+bsz: 64
+accum_steps: 1
+lr: 1e-4
+wd: 1e-2
+
+# ── MAE-specific knobs ────────────────────────────────────────────────────────
+mae:
+  # Synthetic density generation (drives Stage A)
+  sigma_blur_a_lo: 0.30          # min Gaussian blur σ in Å (randomized per batch)
+  sigma_blur_a_hi: 0.80          # max Gaussian blur σ in Å
+  sigma_noise: 0.05              # additive Gaussian noise on the z-scored density
+  # Block masking
+  block_size: 8                  # voxels per cube edge (2 Å at 0.25 Å/vox)
+  mask_ratio: 0.60               # fraction of blocks masked
+  # Loss weights
+  lambda_dens: 1.0               # masked-voxel density reconstruction
+  lambda_str: 1.0                # 11-channel atom structure prediction
+  # Structure-loss positive-voxel weighting. Voxels with target >
+  # struct_pos_thresh get struct_pos_weight× the per-voxel MSE penalty,
+  # countering the constant-zero shortcut on the ~99.8%-sparse ligand target.
+  struct_pos_weight: 100.0
+  struct_pos_thresh: 0.05
+  # EMA
+  ema_decay: 0.999
+  # Gradient clipping (0 disables)
+  grad_clip: 1.0
+  # Validation cadence
+  val_every: 1                   # epochs between val passes
+  ckpt_every: 5                  # epochs between full checkpoints (latest is always written)
+
+# Hydra
+hydra:
+  run:
+    dir: ./${exp_dir}/${exp_name}
+  job:
+    config:
+      override_dirname:
+        kv_sep: ""
+        item_sep: "_"
+        exclude_keys: [
+            "exp_dir", "lr", vox.grid_dim, "wd", "resume", "resume_epoch", "wandb",
+            "num_workers", "exp_name", "output_dir", "out_dir",
+            "bsz", "accum_steps", "seed", "num_epochs", "aug", "pocket_radius",
+            "grid_dim", "debug"
+]

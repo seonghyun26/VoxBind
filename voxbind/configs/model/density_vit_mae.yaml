@@ -1,0 +1,12 @@
+model_name: density_vit_mae
+# Encoder shape — must match VoxBind.density_encoder when loading the pretrained
+# slice (cfg.vox.grid_dim & cfg.model.n_channels here ↔ cfg.vox.grid_dim &
+# cfg.model.n_channels in the downstream VoxBind run).
+n_channels: 32          # backbone width; encoder spatial out has C/2 = 16 channels
+patch_size: 8           # at G=64 → 8³=512 tokens
+dim: 192                # transformer hidden width
+depth: 6                # transformer blocks
+heads: 6                # attention heads
+mlp_ratio: 4            # MLP hidden = dim × mlp_ratio
+dropout: 0.1
+n_struct_channels: 11   # 7 ligand + 4 pocket

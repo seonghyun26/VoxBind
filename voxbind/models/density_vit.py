@@ -1,0 +1,243 @@
+"""density_vit.py — Pure 3D Vision Transformer density encoder + MAE wrapper.
+
+`DensityViT` is shape-compatible with VoxBind's CNN `density_encoder`:
+    in:  (B, 1,   G, G, G)
+    out: (B, C/2, G, G, G)
+so it drops into `VoxBind` in place of the existing Conv-stem + ResidualBlocks.
+Fusion into the UNet backbone is unchanged — the existing zero-init
+`density_proj` head in `voxbind.py` keeps initial output identical to the
+baseline (no-density) model.
+
+Architecture (defaults at G=64, patch=8 → 8³=512 tokens):
+    patch_embed   Conv3d(1 → D, k=p, s=p)            → (B, D, G_p, G_p, G_p)
+    + learnable 3D pos_embed                          → (B, N, D)
+    L × [pre-LN → MHSA (F.scaled_dot_product_attn)
+                  → pre-LN → MLP (×mlp_ratio, GELU)]  → (B, N, D)
+    final LayerNorm                                   → (B, N, D)
+    decoder_proj  Linear(D → C/2 · p³) + reshape      → (B, C/2, G, G, G)
+
+The Linear+reshape decoder mirrors the standard ViT-MAE patch-output head:
+each token emits a (p, p, p, C/2) cube that is placed at its spatial slot.
+With G=64, p=8, D=192, L=6, H=6 this is ~4.4M params.
+
+`DensityViTMAE` wraps `DensityViT` as `self.encoder` and adds the same
+density-reconstruction and 11-channel atom-structure heads used by
+`DensityMAE` (so `train_density_vit_mae.py` can reuse `compute_losses`).
+After pre-training, the `encoder.*` slice of the EMA checkpoint loads
+drop-in into `VoxBind.density_encoder` (via the existing loader in
+`models/__init__.py` — same `encoder.` strip + strict load).
+"""
+
+from typing import Tuple
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+
+# ── Transformer building blocks ───────────────────────────────────────────────
+
+class MultiHeadSelfAttention(nn.Module):
+    """Standard MHSA via `F.scaled_dot_product_attention` (flash on Ampere+)."""
+
+    def __init__(self, dim: int, n_heads: int, dropout: float = 0.0):
+        super().__init__()
+        assert dim % n_heads == 0, f"dim={dim} must be divisible by n_heads={n_heads}"
+        self.n_heads = n_heads
+        self.head_dim = dim // n_heads
+        self.qkv = nn.Linear(dim, dim * 3, bias=True)
+        self.proj = nn.Linear(dim, dim, bias=True)
+        self.dropout_p = dropout
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        B, N, C = x.shape
+        qkv = self.qkv(x).reshape(B, N, 3, self.n_heads, self.head_dim)
+        qkv = qkv.permute(2, 0, 3, 1, 4)                # (3, B, H, N, head_dim)
+        q, k, v = qkv[0], qkv[1], qkv[2]
+        out = F.scaled_dot_product_attention(
+            q, k, v,
+            dropout_p=self.dropout_p if self.training else 0.0,
+        )                                                # (B, H, N, head_dim)
+        out = out.transpose(1, 2).reshape(B, N, C)
+        return self.proj(out)
+
+
+class TransformerBlock(nn.Module):
+    """Pre-LN ViT block: x + MHSA(LN(x)) → x + MLP(LN(x))."""
+
+    def __init__(self, dim: int, n_heads: int, mlp_ratio: int = 4, dropout: float = 0.0):
+        super().__init__()
+        self.norm1 = nn.LayerNorm(dim)
+        self.attn = MultiHeadSelfAttention(dim, n_heads, dropout=dropout)
+        self.norm2 = nn.LayerNorm(dim)
+        hidden = dim * mlp_ratio
+        self.mlp = nn.Sequential(
+            nn.Linear(dim, hidden),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden, dim),
+            nn.Dropout(dropout),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = x + self.attn(self.norm1(x))
+        x = x + self.mlp(self.norm2(x))
+        return x
+
+
+# ── DensityViT (encoder w/ to-spatial head, drop-in for CNN density_encoder) ──
+
+class DensityViT(nn.Module):
+    """Pure 3D ViT producing a full-resolution `(B, C/2, G, G, G)` feature.
+
+    Designed as a 1:1 replacement for VoxBind's `density_encoder`. Block-masking
+    for MAE pretext happens upstream (zeroing voxels in input space), so the
+    encoder always sees a full G³ volume — this keeps the drop-in interface
+    with `VoxBind.density_proj` byte-clean and matches the existing CNN-encoder
+    MAE pipeline.
+    """
+
+    def __init__(
+        self,
+        grid_dim: int = 64,
+        patch_size: int = 8,
+        c_out: int = 16,            # = n_channels // 2 for VoxBind (default n_channels=32)
+        dim: int = 192,
+        depth: int = 6,
+        n_heads: int = 6,
+        mlp_ratio: int = 4,
+        dropout: float = 0.1,
+        pos_embed_std: float = 0.02,
+    ):
+        super().__init__()
+        assert grid_dim % patch_size == 0, (
+            f"grid_dim={grid_dim} must be divisible by patch_size={patch_size}"
+        )
+        self.grid_dim = grid_dim
+        self.patch_size = patch_size
+        self.c_out = c_out
+        self.dim = dim
+        self.depth = depth
+
+        self.g_p = grid_dim // patch_size
+        self.n_tokens = self.g_p ** 3
+        self.patch_volume = patch_size ** 3
+
+        self.patch_embed = nn.Conv3d(
+            1, dim, kernel_size=patch_size, stride=patch_size, padding=0
+        )
+        self.pos_embed = nn.Parameter(torch.zeros(1, self.n_tokens, dim))
+
+        self.blocks = nn.ModuleList([
+            TransformerBlock(dim, n_heads, mlp_ratio=mlp_ratio, dropout=dropout)
+            for _ in range(depth)
+        ])
+        self.norm = nn.LayerNorm(dim)
+
+        # Patch-output decoder: each token → (c_out, p, p, p) cube.
+        self.decoder_proj = nn.Linear(dim, c_out * self.patch_volume)
+
+        self._init_weights(pos_embed_std)
+
+    def _init_weights(self, pos_embed_std: float) -> None:
+        nn.init.trunc_normal_(self.pos_embed, std=pos_embed_std)
+        for m in self.modules():
+            if isinstance(m, nn.Linear):
+                nn.init.trunc_normal_(m.weight, std=0.02)
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
+            elif isinstance(m, nn.LayerNorm):
+                nn.init.zeros_(m.bias)
+                nn.init.ones_(m.weight)
+            elif isinstance(m, nn.Conv3d):
+                nn.init.trunc_normal_(m.weight, std=0.02)
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
+
+    def _tokens_to_voxels(self, tokens: torch.Tensor) -> torch.Tensor:
+        """(B, N, c_out·p³) → (B, c_out, G, G, G)."""
+        B = tokens.shape[0]
+        g_p, p, c_out = self.g_p, self.patch_size, self.c_out
+        # (B, N, c_out·p³) → (B, g_p, g_p, g_p, c_out, p, p, p)
+        x = tokens.reshape(B, g_p, g_p, g_p, c_out, p, p, p)
+        # permute spatial-blocks so they interleave correctly when reshaped:
+        # (B, c_out, g_p, p, g_p, p, g_p, p)
+        x = x.permute(0, 4, 1, 5, 2, 6, 3, 7).contiguous()
+        # collapse (g_p, p) pairs → G per axis
+        x = x.reshape(B, c_out, g_p * p, g_p * p, g_p * p)
+        return x
+
+    def forward(self, density: torch.Tensor) -> torch.Tensor:
+        """density: (B, 1, G, G, G) → (B, c_out, G, G, G)."""
+        z = self.patch_embed(density)                    # (B, D, g_p, g_p, g_p)
+        z = z.flatten(2).transpose(1, 2)                 # (B, N, D)
+        z = z + self.pos_embed
+        for blk in self.blocks:
+            z = blk(z)
+        z = self.norm(z)
+        z = self.decoder_proj(z)                         # (B, N, c_out·p³)
+        return self._tokens_to_voxels(z)                 # (B, c_out, G, G, G)
+
+
+# ── DensityViTMAE (encoder + density head + structure head) ───────────────────
+
+class DensityViTMAE(nn.Module):
+    """Voxel-MAE wrapper around `DensityViT`.
+
+    Matches the API of `DensityMAE` so `train_density_vit_mae.py` can reuse the
+    existing `compute_losses` and synthesis helpers. The encoder is exposed as
+    `self.encoder` (a `DensityViT`) so its weights load drop-in into
+    `VoxBind.density_encoder` via the existing `encoder.*` strip in
+    `models/__init__.py::create_model`.
+    """
+
+    def __init__(
+        self,
+        grid_dim: int = 64,
+        patch_size: int = 8,
+        n_channels: int = 32,         # backbone width; c_out = n_channels // 2
+        dim: int = 192,
+        depth: int = 6,
+        n_heads: int = 6,
+        mlp_ratio: int = 4,
+        dropout: float = 0.1,
+        n_struct_channels: int = 11,  # 7 ligand + 4 pocket
+    ):
+        super().__init__()
+        c_half = n_channels // 2
+
+        self.encoder = DensityViT(
+            grid_dim=grid_dim,
+            patch_size=patch_size,
+            c_out=c_half,
+            dim=dim,
+            depth=depth,
+            n_heads=n_heads,
+            mlp_ratio=mlp_ratio,
+            dropout=dropout,
+        )
+
+        # Heads — identical shape/structure to DensityMAE so the MAE prefetcher
+        # + compute_losses pipeline is reused as-is.
+        self.head_density = nn.Sequential(
+            nn.Conv3d(c_half, c_half, kernel_size=3, padding=1),
+            nn.SiLU(),
+            nn.Conv3d(c_half, 1, kernel_size=3, padding=1),
+        )
+        self.head_structure = nn.Sequential(
+            nn.Conv3d(c_half, c_half, kernel_size=3, padding=1),
+            nn.SiLU(),
+            nn.Conv3d(c_half, n_struct_channels, kernel_size=3, padding=1),
+        )
+
+        self.n_channels = n_channels
+        self.n_struct_channels = n_struct_channels
+
+    def encode(self, density: torch.Tensor) -> torch.Tensor:
+        return self.encoder(density)
+
+    def forward(self, density: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        z = self.encoder(density)
+        d_hat = self.head_density(z)
+        a_hat = self.head_structure(z)
+        return d_hat, a_hat

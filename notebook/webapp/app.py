@@ -40,12 +40,14 @@ from data import (  # noqa: E402
 )
 from metrics import (  # noqa: E402
     DOCKING_MODES,
+    cache_satisfies,
     compute_reference,
     compute_target_metrics,
     docking_available,
     load_metrics,
     metrics_are_fresh,
     metrics_path,
+    ref_satisfies,
 )
 
 
@@ -78,6 +80,46 @@ st.markdown(
       section[data-testid="stSidebar"] h1 { font-size: 1.15rem; }
       /* trim vertical gaps between stacked elements */
       .block-container [data-testid="stVerticalBlock"] { gap: .55rem; }
+      /* Sidebar split into two side-by-side columns:
+           - LEFT  (`sidebar-ctrl-col`): browsing context + compute section.
+           - RIGHT (`sidebar-tgt-col`):  target + sample radios, with their
+                                         own internal vertical scroll.
+         Sidebar is widened to 460 px so the two columns have breathing
+         room (default 336 px would crush selectbox labels). A 1 px hairline
+         between the columns marks the boundary. Backgrounds inherit from
+         the sidebar (Streamlit 1.57 dropped the bg CSS var, so we
+         normalize to its actual default gray with a dark-mode fallback). */
+      section[data-testid="stSidebar"] {
+        background-color: var(--secondary-background-color, #F0F2F6);
+        width: 520px !important;
+        min-width: 520px !important;
+      }
+      section[data-testid="stSidebar"] [data-testid="stSidebarContent"],
+      section[data-testid="stSidebar"] [data-testid="stSidebarUserContent"],
+      section[data-testid="stSidebar"] [data-testid="stSidebarUserContent"] > div,
+      section[data-testid="stSidebar"] .st-key-sidebar-ctrl-col,
+      section[data-testid="stSidebar"] .st-key-sidebar-tgt-col {
+        background-color: inherit;
+      }
+      section[data-testid="stSidebar"] .st-key-sidebar-ctrl-col {
+        padding-right: .5rem;
+        border-right: 1px solid rgba(127,127,127,0.25);
+      }
+      section[data-testid="stSidebar"] .st-key-sidebar-tgt-col {
+        padding-left: .5rem;
+        max-height: calc(100vh - 80px);
+        overflow-y: auto;
+      }
+      @media (prefers-color-scheme: dark) {
+        section[data-testid="stSidebar"] {
+          background-color: var(--secondary-background-color, #262730);
+        }
+      }
+      /* Selectbox dropdown: let the popover grow to fit the longest option
+         (one line per option, no ellipsis) so full experiment / sample-run
+         names are readable. Width is driven by content, not the trigger. */
+      [data-baseweb="popover"] ul[role="listbox"] { min-width: max-content; }
+      [data-baseweb="popover"] li[role="option"] { white-space: nowrap; }
     </style>
     """,
     unsafe_allow_html=True,
@@ -131,13 +173,13 @@ def _delta_str(sample_val, ref_val, prec: int = 2) -> str | None:
 # Per-metric "good direction" for the Mean-vs-Reference colouring:
 # +1 higher-is-better, -1 lower-is-better, 0 no preferred direction.
 _METRIC_DIR = {
-    "QED": 1, "SA": 1, "LogP": 0, "Lipinski": 1, "HAtoms": 0,
+    "QED": 1, "SA": 1, "LogP": 0, "Lipinski": 1, "HAtoms": 0, "Sim→Ref": 0,
     "Vina Score": -1, "Vina Min": -1, "Vina Dock": -1,
 }
 # Display formats for the comparison table's metric columns.
 _TABLE_FMT = {
     "QED": "{:.3f}", "SA": "{:.2f}", "LogP": "{:.2f}",
-    "Lipinski": "{:.1f}", "HAtoms": "{:.0f}",
+    "Lipinski": "{:.1f}", "HAtoms": "{:.0f}", "Sim→Ref": "{:.3f}",
     "Vina Score": "{:.2f}", "Vina Min": "{:.2f}", "Vina Dock": "{:.2f}",
 }
 
@@ -159,7 +201,8 @@ def _comparison_df(metrics: dict) -> pd.DataFrame:
     the samples that have a value.
     """
     chem = (("QED", "qed"), ("SA", "sa"), ("LogP", "logp"),
-            ("Lipinski", "lipinski"), ("HAtoms", "n_atoms"))
+            ("Lipinski", "lipinski"), ("HAtoms", "n_atoms"),
+            ("Sim→Ref", "sim_to_ref"))
     vina = (("score_only", "Vina Score"), ("minimize", "Vina Min"),
             ("dock", "Vina Dock"))
 
@@ -167,6 +210,8 @@ def _comparison_df(metrics: dict) -> pd.DataFrame:
         row: dict = {"Ligand": label}
         for col, key in chem:
             row[col] = rec.get(key)
+        if label == "Reference":
+            row["Sim→Ref"] = 1.0  # the reference is identical to itself
         v = rec.get("vina")
         if isinstance(v, dict) and "error" not in v:
             for key, col in vina:
@@ -258,12 +303,37 @@ def _progress_dialog(kind: str, args: tuple) -> None:
     here synchronously; its progress callback streams per-molecule updates into
     the bar, and the dialog closes via st.rerun() once the compute finishes.
 
-    `kind` is one of "target" | "ref" | "all" | "all_ref"; `args` is the tuple
-    stashed in session_state by the triggering button / confirm dialog.
+    `kind` selects the variant and dictates `args`:
+      - "target":  (target, docking, exh, force)
+      - "ref":     (target, docking, exh)
+      - "all":     (targets, docking, exh, force, skip_existing)
+      - "all_ref": (targets, docking, exh, skip_existing)
     """
     st.caption("Working — this window closes when the compute finishes.")
 
-    if kind in ("target", "ref"):
+    if kind == "target":
+        target, docking, exh, force = args
+        st.markdown(f"##### {target.name}")
+        bar = st.progress(0.0, text="Starting…")
+
+        def _cb(done: int, total: int, label: str) -> None:
+            frac = done / total if total else 1.0
+            bar.progress(min(frac, 1.0), text=f"{label} — {done}/{total}")
+
+        pdb = find_pocket_pdb(target)
+        try:
+            if pdb is None:
+                st.error(f"No pocket PDB in {target.name}; cannot evaluate.")
+                return
+            coords, elems = parse_pocket_pdb(pdb)
+            compute_target_metrics(target, coords, elems, docking=docking,
+                                   receptor_pdb=pdb, exhaustiveness=exh,
+                                   progress_cb=_cb, force=force)
+        except Exception as e:  # noqa: BLE001
+            st.error(f"Compute failed — {e}")
+            return
+
+    elif kind == "ref":
         target, docking, exh = args
         st.markdown(f"##### {target.name}")
         bar = st.progress(0.0, text="Starting…")
@@ -274,33 +344,42 @@ def _progress_dialog(kind: str, args: tuple) -> None:
 
         pdb = find_pocket_pdb(target)
         try:
-            if kind == "target":
-                if pdb is None:
-                    st.error(f"No pocket PDB in {target.name}; cannot evaluate.")
-                    return
-                coords, elems = parse_pocket_pdb(pdb)
-                compute_target_metrics(target, coords, elems, docking=docking,
-                                       receptor_pdb=pdb, exhaustiveness=exh,
-                                       progress_cb=_cb)
-            else:  # "ref"
-                compute_reference(target, docking=docking, receptor_pdb=pdb,
-                                  exhaustiveness=exh, progress_cb=_cb)
+            compute_reference(target, docking=docking, receptor_pdb=pdb,
+                              exhaustiveness=exh, progress_cb=_cb)
         except Exception as e:  # noqa: BLE001
             st.error(f"Compute failed — {e}")
             return
+
     else:  # "all" | "all_ref" — batch over every target
-        targets, docking, exh = args
-        if kind == "all_ref":
-            # compute_reference merges into an existing metrics.json, so
-            # targets without one are skipped (run a target compute first).
-            eligible = [t for t in targets if metrics_path(t).exists()]
-            empty_msg = ("No targets have a metrics.json yet — run a target "
-                         "compute first.")
-        else:
+        if kind == "all":
+            targets, docking, exh, force, skip_existing = args
             eligible = [t for t in targets
                         if (t / "samples.sdf").exists()
                         and find_pocket_pdb(t) is not None]
             empty_msg = "No targets have both samples.sdf and a pocket PDB."
+            # Force overrides skip-existing (the whole point of Force is to
+            # redo everything); otherwise filter out already-satisfied targets.
+            if skip_existing and not force:
+                eligible = [t for t in eligible
+                            if not cache_satisfies(t, docking)]
+                if not eligible:
+                    empty_msg = ("All targets already satisfy the selected "
+                                 "Vina mode — nothing to do (turn off 'Skip "
+                                 "already-done' to recompute).")
+        else:  # "all_ref" — compute_reference merges into existing metrics.json
+            targets, docking, exh, skip_existing = args
+            eligible = [t for t in targets if metrics_path(t).exists()]
+            empty_msg = ("No targets have a metrics.json yet — run a target "
+                         "compute first.")
+            if skip_existing:
+                eligible = [t for t in eligible
+                            if not ref_satisfies(t, docking)]
+                if not eligible:
+                    empty_msg = ("Every cached reference already has the "
+                                 "selected Vina mode — nothing to do (turn "
+                                 "off 'Skip already-done' to recompute).")
+            force = False  # compute_reference doesn't accept force
+
         if not eligible:
             st.warning(empty_msg)
             return
@@ -318,7 +397,7 @@ def _progress_dialog(kind: str, args: tuple) -> None:
                     coords, elems = parse_pocket_pdb(pdb)
                     compute_target_metrics(t, coords, elems, docking=docking,
                                            receptor_pdb=pdb, exhaustiveness=exh,
-                                           progress_cb=_cb)
+                                           progress_cb=_cb, force=force)
                 else:  # "all_ref"
                     compute_reference(t, docking=docking, receptor_pdb=pdb,
                                       exhaustiveness=exh, progress_cb=_cb)
@@ -331,186 +410,226 @@ def _progress_dialog(kind: str, args: tuple) -> None:
     st.rerun()
 
 
-@st.dialog("Recompute this target?")
+@st.dialog("Force-recompute this target?")
 def _confirm_target_eval(target: Path, docking: str,
-                         exhaustiveness: int) -> None:
-    """Confirm before overwriting a target's existing metrics.json.
-
-    Confirming stashes the request and reruns; the compute then runs in
-    `_progress_dialog` — a modal that dims the page behind a live bar.
+                         exhaustiveness: int, force: bool) -> None:
+    """Only shown when **Force recompute** is on for a target that already has
+    a cache. Smart compute is non-destructive (preserves cached chem / vina
+    that already satisfies the request), so it never triggers this dialog.
     """
-    st.warning(f"`{target.name}` already has cached metrics — recomputing "
-               "overwrites its `metrics.json`.")
+    st.warning(f"`{target.name}` already has cached metrics — **Force "
+               "recompute** is on, so its `metrics.json` will be rebuilt from "
+               "scratch and any cached vina results re-run.")
     if docking != "none":
         st.caption(f"Vina mode `{docking}` is selected; docking can be slow.")
     go, cancel = st.columns(2)
-    if go.button("Recompute", type="primary", width="stretch"):
+    if go.button("Force recompute", type="primary", width="stretch"):
         st.session_state["_pending_compute"] = (
-            "target", (target, docking, exhaustiveness))
+            "target", (target, docking, exhaustiveness, force))
         st.rerun()
     if cancel.button("Cancel", width="stretch"):
         st.rerun()
 
 
-@st.dialog("Compute all targets?")
+@st.dialog("Force-recompute all targets?")
 def _confirm_all_eval(targets: list[Path], docking: str,
-                      exhaustiveness: int) -> None:
-    """Confirm before a batch compute that would overwrite cached metrics.
-
-    Confirming stashes the request and reruns; the batch then runs in
-    `_progress_dialog` — a modal that dims the page behind a live bar.
-    """
+                      exhaustiveness: int, force: bool,
+                      skip_existing: bool) -> None:
+    """Only shown when **Force recompute** is on for a batch that has cached
+    targets. Smart-compute batches (force off) skip this and just run."""
     n_cached = sum(1 for t in targets if metrics_path(t).exists())
-    st.warning(f"This computes metrics for all {len(targets)} targets — "
-               f"{n_cached} already cached will be overwritten.")
+    st.warning(f"**Force recompute** will rebuild metrics for all "
+               f"{len(targets)} targets — {n_cached} cached `metrics.json` "
+               "files will be overwritten and any cached vina re-run.")
     if docking != "none":
         st.caption(f"Vina mode `{docking}` across all targets can be slow.")
+    if skip_existing:
+        st.caption("Note: 'Skip already-done' is ignored when Force is on.")
     go, cancel = st.columns(2)
-    if go.button("Compute all", type="primary", width="stretch"):
+    if go.button("Force recompute all", type="primary", width="stretch"):
         st.session_state["_pending_compute"] = (
-            "all", (targets, docking, exhaustiveness))
+            "all", (targets, docking, exhaustiveness, force, skip_existing))
         st.rerun()
     if cancel.button("Cancel", width="stretch"):
         st.rerun()
 
 
 # ─── Sidebar: experiment → target → sample ────────────────────────────────────
-st.sidebar.title("Browse")
-st.sidebar.caption(f"`{EXPS_ROOT}`")
+# Two side-by-side columns inside a widened sidebar:
+#   - LEFT  (`sidebar-ctrl-col`): browsing context + compute-metrics section.
+#   - RIGHT (`sidebar-tgt-col`):  target + sample radios, scrolling inside
+#                                 their own max-height box.
+# Streamlit containers accept multiple `with` blocks; we set up both column
+# containers up front, fill the left with browse context, switch to the right
+# for the radios (which defines `target`), then re-enter the left to append
+# the compute section that needs to reference `target`.
 
-# Force a re-scan without touching a selector. Directory listings refresh on
-# every rerun and the file caches are mtime-keyed, but Streamlit only reruns on
-# a widget event — this button is that event. Clearing the data cache also
-# re-reads sample SDFs whose mtime didn't move (in-place writes, coarse NFS).
-if st.sidebar.button(
-    "🔄 Refresh results",
-    width="stretch",
-    help="Re-scan the experiments directory and reload samples from disk.",
-):
-    st.cache_data.clear()
-    st.rerun()
-st.sidebar.caption(f"Scanned at {datetime.now():%H:%M:%S}")
+with st.sidebar:
+    _ctrl_col, _tgt_col = st.columns([1, 1], gap="small")
+    with _ctrl_col:
+        ctrl = st.container(key="sidebar-ctrl-col")
+    with _tgt_col:
+        tgt = st.container(key="sidebar-tgt-col")
 
-exps = list_experiments()
-if not exps:
-    st.sidebar.error("No experiments under voxbind/exps/.")
-    st.stop()
+with ctrl:
+    st.title("Browse")
+    st.caption(f"`{EXPS_ROOT}`")
 
-exp_names = [e.name for e in exps]
-default_exp = "260514_voxbind_100ep340"
-default_idx = exp_names.index(default_exp) if default_exp in exp_names else 0
-exp_name = st.sidebar.selectbox("Experiment", exp_names, index=default_idx)
-exp = exps[exp_names.index(exp_name)]
+    # Force a re-scan without touching a selector. Directory listings refresh
+    # on every rerun and the file caches are mtime-keyed, but Streamlit only
+    # reruns on a widget event — this button is that event. Clearing the data
+    # cache also re-reads sample SDFs whose mtime didn't move (in-place
+    # writes, coarse NFS).
+    if st.button(
+        "🔄 Refresh results",
+        width="stretch",
+        help="Re-scan the experiments directory and reload samples from disk.",
+    ):
+        st.cache_data.clear()
+        st.rerun()
+    st.caption(f"Scanned at {datetime.now():%H:%M:%S}")
 
-# sampling-run selector — an experiment can hold several runs under samples/
-sample_runs = list_sample_runs(exp)
-if not sample_runs:
-    st.sidebar.warning("This experiment has no sampling runs yet.")
-    st.stop()
-# Default to the most recently created/modified run directory.
-_samples_root = exp / "samples"
+    exps = list_experiments()
+    if not exps:
+        st.error("No experiments under voxbind/exps/.")
+        st.stop()
 
+    exp_names = [e.name for e in exps]
+    default_exp = "260514_voxbind_100ep340"
+    default_idx = exp_names.index(default_exp) if default_exp in exp_names else 0
+    exp_name = st.selectbox("Experiment", exp_names, index=default_idx)
+    exp = exps[exp_names.index(exp_name)]
 
-def _run_mtime(r: str) -> float:
-    try:
-        return (_samples_root / r).stat().st_mtime
-    except OSError:
-        return 0.0
+    # sampling-run selector — an experiment can hold several runs under samples/
+    sample_runs = list_sample_runs(exp)
+    if not sample_runs:
+        st.warning("This experiment has no sampling runs yet.")
+        st.stop()
+    # Default to the most recently created/modified run directory.
+    _samples_root = exp / "samples"
 
+    def _run_mtime(r: str) -> float:
+        try:
+            return (_samples_root / r).stat().st_mtime
+        except OSError:
+            return 0.0
 
-default_run = max(sample_runs, key=_run_mtime)
-run = st.sidebar.selectbox(
-    "Sample run", sample_runs, index=sample_runs.index(default_run)
-)
-
-targets = list_targets(exp, run)
-if not targets:
-    st.sidebar.warning(f"Run `{run}` has no `target_*` folders yet.")
-    st.stop()
-
-
-def _target_label(i: int) -> str:
-    t = targets[i]
-    n_raw = count_raw_samples(t)
-    cached = metrics_path(t).exists()
-    marker = " ✓" if cached else ""
-    return f"{t.name} ({n_raw}){marker}"
-
-
-target_idx = st.sidebar.radio(
-    "Target",
-    range(len(targets)),
-    format_func=_target_label,
-)
-target = targets[target_idx]
-sdf_path = target / "samples.sdf"
-sdf_mtime = _safe_mtime(sdf_path)
-
-samples, sample_smis = _load_samples_cached(str(target), sdf_mtime)
-if not samples:
-    st.sidebar.info("No valid samples for this target.")
-    sample_idx: int | None = None
-else:
-    sample_idx = st.sidebar.radio(
-        "Sample",
-        range(len(samples)),
-        format_func=lambda i: f"Sample {i}",
+    default_run = max(sample_runs, key=_run_mtime)
+    run = st.selectbox(
+        "Sample run", sample_runs, index=sample_runs.index(default_run)
     )
 
-st.sidebar.divider()
-st.sidebar.caption("Cached metrics: `target_*/metrics.json`")
+    targets = list_targets(exp, run)
+    if not targets:
+        st.warning(f"Run `{run}` has no `target_*` folders yet.")
+        st.stop()
 
-# Optional Vina docking — attaches vina_* fields to metrics.json on (re)compute.
-# AutoDock Vina is CPU-only; vina_dock with high exhaustiveness can be slow.
-docking_mode = st.sidebar.selectbox(
-    "Vina docking", DOCKING_MODES, index=0,
-    help="none = chemical metrics only · vina_score = + score_only · "
-         "vina_min = + minimize · vina_dock = + full re-docking (slow). "
-         "vina_dock yields all three paper scores.",
-)
-docking_exh = 8
-if docking_mode != "none":
-    docking_exh = st.sidebar.slider(
-        "Exhaustiveness", 1, 32, 8,
-        help="Vina search effort for vina_dock — higher is slower, more thorough.",
+
+with tgt:
+    def _target_label(i: int) -> str:
+        t = targets[i]
+        n_raw = count_raw_samples(t)
+        cached = metrics_path(t).exists()
+        marker = " ✓" if cached else ""
+        return f"{t.name} ({n_raw}){marker}"
+
+    target_idx = st.radio(
+        "Target",
+        range(len(targets)),
+        format_func=_target_label,
     )
-    if not docking_available():
-        st.sidebar.warning(
-            "Vina toolchain not installed — docking records an error per "
-            "sample. Install instructions are in the `metrics.py` docstring."
+    target = targets[target_idx]
+    sdf_path = target / "samples.sdf"
+    sdf_mtime = _safe_mtime(sdf_path)
+
+    samples, sample_smis = _load_samples_cached(str(target), sdf_mtime)
+    if not samples:
+        st.info("No valid samples for this target.")
+        sample_idx: int | None = None
+    else:
+        sample_idx = st.radio(
+            "Sample",
+            range(len(samples)),
+            format_func=lambda i: f"Sample {i}",
         )
 
-if st.sidebar.button("Compute metrics for all targets", width="stretch"):
-    if any(metrics_path(t).exists() for t in targets):
-        _confirm_all_eval(targets, docking_mode, docking_exh)
-    else:
-        st.session_state["_pending_compute"] = (
-            "all", (targets, docking_mode, docking_exh))
-        st.rerun()
-if st.sidebar.button(f"Compute metrics for {target.name}", width="stretch"):
-    if metrics_path(target).exists():
-        _confirm_target_eval(target, docking_mode, docking_exh)
-    else:
-        st.session_state["_pending_compute"] = (
-            "target", (target, docking_mode, docking_exh))
-        st.rerun()
-if st.sidebar.button("Compute reference ligand", width="stretch"):
-    if metrics_path(target).exists():
-        st.session_state["_pending_compute"] = (
-            "ref", (target, docking_mode, docking_exh))
-        st.rerun()
-    else:
-        st.sidebar.warning("Run a target compute first — the reference "
-                           "is stored in its metrics.json.")
-if st.sidebar.button("Compute reference ligand for all targets",
-                     width="stretch"):
-    if any(metrics_path(t).exists() for t in targets):
-        st.session_state["_pending_compute"] = (
-            "all_ref", (targets, docking_mode, docking_exh))
-        st.rerun()
-    else:
-        st.sidebar.warning("Run a target compute first — the reference "
-                           "is stored in each target's metrics.json.")
+
+# Re-enter the left (control) column so the compute section sits beside the
+# target/sample column — but added *after* the radios run, so the button
+# labels and actions can reference the freshly selected `target`.
+with ctrl:
+    st.divider()
+    st.title("Evaluate")
+
+    # Optional Vina docking — attaches vina_* fields to metrics.json on
+    # (re)compute. AutoDock Vina is CPU-only; vina_dock with high
+    # exhaustiveness can be slow.
+    docking_mode = st.selectbox(
+        "Vina docking", DOCKING_MODES, index=0,
+        help="none = chemical metrics only · vina_score = + score_only · "
+             "vina_min = + minimize · vina_dock = + full re-docking (slow). "
+             "vina_dock yields all three paper scores.",
+    )
+    docking_exh = 8
+    if docking_mode != "none":
+        docking_exh = st.slider(
+            "Exhaustiveness", 1, 32, 8,
+            help="Vina search effort for vina_dock — higher is slower, more thorough.",
+        )
+        if not docking_available():
+            st.warning(
+                "Vina toolchain not installed — docking records an error per "
+                "sample. Install instructions are in the `metrics.py` docstring."
+            )
+
+    force = st.checkbox(
+        "Force recompute", value=False,
+        help="Off (default) = *smart compute*: per-sample chem and per-sample "
+             "vina from a fresh cache are reused; only what's missing for the "
+             "selected mode is (re)computed. On = rebuild every sample from "
+             "scratch even when the cache already has it.",
+    )
+    skip_existing = st.checkbox(
+        "Skip already-done (batch)", value=True,
+        help="When computing for *all* targets, skip those whose metrics.json "
+             "already satisfies the selected Vina mode. Lets an interrupted "
+             "'Compute all' resume without redoing finished pockets. Ignored "
+             "when 'Force recompute' is on.",
+    )
+
+    if st.button("Compute metrics for all targets", width="stretch"):
+        if force and any(metrics_path(t).exists() for t in targets):
+            _confirm_all_eval(targets, docking_mode, docking_exh,
+                              force, skip_existing)
+        else:
+            st.session_state["_pending_compute"] = (
+                "all", (targets, docking_mode, docking_exh,
+                        force, skip_existing))
+            st.rerun()
+    if st.button(f"Compute metrics for {target.name}", width="stretch"):
+        if force and metrics_path(target).exists():
+            _confirm_target_eval(target, docking_mode, docking_exh, force)
+        else:
+            st.session_state["_pending_compute"] = (
+                "target", (target, docking_mode, docking_exh, force))
+            st.rerun()
+    if st.button("Compute reference ligand", width="stretch"):
+        if metrics_path(target).exists():
+            st.session_state["_pending_compute"] = (
+                "ref", (target, docking_mode, docking_exh))
+            st.rerun()
+        else:
+            st.warning("Run a target compute first — the reference "
+                       "is stored in its metrics.json.")
+    if st.button("Compute reference ligand for all targets",
+                 width="stretch"):
+        if any(metrics_path(t).exists() for t in targets):
+            st.session_state["_pending_compute"] = (
+                "all_ref", (targets, docking_mode, docking_exh, skip_existing))
+            st.rerun()
+        else:
+            st.warning("Run a target compute first — the reference "
+                       "is stored in each target's metrics.json.")
 
 
 # ─── Main area ────────────────────────────────────────────────────────────────
@@ -623,7 +742,7 @@ else:
             ref = metrics.get("reference")
             ref = ref if isinstance(ref, dict) and "error" not in ref else {}
 
-            m1, m2, m3, m4, m5 = st.columns(5)
+            m1, m2, m3, m4, m5, m6 = st.columns(6)
             m1.metric("QED", f"{sample_match['qed']:.3f}",
                       delta=_delta_str(sample_match["qed"], ref.get("qed"), 3),
                       delta_color="normal")
@@ -641,6 +760,9 @@ else:
                       delta=_delta_str(sample_match["n_atoms"],
                                        ref.get("n_atoms"), 0),
                       delta_color="off")
+            m6.metric("Sim→Ref", _fmt(sample_match.get("sim_to_ref"), 3),
+                      help="RDKit-fingerprint Tanimoto similarity to the "
+                           "reference ligand (1.0 = identical fingerprint)")
 
             vina = sample_match.get("vina")
             if vina is not None:
@@ -733,6 +855,35 @@ else:
             st.caption("⚠ no reference row — recompute this target to add it.")
         elif ref is None:
             st.caption("⚠ this target has no reference ligand.")
+
+        # Sample-level vina failures: surface them explicitly so a target that
+        # was "evaluated but every dock crashed" is clearly distinguishable
+        # from "docking wasn't requested" (the comparison table renders both
+        # cases as a blank Vina cell). Each row shows sample index + error;
+        # the same shape appears under reference if its dock errored too.
+        _sample_errs = [(i, (s["vina"] or {}).get("error", ""))
+                        for i, s in enumerate(metrics.get("samples", []))
+                        if isinstance(s.get("vina"), dict)
+                        and "error" in s["vina"]]
+        _n_samples = len(metrics.get("samples", []))
+        if _sample_errs:
+            with st.expander(
+                f"⚠ Vina failed for {len(_sample_errs)} of {_n_samples} samples "
+                f"— click for per-sample errors",
+                expanded=False,
+            ):
+                err_rows = [{"sample": f"sample[{i}]", "error": err}
+                            for i, err in _sample_errs]
+                # show distinct error strings up top so the failure mode is
+                # obvious at a glance (e.g. 10 identical PrepProt AttributeErrors)
+                distinct = sorted({e for _, e in _sample_errs})
+                if len(distinct) == 1:
+                    st.caption(f"all {len(_sample_errs)} share the same error: {distinct[0]}")
+                else:
+                    st.caption(f"{len(distinct)} distinct error message(s) across "
+                               f"{len(_sample_errs)} failed samples")
+                st.dataframe(pd.DataFrame(err_rows), hide_index=True,
+                             width="stretch")
 
     st.caption(f"Computed: {metrics['computed_at']}"
                + ("" if fresh else "  ·  ⚠ stale"))

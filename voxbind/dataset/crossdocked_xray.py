@@ -103,6 +103,7 @@ def _crop_density(
     center_cart: np.ndarray,
     G: int = _GRID_DIM,
     res: float = _RESOLUTION,
+    transform: Optional[tuple] = None,
 ) -> np.ndarray:
     """Trilinear interpolation of CCP4 grid onto a G³ box centred at center_cart.
 
@@ -115,6 +116,10 @@ def _crop_density(
     frac_matrix_T : (3, 3) fractionalization matrix transposed (x @ frac_matrix_T = f)
     center_cart   : (3,) Cartesian Å position of the ligand centroid
     G, res        : grid dimension and resolution (Å/voxel)
+    transform     : optional (R, t) rigid frame correction, applied as
+                    x_dep = x_cd @ R.T + t before the map is sampled. Recovered
+                    per structure by residue-matched Kabsch vs the deposited PDB
+                    (see dataset/00d_align_xray_density.py). None = no correction.
 
     Returns
     -------
@@ -132,6 +137,15 @@ def _crop_density(
         indexing="ij",
     )
     cart_pts = np.stack([gx.ravel(), gy.ravel(), gz.ravel()], axis=1)  # (G³, 3)
+
+    # Optional rigid frame correction: CrossDocked frame → deposited (map) frame.
+    # CrossDocked2020 superposes each pocket's receptors onto a shared reference
+    # frame that differs from the deposited crystal frame the CCP4 map lives in;
+    # without this the crop would sample the wrong region. transform = (R, t).
+    if transform is not None:
+        R, t = transform
+        cart_pts = cart_pts @ np.asarray(R, dtype=cart_pts.dtype).T \
+            + np.asarray(t, dtype=cart_pts.dtype)
 
     # Cartesian → fractional  (row vectors × M.T)
     frac_pts = cart_pts @ frac_matrix_T  # (G³, 3)

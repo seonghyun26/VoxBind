@@ -5,4 +5,15 @@ is_attn: [False, False, True, True]
 n_blocks: 2
 n_groups: 16
 dropout: .1
-with_density: false  # add density_encoder branch (requires dset with xray_density field)
+with_density: false              # add density_encoder branch (requires dset with xray_density field)
+density_encoder_type: cnn        # cnn | vit  (cnn = original ResidualBlock stack; vit = pure 3D ViT, see models/density_vit.py)
+density_encoder_blocks: 1        # cnn-only: # of ResidualBlocks (set to 4 to load the 260521 pretrained encoder)
+density_vit:                     # vit-only knobs (ignored for cnn); load the 260522 ViT-MAE encoder with these defaults
+  patch: 8                       # voxels per patch edge → at G=64, 8³=512 tokens
+  dim: 192                       # transformer hidden width
+  depth: 6                       # transformer blocks
+  heads: 6                       # attention heads
+  mlp_ratio: 4                   # MLP hidden = dim × mlp_ratio
+  dropout: 0.1
+density_pretrained_path: null    # path to a density-MAE checkpoint (cnn or vit, must match density_encoder_type)
+density_freeze: false            # freeze the density_encoder branch (requires_grad=False, dropout off)
