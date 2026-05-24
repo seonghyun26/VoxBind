@@ -1,0 +1,61 @@
+defaults:
+  - dset: crossdocked          # density is SYNTHESIZED from atom voxels; no x-ray needed
+  - model: density_vit_mae_40m
+  - vox: default
+  - override hydra/job_logging: custom
+  - _self_
+
+debug: False
+wandb: True
+wandb_tags: []          # e.g. [pretrain, density_vit_mae_40m, stage_a, scale_up]
+num_workers: 4
+resume: null
+resume_epoch: null
+exp_dir: exps
+exp_name: density_vit_mae_40m${hydra.job.override_dirname}
+output_dir: null
+
+seed: 42
+num_epochs: 100
+aug: True
+# 4.5M ViT used bsz=16/rank at ~21 GiB/24 GiB on 24 GiB cards. The 42M variant
+# adds ~5–8 GiB of activation+param memory (D 192→512, L 6→12, attn N×N×H×B
+# memory is the new pressure point). Drop to bsz=8/rank and double accum_steps
+# so the effective batch (8×6×2=96) matches the 4.5M run for apples-to-apples
+# loss curves.
+bsz: 8
+accum_steps: 2
+lr: 1e-4
+wd: 5e-2                 # higher wd than cnn-MAE — ViTs typically need stronger regularization
+
+# ── MAE-specific knobs (identical to the 4.5M variant) ────────────────────────
+mae:
+  sigma_blur_a_lo: 0.30
+  sigma_blur_a_hi: 0.80
+  sigma_noise: 0.05
+  block_size: 8
+  mask_ratio: 0.60
+  lambda_dens: 1.0
+  lambda_str: 1.0
+  struct_pos_weight: 100.0
+  struct_pos_thresh: 0.05
+  ema_decay: 0.999
+  grad_clip: 1.0
+  val_every: 1
+  ckpt_every: 5
+
+# Hydra
+hydra:
+  run:
+    dir: ./${exp_dir}/${exp_name}
+  job:
+    config:
+      override_dirname:
+        kv_sep: ""
+        item_sep: "_"
+        exclude_keys: [
+            "exp_dir", "lr", vox.grid_dim, "wd", "resume", "resume_epoch", "wandb",
+            "num_workers", "exp_name", "output_dir", "out_dir",
+            "bsz", "accum_steps", "seed", "num_epochs", "aug", "pocket_radius",
+            "grid_dim", "debug"
+]

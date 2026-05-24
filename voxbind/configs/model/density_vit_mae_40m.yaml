@@ -1,0 +1,26 @@
+model_name: density_vit_mae_40m
+# ~42.56M-param ViT density encoder (≈ ViT-Base width, depth-12 conventional).
+# Scale-up of the original density_vit_mae (4.5M, D=192 L=6 H=6 — "shallow ViT-Tiny")
+# to test whether the auxiliary density branch was capacity-limited at downstream.
+#
+# Token grid is unchanged (N=512 = (G/p)³ at G=64, p=8) so the attention cost
+# is moderate — N² is small here; growing D is the cheapest knob.
+#
+# Param breakdown (computed for D=512 L=12 H=8 mlp_ratio=4):
+#   patch_embed   :      262,656  (1 → 512, k=8 s=8)
+#   pos_embed     :      262,144  (512 × 512)
+#   per block     :    3,152,384  (2 LN + qkv + proj + MLP 512→2048→512)
+#   12 blocks     :   37,828,608
+#   norm + dec    :    4,203,520  (LN + Linear 512 → 16·8³)
+#   TOTAL         :   42,556,928  ≈ 42.6M
+#
+# Encoder shape must match VoxBind.density_encoder downstream (same n_channels)
+# so the encoder slice loads drop-in via density_pretrained_path.
+n_channels: 32          # backbone width; encoder spatial out has C/2 = 16 channels
+patch_size: 8           # at G=64 → 8³=512 tokens (unchanged from 4.5M variant)
+dim: 512                # transformer hidden width (×2.67 vs 192)
+depth: 12               # transformer blocks (×2 vs 6) — matches ViT-Base depth
+heads: 8                # attention heads (×1.33 vs 6); head_dim stays 64
+mlp_ratio: 4            # MLP hidden = dim × mlp_ratio (unchanged)
+dropout: 0.1
+n_struct_channels: 11   # 7 ligand + 4 pocket

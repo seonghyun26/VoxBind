@@ -48,7 +48,7 @@ from torch.utils.data import Dataset
 
 from voxbind.constants import ELEMENTS_HASH_CROSSDOCKED, RADIUS_PER_ATOM
 from voxbind.utils.dataset_utils import (
-    filter_atoms_by_distance, pad, recenter_structures, translate_coords,
+    filter_atoms_by_distance, pad, recenter_structures,
     random_rot_matrix,
 )
 
@@ -195,6 +195,25 @@ def _rotate_density(
         order=1, mode="constant", cval=0.0,
     )
     return rotated.astype(np.float32)
+
+
+def _translate_density(
+    density: np.ndarray,
+    translation: torch.Tensor,
+    res: float = _RESOLUTION,
+) -> np.ndarray:
+    """Sub-voxel shift of a density volume by `translation` Å.
+
+    Mirrors `translate_coords`' additive shift on atom coords: when atom
+    positions move by +translation Å, the voxel that represents each atom's
+    position shifts by +translation/res voxels — so the density volume must
+    shift by the same amount to stay co-aligned with the atoms.
+    """
+    shift_voxels = (translation.detach().cpu().numpy().reshape(3) / res).tolist()
+    shifted = scipy.ndimage.shift(
+        density, shift=shift_voxels, order=1, mode="constant", cval=0.0,
+    )
+    return shifted.astype(np.float32)
 
 
 # ── Local normalization ─────────────────────────────────────────────────────────
@@ -480,12 +499,17 @@ class DatasetCrossDockedXray(Dataset):
         ligand, pocket = recenter_structures(ligand, pocket, center_coords)
 
         # ── Augmentation (rotation then translation) ──────────────────────────
+        # Translation is inlined (vs. translate_coords) so we can capture the
+        # noise vector and apply the same shift to the density volume below.
         rot_matrix: Optional[torch.Tensor] = None
+        trans_noise: Optional[torch.Tensor] = None
         if self.aug:
             rot_matrix = random_rot_matrix()
             ligand["coords"] = ligand["coords"].reshape(-1, 3) @ rot_matrix.T
             pocket["coords"] = pocket["coords"].reshape(-1, 3) @ rot_matrix.T
-            ligand, pocket = translate_coords(ligand, pocket, self.delta)
+            trans_noise = (torch.rand((1, 3), dtype=ligand["coords"].dtype) - 0.5) * 2 * self.delta
+            pocket["coords"].add_(trans_noise)
+            ligand["coords"].add_(trans_noise)
 
         # ── Box / pad ─────────────────────────────────────────────────────────
         ligand, pocket = filter_atoms_by_distance(ligand, pocket)
@@ -504,6 +528,8 @@ class DatasetCrossDockedXray(Dataset):
                             density_np = normalize_crop(density_np)
                         if rot_matrix is not None:
                             density_np = _rotate_density(density_np, rot_matrix)
+                        if trans_noise is not None:
+                            density_np = _translate_density(density_np, trans_noise)
                         xray_density = torch.from_numpy(density_np)
             else:
                 # On-the-fly path: load CCP4, crop, interpolate
@@ -518,6 +544,8 @@ class DatasetCrossDockedXray(Dataset):
                             density_np = normalize_crop(density_np)
                         if rot_matrix is not None:
                             density_np = _rotate_density(density_np, rot_matrix)
+                        if trans_noise is not None:
+                            density_np = _translate_density(density_np, trans_noise)
                         xray_density = torch.from_numpy(density_np)
 
         # Always return a tensor (zeros when unavailable) so PyTorch default
