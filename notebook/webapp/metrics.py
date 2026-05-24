@@ -24,7 +24,8 @@ import os
 import shutil
 import sys
 import time
-from concurrent.futures import ProcessPoolExecutor
+from collections.abc import Callable
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from copy import deepcopy
 from datetime import datetime
 from functools import partial
@@ -39,8 +40,9 @@ from utils.evaluation.scoring_func import get_chem  # from TargetDiff
 
 RDLogger.DisableLog("rdApp.*")
 
-# `vina` fields and the `reference` baseline are additive & optional, so the
-# cache format is unchanged: a metrics.json with or without them is version 2.
+# `vina` fields, the `reference` baseline, and per-sample `sim_to_ref` are
+# additive & optional, so the cache format is unchanged: a metrics.json with
+# or without them is version 2.
 METRICS_VERSION = 2
 
 # none       -> chemical metrics only
@@ -48,6 +50,10 @@ METRICS_VERSION = 2
 # vina_min   -> + score_only & minimize  (local optimisation; no pose search)
 # vina_dock  -> + score_only, minimize & full re-docking — all three paper scores
 DOCKING_MODES = ("none", "vina_score", "vina_min", "vina_dock")
+
+# An optional progress callback: progress_cb(done, total, stage_label). Called
+# during the chemical-scoring and docking phases so a UI can show a live bar.
+ProgressCb = Callable[[int, int, str], None]
 
 
 def metrics_path(target_dir: Path) -> Path:
@@ -78,6 +84,77 @@ def load_metrics(target_dir: Path) -> dict | None:
         return None
 
 
+# ── Smart-compute helpers ─────────────────────────────────────────────────────
+# A cached row is reusable only when it carries every field the requested mode
+# needs. These predicates drive both the per-sample reuse inside
+# `compute_target_metrics` and the batch "skip-existing" toggle in the webapp.
+
+_CHEM_KEYS = ("smiles", "qed", "sa", "logp", "lipinski", "n_atoms", "interactions")
+
+
+def _has_chem(row: dict) -> bool:
+    """A cached sample row carries every chemical-metric field."""
+    return all(k in row for k in _CHEM_KEYS)
+
+
+def _vina_mode_keys(mode: str) -> tuple[str, ...]:
+    """Vina sub-fields required to satisfy `mode` (empty for 'none')."""
+    if mode == "vina_score": return ("score_only",)
+    if mode == "vina_min":   return ("score_only", "minimize")
+    if mode == "vina_dock":  return ("score_only", "minimize", "dock")
+    return ()
+
+
+def _has_vina_for_mode(vina, mode: str) -> bool:
+    """Cached `vina` dict satisfies `mode` (no error, every required field)."""
+    if mode == "none":
+        return True
+    if not isinstance(vina, dict) or "error" in vina:
+        return False
+    return all(isinstance(vina.get(k), (int, float))
+               for k in _vina_mode_keys(mode))
+
+
+def cache_satisfies(target_dir: Path, docking: str) -> bool:
+    """True when target_dir/metrics.json is fresh AND has chem for every sample
+    AND — if `docking` is requested — the required vina fields for every sample
+    and (when present) the reference ligand.
+
+    Drives the batch "skip-existing" toggle: a target whose cache already
+    satisfies the requested mode is skipped without recomputing anything.
+    """
+    if not metrics_are_fresh(target_dir):
+        return False
+    data = load_metrics(target_dir)
+    if data is None:
+        return False
+    samples = data.get("samples", [])
+    if not samples or not all(_has_chem(s) for s in samples):
+        return False
+    if docking != "none":
+        if not all(_has_vina_for_mode(s.get("vina"), docking) for s in samples):
+            return False
+        ref = data.get("reference")
+        if isinstance(ref, dict) and "error" not in ref:
+            if not _has_vina_for_mode(ref.get("vina"), docking):
+                return False
+    return True
+
+
+def ref_satisfies(target_dir: Path, docking: str) -> bool:
+    """True when target_dir's cached reference already has the requested vina
+    mode. Used by the batch 'skip-existing' toggle for ref-only recomputes."""
+    if not metrics_are_fresh(target_dir):
+        return False
+    data = load_metrics(target_dir)
+    if data is None:
+        return False
+    ref = data.get("reference")
+    if not isinstance(ref, dict) or "error" in ref:
+        return False
+    return _has_vina_for_mode(ref.get("vina"), docking)
+
+
 def _tanimoto_diversity(mols: list[Chem.Mol]) -> float:
     if len(mols) < 2:
         return float("nan")
@@ -87,6 +164,33 @@ def _tanimoto_diversity(mols: list[Chem.Mol]) -> float:
         for j in range(i + 1, len(fps)):
             sims.append(DataStructs.TanimotoSimilarity(fps[i], fps[j]))
     return 1.0 - float(np.mean(sims))
+
+
+def _similarity_to_reference(
+    mols: list[Chem.Mol], ref_mol: Chem.Mol | None
+) -> list[float | None]:
+    """Tanimoto similarity (RDKit fingerprint) of each mol to the reference ligand.
+
+    Uses the same `Chem.RDKFingerprint` as `_tanimoto_diversity`, so the two
+    similarity numbers are directly comparable. Returns one value per input mol
+    — None for the whole list when there is no reference ligand, or for any
+    single mol whose fingerprint cannot be built.
+    """
+    if ref_mol is None:
+        return [None] * len(mols)
+    try:
+        ref_fp = Chem.RDKFingerprint(ref_mol)
+    except Exception:  # noqa: BLE001
+        return [None] * len(mols)
+    out: list[float | None] = []
+    for m in mols:
+        try:
+            out.append(float(
+                DataStructs.TanimotoSimilarity(Chem.RDKFingerprint(m), ref_fp)
+            ))
+        except Exception:  # noqa: BLE001
+            out.append(None)
+    return out
 
 
 def _mol_xyz(mol: Chem.Mol) -> np.ndarray:
@@ -131,14 +235,23 @@ _VINA_IMPORT_ERROR: str | None = None
 
 
 def _heal_path() -> None:
-    """Make conda-env binaries (pdb2pqr30, python3) resolvable by bare name.
+    """Ensure conda-env binaries (python3, pdb2pqr30, vina) shadow any system
+    alternatives on PATH.
 
-    docking_vina.py shells out to them; this keeps them found even when the
-    process was started without `conda activate`.
+    docking_vina.py shells out to them via bare name. If a system Python (e.g.
+    /compuworks/anaconda3/bin/python3) appears on PATH *before* the conda env,
+    prepare_receptor4.py's subprocess lands on the wrong interpreter — which
+    lacks MolKit — and fails silently with ModuleNotFoundError (Popen discards
+    stderr and doesn't check rc), producing no .pdbqt. The next docking step
+    then crashes with `'PrepProt' object has no attribute 'prot_pqr'` because
+    VinaDockingTask.run() skips addH when .pqr already exists and never sets
+    that attribute. So always *prepend* the conda env bin, even if it's
+    already somewhere later on PATH — being present isn't enough; it has to
+    win bare-name resolution.
     """
     _bin = str(Path(sys.executable).parent)
-    if _bin not in os.environ.get("PATH", "").split(os.pathsep):
-        os.environ["PATH"] = _bin + os.pathsep + os.environ.get("PATH", "")
+    parts = [p for p in os.environ.get("PATH", "").split(os.pathsep) if p != _bin]
+    os.environ["PATH"] = os.pathsep.join([_bin, *parts])
 
 
 def docking_available() -> bool:
@@ -210,21 +323,114 @@ def _prepare_receptor(receptor_cached: Path) -> None:
     VinaDockingTask.run() prepares these lazily and guards them with
     os.path.exists — fine serially, but a race when many worker processes hit
     a cold cache at once. Doing it up front makes every worker a pure reader.
+
+    We invoke the prep tools directly (rather than via TargetDiff's PrepProt
+    which silences stderr and doesn't check rc) so the actual upstream cause
+    of a failure — pdb2pqr30 "gap in biomolecule structure", missing MolKit
+    in prepare_receptor4.py, etc. — propagates to the RuntimeError message
+    (and into the per-sample `vina.error` + the new top-level `receptor_prep`
+    field in metrics.json). Each subprocess's stdout/stderr is also persisted
+    to `<receptor>.prep.log` next to the cache for offline inspection.
+
+    Multi-chain fallback: when pdb2pqr30 fails with "gap in biomolecule
+    structure" (typical for protein-protein-interface pockets where the carve
+    spans non-contiguous chains — see target_71 / TIAM1 4gvd), bypass pdb2pqr30
+    and feed the .pdb directly to prepare_receptor4.py with -A hydrogens. That
+    uses Gasteiger charges (AutoDock default) instead of AMBER charges, and
+    preserves every atom of every chain — no biological bias from chain
+    removal. The Vina dock numbers from a fallback target are charge-model-
+    distinct from the rest of the run; flagged in receptor_prep.note so a
+    reader knows.
     """
+    import subprocess as _sp
+    import AutoDockTools as _adt
     _heal_path()
-    from utils.evaluation.docking_vina import PrepProt
 
     base = str(receptor_cached)[:-4]
     pqr, pdbqt = base + ".pqr", base + ".pdbqt"
-    if os.path.exists(pqr) and os.path.exists(pdbqt):
+    prep_log = Path(base + ".prep.log")
+    prepare_receptor4 = os.path.join(
+        _adt.__path__[0], "Utilities24/prepare_receptor4.py")
+    # Note: the multi-chain fallback path produces .pdbqt without writing .pqr,
+    # so only require .pdbqt for the early-return check.
+    if os.path.exists(pdbqt):
         return
-    prot = PrepProt(str(receptor_cached))
-    if os.path.exists(pqr):
-        prot.prot_pqr = pqr
-    else:
-        prot.addH(pqr)
+
+    log_buf: list[str] = []
+
+    def _capture(cmd: list[str], stage: str) -> _sp.CompletedProcess:
+        r = _sp.run(cmd, capture_output=True, text=True)
+        log_buf.append(
+            f"=== {stage} (rc={r.returncode}) ===\n"
+            f"$ {' '.join(cmd)}\n"
+            f"--- stdout ---\n{r.stdout}\n"
+            f"--- stderr ---\n{r.stderr}\n"
+        )
+        return r
+
+    def _raise(stage: str, r: _sp.CompletedProcess) -> None:
+        prep_log.write_text("\n".join(log_buf))
+        err_lines = r.stderr.strip().splitlines()
+        # Prefer lines that look like exception messages (no leading whitespace,
+        # not 'File "..."' frames) — they carry the actual cause (e.g.
+        # "ValueError: Biomolecular structure is incomplete").
+        informative = [
+            ln for ln in err_lines
+            if ln and not ln.startswith((" ", "\t", "File ", "Traceback"))
+        ]
+        summary = "; ".join(informative[-4:]) if informative \
+            else "\n  ".join(err_lines[-15:]) or f"(empty — see {prep_log})"
+        raise RuntimeError(
+            f"{stage} failed for {receptor_cached.name} (rc={r.returncode}). "
+            f"{summary}"
+        )
+
+    # Step 1: produce .pqr via pdb2pqr30 (AMBER). On multi-chain-gap, skip
+    # this step and remember to go direct in step 2.
+    multichain_fallback = False
+    if not os.path.exists(pqr):
+        r = _capture(
+            ["pdb2pqr30", "--ff=AMBER", str(receptor_cached), pqr],
+            stage="pdb2pqr30",
+        )
+        if r.returncode != 0 or not os.path.exists(pqr):
+            if "gap in biomolecule" in r.stderr.lower():
+                multichain_fallback = True
+                log_buf.append(
+                    "=== multi-chain fallback triggered: pdb2pqr30 hit a "
+                    "structural gap; prepare_receptor4.py will read the .pdb "
+                    "directly (Gasteiger charges, all atoms preserved) ===\n"
+                )
+            else:
+                _raise("pdb2pqr30", r)
+
+    # Step 2: produce .pdbqt. Normal path takes the .pqr; the multi-chain
+    # fallback path reads the original .pdb with -A hydrogens.
     if not os.path.exists(pdbqt):
-        prot.get_pdbqt(pdbqt)
+        if multichain_fallback:
+            cmd = [sys.executable, prepare_receptor4,
+                   "-r", str(receptor_cached), "-o", pdbqt,
+                   "-A", "hydrogens", "-U", "nphs_lps_waters"]
+            stage = "prepare_receptor4.py [direct, multi-chain fallback]"
+        else:
+            cmd = [sys.executable, prepare_receptor4, "-r", pqr, "-o", pdbqt]
+            stage = "prepare_receptor4.py"
+        r = _capture(cmd, stage=stage)
+        if r.returncode != 0 or not os.path.exists(pdbqt):
+            _raise(stage, r)
+
+    # Persist diagnostics for offline inspection (successful or not).
+    if log_buf:
+        prep_log.write_text("\n".join(log_buf))
+
+    # Stash a side-marker so compute_target_metrics can mention the fallback
+    # in metrics.json (different charge model -> reader should know).
+    if multichain_fallback:
+        Path(base + ".multichain_fallback").write_text(
+            "prepare_receptor4.py was invoked directly on the multi-chain .pdb "
+            "(Gasteiger charges) because pdb2pqr30 failed with a "
+            "'gap in biomolecule structure' error.\n"
+        )
 
 
 def _high_affinity(sample_rows: list[dict], reference: dict | None) -> dict:
@@ -318,6 +524,8 @@ def compute_target_metrics(
     exhaustiveness: int = 8,
     cpu: int = 8,
     workers: int | None = None,
+    progress_cb: ProgressCb | None = None,
+    force: bool = False,
 ) -> dict:
     """Score every valid sample under `target_dir` and write metrics.json.
 
@@ -329,9 +537,19 @@ def compute_target_metrics(
     workers: parallel docking processes, each using `cpu` Vina threads. None →
              cpu_count // cpu. Pure scheduling — every dock is the identical
              computation, so metrics.json matches a serial run.
+    force:   when True, ignore any cached metrics.json and recompute every
+             sample's chem and vina from scratch. Default False enables
+             *smart compute*: when the cache is fresh, per-sample chem rows
+             (and per-sample vina results that already satisfy the requested
+             mode) are reused — only what's missing is (re)computed.
 
     The crystal reference ligand is scored the same way under the top-level
-    `reference` key — a baseline to read the generated samples against.
+    `reference` key — a baseline to read the generated samples against. Each
+    sample also carries `sim_to_ref` — its RDKit-fingerprint Tanimoto
+    similarity to that reference ligand.
+
+    progress_cb: optional progress_cb(done, total, stage_label) — called once
+                 per molecule for the chemical-scoring and docking phases.
     """
     sdf = target_dir / "samples.sdf"
     if not sdf.exists():
@@ -359,10 +577,26 @@ def compute_target_metrics(
 
     n_raw = sum(1 for _ in Chem.SDMolSupplier(str(sdf), sanitize=False))
 
-    # ── chemical metrics — cheap, computed serially ──────────────────────────
+    # Smart compute: when an existing metrics.json is still fresh (samples.sdf
+    # unchanged since the last write), per-sample chemistry and per-sample
+    # docking results are reused verbatim from the cache, keyed by canonical
+    # SMILES. Only what's missing for the requested `docking` mode gets
+    # (re)computed. `force=True` skips this and rebuilds from scratch.
+    prev: dict | None = None
+    cached_by_smi: dict[str, dict] = {}
+    if not force and metrics_are_fresh(target_dir):
+        prev = load_metrics(target_dir)
+        if prev is not None:
+            for s in prev.get("samples", []):
+                if isinstance(s, dict) and isinstance(s.get("smiles"), str):
+                    cached_by_smi[s["smiles"]] = s
+
+    # ── chemical metrics — cheap, computed serially; reuse cache when possible
     valid_mols: list[Chem.Mol] = []
     sample_rows: list[dict] = []
-    for m in Chem.SDMolSupplier(str(sdf), sanitize=True):
+    for i, m in enumerate(Chem.SDMolSupplier(str(sdf), sanitize=True)):
+        if progress_cb is not None:
+            progress_cb(i + 1, n_raw, "Scoring molecules")
         if m is None:
             continue
         try:
@@ -372,17 +606,23 @@ def compute_target_metrics(
         if "." in smi:
             continue
         valid_mols.append(m)
-        c = get_chem(m)
-        ix = _pocket_ligand_contacts(pocket_coords, pocket_elems, m)
-        sample_rows.append({
-            "smiles": smi,
-            "qed": float(c["qed"]),
-            "sa": float(c["sa"]),
-            "logp": float(c["logp"]),
-            "lipinski": int(c["lipinski"]),
-            "n_atoms": int(m.GetNumHeavyAtoms()),
-            "interactions": ix,
-        })
+        cached = cached_by_smi.get(smi)
+        if cached is not None and _has_chem(cached):
+            # Cached row carries chem (+ any prior vina / sim_to_ref); reuse it
+            # so chem-only recomputes never lose cached docking results.
+            sample_rows.append(deepcopy(cached))
+        else:
+            c = get_chem(m)
+            ix = _pocket_ligand_contacts(pocket_coords, pocket_elems, m)
+            sample_rows.append({
+                "smiles": smi,
+                "qed": float(c["qed"]),
+                "sa": float(c["sa"]),
+                "logp": float(c["logp"]),
+                "lipinski": int(c["lipinski"]),
+                "n_atoms": int(m.GetNumHeavyAtoms()),
+                "interactions": ix,
+            })
 
     # Reference-ligand baseline (chem metrics here; docked with the samples
     # below). It must never break the core metrics, so an unexpected failure is
@@ -393,6 +633,27 @@ def compute_target_metrics(
         reference = {"error": f"reference scoring failed: {type(e).__name__}: {e}"}
         ref_mol = None
 
+    # Reference docking is fixed per target (the crystal ligand never changes),
+    # so reuse a cached `reference.vina` whenever available. The docking
+    # section below will only re-dock the reference if the requested mode adds
+    # fields the cache lacks.
+    if isinstance(reference, dict) and isinstance(prev, dict):
+        prev_ref = prev.get("reference")
+        if isinstance(prev_ref, dict) and isinstance(prev_ref.get("vina"), dict):
+            reference["vina"] = prev_ref["vina"]
+
+    # Per-sample Tanimoto similarity (RDKit fingerprint) to the reference
+    # ligand. Reused samples already carry it (the reference is fixed per
+    # target), so we only compute it for rows where it's missing.
+    missing_sim = [i for i, row in enumerate(sample_rows)
+                   if "sim_to_ref" not in row]
+    if missing_sim:
+        sims = _similarity_to_reference(
+            [valid_mols[i] for i in missing_sim], ref_mol)
+        for idx, sim in zip(missing_sim, sims):
+            if sim is not None:
+                sample_rows[idx]["sim_to_ref"] = sim
+
     # ── Vina docking — parallel across molecules ─────────────────────────────
     # Each molecule docks independently, so a process pool gives a large
     # speedup with per-dock-identical results. The receptor .pqr/.pdbqt are
@@ -400,29 +661,76 @@ def compute_target_metrics(
     # (e.g. toolchain missing) we fall back to serial and each dock reports its
     # own error.
     if dock_on:
-        dock_mols = list(valid_mols)
-        if ref_mol is not None:
-            dock_mols.append(ref_mol)
-        if dock_mols:
+        # Smart-dock: only dock molecules whose cached `vina` doesn't already
+        # satisfy the requested mode. `slot == -1` marks the reference ligand;
+        # any other slot is the index into `sample_rows`.
+        needed: list[tuple[int, Chem.Mol]] = [
+            (i, valid_mols[i]) for i, row in enumerate(sample_rows)
+            if not _has_vina_for_mode(row.get("vina"), docking)
+        ]
+        if ref_mol is not None and not _has_vina_for_mode(
+                reference.get("vina"), docking):
+            needed.append((-1, ref_mol))
+
+        receptor_prep_error: str | None = None
+        if needed:
             try:
                 _prepare_receptor(receptor_cached)
                 n_workers = workers or max(1, (os.cpu_count() or 8) // max(1, cpu))
-            except Exception:  # noqa: BLE001 — workers surface the error per-dock
+            except Exception as e:  # noqa: BLE001 — workers surface the error per-dock
+                # Preserve the upstream cause (pdb2pqr30 stderr, missing dep, ...)
+                # so the metrics.json reader can see WHY every sample's vina.error
+                # is the same downstream "pocket10.pdbqt does not exist" — without
+                # this, the actual root cause is only in the .prep.log file.
+                receptor_prep_error = f"{type(e).__name__}: {e}"
                 n_workers = 1
-            n_workers = min(n_workers, len(dock_mols))
+            n_workers = min(n_workers, len(needed))
             dock_one = partial(
                 run_vina_docking, receptor_pdb=receptor_cached, mode=docking,
                 exhaustiveness=exhaustiveness, tmp_dir=cache_dir, cpu=cpu,
             )
+            n_dock = len(needed)
+            if progress_cb is not None:
+                progress_cb(0, n_dock, "Docking molecules")
+
+            def _place(slot: int, result: dict) -> None:
+                if slot == -1:
+                    reference["vina"] = result
+                else:
+                    sample_rows[slot]["vina"] = result
+
+            # run_vina_docking already catches its own exceptions and returns
+            # {"error": ...}, but a worker process that dies hard (segfault,
+            # OOM-kill, BrokenProcessPool, signal) makes fut.result() re-raise
+            # — that would abort the whole target without writing metrics.json.
+            # Catch here so one bad sample never sinks the rest of the target;
+            # the crashed sample is recorded as a vina.error and the smart-dock
+            # logic (`_has_vina_for_mode`) will retry it on the next run.
             if n_workers <= 1:
-                vina_results = [dock_one(m) for m in dock_mols]
+                for i, (slot, m) in enumerate(needed):
+                    try:
+                        result = dock_one(m)
+                    except Exception as e:  # noqa: BLE001 — defensive; run_vina_docking should already catch
+                        result = {"error": f"dock raised: {type(e).__name__}: {e}"}
+                    _place(slot, result)
+                    if progress_cb is not None:
+                        progress_cb(i + 1, n_dock, "Docking molecules")
             else:
+                # submit + as_completed (not pool.map) so the progress bar
+                # advances as each dock finishes; futs maps each future back
+                # to its slot so results land in the right row.
                 with ProcessPoolExecutor(max_workers=n_workers) as pool:
-                    vina_results = list(pool.map(dock_one, dock_mols))
-            for row, res in zip(sample_rows, vina_results):
-                row["vina"] = res
-            if ref_mol is not None:
-                reference["vina"] = vina_results[-1]
+                    futs = {pool.submit(dock_one, m): slot
+                            for slot, m in needed}
+                    for done, fut in enumerate(as_completed(futs), 1):
+                        slot = futs[fut]
+                        try:
+                            result = fut.result()
+                        except Exception as e:  # noqa: BLE001 — worker died (segfault, OOM-kill, BrokenProcessPool, ...)
+                            result = {"error": f"worker crashed: {type(e).__name__}: {e}"}
+                        _place(slot, result)
+                        if progress_cb is not None:
+                            progress_cb(done, n_dock, "Docking molecules")
 
     # ── aggregate metrics (vina_* means see every docked sample) ─────────────
     if sample_rows:
@@ -438,6 +746,9 @@ def compute_target_metrics(
             "logp_mean": float(np.mean([s["logp"] for s in sample_rows])),
             "lipinski_mean": float(np.mean([s["lipinski"] for s in sample_rows])),
         }
+        sim_vals = [s["sim_to_ref"] for s in sample_rows if "sim_to_ref" in s]
+        if sim_vals:
+            aggregates["sim_to_ref_mean"] = float(np.mean(sim_vals))
         if dock_on:
             aggregates.update(_aggregate_vina(sample_rows, reference))
     else:
@@ -455,6 +766,37 @@ def compute_target_metrics(
         "samples": sample_rows,
         "aggregates": aggregates,
     }
+    # When docking was requested but the receptor-prep step failed, every
+    # sample ended up with a downstream "pocket10.pdbqt does not exist" error
+    # — the root cause (pdb2pqr30 gap, missing dep, ...) only lived inside the
+    # _prepare_receptor exception. Persist it here so a metrics.json reader
+    # can see WHY all dockings failed in one glance, without digging into the
+    # .prep.log file or rerunning. The key is only present when prep had issues.
+    _prep_err = locals().get("receptor_prep_error")
+    # Detect the multi-chain-fallback marker dropped by _prepare_receptor.
+    _mc_marker = None
+    if dock_on and receptor_cached is not None:
+        cand = Path(str(receptor_cached)[:-4] + ".multichain_fallback")
+        if cand.exists():
+            _mc_marker = cand
+    if dock_on and (_prep_err or _mc_marker):
+        rp: dict = {}
+        if _prep_err:
+            rp["ok"] = False
+            rp["error"] = _prep_err
+        elif _mc_marker:
+            # Prep succeeded but via the multi-chain fallback (Gasteiger
+            # charges, not AMBER). The Vina dock numbers for this target are
+            # not strictly charge-model-comparable to other targets in the run.
+            rp["ok"] = True
+            rp["fallback"] = "multi_chain_direct_pdbqt"
+            rp["note"] = ("pdb2pqr30 failed with 'gap in biomolecule "
+                          "structure'; prepare_receptor4.py was run directly "
+                          "on the multi-chain .pdb (Gasteiger charges). All "
+                          "atoms preserved; charge model differs from the "
+                          "rest of the run (AMBER).")
+        rp["log_hint"] = f".vina_cache/{Path(receptor_cached).stem}.prep.log"
+        data["receptor_prep"] = rp
     metrics_path(target_dir).write_text(
         json.dumps(_sanitize_for_json(data), indent=2, allow_nan=False)
     )
@@ -467,12 +809,16 @@ def compute_reference(
     receptor_pdb: Path | None = None,
     exhaustiveness: int = 8,
     cpu: int = 8,
+    progress_cb: ProgressCb | None = None,
 ) -> dict:
     """(Re)compute only the reference-ligand row and merge it into metrics.json.
 
     A fast, samples-untouched update — get the reference baseline (or its Vina
     docking) without re-scoring every generated sample. Requires an existing
     metrics.json, i.e. compute_target_metrics must have been run first.
+
+    progress_cb: optional progress_cb(done, total, stage_label), called around
+                 the single reference dock so a UI can show a live bar.
     """
     mp = metrics_path(target_dir)
     if not mp.exists():
@@ -496,10 +842,14 @@ def compute_reference(
         receptor_cached = cache_dir / Path(receptor_pdb).name
         if not receptor_cached.exists():
             shutil.copy(receptor_pdb, receptor_cached)
+        if progress_cb is not None:
+            progress_cb(0, 1, "Docking reference")
         reference["vina"] = run_vina_docking(
             ref_mol, receptor_cached, mode=docking,
             exhaustiveness=exhaustiveness, tmp_dir=cache_dir, cpu=cpu,
         )
+        if progress_cb is not None:
+            progress_cb(1, 1, "Docking reference")
     elif reference is not None:
         # Chem-only recompute (docking="none"): preserve any docking the
         # previous reference had, so High Affinity — measured against the

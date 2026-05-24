@@ -1,0 +1,6 @@
+model_name: density_mae
+n_channels: 32        # C; encoder output is C/2 = 16 channels (drop-in compat)
+n_blocks: 4           # ResidualBlocks in the encoder (1 = identical to VoxBind today)
+n_groups: 16
+dropout: 0.1
+n_struct_channels: 11 # 7 ligand + 4 pocket

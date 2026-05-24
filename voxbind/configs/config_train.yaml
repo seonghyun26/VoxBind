@@ -8,6 +8,7 @@ defaults:
 
 debug: False
 wandb: True
+wandb_tags: []          # list of strings, e.g. [voxbind, 10k, density_mae, frozen_encoder]
 num_workers: 4
 resume: null
 resume_epoch: null  # if set, overrides the epoch loaded from checkpoint (useful when resuming)
@@ -19,6 +20,7 @@ seed: 42
 num_epochs: 350
 aug: True  # use data augmentation
 bsz: 64  # batch size
+accum_steps: 1  # gradient-accumulation micro-batches per optimizer step (1 = off)
 lr: 1e-5
 wd: 1e-2
 smooth_sigma: .9
@@ -35,5 +37,5 @@ hydra:
         exclude_keys: [
             "exp_dir", "smooth_sigma", "lr", vox.grid_dim, "wd", "resume", "resume_epoch", "wandb",
             "num_workers", "exp_name", "output_dir", "pretrained_path", "out_dir",
-            "bsz", "seed", "num_epochs", "aug", "pocket_radius", "grid_dim", "aug"
+            "bsz", "accum_steps", "seed", "num_epochs", "aug", "pocket_radius", "grid_dim", "aug"
 ]
