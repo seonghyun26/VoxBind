@@ -1,0 +1,226 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"/>
+<title>VoxBind pre-training - research meeting summary (2026-05-26)</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+         max-width: 980px; margin: 2.2em auto; padding: 0 1.5em; color: #1a202c; line-height: 1.45; }
+  h1 { font-size: 1.5em; margin-bottom: 0.2em; border-bottom: 2px solid #2d3748; padding-bottom: 0.3em; }
+  h2 { font-size: 1.15em; margin-top: 1.8em; border-left: 4px solid #2b6cb0; padding-left: 0.6em; color: #2d3748; }
+  h3 { font-size: 1.0em; margin-top: 1.4em; color: #2d3748; }
+  h4 { font-size: 0.92em; margin: 0.7em 0 0.3em; color: #4a5568; }
+  .meta { color: #718096; font-size: 0.85em; margin-bottom: 1.5em; }
+  .tldr { background: #ebf8ff; border-left: 4px solid #2b6cb0; padding: 0.8em 1em;
+          border-radius: 4px; margin: 1em 0; font-size: 0.96em; }
+  .key  { background: #f0fff4; border-left: 4px solid #38a169; padding: 0.6em 0.9em;
+          border-radius: 4px; margin: 0.8em 0; font-size: 0.9em; }
+  .warn { background: #fffaf0; border-left: 4px solid #dd6b20; padding: 0.6em 0.9em;
+          border-radius: 4px; margin: 0.8em 0; font-size: 0.9em; }
+  table { border-collapse: collapse; width: 100%; margin: 0.7em 0; font-size: 0.86em; }
+  th, td { padding: 5px 8px; text-align: left; border-bottom: 1px solid #e2e8f0; vertical-align: middle; }
+  th { background: #f7fafc; font-weight: 600; color: #2d3748; }
+  td.num { font-family: "SF Mono", Menlo, monospace; text-align: right; }
+  th.num { text-align: right; }
+  .good { color: #38a169; font-weight: 600; }
+  .bad  { color: #e53e3e; font-weight: 600; }
+  .neut { color: #4a5568; }
+  code { background: #edf2f7; padding: 0.08em 0.35em; border-radius: 3px; font-size: 0.88em; }
+  pre  { background: #f7fafc; padding: 0.7em 1em; border-radius: 4px; overflow-x: auto;
+         font-size: 0.82em; border: 1px solid #e2e8f0; }
+  .appendix { margin-top: 3em; padding-top: 1em; border-top: 2px dashed #cbd5e0;
+              color: #4a5568; font-size: 0.92em; }
+  .appendix h2 { border-left-color: #a0aec0; }
+  .footnote { font-size: 0.8em; color: #718096; margin-top: 0.4em; }
+  ol li, ul li { margin: 0.25em 0; }
+</style></head><body>
+<h1>VoxBind density-encoder pre-training - meeting summary</h1>
+<div class="meta">Hyun &middot; 2026-05-26 &middot; branch <code>impl/electra</code></div>
+<div class="tldr">
+<b>Headline.</b> A 4.5M-param 3-D <b>ViT-MAE</b> pre-trained on synthetic electron density, then dropped <i>frozen</i> into VoxBind's density branch and trained on a <b>10&times; smaller</b> data subset (10k vs 100k pocket crops), matches the full-data reproduction on Vina-dock within &plusmn;0.14 kcal/mol and effectively ties on <i>high-affinity %</i> (64.3 vs 65.0).
+Versus a non-pre-trained aligned-density baseline at the same 10k data scale, ViT-MAE buys <b>-0.40 kcal/mol Vina-dock</b> and <b>+13.2 pts high-affinity</b> on the 50-target overlap - bigger gain than adding the density branch itself.
+</div>
+<h2>1. What we did &amp; why</h2>
+<p>VoxBind conditions a 3-D voxel diffusion model on a pocket density branch. Before this branch, density features were trained from scratch on a small downstream budget (10k pocket crops) and likely under-trained. We tested whether <b>self-supervised pre-training on synthetic density</b> can produce a strong encoder that downstream training only needs to fuse, not learn from scratch.</p>
+<p>Three pre-training arms share the same synthetic-density pretext (sum-of-atom voxels &rarr; random Gaussian blur &sigma;&isin;[0.30, 0.80]&Aring; &rarr; per-sample z-score &rarr; additive noise). They differ only in <i>encoder</i> and <i>objective</i>:</p>
+<table>
+<thead><tr><th>Arm</th><th>Encoder</th><th>Objective</th><th>Why we ran it</th></tr></thead>
+<tbody>
+<tr><td><b>CNN-MAE</b></td>
+    <td>4 &times; ResidualBlock (CNN)</td>
+    <td>Block-mask + masked-voxel MSE + 11-ch atom-structure aux</td>
+    <td>Shape-compatible drop-in for the existing CNN density encoder; cheapest baseline.</td></tr>
+<tr><td><b>ViT-MAE 4.5M</b></td>
+    <td>3-D ViT (patch 8&sup3;, D=192, L=6, H=6)</td>
+    <td>Same MAE pretext as CNN</td>
+    <td>Apples-to-apples test of whether attention helps over CNN at fixed compute &amp; pretext.</td></tr>
+<tr><td><b>ViT-ELECTRA 4.5M</b></td>
+    <td>3-D ViT, identical config</td>
+    <td>Block-corrupt (swap/reblur/noise) + per-patch RTD BCE + same aux</td>
+    <td>Tests whether replaced-token-detection (more sample-efficient in NLP) beats MAE on dense density volumes.</td></tr>
+</tbody></table>
+<p>All three encoders are <b>shape-compatible drop-ins</b> for <code>VoxBind.density_encoder</code>: same output shape, same fusion path, same downstream config. Only <code>density_encoder_type</code> and <code>density_pretrained_path</code> change.</p>
+<h2>2. Results</h2>
+<h3>2.1 Pre-training convergence</h3>
+<table>
+<thead><tr><th>Arm</th><th>Epochs done</th><th class="num">Val pretext</th><th class="num">Val L_str</th><th class="num">Val total</th><th>Val total (curve)</th></tr></thead>
+<tbody>
+<tr><td>CNN-MAE</td><td>55 / 100 <span class="footnote">killed early to free GPUs</span></td>
+    <td class="num">0.0153</td><td class="num">0.1876</td><td class="num">0.2029</td><td><svg viewBox="0 0 260 52" width="260" height="52" style="background:#fafafa;border:1px solid #e2e8f0;border-radius:4px;vertical-align:middle"><polyline fill="none" stroke="#dd6b20" stroke-width="1.6" points="8.0,8.0 30.2,37.5 52.4,39.7 74.5,41.1 96.7,41.9 118.9,42.5 141.1,42.9 163.3,43.3 185.5,43.5 207.6,43.7 229.8,43.9 252.0,44.0"/><circle cx="8.0" cy="8.0" r="2.4" fill="#dd6b20" opacity="0.55"/><circle cx="252.0" cy="44.0" r="3" fill="#dd6b20"/><text x="254" y="45" text-anchor="end" font-size="10" fill="#4a5568">ep55 · 0.203</text><text x="8" y="45" text-anchor="start" font-size="10" fill="#a0aec0">0.80→</text></svg></td></tr>
+<tr><td><b>ViT-MAE 4.5M</b></td><td>100 / 100</td>
+    <td class="num"><b>0.0066</b></td><td class="num"><b>0.0556</b></td><td class="num"><b>0.0622</b></td><td><svg viewBox="0 0 260 52" width="260" height="52" style="background:#fafafa;border:1px solid #e2e8f0;border-radius:4px;vertical-align:middle"><polyline fill="none" stroke="#3182ce" stroke-width="1.6" points="8.0,8.0 20.3,29.0 32.6,31.7 45.0,35.5 57.3,38.1 69.6,39.6 81.9,40.5 94.3,41.1 106.6,41.7 118.9,42.3 131.2,42.8 143.6,43.1 155.9,43.3 168.2,43.5 180.5,43.6 192.8,43.7 205.2,43.8 217.5,43.9 229.8,43.9 242.1,44.0 252.0,44.0"/><circle cx="8.0" cy="8.0" r="2.4" fill="#3182ce" opacity="0.55"/><circle cx="252.0" cy="44.0" r="3" fill="#3182ce"/><text x="254" y="45" text-anchor="end" font-size="10" fill="#4a5568">ep99 · 0.062</text><text x="8" y="45" text-anchor="start" font-size="10" fill="#a0aec0">1.77→</text></svg></td></tr>
+<tr><td>ViT-ELECTRA 4.5M</td><td>100 / 100</td>
+    <td class="num">L_rtd 0.0025</td>
+    <td class="num">0.2758</td><td class="num">0.2783</td><td><svg viewBox="0 0 260 52" width="260" height="52" style="background:#fafafa;border:1px solid #e2e8f0;border-radius:4px;vertical-align:middle"><polyline fill="none" stroke="#805ad5" stroke-width="1.6" points="8.0,8.0 20.3,26.3 32.6,38.0 45.0,41.2 57.3,42.4 69.6,43.2 81.9,43.5 94.3,43.6 106.6,43.7 118.9,43.7 131.2,43.8 143.6,43.8 155.9,43.8 168.2,43.9 180.5,43.9 192.8,43.9 205.2,43.9 217.5,44.0 229.8,44.0 242.1,44.0 252.0,44.0"/><circle cx="8.0" cy="8.0" r="2.4" fill="#805ad5" opacity="0.55"/><circle cx="252.0" cy="44.0" r="3" fill="#805ad5"/><text x="254" y="45" text-anchor="end" font-size="10" fill="#4a5568">ep99 · 0.003</text><text x="8" y="45" text-anchor="start" font-size="10" fill="#a0aec0">0.60→</text></svg></td></tr>
+</tbody></table>
+<div class="key">
+<b>Pre-training takeaways.</b>
+<ul>
+<li><b>ViT-MAE reconstructs ~3.3&times; tighter than CNN-MAE</b> at the same effective batch (val 0.062 vs 0.203). At matching ep55, ViT-MAE was already at 0.117 - so the gap is not just from CNN-MAE being killed.</li>
+<li><b>ELECTRA solves its pretext too easily</b>: val L_rtd collapses to 0.0025, meaning the discriminator detects swap/reblur/noise corruptions almost perfectly. The encoder gets little representation pressure, so the auxiliary structure head ends up doing the work but tops out worse than under MAE (L_str 0.276 vs 0.056).</li>
+<li><b>Diagnosis:</b> rule-based corruptions sit too far from the data manifold for a strong discriminator. The learned-generator path is implemented but not yet wired in.</li>
+</ul>
+</div>
+<h3>2.2 Downstream diffusion training (frozen encoder, 10k subset)</h3>
+<table>
+<thead><tr><th>Frozen encoder</th><th>Epochs</th><th class="num">Val loss</th><th class="num">Val mIoU</th><th>Val mIoU (curve)</th></tr></thead>
+<tbody>
+<tr><td>CNN-MAE (ep55)</td><td>200</td><td class="num">157.11</td><td class="num">0.578</td><td><svg viewBox="0 0 260 52" width="260" height="52" style="background:#fafafa;border:1px solid #e2e8f0;border-radius:4px;vertical-align:middle"><polyline fill="none" stroke="#dd6b20" stroke-width="1.6" points="8.0,44.0 14.1,44.0 20.3,44.0 26.4,44.0 32.5,38.4 38.7,29.5 44.8,28.4 50.9,27.5 57.0,25.9 63.2,24.2 69.3,22.7 75.4,20.1 81.6,17.9 87.7,17.0 93.8,15.9 100.0,15.6 106.1,14.6 112.2,14.4 118.4,13.4 124.5,13.3 130.6,13.3 136.7,12.5 142.9,12.0 149.0,11.8 155.1,12.2 161.3,11.2 167.4,11.0 173.5,11.4 179.7,11.1 185.8,11.0 191.9,10.4 198.1,9.7 204.2,9.5 210.3,9.6 216.4,9.4 222.6,9.7 228.7,9.1 234.8,9.0 241.0,8.8 247.1,8.7 252.0,8.0"/><circle cx="8.0" cy="44.0" r="2.4" fill="#dd6b20" opacity="0.55"/><circle cx="252.0" cy="8.0" r="3" fill="#dd6b20"/><text x="254" y="45" text-anchor="end" font-size="10" fill="#4a5568">ep199 · 0.578</text><text x="8" y="45" text-anchor="start" font-size="10" fill="#a0aec0">0.00→</text></svg></td></tr>
+<tr><td><b>ViT-MAE (ep99)</b></td><td>380</td><td class="num"><b>116.22</b></td><td class="num"><b>0.623</b></td><td><svg viewBox="0 0 260 52" width="260" height="52" style="background:#fafafa;border:1px solid #e2e8f0;border-radius:4px;vertical-align:middle"><polyline fill="none" stroke="#3182ce" stroke-width="1.6" points="8.0,44.0 11.2,44.0 14.4,44.0 17.7,36.9 20.9,27.4 24.1,25.3 27.3,24.0 30.5,19.2 33.8,17.3 37.0,16.5 40.2,15.4 43.4,14.8 46.6,14.1 49.8,13.8 53.1,13.6 56.3,13.9 59.5,13.0 62.7,12.9 65.9,12.5 69.2,12.8 72.4,12.2 75.6,11.8 78.8,11.8 82.0,11.8 85.3,11.5 88.5,11.7 91.7,11.7 94.9,11.3 98.1,10.9 101.4,10.6 104.6,11.1 107.8,11.1 111.0,10.3 114.2,10.5 117.4,10.2 120.7,10.1 123.9,10.3 127.1,10.1 130.3,9.7 133.5,10.2 136.8,9.9 140.0,9.7 143.2,9.5 146.4,9.4 149.6,9.9 152.9,9.3 156.1,9.4 159.3,9.7 162.5,9.8 165.7,9.9 168.9,9.3 172.2,8.9 175.4,9.1 178.6,8.9 181.8,9.0 185.0,9.3 188.3,8.7 191.5,9.0 194.7,8.9 197.9,9.0 201.1,8.7 204.4,8.4 207.6,8.6 210.8,8.5 214.0,8.7 217.2,9.0 220.5,9.0 223.7,8.6 226.9,8.3 230.1,8.3 233.3,8.7 236.5,8.8 239.8,8.2 243.0,8.2 246.2,8.2 249.4,8.0 252.0,8.0"/><circle cx="8.0" cy="44.0" r="2.4" fill="#3182ce" opacity="0.55"/><circle cx="252.0" cy="8.034615384615385" r="3" fill="#3182ce"/><text x="254" y="45" text-anchor="end" font-size="10" fill="#4a5568">ep379 · 0.623</text><text x="8" y="45" text-anchor="start" font-size="10" fill="#a0aec0">0.00→</text></svg></td></tr>
+<tr><td>ViT-ELECTRA (ep99)</td><td>157 / 200 <span class="footnote">still training</span></td>
+    <td class="num">149.86</td><td class="num">0.589</td><td><svg viewBox="0 0 260 52" width="260" height="52" style="background:#fafafa;border:1px solid #e2e8f0;border-radius:4px;vertical-align:middle"><polyline fill="none" stroke="#805ad5" stroke-width="1.6" points="8.0,44.0 15.8,44.0 23.5,43.3 31.3,28.6 39.1,25.3 46.9,23.3 54.6,17.1 62.4,15.1 70.2,13.6 77.9,13.2 85.7,12.9 93.5,13.0 101.2,12.2 109.0,11.8 116.8,11.4 124.6,11.6 132.3,10.7 140.1,10.4 147.9,9.8 155.6,10.2 163.4,9.9 171.2,10.1 179.0,9.7 186.7,9.4 194.5,8.9 202.3,9.3 210.0,9.3 217.8,8.7 225.6,8.6 233.4,8.5 241.1,8.0 248.9,8.3 252.0,8.3"/><circle cx="8.0" cy="44.0" r="2.4" fill="#805ad5" opacity="0.55"/><circle cx="252.0" cy="8.284800538629852" r="3" fill="#805ad5"/><text x="254" y="45" text-anchor="end" font-size="10" fill="#4a5568">ep157 · 0.589</text><text x="8" y="45" text-anchor="start" font-size="10" fill="#a0aec0">0.00→</text></svg></td></tr>
+</tbody></table>
+<div class="key"><b>Downstream takeaways.</b> ViT-MAE wins on both diffusion loss (<b>26% lower</b> than CNN-MAE) and mIoU (<b>+4.5 pts</b>). ViT-ELECTRA tracks CNN-MAE more than ViT-MAE so far - same encoder, but ELECTRA's weaker pretext signal carries through to downstream. (ELECTRA has ~43 epochs left.)</div>
+<h3>2.3 Vina docking (overlap-only target means; kcal/mol, lower = better)</h3>
+<p>ViT-MAE is the only pre-training arm with a fulltest sampling+docking run (79 targets). Each row compares ViT-MAE to a reference arm on the same target subset.</p>
+<table>
+<thead><tr>
+  <th>Comparison (self vs ref)</th><th>n_overlap</th>
+  <th class="num">v_score self</th><th class="num">v_score ref</th><th class="num">&Delta; score</th>
+  <th class="num">v_dock self</th><th class="num">v_dock ref</th><th class="num">&Delta; dock</th>
+  <th class="num">HA% self / ref</th><th class="num">&Delta; HA%</th>
+</tr></thead><tbody>
+<tr><td><b>ViT-MAE</b> vs reproduction (full data)</td><td class="num">79</td><td class="num">-5.53</td><td class="num">-5.65</td><td class="num bad">+0.12</td><td class="num">-7.85</td><td class="num">-7.99</td><td class="num bad">+0.14</td><td class="num">64.3 / 65.0</td><td class="num bad">-0.67</td></tr>
+<tr><td><b>ViT-MAE</b> vs aligned density (no SSL)</td><td class="num">50</td><td class="num">-6.39</td><td class="num">-5.57</td><td class="num good">-0.82</td><td class="num">-7.76</td><td class="num">-7.35</td><td class="num good">-0.40</td><td class="num">65.6 / 52.4</td><td class="num good">+13.22</td></tr>
+<tr><td><b>ViT-MAE</b> vs 10k baseline (no density branch)</td><td class="num">79</td><td class="num">-5.53</td><td class="num">-4.56</td><td class="num good">-0.97</td><td class="num">-7.85</td><td class="num">-7.18</td><td class="num good">-0.67</td><td class="num">64.3 / 48.6</td><td class="num good">+15.74</td></tr>
+<tr><td>aligned density vs 10k baseline (no density)</td><td class="num">50</td><td class="num">-5.57</td><td class="num">-5.30</td><td class="num good">-0.27</td><td class="num">-7.35</td><td class="num">-7.09</td><td class="num good">-0.26</td><td class="num">52.4 / 50.0</td><td class="num good">+2.44</td></tr>
+</tbody></table>
+<div class="key">
+<b>Docking takeaways (effectiveness of what we did).</b>
+<ol>
+<li><b>The density branch alone</b> (no SSL, aligned crops) buys <b>-0.26 kcal/mol Vina-dock</b> and <b>+2.4 pts HA%</b> over no-density baseline.</li>
+<li><b>Adding ViT-MAE pre-training on top</b> of the density branch buys an <b>additional -0.40 kcal/mol</b> and <b>+13.2 pts HA%</b> - <i>larger than the density branch's own contribution</i>.</li>
+<li><b>Data efficiency:</b> ViT-MAE on a <b>10&times; smaller</b> training set lands within 0.14 kcal/mol Vina-dock of the full-data reproduction. Downstream looks feature-bound, not data-bound, at this scale.</li>
+</ol>
+</div>
+<h2>3. Conclusions</h2>
+<ol>
+<li><b>SSL pre-training on density works</b> - and contributes more than just having the density branch. Headline positive result.</li>
+<li><b>ViT &gt; CNN as the density encoder</b> at this scale (4.5M params). ViT-MAE dominates CNN-MAE on pretext loss and downstream metrics.</li>
+<li><b>MAE &gt; rule-based ELECTRA</b> on this pretext. Swap/reblur/noise corruptions are too distinguishable - the discriminator solves the RTD task trivially and provides no representation pressure. Final ELECTRA downstream still pending but trajectory is clear.</li>
+<li><b>Downstream data efficiency:</b> a frozen pre-trained ViT-MAE encoder + 10k subset reaches full-data reproduction quality. Cheaper to pre-train once than to scale downstream data.</li>
+</ol>
+<h2>4. Suggested next experiments (to grow the contribution)</h2>
+<ol>
+<li><b>Scale-up: ViT-MAE 40M.</b> The 42.6M config (D=512, L=12, H=8) is already written but not run. Tests whether the encoder is capacity-limited - current 4.5M is ViT-Tiny shaped. If MAE loss keeps dropping and downstream improves, we claim a scaling law for 3-D voxel SSL.</li>
+<li><b>Unfreeze + fine-tune the encoder.</b> All current downstream runs use <code>density_freeze=true</code>. A short discriminative-LR fine-tune (encoder 1e-5, rest 1e-4, last 50 ep) usually buys another step. If it does <i>not</i> help here, that itself is a publishable finding.</li>
+<li><b>Real-density pretext.</b> Current pretext is Gaussian-blurred atom voxels - a sanity-check distribution. Replace with real 2Fo-Fc maps from PDB or cryo-EM densities so the encoder learns features robust to true noise, resolution, and missing-density. This could be the headline contribution: "SSL transfers from real density &rarr; de novo ligand generation."</li>
+<li><b>Learned-generator ELECTRA.</b> The <code>cfg.electra.generator</code> path is wired in but not enabled. A small CNN generator trained jointly produces distribution-matched corruptions and fixes the trivial-detection failure. Worth one run before declaring ELECTRA dead.</li>
+<li><b>Bigger pretext corpus.</b> Pretext is synthetic from CrossDocked atoms only. Adding PDB-mined pockets (no x-ray needed) easily 10&times;'s the data - often the unlock for ViT scaling.</li>
+<li><b>Cross-modal contrastive pretext.</b> Replace the structure-MSE aux head with an InfoNCE objective between density-encoder output and a separate ligand-atom encoder. Directly targets the cross-modal alignment we ultimately need for diffusion conditioning.</li>
+<li><b>Linear-probing study.</b> Probe what the pre-trained encoder has actually learned: (a) atom-type classification, (b) secondary-structure recovery, (c) ligand-pose RMSD prediction. Gives interpretable mechanisms for the downstream Vina deltas - turns "it works" into "we explain why."</li>
+<li><b>Fulltest sampling+docking for CNN-MAE and ViT-ELECTRA.</b> Immediate next step before any paper writeup - currently only ViT-MAE has 79-target Vina numbers.</li>
+</ol>
+<div class="appendix">
+<h2>Appendix A &middot; Architecture details</h2>
+<table>
+<thead><tr><th>Component</th><th>CNN-MAE</th><th>ViT-MAE 4.5M</th><th>ViT-MAE 40M (planned)</th></tr></thead>
+<tbody>
+<tr><td>Patchifier / pre-conv</td><td>Conv3d(1&rarr;16, k=3)</td><td>Conv3d(1&rarr;192, k=8, s=8)</td><td>Conv3d(1&rarr;512, k=8, s=8)</td></tr>
+<tr><td>Token / spatial grid</td><td>n/a (full 64&sup3;)</td><td>8&sup3;=512 tokens</td><td>8&sup3;=512 tokens</td></tr>
+<tr><td>Encoder body</td><td>4 &times; ResidualBlock(16&rarr;16, gn=16, p=0.1)</td><td>6 &times; pre-LN ViT block, D=192, H=6, MLP=4&times;</td><td>12 &times; pre-LN ViT block, D=512, H=8, MLP=4&times;</td></tr>
+<tr><td>Output feature shape</td><td>(B,16,64,64,64)</td><td>(B,16,64,64,64) via token&rarr;voxel reshape</td><td>(B,16,64,64,64) idem</td></tr>
+<tr><td>Density head</td><td colspan="3">Conv3d(16&rarr;16) &rarr; SiLU &rarr; Conv3d(16&rarr;1)</td></tr>
+<tr><td>RTD head (ELECTRA)</td><td colspan="3">Conv3d(16&rarr;16) &rarr; SiLU &rarr; Conv3d(16&rarr;1, k=8, s=8) &rarr; (B,1,8,8,8)</td></tr>
+<tr><td>Structure aux head</td><td colspan="3">Conv3d(16&rarr;16) &rarr; SiLU &rarr; Conv3d(16&rarr;11)  // 7 ligand + 4 pocket</td></tr>
+<tr><td><b>Total pretext-model params</b></td><td><b>0.08 M</b></td><td><b>4.47 M</b></td><td><b>42.6 M</b></td></tr>
+<tr><td>Frozen encoder params loaded into VoxBind</td><td>0.056 M</td><td>4.45 M</td><td>~42.5 M</td></tr>
+</tbody></table>
+<p class="footnote">All three encoders produce (B, n_channels/2, G, G, G) and load drop-in into <code>VoxBind.density_encoder</code> via <code>encoder_state_dict_ema</code>. Downstream <code>density_proj</code> fusion path is identical.</p>
+<h2>Appendix B &middot; Pretext objective details</h2>
+<h4>Shared input synthesis</h4>
+<pre>density = sum_over_channels(voxels_lig) + sum_over_channels(voxels_poc)
+        &rarr; GaussianBlur3D(sigma ~ U[0.30, 0.80] Aa)
+        &rarr; per-sample z-score
+        &rarr; + N(0, 0.05^2)         # additive Gaussian noise</pre>
+
+<h4>MAE pretext (CNN-MAE, ViT-MAE)</h4>
+<ul>
+<li>3-D block mask at 8&sup3; voxel blocks, mask_ratio = 0.60. Masked voxels are <b>zeroed</b> in the encoder input.</li>
+<li>L = L_dens + L_str
+  <ul>
+    <li>L_dens = MSE(d_hat, d_clean) restricted to masked voxels.</li>
+    <li>L_str  = pos-weighted MSE on 11-ch atom voxels. Voxels with target &gt; 0.05 get 100&times; weight to counter the ~99.8%-sparse target (without this, the network learns the constant-zero shortcut).</li>
+  </ul>
+</li>
+</ul>
+
+<h4>ELECTRA pretext (ViT-ELECTRA)</h4>
+<ul>
+<li>Same block mask, but masked blocks are <b>replaced</b> per batch by one of:
+  <ul>
+    <li><code>swap</code> (60%) - copy same region from a neighbour-shifted sample</li>
+    <li><code>reblur</code> (30%) - re-blur the same atoms with a different sigma</li>
+    <li><code>noise</code> (10%) - N(0,1) at the z-scored scale</li>
+  </ul></li>
+<li>Per-patch BCE-with-logits on RTD head over the 8&sup3;=512-patch grid. Target = 1 if any voxel in the patch was corrupted.</li>
+<li>Structure aux head retained, identical loss as MAE.</li>
+</ul>
+
+<h4>End-of-pre-training loss decomposition (val, EMA)</h4>
+<table>
+<thead><tr><th>Arm</th><th class="num">Pretext (dens / RTD)</th><th class="num">L_str</th><th class="num">Total</th></tr></thead>
+<tbody>
+<tr><td>CNN-MAE (ep55)</td><td class="num">0.0153</td><td class="num">0.1876</td><td class="num">0.2029</td></tr>
+<tr><td>ViT-MAE (ep99)</td><td class="num">0.0066</td><td class="num">0.0556</td><td class="num">0.0622</td></tr>
+<tr><td>ViT-ELECTRA (ep99)</td><td class="num">0.0025 (RTD)</td><td class="num">0.2758</td><td class="num">0.2783</td></tr>
+</tbody></table>
+<h2>Appendix C &middot; Launch / hyperparameters</h2>
+<table>
+<thead><tr><th>Setting</th><th>CNN-MAE</th><th>ViT-MAE</th><th>ViT-ELECTRA</th></tr></thead>
+<tbody>
+<tr><td>Pretext data</td><td colspan="3">CrossDocked2020, full set (~100k pockets) - atom voxels only</td></tr>
+<tr><td>GPUs &middot; bsz/rank &middot; eff batch</td>
+    <td>6 &middot; 16 &middot; 96</td><td>6 &middot; 16 &middot; 96</td><td>5 &middot; 16 &middot; 80</td></tr>
+<tr><td>Epochs done</td><td>55 / 100 (killed)</td><td>100</td><td>100</td></tr>
+<tr><td>Optimizer</td><td colspan="3">AdamW, lr=1e-4, beta=(0.9,0.999); CNN wd=1e-2, ViT wd=5e-2; grad-clip 1.0</td></tr>
+<tr><td>EMA decay</td><td colspan="3">0.999</td></tr>
+<tr><td>Pretext run dir</td>
+    <td><code>exps/260521_density_mae_posweight</code></td>
+    <td><code>exps/260522_density_vit_mae_pretrain</code></td>
+    <td><code>exps/260524_density_vit_electra_pretrain</code></td></tr>
+<tr><td>Downstream run dir</td>
+    <td><code>260521_voxbind_10k_density_mae_frozen</code></td>
+    <td><code>260523_voxbind_10k_density_vit_mae_frozen</code></td>
+    <td><code>260525_voxbind_10k_density_vit_electra_frozen</code></td></tr>
+<tr><td>Downstream data</td>
+    <td colspan="3">CrossDocked 10k subset, aligned x-ray crops, bsz=4/rank, 200 ep (ViT 380 ep w/ resume)</td></tr>
+<tr><td>Downstream encoder mode</td><td colspan="3"><code>density_freeze=true</code> (requires_grad=False, dropout off)</td></tr>
+</tbody></table>
+<h2>Appendix D &middot; Full-arm Vina aggregates (across all available targets)</h2>
+<table>
+<thead><tr><th>Arm</th><th>n targets</th><th class="num">v_score</th><th class="num">v_min</th><th class="num">v_dock</th><th class="num">HA%</th><th class="num">QED</th><th class="num">SA</th><th class="num">Diversity</th></tr></thead>
+<tbody>
+<tr><td>10k baseline (no density)</td><td class="num">92</td><td class="num">-4.62</td><td class="num">-5.93</td><td class="num">-7.14</td><td class="num">45.7</td><td class="num">0.47</td><td class="num">0.60</td><td class="num">0.78</td></tr>
+<tr><td>10k aligned density (no SSL, ep138)</td><td class="num">50</td><td class="num">-5.57</td><td class="num">-6.48</td><td class="num">-7.35</td><td class="num">52.4</td><td class="num">0.48</td><td class="num">0.60</td><td class="num">0.75</td></tr>
+<tr><td>10k ViT-MAE frozen (ep379, fulltest)</td><td class="num">79</td><td class="num">-5.53</td><td class="num">-6.89</td><td class="num">-7.85</td><td class="num">64.3</td><td class="num">0.48</td><td class="num">0.62</td><td class="num">0.72</td></tr>
+<tr><td>VoxBind reproduction (full data, fulltest)</td><td class="num">100</td><td class="num">-5.80</td><td class="num">-7.06</td><td class="num">-7.99</td><td class="num">62.5</td><td class="num">0.53</td><td class="num">0.65</td><td class="num">0.74</td></tr>
+</tbody></table>
+<p class="footnote">Full-arm means are over <i>different</i> target sets; use &sect;2.3 (overlap-only) for head-to-head comparisons. CNN-MAE and ViT-ELECTRA do not yet have a fulltest sampling+docking run - that is the immediate next step.</p>
+<h2>Appendix E &middot; Open items / known limitations</h2>
+<ul>
+<li>CNN-MAE pre-training was killed at ep55 to free GPUs - final pretext loss is "best we have" not "best possible". Re-running to 100 ep would tighten the apples-to-apples claim.</li>
+<li>ViT-ELECTRA downstream still has ~43 epochs left as of 2026-05-26. Final mIoU may close some gap but trajectory clearly underperforms ViT-MAE.</li>
+<li>Only ViT-MAE has a fulltest sampling+docking run (79 targets). Matching runs for CNN-MAE and ViT-ELECTRA are needed before any paper writeup.</li>
+<li>40M ViT config is committed but not yet launched.</li>
+<li>Vina scoring has a few clash-explosion outliers (vina_score &gt;= 0 on ~2 targets out of 79) - median Vina-dock is more robust than mean. ViT-MAE median Vina-dock = -8.06 vs reproduction -8.12; deltas hold.</li>
+</ul>
+</div></body></html>

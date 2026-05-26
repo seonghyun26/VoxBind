@@ -1,0 +1,85 @@
+defaults:
+  - dset: crossdocked          # density is SYNTHESIZED from atom voxels; no x-ray needed
+  - model: density_vit_mae
+  - vox: default
+  - override hydra/job_logging: custom
+  - _self_
+
+# Thin sibling of config_train_density_vit_mae.yaml that flips pretext to
+# ELECTRA-style: corrupt blocks via rule-based op (swap / reblur / noise) +
+# per-patch RTD detector + 11-ch atom-structure auxiliary head. See
+# train_density_vit_mae.py for the corruption pipeline.
+
+debug: False
+wandb: True
+wandb_tags: []          # list of strings, e.g. [pretrain, density_vit, electra, stage_a]
+num_workers: 4
+resume: null
+resume_epoch: null
+exp_dir: exps
+exp_name: density_vit_electra${hydra.job.override_dirname}
+output_dir: null
+
+seed: 42
+num_epochs: 100
+aug: True
+bsz: 32                  # same default as MAE config; drop to 16 on tight memory.
+accum_steps: 1
+lr: 1e-4
+wd: 5e-2                 # higher wd than cnn-MAE — ViTs typically need stronger regularization
+
+# ── MAE/ELECTRA shared knobs (pretext_style flips to electra) ───────────────
+mae:
+  pretext_style: electra
+  # Synthetic density generation (same as mae config)
+  sigma_blur_a_lo: 0.30
+  sigma_blur_a_hi: 0.80
+  sigma_noise: 0.05
+  # Block corruption
+  block_size: 8                  # voxels per cube edge (2 Å at 0.25 Å/vox)
+  mask_ratio: 0.60               # fraction of blocks corrupted
+  # Loss weights
+  lambda_dens: 1.0               # unused in electra mode
+  lambda_rtd: 1.0                # per-patch BCE on RTD logits
+  lambda_str: 1.0                # 11-channel atom structure prediction
+  # Structure-loss positive-voxel weighting (kept identical to MAE config so
+  # the structure auxiliary remains directly comparable).
+  struct_pos_weight: 100.0
+  struct_pos_thresh: 0.05
+  # EMA
+  ema_decay: 0.999
+  # Gradient clipping (0 disables)
+  grad_clip: 1.0
+  # Validation cadence
+  val_every: 1
+  ckpt_every: 20
+
+# ── ELECTRA pretext knobs ───────────────────────────────────────────────────
+electra:
+  # Per-batch op is sampled from this list with weights. v1 supports rule-based
+  # ops only ({swap, reblur, noise}); the learned-generator path is reserved.
+  # The default uses swap+reblur weighted toward swap, since reblur is
+  # noticeably more expensive (second 3D Gaussian) and swap is the cheapest
+  # plausible-distribution corruption.
+  corruption_ops: [swap, reblur, noise]
+  corruption_op_weights: [0.6, 0.3, 0.1]
+  generator:
+    enabled: false               # learned generator path not wired in v1
+    hidden: 32
+    lambda_gen_mlm: 1.0
+
+# Hydra
+hydra:
+  run:
+    dir: ./${exp_dir}/${exp_name}
+  job:
+    config:
+      override_dirname:
+        kv_sep: ""
+        item_sep: "_"
+        exclude_keys: [
+            "exp_dir", "lr", vox.grid_dim, "wd", "resume", "resume_epoch", "wandb",
+            "num_workers", "exp_name", "output_dir", "out_dir",
+            "bsz", "accum_steps", "seed", "num_epochs", "aug", "pocket_radius",
+            "grid_dim", "debug"
+]

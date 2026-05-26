@@ -80,7 +80,7 @@ def _load_grid(ccp4_path: Path):
         nu, nv, nw = arr.shape
 
         sigma = arr.std()
-        if sigma < 1e-10:
+        if not np.isfinite(sigma) or sigma < 1e-10:
             return None
         arr_norm = (arr - arr.mean()) / sigma
 
@@ -242,7 +242,7 @@ def normalize_crop(crop: np.ndarray) -> np.ndarray:
     crop = crop.astype(np.float32)
     mu = crop.mean()
     sigma = crop.std()
-    if sigma < 1e-10:
+    if not np.isfinite(sigma) or sigma < 1e-10:
         return crop - mu   # flat / empty crop → return all-zeros
     crop_clipped = np.clip(crop, mu - 3.0 * sigma, mu + 3.0 * sigma)
     return (crop_clipped - mu) / sigma

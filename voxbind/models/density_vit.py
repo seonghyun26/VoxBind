@@ -1,31 +1,26 @@
-"""density_vit.py — Pure 3D Vision Transformer density encoder + MAE wrapper.
+"""density_vit.py — Pure 3D Vision Transformer density encoder + MAE/ELECTRA wrapper.
 
 `DensityViT` is shape-compatible with VoxBind's CNN `density_encoder`:
     in:  (B, 1,   G, G, G)
     out: (B, C/2, G, G, G)
 so it drops into `VoxBind` in place of the existing Conv-stem + ResidualBlocks.
-Fusion into the UNet backbone is unchanged — the existing zero-init
-`density_proj` head in `voxbind.py` keeps initial output identical to the
-baseline (no-density) model.
 
-Architecture (defaults at G=64, patch=8 → 8³=512 tokens):
-    patch_embed   Conv3d(1 → D, k=p, s=p)            → (B, D, G_p, G_p, G_p)
-    + learnable 3D pos_embed                          → (B, N, D)
-    L × [pre-LN → MHSA (F.scaled_dot_product_attn)
-                  → pre-LN → MLP (×mlp_ratio, GELU)]  → (B, N, D)
-    final LayerNorm                                   → (B, N, D)
-    decoder_proj  Linear(D → C/2 · p³) + reshape      → (B, C/2, G, G, G)
+`DensityViTMAE` wraps `DensityViT` as `self.encoder` and adds pretext heads.
+Two pretext styles are supported via `pretext_style`:
 
-The Linear+reshape decoder mirrors the standard ViT-MAE patch-output head:
-each token emits a (p, p, p, C/2) cube that is placed at its spatial slot.
-With G=64, p=8, D=192, L=6, H=6 this is ~4.4M params.
+  - "mae"     : block-mask + reconstruct masked voxels. `head_density` is a
+                Conv3d stack producing (B, 1, G, G, G); 11-ch atom-structure
+                auxiliary head also active.
 
-`DensityViTMAE` wraps `DensityViT` as `self.encoder` and adds the same
-density-reconstruction and 11-channel atom-structure heads used by
-`DensityMAE` (so `train_density_vit_mae.py` can reuse `compute_losses`).
-After pre-training, the `encoder.*` slice of the EMA checkpoint loads
-drop-in into `VoxBind.density_encoder` (via the existing loader in
-`models/__init__.py` — same `encoder.` strip + strict load).
+  - "electra" : ELECTRA-style replaced-token detection. Inputs are CORRUPTED
+                (rule-based: swap-from-other-sample / re-blur / noise / or an
+                optional learned generator) rather than zero-masked. `head_rtd`
+                emits one logit per ViT patch (B, 1, G_p, G_p, G_p) for binary
+                "was this patch corrupted?" classification. The 11-ch atom-
+                structure auxiliary head is retained.
+
+In either style, the `encoder.*` slice of the EMA checkpoint loads drop-in into
+`VoxBind.density_encoder` via the existing loader in `models/__init__.py`.
 """
 
 from typing import Tuple
@@ -182,13 +177,20 @@ class DensityViT(nn.Module):
 # ── DensityViTMAE (encoder + density head + structure head) ───────────────────
 
 class DensityViTMAE(nn.Module):
-    """Voxel-MAE wrapper around `DensityViT`.
+    """Voxel-MAE / ELECTRA wrapper around `DensityViT`.
 
-    Matches the API of `DensityMAE` so `train_density_vit_mae.py` can reuse the
-    existing `compute_losses` and synthesis helpers. The encoder is exposed as
-    `self.encoder` (a `DensityViT`) so its weights load drop-in into
-    `VoxBind.density_encoder` via the existing `encoder.*` strip in
-    `models/__init__.py::create_model`.
+    The encoder is exposed as `self.encoder` (a `DensityViT`) so its weights
+    load drop-in into `VoxBind.density_encoder` via the existing `encoder.*`
+    strip in `models/__init__.py::create_model`. Which pretext head is active
+    depends on `pretext_style`:
+
+      - "mae"     : `head_density` (B,1,G,G,G)  + `head_structure` (B,11,G,G,G)
+      - "electra" : `head_rtd`     (B,1,Gp,Gp,Gp) + `head_structure` (B,11,G,G,G)
+
+    Forward returns `(out_pretext, out_structure)`. `out_pretext` is the
+    masked-voxel density reconstruction in mae mode and per-patch RTD logits
+    in electra mode — interpretation lives in `train_density_vit_mae.py::
+    compute_losses`.
     """
 
     def __init__(
@@ -202,8 +204,13 @@ class DensityViTMAE(nn.Module):
         mlp_ratio: int = 4,
         dropout: float = 0.1,
         n_struct_channels: int = 11,  # 7 ligand + 4 pocket
+        pretext_style: str = "mae",   # "mae" | "electra"
     ):
         super().__init__()
+        assert pretext_style in ("mae", "electra"), (
+            f"unknown pretext_style: {pretext_style!r} (expected 'mae' or 'electra')"
+        )
+        self.pretext_style = pretext_style
         c_half = n_channels // 2
 
         self.encoder = DensityViT(
@@ -217,13 +224,24 @@ class DensityViTMAE(nn.Module):
             dropout=dropout,
         )
 
-        # Heads — identical shape/structure to DensityMAE so the MAE prefetcher
-        # + compute_losses pipeline is reused as-is.
-        self.head_density = nn.Sequential(
-            nn.Conv3d(c_half, c_half, kernel_size=3, padding=1),
-            nn.SiLU(),
-            nn.Conv3d(c_half, 1, kernel_size=3, padding=1),
-        )
+        if pretext_style == "mae":
+            # Masked-voxel density reconstruction head: same shape as DensityMAE.
+            self.head_density = nn.Sequential(
+                nn.Conv3d(c_half, c_half, kernel_size=3, padding=1),
+                nn.SiLU(),
+                nn.Conv3d(c_half, 1, kernel_size=3, padding=1),
+            )
+        else:
+            # Per-patch RTD logits via a strided Conv3d that pools the full-res
+            # encoder feature map (B, c_half, G, G, G) down to the patch grid
+            # (B, 1, g_p, g_p, g_p). Mirrors `head_density`'s 2-layer pattern.
+            self.head_rtd = nn.Sequential(
+                nn.Conv3d(c_half, c_half, kernel_size=3, padding=1),
+                nn.SiLU(),
+                nn.Conv3d(c_half, 1,
+                          kernel_size=patch_size, stride=patch_size, padding=0),
+            )
+
         self.head_structure = nn.Sequential(
             nn.Conv3d(c_half, c_half, kernel_size=3, padding=1),
             nn.SiLU(),
@@ -238,6 +256,35 @@ class DensityViTMAE(nn.Module):
 
     def forward(self, density: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         z = self.encoder(density)
-        d_hat = self.head_density(z)
-        a_hat = self.head_structure(z)
-        return d_hat, a_hat
+        if self.pretext_style == "electra":
+            out_pretext = self.head_rtd(z)        # (B, 1, g_p, g_p, g_p)
+        else:
+            out_pretext = self.head_density(z)    # (B, 1, G, G, G)
+        out_structure = self.head_structure(z)    # (B, n_struct, G, G, G)
+        return out_pretext, out_structure
+
+
+# ── DensityGenerator (optional learned corruption for ELECTRA) ────────────────
+
+class DensityGenerator(nn.Module):
+    """Tiny 3D CNN that fills corrupted blocks with plausible density values.
+
+    Used only when "generator" is included in cfg.electra.corruption_ops AND
+    cfg.electra.generator.enabled is True. Trained jointly with the
+    discriminator via MLM-style MSE on the corrupted-voxel positions; its
+    detached samples then replace the original values for those positions
+    before the discriminator forward.
+    """
+
+    def __init__(self, hidden: int = 32):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Conv3d(1, hidden, kernel_size=3, padding=1),
+            nn.SiLU(),
+            nn.Conv3d(hidden, hidden, kernel_size=3, padding=1),
+            nn.SiLU(),
+            nn.Conv3d(hidden, 1, kernel_size=3, padding=1),
+        )
+
+    def forward(self, density: torch.Tensor) -> torch.Tensor:
+        return self.net(density)

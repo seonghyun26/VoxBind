@@ -25,6 +25,15 @@ A crop is DROPPED (marked unavailable -> model falls back to zero density) when:
   * post-fit Kabsch RMSD above --max-rmsd     (reason: high_rmsd)
   * weak density at corrected atoms           (reason: weak_density)
 
+Chain selection (--match-version)
+---------------------------------
+  v1 : lowest Kabsch RMSD across deposited chains (legacy; produced
+       dataset/data/xray_crops_aligned).
+  v2 : highest mean density at the corrected atoms (default). Targets the
+       ~2.7k mixed-PDB weak_density failures where v1's RMSD tiebreak picked
+       a chain whose (R,t) landed pocket10 into noise. See
+       notebook/260524_density_alignment_audit.ipynb section K.
+
 Outputs (--out-dir, default dataset/data/xray_crops_aligned; the original
 dataset/data/xray_crops is left untouched)
 -----------------------------------------------------------------------
@@ -109,6 +118,55 @@ def sample_map(arr, frac_T, nu, nv, nw, xyz):
     fr = np.asarray(xyz, float) @ frac_T
     idx = [(fr[:, 0] * nu) % nu, (fr[:, 1] * nv) % nv, (fr[:, 2] * nw) % nw]
     return scipy.ndimage.map_coordinates(arr, idx, order=1, mode="wrap")
+
+
+def kabsch_match(pk, dep, cfg, density_fn, version="v2"):
+    """Find a chain-Kabsch fit mapping pocket10 atoms to the deposited frame.
+
+    Iterates each deposited chain, fits Kabsch on (seqid, atom_name)-matched
+    atoms, and picks the best candidate by:
+
+      v1 : lowest Kabsch RMSD (structural proxy used by the original cache).
+      v2 : highest mean density at the corrected atom positions.
+
+    Why v2 exists: for interface or heterogeneous pockets (pocket10 contains
+    atoms from multiple deposited chains), per-chain Kabsch can fit a subset
+    tightly while the rest of pocket10 mis-fits — low RMSD, but the (R,t)
+    lands pocket10 onto noise in the map. Density at the fitted atoms is the
+    direct correctness signal, so v2 uses it as the selection criterion.
+
+    Parameters
+    ----------
+    pk         : {(seqid, atom_name) -> xyz}                pocket10 atoms
+    dep        : {chain_name -> {(seqid, atom_name) -> xyz}} deposited atoms
+    cfg        : {min_atoms: int, ...}
+    density_fn : callable, points (N,3) -> mean density (float). Only invoked
+                 by v2 (one call per candidate chain).
+    version    : "v1" or "v2"
+
+    Returns
+    -------
+    dict(R, t, rmsd, rot, n, P, density, chain) or None if no chain meets
+    `min_atoms`. The `density` field is populated only under v2.
+    """
+    best = None
+    for chain, datoms in dep.items():
+        keys = [k for k in pk if k in datoms]
+        if len(keys) < cfg["min_atoms"]:
+            continue
+        P = np.array([pk[k] for k in keys], float)
+        Q = np.array([datoms[k] for k in keys], float)
+        R, t, rmsd, rot = kabsch(P, Q)
+        cand = dict(R=R, t=t, rmsd=rmsd, rot=rot, n=len(keys), P=P,
+                    chain=chain, density=None)
+        if version == "v2":
+            cand["density"] = float(density_fn(P @ R.T + t))
+            if best is None or cand["density"] > best["density"]:
+                best = cand
+        else:  # v1
+            if best is None or cand["rmsd"] < best["rmsd"]:
+                best = cand
+    return best
 
 
 def atoms_by_key(structure, per_chain):
@@ -202,6 +260,7 @@ def process_pdb(pdb_id, jobs, cfg):
             return fail_all("deposited_empty")
 
         results = []
+        density_fn = lambda xyz: sample_map(arr, frac_T, nu, nv, nw, xyz).mean()
         for split, idx, p10_path, centroid in jobs:
             r = blank(split, idx)
             try:
@@ -209,18 +268,8 @@ def process_pdb(pdb_id, jobs, cfg):
             except Exception:
                 r["reason"] = "pocket10_parse_failed"; results.append(r); continue
 
-            # match the receptor pocket against each deposited chain, keep the
-            # lowest-RMSD fit (handles homo-oligomers / chain renaming)
-            best = None
-            for datoms in dep.values():
-                keys = [k for k in pk if k in datoms]
-                if len(keys) < cfg["min_atoms"]:
-                    continue
-                P = np.array([pk[k] for k in keys], float)
-                Q = np.array([datoms[k] for k in keys], float)
-                R, t, rmsd, rot = kabsch(P, Q)
-                if best is None or rmsd < best["rmsd"]:
-                    best = dict(R=R, t=t, rmsd=rmsd, rot=rot, n=len(keys), P=P)
+            best = kabsch_match(pk, dep, cfg, density_fn,
+                                version=cfg["match_version"])
             if best is None:
                 r["reason"] = "too_few_matched_atoms"; results.append(r); continue
 
@@ -229,9 +278,11 @@ def process_pdb(pdb_id, jobs, cfg):
 
             # Density at the corrected receptor atoms is the physical
             # correctness check; RMSD is only a looser structural sanity bound,
-            # so density is gated first.
-            dens = float(sample_map(arr, frac_T, nu, nv, nw,
-                                    best["P"] @ best["R"].T + best["t"]).mean())
+            # so density is gated first. v2 already scored density during
+            # selection; v1 needs it computed now.
+            dens = best["density"]
+            if dens is None:
+                dens = float(density_fn(best["P"] @ best["R"].T + best["t"]))
             r["density"] = dens
             if dens < cfg["min_density"]:
                 r["reason"] = "weak_density"; results.append(r); continue
@@ -342,6 +393,11 @@ def main():
     ap.add_argument("--min-density", type=float, default=0.5,
                     help="min mean density (sigma) at corrected receptor atoms — "
                          "the primary gate (correct crops sit at ~+2.3 sigma)")
+    ap.add_argument("--match-version", choices=["v1", "v2"], default="v2",
+                    help="chain selection criterion: v1=lowest Kabsch RMSD "
+                         "(legacy, produced xray_crops_aligned/), "
+                         "v2=highest density at corrected atoms (default; "
+                         "targets weak_density failures in mixed-chain pockets)")
     ap.add_argument("--overwrite", action="store_true",
                     help="recompute crops even if the .npy already exists")
     ap.add_argument("--limit", type=int, default=0,
@@ -354,11 +410,13 @@ def main():
     cfg = dict(ccp4=Path(args.ccp4_dir), pdb=Path(args.pdb_dir),
                out=Path(args.out_dir), overwrite=args.overwrite,
                min_atoms=args.min_atoms, max_rmsd=args.max_rmsd,
-               min_density=args.min_density)
+               min_density=args.min_density,
+               match_version=args.match_version)
 
     print("=== 00d frame-corrected X-ray density crops ===")
     print(f"  data_dir   : {args.data_dir}")
     print(f"  out_dir    : {args.out_dir}")
+    print(f"  match_ver  : {args.match_version}")
     print(f"  gates      : min_atoms={args.min_atoms} max_rmsd={args.max_rmsd} "
           f"min_density={args.min_density}")
     print(f"  workers    : {args.workers}")

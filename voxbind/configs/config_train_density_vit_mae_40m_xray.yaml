@@ -1,0 +1,91 @@
+defaults:
+  - dset: crossdocked_xray     # real 2Fo-Fc crops in xray_crops_aligned/
+  - model: density_vit_mae_40m # ~42.6M ViT (D=512, L=12, H=8) - first scale-up
+  - vox: default
+  - override hydra/job_logging: custom
+  - _self_
+
+# Real-density variant of config_train_density_vit_mae_40m.yaml:
+# swaps the synthetic Gaussian-blur pretext input for real x-ray density
+# crops (xray_crops_aligned/), and bumps the encoder to the 40M ViT variant.
+# Same MAE pretext (block-mask zero + masked-voxel MSE + 11-ch atom-structure aux).
+
+debug: False
+wandb: True
+wandb_tags: []          # e.g. [pretrain, density_vit_mae_40m, real_density, stage_a]
+num_workers: 4
+resume: null
+resume_epoch: null
+exp_dir: exps
+exp_name: density_vit_mae_40m_xray${hydra.job.override_dirname}
+output_dir: null
+
+seed: 42
+num_epochs: 100
+aug: True
+# 40M ViT memory profile: bsz=8/rank fit on 24 GiB cards in the synthetic run
+# (config_train_density_vit_mae_40m.yaml). Real-density path skips the
+# in-loop Gaussian-blur conv, freeing a small amount of activation memory.
+# accum_steps=2 keeps effective batch ~ matched to the 4.5M synthetic run
+# (5 GPUs × 8 × 2 = 80 eff, vs 4.5M synthetic 6×16=96).
+bsz: 8
+accum_steps: 2
+lr: 1e-4
+wd: 5e-2                 # higher wd than cnn-MAE - ViTs typically need stronger regularization
+
+# ── Dataset overrides ────────────────────────────────────────────────────────
+# subset_xray_only=true filters to the ~78.5k crops where xray is available;
+# without it, ~21% of samples return zero density and pollute the pretext.
+# The xray subset is materialized via subset_n/subset_val_n (the gate only
+# triggers when subset_n is set). 78428 + 100 = 78528 = full xray-available
+# train_pool count (see train_available.npy). val pool is carved from the
+# train-xray pool, disjoint from train.
+dset:
+  subset_xray_only: true
+  subset_n: 78428
+  subset_val_n: 100
+
+# ── MAE-specific knobs ───────────────────────────────────────────────────────
+mae:
+  # Pretext source: 'synthetic' = blur-from-atoms (260522), 'xray' = real 2Fo-Fc.
+  density_source: xray
+  # Synthetic-density knobs are unused when density_source=xray, kept for
+  # config-schema consistency with the synthetic configs.
+  sigma_blur_a_lo: 0.30
+  sigma_blur_a_hi: 0.80
+  # Additive noise on top of d_clean. Real density already carries experimental
+  # noise; we set this to 0 to keep the pretext signal closest to what the
+  # encoder will see downstream (xray_crops_aligned/ + locally z-scored).
+  sigma_noise: 0.0
+  # Block masking (input space - encoder always sees full G³, masked voxels zeroed)
+  block_size: 8                  # 2 Å cubes at 0.25 Å/vox
+  mask_ratio: 0.60               # fraction of blocks masked
+  # Loss weights
+  lambda_dens: 1.0               # masked-voxel density reconstruction
+  lambda_str: 1.0                # 11-channel atom structure prediction
+  # Structure-loss positive-voxel weighting (same as synthetic 40M)
+  struct_pos_weight: 100.0
+  struct_pos_thresh: 0.05
+  # EMA
+  ema_decay: 0.999
+  # Gradient clipping (0 disables)
+  grad_clip: 1.0
+  # Validation cadence
+  val_every: 1
+  ckpt_every: 20
+
+# Hydra
+hydra:
+  run:
+    dir: ./${exp_dir}/${exp_name}
+  job:
+    config:
+      override_dirname:
+        kv_sep: ""
+        item_sep: "_"
+        exclude_keys: [
+            "exp_dir", "lr", vox.grid_dim, "wd", "resume", "resume_epoch", "wandb",
+            "num_workers", "exp_name", "output_dir", "out_dir",
+            "bsz", "accum_steps", "seed", "num_epochs", "aug", "pocket_radius",
+            "grid_dim", "debug"
+]
