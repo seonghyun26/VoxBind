@@ -328,13 +328,19 @@ class DatasetCrossDockedXray(Dataset):
         self._val_from_train_pool = (split == "val" and subset_val_n is not None)
         phys_split = "train" if self._val_from_train_pool else split
 
-        # Precomputed crops mode: load float16 .npy files produced by dataset/00b_data_density_preprocess.py
+        # Precomputed crops mode: load float16 .npy files produced by dataset/00b_data_density_preprocess.py.
+        # Manifest discovery is decoupled from `use_xray` so that `subset_xray_only=True`
+        # can filter to the X-ray-available pool even when actual density I/O is
+        # skipped (use_xray=False) — needed for the atomblob pretraining variant,
+        # which shares the data subset with atomblob+density but does not consume
+        # the density channel. `_use_crops` still tracks use_xray so the per-sample
+        # density loader (gated by self.use_xray) reads from the right path.
         _crops_path = Path(crops_dir) if crops_dir else None
-        if use_xray and _crops_path and (_crops_path / phys_split).exists():
+        if _crops_path and (_crops_path / phys_split).exists():
             self._crops_dir = _crops_path / phys_split
             avail_path = _crops_path / f"{phys_split}_available.npy"
             self._crops_available = np.load(str(avail_path)) if avail_path.exists() else None
-            self._use_crops = True
+            self._use_crops = use_xray
         else:
             self._crops_dir = None
             self._crops_available = None
