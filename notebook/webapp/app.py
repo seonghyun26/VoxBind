@@ -82,17 +82,34 @@ st.markdown(
       .block-container [data-testid="stVerticalBlock"] { gap: .55rem; }
       /* Sidebar split into two side-by-side columns:
            - LEFT  (`sidebar-ctrl-col`): browsing context + compute section.
-           - RIGHT (`sidebar-tgt-col`):  target + sample radios, with their
-                                         own internal vertical scroll.
-         Sidebar is widened to 460 px so the two columns have breathing
+           - RIGHT (`sidebar-tgt-col`):  target + sample radios.
+         Sidebar is widened to 520 px so the two columns have breathing
          room (default 336 px would crush selectbox labels). A 1 px hairline
-         between the columns marks the boundary. Backgrounds inherit from
-         the sidebar (Streamlit 1.57 dropped the bg CSS var, so we
-         normalize to its actual default gray with a dark-mode fallback). */
+         between the columns marks the boundary. The width override is
+         scoped to `[aria-expanded="true"]` so Streamlit's collapse
+         (translateX by its *stored* width — default 300 px — would otherwise
+         leave 220 px of our 520 px sidebar visible). When collapsed we
+         shrink to 0 width so the collapse is clean. Backgrounds inherit
+         from the sidebar (Streamlit 1.57 dropped the bg CSS var, so we
+         normalize to its actual default gray with a dark-mode fallback).
+         Outer sidebar scrolling is disabled and replaced by per-column
+         scrolling so users only ever see one scrollbar at a time. */
       section[data-testid="stSidebar"] {
         background-color: var(--secondary-background-color, #F0F2F6);
+        transition: width 300ms, min-width 300ms !important;
+      }
+      section[data-testid="stSidebar"][aria-expanded="true"] {
         width: 520px !important;
         min-width: 520px !important;
+      }
+      section[data-testid="stSidebar"][aria-expanded="false"] {
+        width: 0 !important;
+        min-width: 0 !important;
+        overflow: hidden;
+      }
+      section[data-testid="stSidebar"] [data-testid="stSidebarContent"] {
+        height: 100vh;
+        overflow: hidden;
       }
       section[data-testid="stSidebar"] [data-testid="stSidebarContent"],
       section[data-testid="stSidebar"] [data-testid="stSidebarUserContent"],
@@ -104,10 +121,12 @@ st.markdown(
       section[data-testid="stSidebar"] .st-key-sidebar-ctrl-col {
         padding-right: .5rem;
         border-right: 1px solid rgba(127,127,127,0.25);
+        max-height: calc(100vh - 100px);
+        overflow-y: auto;
       }
       section[data-testid="stSidebar"] .st-key-sidebar-tgt-col {
         padding-left: .5rem;
-        max-height: calc(100vh - 80px);
+        max-height: calc(100vh - 100px);
         overflow-y: auto;
       }
       @media (prefers-color-scheme: dark) {
@@ -170,12 +189,6 @@ def _delta_str(sample_val, ref_val, prec: int = 2) -> str | None:
     return f"{sample_val - ref_val:+.{prec}f} vs ref"
 
 
-# Per-metric "good direction" for the Mean-vs-Reference colouring:
-# +1 higher-is-better, -1 lower-is-better, 0 no preferred direction.
-_METRIC_DIR = {
-    "QED": 1, "SA": 1, "LogP": 0, "Lipinski": 1, "HAtoms": 0, "Sim→Ref": 0,
-    "Vina Score": -1, "Vina Min": -1, "Vina Dock": -1,
-}
 # Display formats for the comparison table's metric columns.
 _TABLE_FMT = {
     "QED": "{:.3f}", "SA": "{:.2f}", "LogP": "{:.2f}",
@@ -183,13 +196,13 @@ _TABLE_FMT = {
     "Vina Score": "{:.2f}", "Vina Min": "{:.2f}", "Vina Dock": "{:.2f}",
 }
 
-# Comparison-table cell backgrounds, per Streamlit theme. Light values are the
-# original pastels; dark values are muted so light theme text stays readable.
+# Comparison-table cell backgrounds, per Streamlit theme. `summary` shades the
+# Reference and Mean rows in the same dark gray so both summary rows stand
+# apart from the per-sample rows below them. `selected` highlights the row
+# matching the currently-picked sample in the sidebar.
 _COMPARE_PALETTE = {
-    "light": {"ref": "#e6e6e6", "better": "#d6efd9",
-              "worse": "#f6d9da", "equal": "#ededed"},
-    "dark":  {"ref": "#3a3f4b", "better": "#1f4a32",
-              "worse": "#5c2b30", "equal": "#33373f"},
+    "light": {"summary": "#c8c8c8", "selected": "#fce97a"},
+    "dark":  {"summary": "#3a3f4b", "selected": "#6b5a1f"},
 }
 
 
@@ -250,41 +263,26 @@ def _theme_is_dark() -> bool:
         return False
 
 
-def _style_comparison(df: pd.DataFrame, palette: dict) -> pd.DataFrame:
-    """Shade the Reference row grey; colour each Mean cell vs the Reference.
+def _style_comparison(df: pd.DataFrame, palette: dict,
+                      selected_idx: int | None = None) -> pd.DataFrame:
+    """Shade Reference & Mean rows in the same gray; highlight the selected sample.
 
-    A Mean cell is green when the sample mean beats the reference on that
-    metric, red when worse, grey when equal (or for direction-less metrics).
-    Per-sample rows stay plain so the two summary rows stand out. `palette`
-    holds the theme-specific ref/better/worse/equal background colours.
+    `selected_idx` is the index of the sample currently chosen in the sidebar;
+    the row labelled ``Sample {selected_idx}`` gets the highlight colour so the
+    user can quickly find the row matching the 3-D view above.
     """
     css = pd.DataFrame("", index=df.index, columns=df.columns)
     if "Ligand" not in df.columns:
         return css
-    ref_hits = df.index[df["Ligand"] == "Reference"]
-    mean_hits = df.index[df["Ligand"] == "Mean"]
-    for ri in ref_hits:
-        css.loc[ri, :] = f"background-color: {palette['ref']}; font-weight: 600"
-    numeric = (int, float, np.number)
-    have_ref = len(ref_hits) > 0
-    for mi in mean_hits:
-        css.loc[mi, :] = "font-weight: 600"
-        for col in df.columns:
-            if col == "Ligand":
-                continue
-            direction = _METRIC_DIR.get(col, 0)
-            rv = df.at[ref_hits[0], col] if have_ref else None
-            mv = df.at[mi, col]
-            if (not have_ref or direction == 0
-                    or not isinstance(rv, numeric) or pd.isna(rv)
-                    or not isinstance(mv, numeric) or pd.isna(mv)):
-                color = palette["equal"]
-            else:
-                diff = (mv - rv) * direction
-                color = (palette["better"] if diff > 0
-                         else palette["worse"] if diff < 0
-                         else palette["equal"])
-            css.at[mi, col] = f"background-color: {color}; font-weight: 600"
+    summary_mask = df["Ligand"].isin(("Reference", "Mean"))
+    css.loc[summary_mask, :] = (
+        f"background-color: {palette['summary']}; font-weight: 600"
+    )
+    if selected_idx is not None:
+        sel_mask = df["Ligand"] == f"Sample {selected_idx}"
+        css.loc[sel_mask, :] = (
+            f"background-color: {palette['selected']}; font-weight: 600"
+        )
     return css
 
 
@@ -832,22 +830,23 @@ else:
                      "reference Vina Dock score · needs vina_dock",
             )
 
-        # The reference ligand vs the sample mean. A Mean cell is green when
-        # the sample mean beats the reference on that metric, red when worse;
-        # the shaded row is the reference.
+        # Reference and Mean rows share a dark gray background so both summary
+        # rows stand apart; the row matching the sidebar-selected sample is
+        # highlighted so users can spot it without scanning.
         st.markdown("##### Reference, mean & per-sample metrics")
         cmp_df = _comparison_df(metrics)
         cmp_fmt = {k: v for k, v in _TABLE_FMT.items() if k in cmp_df.columns}
         pal = _COMPARE_PALETTE["dark" if _theme_is_dark() else "light"]
         st.dataframe(
-            cmp_df.style.apply(_style_comparison, palette=pal, axis=None)
+            cmp_df.style.apply(_style_comparison, palette=pal,
+                               selected_idx=sample_idx, axis=None)
                   .format(cmp_fmt, na_rep="—"),
             width="stretch",
             hide_index=True,
             height=min(36 * (len(cmp_df) + 1) + 3, 560),
         )
-        st.caption("grey row = reference ligand · Mean cells: green = beats "
-                   "the reference · red = worse · grey = equal / no direction")
+        st.caption("grey rows = reference ligand & sample mean · "
+                   "highlighted row = currently selected sample")
         ref = metrics.get("reference")
         if isinstance(ref, dict) and "error" in ref:
             st.caption(f"⚠ reference ligand not scored — {ref['error']}")

@@ -1,9 +1,19 @@
-"""train_density_vit_mae.py — DDP voxel-MAE pre-training for the ViT density encoder.
+"""train_density_vit_mae.py — DDP MAE/ELECTRA pre-training for the ViT density encoder.
 
-Same pretext as `train_density_mae.py` (synthetic Gaussian-blur density + 3D
-block masking + density-reconstruction + 11-channel atom-structure heads), but
-the encoder is `DensityViTMAE` (pure 3D ViT) instead of the CNN-stack
-`DensityMAE`. Apples-to-apples ablation: change `model:` only.
+Two pretexts are supported via `mae.pretext_style`:
+
+  - "mae"     : synthetic Gaussian-blur density + 3D block masking (zero
+                masked voxels) + density-reconstruction + 11-channel atom-
+                structure auxiliary head. Apples-to-apples vs cnn-MAE.
+
+  - "electra" : same synthetic density, but masked blocks are CORRUPTED
+                (replaced) rather than zeroed. Corruption op is sampled per
+                batch from `cfg.electra.corruption_ops` (any combination of
+                `swap` / `reblur` / `noise`, weighted by
+                `cfg.electra.corruption_op_weights`). The discriminator emits
+                one logit per ViT patch and is trained with BCE on the binary
+                "was this patch corrupted?" target; the 11-channel atom-
+                structure auxiliary head is retained.
 
 Checkpoint layout matches `train_density_mae.py` exactly:
   state_dict_ema          full DensityViTMAE EMA
@@ -14,10 +24,10 @@ Checkpoint layout matches `train_density_mae.py` exactly:
 Launch
 ------
     cd voxbind
-    CUDA_VISIBLE_DEVICES=0,1,2,3 torchrun --standalone --nproc_per_node=4 \\
-        train_density_vit_mae.py \\
-        exp_name=260522_density_vit_mae_pretrain \\
-        output_dir=exps/260522_density_vit_mae_pretrain
+    CUDA_VISIBLE_DEVICES=1,2,3,4,5 torchrun --standalone --nproc_per_node=5 \\
+        train_density_vit_mae.py --config-name=config_train_density_vit_electra \\
+        exp_name=260524_density_vit_electra_pretrain \\
+        output_dir=exps/260524_density_vit_electra_pretrain
 """
 
 import copy
@@ -40,7 +50,9 @@ from tqdm import tqdm
 from voxbind.dataset import create_dataloaders
 from voxbind.models.adamw import AdamW
 from voxbind.models.density_mae import (
+    corrupt_noise, corrupt_reblur, corrupt_swap,
     gaussian_blur3d, make_block_mask, per_sample_zscore,
+    voxel_mask_to_patch_target,
 )
 from voxbind.models.density_vit import DensityViTMAE
 from voxbind.models.ema import ModelEma
@@ -109,15 +121,35 @@ class AsyncCheckpointSaver:
             t.join()
 
 
-# ── MAE prefetcher (same as train_density_mae.py) ─────────────────────────────
+# ── Prefetcher (MAE zero-masking OR ELECTRA rule-based corruption) ────────────
+
+_RULE_BASED_OPS = ("swap", "reblur", "noise")
+
+
+def _sample_op(
+    ops: tuple, weights: tuple, generator: torch.Generator = None,
+) -> str:
+    """Sample one corruption op name from `ops` with given `weights`."""
+    if len(ops) == 1:
+        return ops[0]
+    w = torch.tensor(weights, dtype=torch.float32)
+    w = w / w.sum().clamp(min=1e-8)
+    if generator is not None:
+        idx = int(torch.multinomial(w, num_samples=1, generator=generator).item())
+    else:
+        idx = int(torch.multinomial(w, num_samples=1).item())
+    return ops[idx]
+
 
 class MAEPrefetcher:
-    """Voxelize → synthesize density → mask, all overlapped with model compute.
+    """Voxelize → synthesize density → mask/corrupt, overlapped with compute.
 
-    Yields per batch:
-        density_in   (B, 1, G, G, G)  — masked, noisy synthetic density
-        density_clean(B, 1, G, G, G)  — un-masked, noiseless z-scored target
-        mask         (B, 1, G, G, G)  — bool, True = masked
+    Yields per batch (shape identical in mae and electra modes):
+        density_in   (B, 1, G, G, G)  — masked (mae) OR corrupted (electra) input
+        density_clean(B, 1, G, G, G)  — un-masked, noiseless z-scored density
+                                        (used by mae MSE target, kept for logging
+                                        in electra; safe to ignore there).
+        mask         (B, 1, G, G, G)  — bool, True = masked/corrupted
         target_str   (B, 11, G, G, G) — voxelized ligand (7) + pocket (4)
     """
 
@@ -130,7 +162,25 @@ class MAEPrefetcher:
         block_size: int,
         mask_ratio: float,
         generator: torch.Generator = None,
+        pretext_style: str = "mae",
+        corruption_ops: tuple = ("swap",),
+        corruption_op_weights: tuple = (1.0,),
+        density_source: str = "synthetic",
     ):
+        assert pretext_style in ("mae", "electra")
+        assert density_source in ("synthetic", "xray"), (
+            f"density_source={density_source!r}; expected 'synthetic' or 'xray'"
+        )
+        for op in corruption_ops:
+            if op not in _RULE_BASED_OPS:
+                raise NotImplementedError(
+                    f"corruption op {op!r} not supported in v1; expected one of "
+                    f"{_RULE_BASED_OPS} (learned-generator path is not wired)."
+                )
+        assert len(corruption_ops) == len(corruption_op_weights), (
+            f"len(corruption_ops)={len(corruption_ops)} != "
+            f"len(corruption_op_weights)={len(corruption_op_weights)}"
+        )
         self.loader = loader
         self.voxelizer = voxelizer
         self.sigma_range = sigma_blur_vox_range
@@ -138,6 +188,10 @@ class MAEPrefetcher:
         self.block_size = block_size
         self.mask_ratio = mask_ratio
         self.generator = generator
+        self.pretext_style = pretext_style
+        self.corruption_ops = tuple(corruption_ops)
+        self.corruption_op_weights = tuple(corruption_op_weights)
+        self.density_source = density_source
         self.stream = torch.cuda.Stream()
 
     def _step(self, batch):
@@ -146,25 +200,62 @@ class MAEPrefetcher:
             with torch.no_grad():
                 v_lig = self.voxelizer.forward(batch["ligand"], num_channels=7)
                 v_poc = self.voxelizer.forward(batch["pocket"], num_channels=4)
-
                 atoms_sum = v_lig.sum(dim=1, keepdim=True) + v_poc.sum(dim=1, keepdim=True)
-                sigma_lo, sigma_hi = self.sigma_range
-                if self.generator is not None:
-                    u = torch.rand(1, generator=self.generator).item()
+
+                if self.density_source == "xray":
+                    # Real 2Fo-Fc crop, already locally ±3σ-clipped + z-scored
+                    # by DatasetCrossDockedXray.normalize_crop. Just lift to
+                    # (B, 1, G, G, G). The sigma_range/blur knobs are unused
+                    # in this mode (kept on self only for the val_epoch path
+                    # that still computes a deterministic σ for logging).
+                    d_clean = batch["xray_density"].to(device, non_blocking=True).unsqueeze(1)
                 else:
-                    u = torch.rand(1).item()
-                sigma_vox = sigma_lo + u * (sigma_hi - sigma_lo)
-                d_clean = gaussian_blur3d(atoms_sum, sigma_vox)
-                d_clean = per_sample_zscore(d_clean)
-                noise = torch.randn(d_clean.shape, device=device,
-                                    generator=self.generator) if self.generator is not None \
-                    else torch.randn_like(d_clean)
-                d_noisy = d_clean + noise * self.sigma_noise
+                    sigma_lo, sigma_hi = self.sigma_range
+                    if self.generator is not None:
+                        u = torch.rand(1, generator=self.generator).item()
+                    else:
+                        u = torch.rand(1).item()
+                    sigma_vox = sigma_lo + u * (sigma_hi - sigma_lo)
+                    d_clean = gaussian_blur3d(atoms_sum, sigma_vox)
+                    d_clean = per_sample_zscore(d_clean)
+
+                if self.sigma_noise > 0:
+                    noise = torch.randn(d_clean.shape, device=device,
+                                        generator=self.generator) if self.generator is not None \
+                        else torch.randn_like(d_clean)
+                    d_noisy = d_clean + noise * self.sigma_noise
+                else:
+                    d_noisy = d_clean
 
                 B = d_clean.shape[0]
                 G = d_clean.shape[-1]
                 mask = make_block_mask(B, G, self.block_size, self.mask_ratio, device)
-                d_in = d_noisy * (~mask).to(d_noisy.dtype)
+
+                if self.pretext_style == "mae":
+                    d_in = d_noisy * (~mask).to(d_noisy.dtype)
+                else:
+                    # ELECTRA: replace masked blocks with a rule-based corruption.
+                    op = _sample_op(
+                        self.corruption_ops, self.corruption_op_weights, self.generator
+                    )
+                    if op == "swap":
+                        d_in = corrupt_swap(d_noisy, mask)
+                    elif op == "noise":
+                        d_in = corrupt_noise(d_noisy, mask)
+                    elif op == "reblur":
+                        # Re-blur the raw atoms at a different σ drawn from a wider
+                        # range so the alt density is materially different from
+                        # the clean one (otherwise corruption is trivial).
+                        sigma_alt_lo = max(0.4 * sigma_lo, 0.5)
+                        sigma_alt_hi = 2.0 * sigma_hi
+                        if self.generator is not None:
+                            u2 = torch.rand(1, generator=self.generator).item()
+                        else:
+                            u2 = torch.rand(1).item()
+                        sigma_alt = sigma_alt_lo + u2 * (sigma_alt_hi - sigma_alt_lo)
+                        d_in = corrupt_reblur(atoms_sum, d_noisy, mask, sigma_alt)
+                    else:
+                        raise RuntimeError(f"unhandled corruption op: {op}")
 
                 target_str = torch.cat([v_lig, v_poc], dim=1)
         return d_in, d_clean, mask, target_str
@@ -188,16 +279,37 @@ class MAEPrefetcher:
         return len(self.loader)
 
 
-# ── Losses (identical to cnn-MAE so the ViT vs CNN ablation is apples-to-apples) ──
+# ── Losses (branches on pretext_style; both keep the structure aux head) ─────
 
 def compute_losses(
-    d_hat, a_hat, d_clean, target_str, mask,
+    out_pretext, a_hat, d_clean, target_str, mask,
     struct_pos_weight: float = 1.0,
     struct_pos_thresh: float = 0.05,
+    pretext_style: str = "mae",
+    patch_size: int = 8,
 ):
-    m = mask.to(d_hat.dtype)
-    n_masked = m.sum().clamp(min=1.0)
-    L_dens = ((d_hat - d_clean) ** 2 * m).sum() / n_masked
+    """Returns a dict of named losses.
+
+    mae path:
+      L_dens : masked-voxel MSE between out_pretext (B,1,G,G,G) and d_clean.
+      L_str  : 11-ch atom structure MSE (pos-weighted).
+
+    electra path:
+      L_rtd  : per-patch BCE-with-logits between out_pretext (B,1,Gp,Gp,Gp)
+               and patch-level corruption target derived from `mask`.
+      L_str  : 11-ch atom structure MSE (pos-weighted).
+    """
+    if pretext_style == "electra":
+        # Pool voxel mask to patch grid (max-pool).
+        patch_target = voxel_mask_to_patch_target(mask, patch_size)
+        # Per-patch BCE; mean reduction over (B, 1, Gp, Gp, Gp).
+        L_pretext = F.binary_cross_entropy_with_logits(out_pretext, patch_target)
+        out_key = "L_rtd"
+    else:
+        m = mask.to(out_pretext.dtype)
+        n_masked = m.sum().clamp(min=1.0)
+        L_pretext = ((out_pretext - d_clean) ** 2 * m).sum() / n_masked
+        out_key = "L_dens"
 
     if struct_pos_weight > 1.0:
         pos = (target_str > struct_pos_thresh).to(a_hat.dtype)
@@ -205,7 +317,7 @@ def compute_losses(
         L_str = ((a_hat - target_str) ** 2 * w).mean()
     else:
         L_str = F.mse_loss(a_hat, target_str)
-    return L_dens, L_str
+    return {out_key: L_pretext, "L_str": L_str}
 
 
 # ── Val cache ─────────────────────────────────────────────────────────────────
@@ -249,19 +361,35 @@ def precompute_val(loader_val, voxelizer, cfg) -> dict:
 
 
 def val_epoch(cfg, model, val_cache, device) -> dict:
-    """Deterministic val pass — fixed-seed σ_blur / noise / mask per sample."""
+    """Deterministic val pass — fixed-seed σ_blur / noise / mask per sample.
+
+    In electra mode, cycles deterministically through `cfg.electra.corruption_ops`
+    by batch index so val loss is comparable across epochs.
+    """
     model.eval()
     sigma_lo = cfg.mae.sigma_blur_a_lo / cfg.vox.resolution
     sigma_hi = cfg.mae.sigma_blur_a_hi / cfg.vox.resolution
     block = cfg.mae.block_size
     ratio = cfg.mae.mask_ratio
     sigma_noise = cfg.mae.sigma_noise
+    pretext_style = str(cfg.mae.get("pretext_style", "mae"))
+    patch_size = int(cfg.model.patch_size)
+
+    if pretext_style == "electra":
+        corruption_ops = tuple(cfg.electra.corruption_ops)
+        pretext_key = "L_rtd"
+        lambda_pretext = float(cfg.mae.get("lambda_rtd", 1.0))
+    else:
+        corruption_ops = ()
+        pretext_key = "L_dens"
+        lambda_pretext = float(cfg.mae.get("lambda_dens", 1.0))
+    lambda_str = float(cfg.mae.get("lambda_str", 1.0))
 
     voxels_lig = val_cache["voxels_lig"]
     voxels_poc = val_cache["voxels_poc"]
     n = voxels_lig.shape[0]
 
-    L_dens_sum, L_str_sum, n_batches = 0.0, 0.0, 0
+    L_pretext_sum, L_str_sum, n_batches = 0.0, 0.0, 0
     gen = torch.Generator(device=device)
     with torch.no_grad():
         for batch_idx, start in enumerate(range(0, n, cfg.bsz)):
@@ -279,24 +407,40 @@ def val_epoch(cfg, model, val_cache, device) -> dict:
             mask = blocks.repeat_interleave(block, 2)\
                          .repeat_interleave(block, 3)\
                          .repeat_interleave(block, 4)
-            d_in = d_noisy * (~mask).to(d_noisy.dtype)
+
+            if pretext_style == "mae":
+                d_in = d_noisy * (~mask).to(d_noisy.dtype)
+            else:
+                op = corruption_ops[batch_idx % len(corruption_ops)]
+                if op == "swap":
+                    d_in = corrupt_swap(d_noisy, mask)
+                elif op == "noise":
+                    d_in = corrupt_noise(d_noisy, mask)
+                elif op == "reblur":
+                    sigma_alt = max(0.4 * sigma_lo, 0.5) * 1.5
+                    d_in = corrupt_reblur(atoms_sum, d_noisy, mask, sigma_alt)
+                else:
+                    raise RuntimeError(f"unsupported val corruption op: {op}")
+
             target_str = torch.cat([v_lig, v_poc], dim=1)
-            d_hat, a_hat = model(d_in)
-            L_dens, L_str = compute_losses(
-                d_hat, a_hat, d_clean, target_str, mask,
+            out_pretext, a_hat = model(d_in)
+            losses = compute_losses(
+                out_pretext, a_hat, d_clean, target_str, mask,
                 struct_pos_weight=float(cfg.mae.get("struct_pos_weight", 1.0)),
                 struct_pos_thresh=float(cfg.mae.get("struct_pos_thresh", 0.05)),
+                pretext_style=pretext_style,
+                patch_size=patch_size,
             )
-            L_dens_sum += L_dens.item()
-            L_str_sum += L_str.item()
+            L_pretext_sum += losses[pretext_key].item()
+            L_str_sum += losses["L_str"].item()
             n_batches += 1
             if cfg.debug and n_batches >= 5:
                 break
 
     return {
-        "L_dens": L_dens_sum / max(1, n_batches),
+        pretext_key: L_pretext_sum / max(1, n_batches),
         "L_str": L_str_sum / max(1, n_batches),
-        "loss": (cfg.mae.lambda_dens * L_dens_sum + cfg.mae.lambda_str * L_str_sum)
+        "loss": (lambda_pretext * L_pretext_sum + lambda_str * L_str_sum)
                 / max(1, n_batches),
     }
 
@@ -305,7 +449,17 @@ def val_epoch(cfg, model, val_cache, device) -> dict:
 
 def train_epoch(cfg, prefetcher, model, optimizer, model_ema, device, global_step) -> tuple:
     model.train()
-    L_dens_sum, L_str_sum, grad_norm_sum, n_batches = 0.0, 0.0, 0.0, 0
+    pretext_style = str(cfg.mae.get("pretext_style", "mae"))
+    patch_size = int(cfg.model.patch_size)
+    if pretext_style == "electra":
+        pretext_key = "L_rtd"
+        lambda_pretext = float(cfg.mae.get("lambda_rtd", 1.0))
+    else:
+        pretext_key = "L_dens"
+        lambda_pretext = float(cfg.mae.get("lambda_dens", 1.0))
+    lambda_str = float(cfg.mae.get("lambda_str", 1.0))
+
+    L_pretext_sum, L_str_sum, grad_norm_sum, n_batches = 0.0, 0.0, 0.0, 0
     accum_steps = max(1, int(cfg.get("accum_steps", 1)))
     grad_clip = float(cfg.mae.get("grad_clip", 0.0))
     optimizer.zero_grad(set_to_none=True)
@@ -318,13 +472,17 @@ def train_epoch(cfg, prefetcher, model, optimizer, model_ema, device, global_ste
         if not is_step and hasattr(model, "no_sync"):
             sync_ctx = model.no_sync()
         with sync_ctx:
-            d_hat, a_hat = model(d_in)
-            L_dens, L_str = compute_losses(
-                d_hat, a_hat, d_clean, target_str, mask,
+            out_pretext, a_hat = model(d_in)
+            losses = compute_losses(
+                out_pretext, a_hat, d_clean, target_str, mask,
                 struct_pos_weight=float(cfg.mae.get("struct_pos_weight", 1.0)),
                 struct_pos_thresh=float(cfg.mae.get("struct_pos_thresh", 0.05)),
+                pretext_style=pretext_style,
+                patch_size=patch_size,
             )
-            loss = cfg.mae.lambda_dens * L_dens + cfg.mae.lambda_str * L_str
+            L_pretext = losses[pretext_key]
+            L_str = losses["L_str"]
+            loss = lambda_pretext * L_pretext + lambda_str * L_str
             loss.backward()
         if is_step:
             if grad_clip > 0:
@@ -336,16 +494,16 @@ def train_epoch(cfg, prefetcher, model, optimizer, model_ema, device, global_ste
             optimizer.zero_grad(set_to_none=True)
             model_ema.update(_unwrap(model))
             global_step += 1
-        L_dens_sum += L_dens.item()
+        L_pretext_sum += L_pretext.item()
         L_str_sum += L_str.item()
         n_batches += 1
         if cfg.debug and i == 10:
             break
 
     metrics = {
-        "L_dens": L_dens_sum / max(1, n_batches),
+        pretext_key: L_pretext_sum / max(1, n_batches),
         "L_str": L_str_sum / max(1, n_batches),
-        "loss": (cfg.mae.lambda_dens * L_dens_sum + cfg.mae.lambda_str * L_str_sum)
+        "loss": (lambda_pretext * L_pretext_sum + lambda_str * L_str_sum)
                 / max(1, n_batches),
     }
     if grad_clip > 0:
@@ -428,7 +586,8 @@ def main(cfg: DictConfig) -> None:
         logger.info(f"train batches per rank: {len(loader_train)} "
                     f"(effective batch = {cfg.bsz * world_size * accum})")
 
-    # Model — pure 3D ViT density encoder + density head + 11-ch atom-structure head
+    # Model — pure 3D ViT density encoder + pretext head (density/RTD) + structure head
+    pretext_style = str(cfg.mae.get("pretext_style", "mae"))
     torch.manual_seed(cfg.seed)
     torch.cuda.manual_seed(cfg.seed)
     model = DensityViTMAE(
@@ -441,10 +600,12 @@ def main(cfg: DictConfig) -> None:
         mlp_ratio=int(cfg.model.mlp_ratio),
         dropout=float(cfg.model.dropout),
         n_struct_channels=int(cfg.model.n_struct_channels),
+        pretext_style=pretext_style,
     ).to(device)
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     if is_main:
-        logger.info(f"DensityViTMAE has {(n_params/1e6):.02f}M parameters")
+        logger.info(f"DensityViTMAE has {(n_params/1e6):.02f}M parameters "
+                    f"(pretext_style={pretext_style})")
 
     optimizer = AdamW(model.parameters(), lr=cfg.lr, weight_decay=cfg.wd)
     optimizer.zero_grad()
@@ -511,12 +672,23 @@ def main(cfg: DictConfig) -> None:
         if hasattr(loader_train.sampler, "set_epoch"):
             loader_train.sampler.set_epoch(epoch)
 
+        if pretext_style == "electra":
+            corruption_ops = tuple(cfg.electra.corruption_ops)
+            corruption_op_weights = tuple(
+                cfg.electra.get("corruption_op_weights", [1.0] * len(corruption_ops))
+            )
+        else:
+            corruption_ops = ("swap",)        # unused in mae mode
+            corruption_op_weights = (1.0,)
         prefetcher = MAEPrefetcher(
             loader_train, voxelizer,
             sigma_blur_vox_range=sigma_blur_vox_range,
             sigma_noise=cfg.mae.sigma_noise,
             block_size=cfg.mae.block_size,
             mask_ratio=cfg.mae.mask_ratio,
+            pretext_style=pretext_style,
+            corruption_ops=corruption_ops,
+            corruption_op_weights=corruption_op_weights,
         )
         train_metrics, global_step = train_epoch(
             cfg, prefetcher, model, optimizer, model_ema, device, global_step,

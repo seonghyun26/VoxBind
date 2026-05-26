@@ -92,6 +92,81 @@ def synth_density(
     return d
 
 
+# ── ELECTRA-style corruption ops ──────────────────────────────────────────────
+# Each op takes the clean z-scored density and the (B,1,G,G,G) bool corruption
+# mask, and returns a (B,1,G,G,G) density with masked voxels replaced by the
+# op's "fake" content (and clean voxels untouched). Used by
+# `train_density_vit_mae.py` when `mae.pretext_style == 'electra'`.
+
+def corrupt_swap(d_clean: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+    """Replace masked blocks with same-region content from another sample.
+
+    Cyclically rolls the batch by 1 so each sample's corrupted regions come
+    from a different sample's clean density. Cheap and distribution-matched.
+    Edge case: B == 1 → no-op (returns d_clean unchanged).
+    """
+    if d_clean.shape[0] <= 1:
+        return d_clean
+    d_other = torch.roll(d_clean, shifts=1, dims=0)
+    return torch.where(mask, d_other, d_clean)
+
+
+def corrupt_reblur(
+    atoms_sum: torch.Tensor,
+    d_clean: torch.Tensor,
+    mask: torch.Tensor,
+    sigma_alt_vox: float,
+) -> torch.Tensor:
+    """Replace masked blocks with the same atoms re-blurred at a different σ.
+
+    Captures resolution-mismatch failure modes (e.g. distinguishing real EM
+    density at the modeled resolution vs. an over-smoothed or under-smoothed
+    alternative). Computes a fresh per-sample z-scored volume at `sigma_alt_vox`,
+    then composites into the mask.
+    """
+    d_alt = gaussian_blur3d(atoms_sum, sigma_alt_vox)
+    d_alt = per_sample_zscore(d_alt)
+    return torch.where(mask, d_alt, d_clean)
+
+
+def corrupt_noise(d_clean: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+    """Replace masked blocks with N(0, 1) noise (matched to z-scored scale)."""
+    noise = torch.randn_like(d_clean)
+    return torch.where(mask, noise, d_clean)
+
+
+def corrupt_generator(
+    d_clean: torch.Tensor, mask: torch.Tensor, generator_net,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """Run a learned generator on the partially-masked density.
+
+    The generator sees `d_clean * (~mask)` (zero-masked input) and produces a
+    full (B,1,G,G,G) density `d_gen`. Returns:
+      d_corrupted : (B,1,G,G,G) — d_clean with masked positions replaced by
+                    d_gen.detach() (so disc-side gradient does NOT flow into gen).
+      d_gen       : (B,1,G,G,G) — the raw generator output WITH grad, for the
+                    generator's MLM-style MSE loss on masked positions.
+    """
+    d_in_masked = d_clean * (~mask).to(d_clean.dtype)
+    d_gen = generator_net(d_in_masked)
+    d_corrupted = torch.where(mask, d_gen.detach(), d_clean)
+    return d_corrupted, d_gen
+
+
+def voxel_mask_to_patch_target(
+    mask: torch.Tensor, patch_size: int,
+) -> torch.Tensor:
+    """Pool a (B,1,G,G,G) bool voxel-level mask to (B,1,G_p,G_p,G_p) float.
+
+    Output is 1.0 if any voxel in the patch is corrupted (max-pool), else 0.0.
+    When block_size == patch_size and the mask is block-aligned, every patch is
+    either fully corrupted or fully clean — but using max_pool keeps things
+    safe if the two ever diverge.
+    """
+    m = mask.to(dtype=torch.float32)
+    return F.max_pool3d(m, kernel_size=patch_size, stride=patch_size)
+
+
 # ── DensityMAE ────────────────────────────────────────────────────────────────
 
 class DensityMAE(nn.Module):

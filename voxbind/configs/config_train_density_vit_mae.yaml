@@ -24,21 +24,25 @@ accum_steps: 1
 lr: 1e-4
 wd: 5e-2                 # higher wd than cnn-MAE — ViTs typically need stronger regularization
 
-# ── MAE-specific knobs ────────────────────────────────────────────────────────
+# ── MAE/ELECTRA-specific knobs ───────────────────────────────────────────────
 # Mirrors the cnn-MAE pretext exactly so a apples-to-apples ViT vs CNN ablation
-# is possible by swapping `model:` only.
+# is possible by swapping `model:` only. The same train script also handles
+# ELECTRA-style pretext when `pretext_style: electra` (see `electra:` block).
 mae:
+  # Pretext mode: "mae" (zero-mask + reconstruct) or "electra" (corrupt + RTD).
+  pretext_style: mae
   # Synthetic density generation
   sigma_blur_a_lo: 0.30          # min Gaussian blur σ in Å (randomized per batch)
   sigma_blur_a_hi: 0.80          # max Gaussian blur σ in Å
   sigma_noise: 0.05              # additive Gaussian noise on the z-scored density
   # Block masking (applied in input space — encoder sees full G³ with masked
-  # voxels zeroed, identical pattern to cnn-MAE).
+  # voxels zeroed in mae mode, or replaced via the rule-based op in electra mode).
   block_size: 8                  # voxels per cube edge (2 Å at 0.25 Å/vox)
-  mask_ratio: 0.60               # fraction of blocks masked
+  mask_ratio: 0.60               # fraction of blocks masked/corrupted
   # Loss weights
-  lambda_dens: 1.0               # masked-voxel density reconstruction
-  lambda_str: 1.0                # 11-channel atom structure prediction
+  lambda_dens: 1.0               # masked-voxel density reconstruction (mae mode)
+  lambda_rtd: 1.0                # per-patch BCE on RTD logits (electra mode)
+  lambda_str: 1.0                # 11-channel atom structure prediction (both modes)
   # Structure-loss positive-voxel weighting (as in cnn-MAE; 99%-sparse target).
   struct_pos_weight: 100.0
   struct_pos_thresh: 0.05
@@ -48,7 +52,21 @@ mae:
   grad_clip: 1.0
   # Validation cadence
   val_every: 1                   # epochs between val passes
-  ckpt_every: 5                  # epochs between full checkpoints (latest is always written)
+  ckpt_every: 20                 # epochs between full checkpoints (latest is always written)
+
+# ── ELECTRA-specific knobs (consulted only when mae.pretext_style == "electra") ──
+electra:
+  # Rule-based corruption ops sampled per batch (must be a non-empty subset of
+  # {swap, reblur, noise}). corruption_op_weights gives the sampling
+  # probabilities (renormalized internally). The learned-generator path is
+  # NOT wired in v1; including "generator" here raises NotImplementedError.
+  corruption_ops: [swap]
+  corruption_op_weights: [1.0]
+  # Future hook for the learned-generator path (currently inert).
+  generator:
+    enabled: false               # set true to enable the learned generator op
+    hidden: 32                   # tiny 3D CNN hidden width
+    lambda_gen_mlm: 1.0          # MSE on corrupted voxels for the generator
 
 # Hydra
 hydra:
