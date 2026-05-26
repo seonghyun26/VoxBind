@@ -134,11 +134,30 @@ st.markdown(
           background-color: var(--secondary-background-color, #262730);
         }
       }
-      /* Selectbox dropdown: let the popover grow to fit the longest option
-         (one line per option, no ellipsis) so full experiment / sample-run
-         names are readable. Width is driven by content, not the trigger. */
-      [data-baseweb="popover"] ul[role="listbox"] { min-width: max-content; }
-      [data-baseweb="popover"] li[role="option"] { white-space: nowrap; }
+      /* Open selectbox dropdown: let the popover grow to fit its longest
+         option so full experiment / sample-run paths are readable. Without
+         this, BaseWeb pins the popover to the closed-trigger width via an
+         inline style and clips long labels — the rule needs `!important`
+         to override that, and needs to apply to the popover wrapper itself
+         (where the inline width sits) plus the inner listbox/menu. The
+         `:has([role="listbox"])` scope keeps tooltip/info popovers default.
+         Only the open popover widens; the closed selectbox trigger stays
+         at sidebar-column width. */
+      div[data-baseweb="popover"]:has([role="listbox"]) {
+        width: auto !important;
+        min-width: max-content !important;
+        max-width: min(720px, 90vw) !important;
+      }
+      div[data-baseweb="popover"] [role="listbox"],
+      div[data-baseweb="popover"] ul[role="listbox"],
+      div[data-baseweb="popover"] [data-baseweb="menu"] {
+        width: auto !important;
+        min-width: max-content !important;
+      }
+      div[data-baseweb="popover"] [role="option"],
+      div[data-baseweb="popover"] li[role="option"] {
+        white-space: nowrap !important;
+      }
     </style>
     """,
     unsafe_allow_html=True,
@@ -189,20 +208,34 @@ def _delta_str(sample_val, ref_val, prec: int = 2) -> str | None:
     return f"{sample_val - ref_val:+.{prec}f} vs ref"
 
 
+# Per-metric "good direction" for the per-cell vs-reference colouring of value
+# cells in the comparison table: +1 higher-is-better, -1 lower-is-better,
+# 0 no preferred direction (those cells stay uncoloured).
+_METRIC_DIR = {
+    "QED": 1, "SA": 1, "LogP": 0, "Lipinski": 1, "HAtoms": 0, "Sim→Ref": 0,
+    "Clashes": -1,
+    "Vina Score": -1, "Vina Min": -1, "Vina Dock": -1,
+}
 # Display formats for the comparison table's metric columns.
 _TABLE_FMT = {
     "QED": "{:.3f}", "SA": "{:.2f}", "LogP": "{:.2f}",
     "Lipinski": "{:.1f}", "HAtoms": "{:.0f}", "Sim→Ref": "{:.3f}",
+    "Clashes": "{:.1f}",
     "Vina Score": "{:.2f}", "Vina Min": "{:.2f}", "Vina Dock": "{:.2f}",
 }
 
-# Comparison-table cell backgrounds, per Streamlit theme. `summary` shades the
-# Reference and Mean rows in the same dark gray so both summary rows stand
-# apart from the per-sample rows below them. `selected` highlights the row
-# matching the currently-picked sample in the sidebar.
+# Comparison-table cell backgrounds, per Streamlit theme.
+#   `summary`  — Ligand cell of Reference & Mean rows (row-role marker)
+#   `selected` — Ligand cell of the sidebar-selected sample row
+#   `better` / `worse` — value cells, vs the Reference row on the same metric
+# Only the Ligand column carries a row-role marker; value columns are coloured
+# purely by direction-vs-reference so a green/red sweep tells you at a glance
+# which samples beat the reference on which metrics.
 _COMPARE_PALETTE = {
-    "light": {"summary": "#c8c8c8", "selected": "#fce97a"},
-    "dark":  {"summary": "#3a3f4b", "selected": "#6b5a1f"},
+    "light": {"summary": "#c8c8c8", "selected": "#fce97a",
+              "better": "#d6efd9", "worse": "#f6d9da"},
+    "dark":  {"summary": "#3a3f4b", "selected": "#6b5a1f",
+              "better": "#1f4a32", "worse": "#5c2b30"},
 }
 
 
@@ -225,6 +258,11 @@ def _comparison_df(metrics: dict) -> pd.DataFrame:
             row[col] = rec.get(key)
         if label == "Reference":
             row["Sim→Ref"] = 1.0  # the reference is identical to itself
+        # Clashes live under `interactions.n_clashes` and aren't computed for
+        # the reference ligand — only populate for sample rows that have it.
+        ix = rec.get("interactions")
+        if isinstance(ix, dict) and isinstance(ix.get("n_clashes"), (int, float)):
+            row["Clashes"] = ix["n_clashes"]
         v = rec.get("vina")
         if isinstance(v, dict) and "error" not in v:
             for key, col in vina:
@@ -265,24 +303,61 @@ def _theme_is_dark() -> bool:
 
 def _style_comparison(df: pd.DataFrame, palette: dict,
                       selected_idx: int | None = None) -> pd.DataFrame:
-    """Shade Reference & Mean rows in the same gray; highlight the selected sample.
+    """Two-axis colouring: row role on the Ligand cell, direction on value cells.
 
-    `selected_idx` is the index of the sample currently chosen in the sidebar;
-    the row labelled ``Sample {selected_idx}`` gets the highlight colour so the
-    user can quickly find the row matching the 3-D view above.
+    **Ligand column** carries the row-role marker only:
+      * Reference / Mean rows           → ``summary`` gray (bold)
+      * ``Sample {selected_idx}`` row   → ``selected`` yellow (bold)
+      * other per-sample rows           → plain
+
+    **Value columns** are coloured per (cell vs Reference) × ``_METRIC_DIR``:
+      * green when the cell beats Reference on that metric
+      * red   when it is worse
+      * plain when there is no preferred direction (LogP / HAtoms / Sim→Ref),
+        when Reference is missing the value, when the row itself lacks it,
+        or when the value equals Reference exactly
+    The Reference row's own value cells stay plain — self-comparison is
+    degenerate, and the gray Ligand marker is enough to anchor the row.
     """
     css = pd.DataFrame("", index=df.index, columns=df.columns)
     if "Ligand" not in df.columns:
         return css
+
+    # Ligand column: row-role marker (gray for Ref/Mean, yellow for selected).
     summary_mask = df["Ligand"].isin(("Reference", "Mean"))
-    css.loc[summary_mask, :] = (
+    css.loc[summary_mask, "Ligand"] = (
         f"background-color: {palette['summary']}; font-weight: 600"
     )
     if selected_idx is not None:
         sel_mask = df["Ligand"] == f"Sample {selected_idx}"
-        css.loc[sel_mask, :] = (
+        css.loc[sel_mask, "Ligand"] = (
             f"background-color: {palette['selected']}; font-weight: 600"
         )
+
+    # Value columns: per-cell green/red vs the Reference row.
+    ref_hits = df.index[df["Ligand"] == "Reference"]
+    if len(ref_hits) == 0:
+        return css
+    ri = ref_hits[0]
+    numeric = (int, float, np.number)
+    for col in df.columns:
+        if col == "Ligand" or _METRIC_DIR.get(col, 0) == 0:
+            continue
+        rv = df.at[ri, col]
+        if not isinstance(rv, numeric) or pd.isna(rv):
+            continue
+        direction = _METRIC_DIR[col]
+        for idx in df.index:
+            if idx == ri:
+                continue  # Reference compared to itself: stay plain.
+            v = df.at[idx, col]
+            if not isinstance(v, numeric) or pd.isna(v):
+                continue
+            diff = (v - rv) * direction
+            if diff > 0:
+                css.at[idx, col] = f"background-color: {palette['better']}"
+            elif diff < 0:
+                css.at[idx, col] = f"background-color: {palette['worse']}"
     return css
 
 
@@ -830,9 +905,10 @@ else:
                      "reference Vina Dock score · needs vina_dock",
             )
 
-        # Reference and Mean rows share a dark gray background so both summary
-        # rows stand apart; the row matching the sidebar-selected sample is
-        # highlighted so users can spot it without scanning.
+        # The Ligand column carries the row role (gray = Reference/Mean,
+        # yellow = sidebar-selected sample); value cells carry the direction
+        # signal (green beats Reference, red is worse) so you can scan for
+        # green/red clusters across both Mean and every per-sample row.
         st.markdown("##### Reference, mean & per-sample metrics")
         cmp_df = _comparison_df(metrics)
         cmp_fmt = {k: v for k, v in _TABLE_FMT.items() if k in cmp_df.columns}
@@ -845,8 +921,10 @@ else:
             hide_index=True,
             height=min(36 * (len(cmp_df) + 1) + 3, 560),
         )
-        st.caption("grey rows = reference ligand & sample mean · "
-                   "highlighted row = currently selected sample")
+        st.caption("Ligand column: gray = reference & mean · "
+                   "yellow = selected sample  ·  "
+                   "Values: green = beats reference · red = worse · "
+                   "blank = direction-less metric or no value")
         ref = metrics.get("reference")
         if isinstance(ref, dict) and "error" in ref:
             st.caption(f"⚠ reference ligand not scored — {ref['error']}")

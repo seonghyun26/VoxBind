@@ -331,6 +331,8 @@ def _val_cache_path(cfg) -> str:
         "pocket_radius": cfg.dset.pocket_radius,
         "dset_name": cfg.dset.dset_name,
         "subset_n": cfg.dset.get("subset_n", None),
+        "subset_xray_only": cfg.dset.get("subset_xray_only", False),
+        "density_source": cfg.mae.get("density_source", "synthetic"),
         # `density_mae_v1` is kept identical to cnn-MAE — the cached tensors are
         # just voxelized ligand+pocket, no encoder-specific content.
         "task": "density_mae_v1",
@@ -345,16 +347,21 @@ def precompute_val(loader_val, voxelizer, cfg) -> dict:
         logger.info(f"loading pre-computed val voxels from {path}")
         return torch.load(path, weights_only=True)
 
-    logger.info("pre-computing val voxels...")
-    all_lig, all_poc = [], []
+    density_source = str(cfg.mae.get("density_source", "synthetic"))
+    logger.info(f"pre-computing val voxels (density_source={density_source})...")
+    all_lig, all_poc, all_xray = [], [], []
     with torch.no_grad():
         for batch in loader_val:
             all_lig.append(voxelizer.forward(batch["ligand"], num_channels=7).cpu())
             all_poc.append(voxelizer.forward(batch["pocket"], num_channels=4).cpu())
+            if density_source == "xray":
+                all_xray.append(batch["xray_density"].cpu())
     cache = {
         "voxels_lig": torch.cat(all_lig, 0),
         "voxels_poc": torch.cat(all_poc, 0),
     }
+    if density_source == "xray":
+        cache["xray_density"] = torch.cat(all_xray, 0)
     torch.save(cache, path)
     logger.info(f"saved val voxels to {path}")
     return cache
@@ -373,6 +380,7 @@ def val_epoch(cfg, model, val_cache, device) -> dict:
     ratio = cfg.mae.mask_ratio
     sigma_noise = cfg.mae.sigma_noise
     pretext_style = str(cfg.mae.get("pretext_style", "mae"))
+    density_source = str(cfg.mae.get("density_source", "synthetic"))
     patch_size = int(cfg.model.patch_size)
 
     if pretext_style == "electra":
@@ -387,6 +395,7 @@ def val_epoch(cfg, model, val_cache, device) -> dict:
 
     voxels_lig = val_cache["voxels_lig"]
     voxels_poc = val_cache["voxels_poc"]
+    cached_xray = val_cache.get("xray_density", None)
     n = voxels_lig.shape[0]
 
     L_pretext_sum, L_str_sum, n_batches = 0.0, 0.0, 0
@@ -397,10 +406,16 @@ def val_epoch(cfg, model, val_cache, device) -> dict:
             v_lig = voxels_lig[start:start + cfg.bsz].to(device, non_blocking=True)
             v_poc = voxels_poc[start:start + cfg.bsz].to(device, non_blocking=True)
             atoms_sum = v_lig.sum(dim=1, keepdim=True) + v_poc.sum(dim=1, keepdim=True)
-            sigma_vox = sigma_lo + (sigma_hi - sigma_lo) * 0.5
-            d_clean = gaussian_blur3d(atoms_sum, sigma_vox)
-            d_clean = per_sample_zscore(d_clean)
-            d_noisy = d_clean + torch.randn(d_clean.shape, device=device, generator=gen) * sigma_noise
+            if density_source == "xray":
+                d_clean = cached_xray[start:start + cfg.bsz].to(device, non_blocking=True).unsqueeze(1)
+            else:
+                sigma_vox = sigma_lo + (sigma_hi - sigma_lo) * 0.5
+                d_clean = gaussian_blur3d(atoms_sum, sigma_vox)
+                d_clean = per_sample_zscore(d_clean)
+            if sigma_noise > 0:
+                d_noisy = d_clean + torch.randn(d_clean.shape, device=device, generator=gen) * sigma_noise
+            else:
+                d_noisy = d_clean
             B, G = d_clean.shape[0], d_clean.shape[-1]
             blocks = torch.rand(B, 1, G // block, G // block, G // block,
                                 device=device, generator=gen) < ratio
@@ -689,6 +704,7 @@ def main(cfg: DictConfig) -> None:
             pretext_style=pretext_style,
             corruption_ops=corruption_ops,
             corruption_op_weights=corruption_op_weights,
+            density_source=str(cfg.mae.get("density_source", "synthetic")),
         )
         train_metrics, global_step = train_epoch(
             cfg, prefetcher, model, optimizer, model_ema, device, global_step,
