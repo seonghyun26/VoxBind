@@ -1,0 +1,88 @@
+defaults:
+  - dset: crossdocked_xray     # real 2Fo-Fc crops in xray_crops_aligned/
+  - model: atomblob_density_vit_mae_40m
+  - vox: default
+  - override hydra/job_logging: custom
+  - _self_
+
+# Atom-blob + X-ray-density multi-channel ViT-MAE pretraining variant.
+#
+# The encoder consumes a 12-channel input: 11 atom voxels (7 ligand + 4
+# pocket) concatenated with the z-scored real X-ray density. MAE
+# reconstruction targets all 12 channels jointly; per-modality recon loss
+# is logged separately (L_dens_atom on the 11 atom channels, L_dens_density
+# on the trailing density channel) so we can spot scale imbalance.
+#
+# Pairs with config_train_atomblob_vit_mae_40m.yaml on the same data subset
+# for the multi-channel-vs-atomblob ablation.
+
+debug: False
+wandb: True
+wandb_tags: []          # e.g. [pretrain, atomblob_density_vit_mae, 40m, stage_a, crossdocked_xray]
+num_workers: 4
+resume: null
+resume_epoch: null
+exp_dir: exps
+exp_name: atomblob_density_vit_mae_40m${hydra.job.override_dirname}
+output_dir: null
+
+seed: 42
+num_epochs: 100
+aug: True
+bsz: 8                   # match config_train_density_vit_mae_40m_xray.yaml (40M ViT)
+accum_steps: 2
+lr: 1e-4
+wd: 5e-2
+
+# ── Input-mode selector ─────────────────────────────────────────────────────
+input_mode: atomblob_density
+
+# ── Dataset overrides ────────────────────────────────────────────────────────
+# Same X-ray-available subset as the atomblob-only variant for a clean
+# ablation. use_xray=true → the trailing density channel is real 2Fo-Fc.
+dset:
+  subset_xray_only: true
+  subset_n: 78428
+  subset_val_n: 100
+  use_xray: true
+
+# ── MAE knobs ────────────────────────────────────────────────────────────────
+mae:
+  pretext_style: mae
+  # Real X-ray density (already locally ±3σ-clipped + z-scored by the dataset
+  # via normalize_crop). The synthetic-Gaussian-blur path is skipped.
+  density_source: xray
+  # Synthetic-density σ knobs are unused when density_source=xray; kept for
+  # schema parity with the density-only configs.
+  sigma_blur_a_lo: 0.30
+  sigma_blur_a_hi: 0.80
+  # No additive noise — real density already carries experimental noise,
+  # mirroring config_train_density_vit_mae_40m_xray.yaml. Atom channels are
+  # never noised regardless of this setting (gated in MAEPrefetcher._step).
+  sigma_noise: 0.0
+  block_size: 8
+  mask_ratio: 0.60
+  lambda_dens: 1.0       # joint 12-channel MAE recon (per-element scale)
+  lambda_str: 1.0        # harmless: L_str is 0 when struct head is disabled
+  struct_pos_weight: 100.0
+  struct_pos_thresh: 0.05
+  ema_decay: 0.999
+  grad_clip: 1.0
+  val_every: 1
+  ckpt_every: 20
+
+# Hydra
+hydra:
+  run:
+    dir: ./${exp_dir}/${exp_name}
+  job:
+    config:
+      override_dirname:
+        kv_sep: ""
+        item_sep: "_"
+        exclude_keys: [
+            "exp_dir", "lr", vox.grid_dim, "wd", "resume", "resume_epoch", "wandb",
+            "num_workers", "exp_name", "output_dir", "out_dir",
+            "bsz", "accum_steps", "seed", "num_epochs", "aug", "pocket_radius",
+            "grid_dim", "debug"
+]

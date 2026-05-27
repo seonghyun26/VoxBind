@@ -1,0 +1,21 @@
+model_name: atomblob_density_vit_mae_40m
+# ~45.4M-param ViT. Same width/depth as density_vit_mae_40m but the patch
+# embed accepts 12 channels: 7 ligand + 4 pocket atom-type + 1 z-scored
+# X-ray density. The structure aux head is disabled (n_struct_channels=0)
+# because the atom voxels are already part of the input — see comment in
+# atomblob_vit_mae_40m.yaml.
+#
+# Param delta vs density_vit_mae_40m (~42.6M):
+#   patch_embed (1→512 → 12→512, k=8 s=8) : +2,883,584
+#   head_density (c_half→1 → c_half→12, k=3) :   +4,762
+#   head_structure                          :  -11,707  (removed)
+#   net                                     : +2,876,639  → ~45.4M total
+n_channels: 32
+patch_size: 8
+n_in_channels: 12       # 11 atom-type (7 lig + 4 poc) + 1 X-ray density
+dim: 512
+depth: 12
+heads: 8
+mlp_ratio: 4
+dropout: 0.1
+n_struct_channels: 0    # disabled: atoms ARE part of the input

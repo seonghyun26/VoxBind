@@ -1,0 +1,26 @@
+model_name: atomblob_vit_mae_40m
+# ~45.2M-param ViT. Same width/depth as density_vit_mae_40m but the patch
+# embed is widened to accept 11 atom-type channels (7 ligand + 4 pocket).
+# The structure aux head is disabled (n_struct_channels=0) because the atom
+# voxels are already the encoder's input — a cross-modal "predict the atoms"
+# task on top of an atom-channel input would be degenerate.
+#
+# Param delta vs density_vit_mae_40m (~42.6M):
+#   patch_embed (1→512 → 11→512, k=8 s=8) : +2,621,440
+#   head_density (c_half→1 → c_half→11, k=3) :   +4,330
+#   head_structure (16-ch struct head)     :  -11,707  (removed)
+#   net                                    : +2,614,063  → ~45.2M total
+#
+# Encoder shape (patch_size, n_channels, c_out = n_channels/2) is preserved
+# so the encoder slice loads drop-in into a 40M VoxBind.density_encoder slot
+# IF that slot is widened to accept n_in_channels=11 (separate follow-up
+# branch — current voxbind.py hardcodes (B,1,G³) for the density slot).
+n_channels: 32          # backbone width; encoder spatial out has C/2 = 16 channels
+patch_size: 8           # at G=64 → 8³=512 tokens (unchanged)
+n_in_channels: 11       # 7 ligand + 4 pocket atom-type channels
+dim: 512                # transformer hidden width (matches density 40M)
+depth: 12               # transformer blocks (matches density 40M)
+heads: 8                # attention heads (matches density 40M)
+mlp_ratio: 4
+dropout: 0.1
+n_struct_channels: 0    # disabled: atoms ARE the input

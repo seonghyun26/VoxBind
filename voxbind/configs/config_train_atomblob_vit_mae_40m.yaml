@@ -1,0 +1,90 @@
+defaults:
+  - dset: crossdocked_xray     # subset filtering uses xray manifest; density itself is NOT loaded
+  - model: atomblob_vit_mae_40m
+  - vox: default
+  - override hydra/job_logging: custom
+  - _self_
+
+# Atom-blob-only ViT-MAE pretraining variant.
+#
+# Reads the SAME X-ray-available sample subset as the atomblob+density run
+# (subset_xray_only=true) for a clean ablation, but the per-sample X-ray
+# density tensor is NOT loaded (use_xray=false). The encoder sees only the
+# 11-channel atom voxels.
+#
+# Companion configs:
+#   - config_train_density_vit_mae_40m_xray.yaml : density-only (existing)
+#   - config_train_atomblob_density_vit_mae_40m.yaml : atomblob + density
+
+debug: False
+wandb: True
+wandb_tags: []          # e.g. [pretrain, atomblob_vit_mae, 40m, stage_a, crossdocked_xray]
+num_workers: 4
+resume: null
+resume_epoch: null
+exp_dir: exps
+exp_name: atomblob_vit_mae_40m${hydra.job.override_dirname}
+output_dir: null
+
+seed: 42
+num_epochs: 100
+aug: True
+bsz: 8                   # match config_train_density_vit_mae_40m_xray.yaml (40M ViT)
+accum_steps: 2
+lr: 1e-4
+wd: 5e-2
+
+# ── Input-mode selector (read by train_density_vit_mae.py) ──────────────────
+input_mode: atomblob
+
+# ── Dataset overrides ────────────────────────────────────────────────────────
+# Same X-ray-available subset as atomblob+density for a clean ablation. The
+# subset_xray_only filter uses the manifest (loaded even when use_xray=false
+# after the dataset/crossdocked_xray.py decoupling). use_xray=false skips
+# every per-sample CCP4/crop read; the dataset returns a zeros placeholder
+# that the prefetcher never touches in atomblob mode.
+dset:
+  subset_xray_only: true
+  subset_n: 78428
+  subset_val_n: 100
+  use_xray: false
+
+# ── MAE knobs ────────────────────────────────────────────────────────────────
+mae:
+  pretext_style: mae
+  # Density knobs are inert in atomblob mode (no density is built or loaded).
+  # density_source is irrelevant here; kept default for schema parity.
+  density_source: synthetic
+  sigma_blur_a_lo: 0.30
+  sigma_blur_a_hi: 0.80
+  # No noise: atom voxels have no experimental noise to begin with.
+  sigma_noise: 0.0
+  # Block masking — same as density-only run (60% of 8³ cubes zeroed in input).
+  block_size: 8
+  mask_ratio: 0.60
+  # Loss weights. L_str returns 0 when the struct head is disabled, so
+  # lambda_str is harmless at the default 1.0.
+  lambda_dens: 1.0
+  lambda_str: 1.0
+  struct_pos_weight: 100.0
+  struct_pos_thresh: 0.05
+  ema_decay: 0.999
+  grad_clip: 1.0
+  val_every: 1
+  ckpt_every: 20
+
+# Hydra
+hydra:
+  run:
+    dir: ./${exp_dir}/${exp_name}
+  job:
+    config:
+      override_dirname:
+        kv_sep: ""
+        item_sep: "_"
+        exclude_keys: [
+            "exp_dir", "lr", vox.grid_dim, "wd", "resume", "resume_epoch", "wandb",
+            "num_workers", "exp_name", "output_dir", "out_dir",
+            "bsz", "accum_steps", "seed", "num_epochs", "aug", "pocket_radius",
+            "grid_dim", "debug"
+]

@@ -23,7 +23,7 @@ In either style, the `encoder.*` slice of the EMA checkpoint loads drop-in into
 `VoxBind.density_encoder` via the existing loader in `models/__init__.py`.
 """
 
-from typing import Tuple
+from typing import Optional, Tuple
 
 import torch
 import torch.nn as nn
@@ -90,12 +90,18 @@ class DensityViT(nn.Module):
     encoder always sees a full G³ volume — this keeps the drop-in interface
     with `VoxBind.density_proj` byte-clean and matches the existing CNN-encoder
     MAE pipeline.
+
+    `n_in_channels` controls the number of input channels at the patch embed:
+        1  → density-only (default; matches the original density_encoder slot)
+        11 → atom-blob only (7 ligand + 4 pocket)
+        12 → atom-blob + density (joint multi-channel input)
     """
 
     def __init__(
         self,
         grid_dim: int = 64,
         patch_size: int = 8,
+        n_in_channels: int = 1,     # input channels: 1=density, 11=atomblob, 12=atomblob+density
         c_out: int = 16,            # = n_channels // 2 for VoxBind (default n_channels=32)
         dim: int = 192,
         depth: int = 6,
@@ -110,6 +116,7 @@ class DensityViT(nn.Module):
         )
         self.grid_dim = grid_dim
         self.patch_size = patch_size
+        self.n_in_channels = n_in_channels
         self.c_out = c_out
         self.dim = dim
         self.depth = depth
@@ -119,7 +126,7 @@ class DensityViT(nn.Module):
         self.patch_volume = patch_size ** 3
 
         self.patch_embed = nn.Conv3d(
-            1, dim, kernel_size=patch_size, stride=patch_size, padding=0
+            n_in_channels, dim, kernel_size=patch_size, stride=patch_size, padding=0
         )
         self.pos_embed = nn.Parameter(torch.zeros(1, self.n_tokens, dim))
 
@@ -163,7 +170,7 @@ class DensityViT(nn.Module):
         return x
 
     def forward(self, density: torch.Tensor) -> torch.Tensor:
-        """density: (B, 1, G, G, G) → (B, c_out, G, G, G)."""
+        """density: (B, n_in_channels, G, G, G) → (B, c_out, G, G, G)."""
         z = self.patch_embed(density)                    # (B, D, g_p, g_p, g_p)
         z = z.flatten(2).transpose(1, 2)                 # (B, N, D)
         z = z + self.pos_embed
@@ -184,26 +191,36 @@ class DensityViTMAE(nn.Module):
     strip in `models/__init__.py::create_model`. Which pretext head is active
     depends on `pretext_style`:
 
-      - "mae"     : `head_density` (B,1,G,G,G)  + `head_structure` (B,11,G,G,G)
-      - "electra" : `head_rtd`     (B,1,Gp,Gp,Gp) + `head_structure` (B,11,G,G,G)
+      - "mae"     : `head_density` (B, n_in_channels, G, G, G)
+                    + optional `head_structure` (B, n_struct_channels, G, G, G)
+      - "electra" : `head_rtd`     (B, 1, Gp, Gp, Gp)
+                    + optional `head_structure` (B, n_struct_channels, G, G, G)
 
-    Forward returns `(out_pretext, out_structure)`. `out_pretext` is the
-    masked-voxel density reconstruction in mae mode and per-patch RTD logits
-    in electra mode — interpretation lives in `train_density_vit_mae.py::
-    compute_losses`.
+    `n_in_channels` widens both the patch embed and the MAE reconstruction head
+    so the same wrapper handles density-only (=1), atom-blob-only (=11), and
+    atom-blob+density (=12) pretraining variants.
+
+    `n_struct_channels=0` skips the auxiliary structure head — useful when the
+    atom channels are already part of the input (atomblob / atomblob_density),
+    making cross-modal structure prediction redundant.
+
+    Forward returns `(out_pretext, out_structure_or_None)`. `out_pretext` is the
+    masked-voxel reconstruction in mae mode and per-patch RTD logits in electra
+    mode — interpretation lives in `train_density_vit_mae.py::compute_losses`.
     """
 
     def __init__(
         self,
         grid_dim: int = 64,
         patch_size: int = 8,
+        n_in_channels: int = 1,       # patch-embed input + MAE recon output channels
         n_channels: int = 32,         # backbone width; c_out = n_channels // 2
         dim: int = 192,
         depth: int = 6,
         n_heads: int = 6,
         mlp_ratio: int = 4,
         dropout: float = 0.1,
-        n_struct_channels: int = 11,  # 7 ligand + 4 pocket
+        n_struct_channels: int = 11,  # 7 ligand + 4 pocket; 0 disables the head
         pretext_style: str = "mae",   # "mae" | "electra"
     ):
         super().__init__()
@@ -216,6 +233,7 @@ class DensityViTMAE(nn.Module):
         self.encoder = DensityViT(
             grid_dim=grid_dim,
             patch_size=patch_size,
+            n_in_channels=n_in_channels,
             c_out=c_half,
             dim=dim,
             depth=depth,
@@ -225,11 +243,11 @@ class DensityViTMAE(nn.Module):
         )
 
         if pretext_style == "mae":
-            # Masked-voxel density reconstruction head: same shape as DensityMAE.
+            # Masked-voxel reconstruction head; output width matches input.
             self.head_density = nn.Sequential(
                 nn.Conv3d(c_half, c_half, kernel_size=3, padding=1),
                 nn.SiLU(),
-                nn.Conv3d(c_half, 1, kernel_size=3, padding=1),
+                nn.Conv3d(c_half, n_in_channels, kernel_size=3, padding=1),
             )
         else:
             # Per-patch RTD logits via a strided Conv3d that pools the full-res
@@ -242,25 +260,33 @@ class DensityViTMAE(nn.Module):
                           kernel_size=patch_size, stride=patch_size, padding=0),
             )
 
-        self.head_structure = nn.Sequential(
-            nn.Conv3d(c_half, c_half, kernel_size=3, padding=1),
-            nn.SiLU(),
-            nn.Conv3d(c_half, n_struct_channels, kernel_size=3, padding=1),
-        )
+        if n_struct_channels > 0:
+            self.head_structure = nn.Sequential(
+                nn.Conv3d(c_half, c_half, kernel_size=3, padding=1),
+                nn.SiLU(),
+                nn.Conv3d(c_half, n_struct_channels, kernel_size=3, padding=1),
+            )
+        else:
+            self.head_structure = None
 
+        self.n_in_channels = n_in_channels
         self.n_channels = n_channels
         self.n_struct_channels = n_struct_channels
 
     def encode(self, density: torch.Tensor) -> torch.Tensor:
         return self.encoder(density)
 
-    def forward(self, density: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def forward(
+        self, density: torch.Tensor
+    ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
         z = self.encoder(density)
         if self.pretext_style == "electra":
             out_pretext = self.head_rtd(z)        # (B, 1, g_p, g_p, g_p)
         else:
-            out_pretext = self.head_density(z)    # (B, 1, G, G, G)
-        out_structure = self.head_structure(z)    # (B, n_struct, G, G, G)
+            out_pretext = self.head_density(z)    # (B, n_in_channels, G, G, G)
+        out_structure = (
+            self.head_structure(z) if self.head_structure is not None else None
+        )
         return out_pretext, out_structure
 
 
