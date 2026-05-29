@@ -198,6 +198,9 @@ def parse_args() -> argparse.Namespace:
                    default=["atomblob", "atomblob_density", "atomblob_weighted"],
                    choices=["atomblob", "atomblob_density", "atomblob_weighted"])
     p.add_argument("--epoch",         type=int,   default=99)
+    p.add_argument("--voxel_version", choices=["v1", "v2", "v3"], default="v1",
+                   help="Selects which density-normalisation variant's features "
+                        "to probe. Adds matching suffix to feature paths + output CSV.")
     p.add_argument("--seeds",         type=int,   default=3)
     p.add_argument("--device",        default="cuda" if torch.cuda.is_available() else "cpu")
     p.add_argument("--hidden",        type=int,   default=128)
@@ -220,13 +223,15 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    suffix = "" if args.voxel_version == "v1" else f"_{args.voxel_version}"
     out_csv = Path(args.out_csv) if args.out_csv else (
-        RESULTS_DIR / f"probe_results_e{args.epoch}.csv"
+        RESULTS_DIR / f"probe_results_e{args.epoch}{suffix}.csv"
     )
 
     print(f"=== PDBbind frozen-encoder probe (pocket repr only) ===")
     print(f"  conditions    : {args.conditions}")
     print(f"  epoch         : {args.epoch}")
+    print(f"  voxel_version : {args.voxel_version}")
     print(f"  seeds         : {args.seeds}")
     print(f"  device        : {args.device}")
     print(f"  intersect     : {not args.no_intersect}")
@@ -240,9 +245,11 @@ def main() -> None:
     # ── Load all feature bundles upfront so we can intersect pdb_ids ─────────
     all_feats: dict[str, dict[str, torch.Tensor]] = {}
     for cond in args.conditions:
-        feat_path = FEAT_DIR / f"{cond}_e{args.epoch}.pt"
+        feat_path = FEAT_DIR / f"{cond}_e{args.epoch}{suffix}.pt"
         if not feat_path.exists():
             print(f"\n[error] missing features: {feat_path}")
+            print(f"        Run: python dataset/01e_pdbbind_features.py "
+                  f"--condition {cond} --voxel_version {args.voxel_version}")
             sys.exit(1)
         bundle = torch.load(feat_path, weights_only=False)
         all_feats[cond] = bundle["features"]
