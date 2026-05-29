@@ -1,0 +1,93 @@
+defaults:
+  - dset: crossdocked_xray     # X-ray-available subset (same as atomblob baseline)
+  - model: atomblob_vit_mae_40m
+  - vox: default
+  - override hydra/job_logging: custom
+  - _self_
+
+# Atom-blob-only ViT-MAE pretraining variant — WEIGHTED ablation.
+#
+# Differs from config_train_atomblob_vit_mae_40m.yaml in two places:
+#   1. mae.mask_strategy = atom_biased
+#        Blocks containing atoms are masked first (noisy top-K over per-block
+#        atom mass). Encourages the model to spend capacity on actually-
+#        informative regions instead of empty space.
+#   2. mae.channel_weighting = inv_sqrt_freq
+#        Per-channel weight = 1 / sqrt(pos-voxel frequency), normalized so
+#        the 11-vector sums to 11. Rare atom types (S/F/Cl/P) are up-weighted
+#        in the masked-MSE so they actually contribute to learning.
+#
+# Companion configs:
+#   - config_train_atomblob_vit_mae_40m.yaml           : baseline atomblob (uniform mask, equal channel weights)
+#   - config_train_atomblob_density_vit_mae_40m.yaml   : atomblob + density
+
+debug: False
+wandb: True
+wandb_tags: []          # e.g. [pretrain, atomblob_vit_mae, 40m, weighted, atom_biased_mask, crossdocked_xray]
+num_workers: 4
+resume: null
+resume_epoch: null
+exp_dir: exps
+exp_name: atomblob_vit_mae_40m_weighted${hydra.job.override_dirname}
+output_dir: null
+
+seed: 42
+num_epochs: 100
+aug: True
+bsz: 8                   # match the baseline atomblob run
+accum_steps: 2
+lr: 1e-4
+wd: 5e-2
+
+# ── Input-mode selector (read by train_density_vit_mae.py) ──────────────────
+input_mode: atomblob
+
+# ── Dataset overrides ────────────────────────────────────────────────────────
+# Same X-ray-available subset as atomblob for a clean A/B against the baseline.
+dset:
+  subset_xray_only: true
+  subset_n: 78428
+  subset_val_n: 100
+  use_xray: false
+
+# ── MAE knobs ────────────────────────────────────────────────────────────────
+mae:
+  pretext_style: mae
+  density_source: synthetic
+  sigma_blur_a_lo: 0.30
+  sigma_blur_a_hi: 0.80
+  sigma_noise: 0.0
+  block_size: 8
+  mask_ratio: 0.60
+  # NEW: atom-biased masking.
+  #   mask_strategy='uniform'    → same as baseline (random block mask)
+  #   mask_strategy='atom_biased'→ noisy top-K over per-block atom mass;
+  #                                blocks containing atoms are masked first.
+  mask_strategy: atom_biased
+  mask_atom_tau: 1.0
+  # NEW: per-channel inv-sqrt-freq weighting (auto-computed + cached at run start).
+  channel_weighting: inv_sqrt_freq
+  lambda_dens: 1.0
+  lambda_str: 1.0
+  struct_pos_weight: 100.0
+  struct_pos_thresh: 0.05
+  ema_decay: 0.999
+  grad_clip: 1.0
+  val_every: 1
+  ckpt_every: 20
+
+# Hydra
+hydra:
+  run:
+    dir: ./${exp_dir}/${exp_name}
+  job:
+    config:
+      override_dirname:
+        kv_sep: ""
+        item_sep: "_"
+        exclude_keys: [
+            "exp_dir", "lr", vox.grid_dim, "wd", "resume", "resume_epoch", "wandb",
+            "num_workers", "exp_name", "output_dir", "out_dir",
+            "bsz", "accum_steps", "seed", "num_epochs", "aug", "pocket_radius",
+            "grid_dim", "debug"
+]

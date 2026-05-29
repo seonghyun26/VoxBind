@@ -1,0 +1,96 @@
+defaults:
+  - dset: crossdocked_xray     # real 2Fo-Fc crops in xray_crops_aligned/
+  - model: atomblob_density_vit_mae_40m
+  - vox: default
+  - override hydra/job_logging: custom
+  - _self_
+
+# Atom-blob + X-ray-density multi-channel ViT-MAE — FULLY WEIGHTED variant.
+#
+# Stacks three rebalancing knobs on top of config_train_atomblob_density_vit_mae_40m.yaml:
+#   1. mae.channel_weighting = inv_sqrt_freq
+#        Per-atom-channel masked-MSE weighted by 1/sqrt(pos-voxel frequency),
+#        normalized so the 11 atom weights sum to 11. Up-weights rare ligand
+#        atoms (S/F/Cl/P) so they actually contribute to learning.
+#   2. mae.mask_strategy = atom_biased
+#        Blocks containing atoms are masked first (noisy top-K over per-block
+#        atom mass), encouraging the encoder to spend pretext capacity on
+#        informative regions rather than empty space.
+#   3. mae.density_channel_weight = 0.1
+#        Down-weights the trailing density channel inside the joint MAE loss.
+#        Without this knob the density channel dominated ~93% of the gradient
+#        mass (atom MSE ≈ 0.0005/ch, density MSE ≈ 0.07/voxel); with
+#        density_channel_weight=0.1 it drops to ~57%, giving atom channels a
+#        meaningful gradient share. Final 12-vec is renormalized to sum=12 so
+#        L_pretext magnitude stays comparable to the unweighted run.
+#
+# Companion configs:
+#   - config_train_atomblob_density_vit_mae_40m.yaml          : baseline (uniform mask, equal weights, no density downweight)
+#   - config_train_atomblob_vit_mae_40m_weighted.yaml         : atomblob-only equivalent (no density input)
+
+debug: False
+wandb: True
+wandb_tags: []          # e.g. [pretrain, atomblob_density_vit_mae, 40m, weighted, atom_biased_mask, density_downweight, crossdocked_xray]
+num_workers: 4
+resume: null
+resume_epoch: null
+exp_dir: exps
+exp_name: atomblob_density_vit_mae_40m_weighted${hydra.job.override_dirname}
+output_dir: null
+
+seed: 42
+num_epochs: 100
+aug: True
+bsz: 8                   # per-GPU; effective batch = bsz × world_size × accum_steps
+accum_steps: 2           # launcher overrides to 5 when world_size=2 (keeps effective bsz = 80)
+lr: 1e-4
+wd: 5e-2
+
+# ── Input-mode selector ─────────────────────────────────────────────────────
+input_mode: atomblob_density
+
+# ── Dataset overrides ────────────────────────────────────────────────────────
+dset:
+  subset_xray_only: true
+  subset_n: 78428
+  subset_val_n: 100
+  use_xray: true
+
+# ── MAE knobs ────────────────────────────────────────────────────────────────
+mae:
+  pretext_style: mae
+  density_source: xray
+  sigma_blur_a_lo: 0.30
+  sigma_blur_a_hi: 0.80
+  sigma_noise: 0.0
+  block_size: 8
+  mask_ratio: 0.60
+  # NEW knobs (composed):
+  mask_strategy: atom_biased         # bias 60% mask toward atom-occupied blocks
+  mask_atom_tau: 1.0                 # moderate stochasticity (tau=0 = deterministic top-K)
+  channel_weighting: inv_sqrt_freq   # inv-sqrt-freq atom-channel weighting
+  density_channel_weight: 0.1        # density channel down-weighted inside joint MAE loss
+  lambda_dens: 1.0
+  lambda_str: 1.0
+  struct_pos_weight: 100.0
+  struct_pos_thresh: 0.05
+  ema_decay: 0.999
+  grad_clip: 1.0
+  val_every: 1
+  ckpt_every: 20
+
+# Hydra
+hydra:
+  run:
+    dir: ./${exp_dir}/${exp_name}
+  job:
+    config:
+      override_dirname:
+        kv_sep: ""
+        item_sep: "_"
+        exclude_keys: [
+            "exp_dir", "lr", vox.grid_dim, "wd", "resume", "resume_epoch", "wandb",
+            "num_workers", "exp_name", "output_dir", "out_dir",
+            "bsz", "accum_steps", "seed", "num_epochs", "aug", "pocket_radius",
+            "grid_dim", "debug"
+]
