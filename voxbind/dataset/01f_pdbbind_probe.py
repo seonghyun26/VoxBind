@@ -195,8 +195,10 @@ def parse_args() -> argparse.Namespace:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     p.add_argument("--conditions", nargs="+",
-                   default=["atomblob", "atomblob_density", "atomblob_weighted"],
-                   choices=["atomblob", "atomblob_density", "atomblob_weighted"])
+                   default=["atomblob", "atomblob_density", "atomblob_weighted",
+                            "atomblob_merged_density"],
+                   choices=["atomblob", "atomblob_density", "atomblob_weighted",
+                            "atomblob_merged_density"])
     p.add_argument("--epoch",         type=int,   default=99)
     p.add_argument("--voxel_version", choices=["v1", "v2", "v3"], default="v1",
                    help="Selects which density-normalisation variant's features "

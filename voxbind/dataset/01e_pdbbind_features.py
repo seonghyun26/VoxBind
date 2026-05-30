@@ -49,11 +49,28 @@ FEAT_DIR     = PDBBIND_DIR / "features"
 # identical across v1/v2/v3 (atoms are symlinked).
 ATOM_ONLY_CONDITIONS = {"atomblob", "atomblob_weighted"}
 
+# Conditions whose encoder DOES read the density channel; need has_density pids
+# AND care about which density-version the model was pretrained on.
+DENSITY_CONSUMING = {"atomblob_density", "atomblob_merged_density"}
+
 EXPS = {
-    "atomblob":          Path("exps") / "260526_atomblob_vit_mae_40m_pretrain",
-    "atomblob_density":  Path("exps") / "260526_atomblob_density_vit_mae_40m_pretrain",
-    "atomblob_weighted": Path("exps") / "260528_atomblob_vit_mae_40m_weighted_pretrain",
+    "atomblob":               Path("exps") / "260526_atomblob_vit_mae_40m_pretrain",
+    "atomblob_density":       Path("exps") / "260526_atomblob_density_vit_mae_40m_pretrain",
+    "atomblob_weighted":      Path("exps") / "260528_atomblob_vit_mae_40m_weighted_pretrain",
+    "atomblob_merged_density": Path("exps") / "260530_atomblob_merged_density_vit_mae_40m_weighted_pretrain",
 }
+
+# Conditions whose encoder was retrained on the v2/v3 density distributions;
+# the (condition, version) pair overrides the default exp dir from EXPS.
+EXPS_OVERRIDE: dict[tuple[str, str], Path] = {
+    ("atomblob_merged_density", "v2"): Path("exps") / "260530_atomblob_merged_density_vit_mae_40m_weighted_v2_pretrain",
+    ("atomblob_merged_density", "v3"): Path("exps") / "260530_atomblob_merged_density_vit_mae_40m_weighted_v3_pretrain",
+}
+
+
+def resolve_exp(condition: str, version: str) -> Path:
+    """Pick the encoder exp dir for a (condition, voxel_version) pair."""
+    return EXPS_OVERRIDE.get((condition, version), EXPS[condition])
 
 
 def voxel_dir_for(version: str) -> Path:
@@ -121,11 +138,20 @@ def load_voxels_for(
     if condition in ATOM_ONLY_CONDITIONS:
         assert n_in_channels == 11
         return atoms_t                                       # (11, G, G, G)
-    # atomblob_density
-    assert n_in_channels == 12
+    # All density-consuming conditions need the density crop loaded.
     dens = np.load(dens_dir / f"{pid}.npy")                 # (G, G, G) float16
     dens_t = torch.from_numpy(dens.astype(np.float32)).unsqueeze(0)  # (1, G, G, G)
-    return torch.cat([atoms_t, dens_t], dim=0)              # (12, G, G, G)
+    if condition == "atomblob_density":
+        assert n_in_channels == 12
+        return torch.cat([atoms_t, dens_t], dim=0)          # (12, G, G, G)
+    if condition == "atomblob_merged_density":
+        # Pocket {C,O,N,S} (channels 7..10) folded into ligand {C,O,N,S} (0..3).
+        # Ligand-only halogens + P (channels 4..6) stay as-is.
+        assert n_in_channels == 8
+        merged = atoms_t[:7].clone()                         # (7, G, G, G)
+        merged[:4] += atoms_t[7:11]
+        return torch.cat([merged, dens_t], dim=0)            # (8, G, G, G)
+    raise ValueError(f"unknown condition: {condition!r}")
 
 
 # ── CLI ────────────────────────────────────────────────────────────────────────
@@ -136,7 +162,8 @@ def parse_args() -> argparse.Namespace:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     p.add_argument("--condition",
-                   choices=["atomblob", "atomblob_density", "atomblob_weighted"],
+                   choices=["atomblob", "atomblob_density", "atomblob_weighted",
+                            "atomblob_merged_density"],
                    required=True)
     p.add_argument("--epoch",      type=int, default=99,
                    help="Checkpoint epoch to use (matched across conditions)")
@@ -193,19 +220,26 @@ def main() -> None:
         print(f"  [symlink] {out_path}  →  {src.name}")
         return
 
-    # ── Distribution-shift warning for density-consuming condition on v2/v3 ──
-    if args.voxel_version != "v1" and args.condition == "atomblob_density":
-        print(f"\n  [warn] atomblob_density encoder was pretrained on v1 density.")
+    # ── Distribution-shift warning when the encoder wasn't retrained on the
+    # selected density version. We override the exp dir for (condition, version)
+    # combos that have a matching retrain; if no override exists for this combo
+    # AND the condition reads density AND version != v1, the encoder is OOD.
+    is_density = args.condition in DENSITY_CONSUMING
+    has_override = (args.condition, args.voxel_version) in EXPS_OVERRIDE
+    if is_density and args.voxel_version != "v1" and not has_override:
+        print(f"\n  [warn] {args.condition} encoder was pretrained on v1 density.")
         print(f"  [warn] --voxel_version {args.voxel_version} feeds the encoder OOD inputs.")
         print(f"  [warn] Probe results reflect distribution shift, not encoder quality.")
 
-    encoder = load_encoder(EXPS[args.condition], args.epoch, args.device)
+    exp_dir = resolve_exp(args.condition, args.voxel_version)
+    print(f"  exp_dir        : {exp_dir}")
+    encoder = load_encoder(exp_dir, args.epoch, args.device)
     n_in = encoder.n_in_channels
 
     # Pick the right pdb_id pool: density-using conditions need has_density,
     # atom-only conditions (atomblob, atomblob_weighted) just need has_atoms.
     avail = pd.read_csv(avail_csv)
-    if args.condition == "atomblob_density":
+    if args.condition in DENSITY_CONSUMING:
         pool = avail[avail["has_atoms"] & avail["has_density"]].copy()
     else:
         pool = avail[avail["has_atoms"]].copy()
