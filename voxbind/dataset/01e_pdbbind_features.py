@@ -65,6 +65,7 @@ EXPS = {
 EXPS_OVERRIDE: dict[tuple[str, str], Path] = {
     ("atomblob_merged_density", "v2"): Path("exps") / "260530_atomblob_merged_density_vit_mae_40m_weighted_v2_pretrain",
     ("atomblob_merged_density", "v3"): Path("exps") / "260530_atomblob_merged_density_vit_mae_40m_weighted_v3_pretrain",
+    ("atomblob_density",        "v2"): Path("exps") / "260531_atomblob_density_vit_mae_40m_v2_pretrain",
 }
 
 
