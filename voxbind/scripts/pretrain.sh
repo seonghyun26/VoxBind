@@ -139,7 +139,7 @@ esac
 
 # ── Data version → crops_dir / normalize ──────────────────────────────────────
 # v1 = xray_crops_aligned (per-crop ±3σ z-score; dset.normalize default true).
-# vN (N≥2) = xray_crops_aligned_vN, pre-normalised by 00e_v2_pool_norm → normalize=false.
+# vN (N≥2) = xray_crops_aligned_vN, pre-normalised by 00b_density_preprocess.py → normalize=false.
 # Generic so new versions (v4, v5, …) need no script edit.
 if [[ "$DATA_VER" == v1 ]]; then
     CROPS=$DATA/xray_crops_aligned;          NORMALIZE="";    DV_TAG=""

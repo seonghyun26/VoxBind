@@ -20,9 +20,9 @@ ts(){ date "+%Y-%m-%d %H:%M:%S"; }
 
 mkdir -p "$LOG"
 cd "$VOX" || exit 1
-echo "[$(ts)] launching $EXP  (GPU 4,6,7 | bsz 8 × 3 × accum 4 = 96 eff | merged+density on v4 crops)"
+echo "[$(ts)] launching $EXP  (GPU 4-7 | bsz 8 × 4 × accum 3 = 96 eff | merged+density on v4 crops)"
 
-CUDA_VISIBLE_DEVICES=4,6,7 $PY/torchrun --standalone --nproc_per_node=3 train_density_vit_mae.py \
+CUDA_VISIBLE_DEVICES=4,5,6,7 $PY/torchrun --standalone --nproc_per_node=4 train_density_vit_mae.py \
     --config-name=config_train_atomblob_merged_density_vit_mae_40m_weighted_v4 \
     dset=crossdocked_xray \
     dset.data_dir=$DATA \
@@ -36,7 +36,7 @@ CUDA_VISIBLE_DEVICES=4,6,7 $PY/torchrun --standalone --nproc_per_node=3 train_de
     model.n_in_channels=8 \
     num_epochs=100 \
     bsz=8 \
-    accum_steps=4 \
+    accum_steps=3 \
     'wandb_tags=[pretrain,atomblob_merged_density_vit_mae,40m,weighted,merged7,v4,clip_zscore,crossdocked_xray]' \
     lr=1e-4 \
     wd=5e-2 \

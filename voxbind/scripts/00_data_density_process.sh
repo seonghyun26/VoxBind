@@ -8,13 +8,21 @@
 # Modes (default: all):
 #   all         run every step: preprocess  →  download  →  crops
 #   preprocess  preprocess CrossDocked (dataset/preprocess_crossdocked.py)
-#   download    download 2Fo-Fc CCP4 maps from PDBe EDS (dataset/00a_data_density_download.py)
-#   crops       precompute 64³ density crops (dataset/00b_data_density_preprocess.py)
+#   download    download 2Fo-Fc CCP4 maps + deposited PDBs (dataset/00a_density_download.py)
+#   crops       align + crop + normalise density crops (dataset/00b_density_preprocess.py)
 #
 # Environment variables (optional):
-#   WORKERS     parallel download threads        (default: 16)
-#   SPLITS      crop splits to process           (default: "train test")
-#   EDS_CACHE   PDBe EDS cache JSON              (default: ../notebook/data/check_xray_cache.json)
+#   WORKERS     parallel workers (download threads / crop processes)  (default: 16)
+#   SPLITS      splits to process                                     (default: "train test")
+#   VERSION     crop version(s) for the crops step                    (default: "v3")
+#                 v1 → xray_crops_aligned (load-time ±3σ z-score)
+#                 v2 → xray_crops_aligned_v2 (pool z-score)
+#                 v3 → xray_crops_aligned_v3 (pool max-abs → [−1,1])
+#                 v4 → xray_crops_aligned_v4 (pool clip + z-score)
+#               Space-separate to build several at once, e.g. VERSION="v2 v3 v4".
+#   EDS_CACHE   optional PDBe EDS cache JSON to restrict MAP downloads to
+#               confirmed-EDS PDB IDs (default: ../notebook/data/check_xray_cache.json
+#               if present; otherwise maps are attempted for every dataset PDB ID)
 #
 # Prerequisites (preprocess step):
 #   Manually download the following into voxbind/dataset/data/:
@@ -22,15 +30,11 @@
 #     - crossdocked_pocket10.tar.gz   (then: tar xvzf ... -C dataset/data/)
 #   Source: https://drive.google.com/drive/folders/1CzwxmTpjbrt83z_wBzcQncq84OVDPurM
 #
-# Prerequisites (download step):
-#   notebook/data/check_xray_cache.json must exist
-#   (run notebook/check_xray_data.py first to build the cache).
-#
 # Outputs:
 #   preprocess  →  dataset/data/data_train.pt, dataset/data/data_test.pt
-#   download    →  dataset/data/ccp4/{pdb_id}.map
-#   crops       →  dataset/data/xray_crops/{train,test}/{:06d}.npy
-#                  dataset/data/xray_crops/{train,test}_available.npy
+#   download    →  dataset/data/ccp4/{pdb}.ccp4 , dataset/data/pdb/{pdb}.pdb
+#   crops       →  dataset/data/xray_crops_aligned[_vN]/{train,test}/{:06d}.npy
+#                  dataset/data/xray_crops_aligned[_vN]/{train,test}_available.npy
 
 set -e
 
@@ -40,9 +44,10 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 MODE="${1:-all}"
 WORKERS="${WORKERS:-16}"
 SPLITS="${SPLITS:-train test}"
+VERSION="${VERSION:-v3}"
 DATA_DIR="${PROJECT_ROOT}/dataset/data"
-CCP4_DIR="${PROJECT_ROOT}/dataset/data/ccp4"
-CROPS_DIR="${PROJECT_ROOT}/dataset/data/xray_crops"
+CCP4_DIR="${DATA_DIR}/ccp4"
+PDB_DIR="${DATA_DIR}/pdb"
 EDS_CACHE="${EDS_CACHE:-${PROJECT_ROOT}/../notebook/data/check_xray_cache.json}"
 
 cd "$PROJECT_ROOT"
@@ -65,20 +70,26 @@ run_preprocess() {
 }
 
 run_download() {
-    if [ ! -f "$EDS_CACHE" ]; then
-        echo "ERROR: EDS cache not found at ${EDS_CACHE}"
-        echo "  Run notebook/check_xray_data.py first to build the cache."
-        exit 1
+    echo "==> [download] X-ray CCP4 maps + deposited PDBs from PDBe"
+    echo "    Maps    : ${CCP4_DIR}"
+    echo "    PDBs    : ${PDB_DIR}"
+    echo "    Splits  : ${SPLITS}"
+    echo "    Workers : ${WORKERS}"
+    local eds_arg=()
+    if [ -f "$EDS_CACHE" ]; then
+        echo "    EDS cache (map filter): ${EDS_CACHE}"
+        eds_arg=(--eds_cache "$EDS_CACHE")
+    else
+        echo "    EDS cache not found — attempting maps for every dataset PDB ID."
     fi
-
-    echo "==> [download] X-ray CCP4 maps from PDBe EDS"
-    echo "    EDS cache : ${EDS_CACHE}"
-    echo "    Output    : ${CCP4_DIR}"
-    echo "    Workers   : ${WORKERS}"
-    python dataset/00a_data_density_download.py \
-        --eds_cache "$EDS_CACHE" \
-        --out_dir   "$CCP4_DIR" \
-        --workers   "$WORKERS"
+    # shellcheck disable=SC2086
+    python dataset/00a_density_download.py \
+        --data_dir "$DATA_DIR" \
+        --ccp4_dir "$CCP4_DIR" \
+        --pdb_dir  "$PDB_DIR" \
+        --splits   $SPLITS \
+        --workers  "$WORKERS" \
+        "${eds_arg[@]}"
 }
 
 run_crops() {
@@ -88,17 +99,20 @@ run_crops() {
         exit 1
     fi
 
-    echo "==> [crops] Precompute X-ray density crops"
-    echo "    Data dir  : ${DATA_DIR}"
-    echo "    CCP4 dir  : ${CCP4_DIR}"
-    echo "    Output    : ${CROPS_DIR}"
-    echo "    Splits    : ${SPLITS}"
+    echo "==> [crops] Align + crop + normalise X-ray density"
+    echo "    Data dir : ${DATA_DIR}"
+    echo "    Version  : ${VERSION}"
+    echo "    Splits   : ${SPLITS}"
+    echo "    Workers  : ${WORKERS}"
     # shellcheck disable=SC2086
-    python dataset/00b_data_density_preprocess.py \
+    python dataset/00b_density_preprocess.py \
+        --version  $VERSION \
         --data_dir "$DATA_DIR" \
         --ccp4_dir "$CCP4_DIR" \
-        --out_dir  "$CROPS_DIR" \
-        --splits   $SPLITS
+        --pdb_dir  "$PDB_DIR" \
+        --out_root "$DATA_DIR" \
+        --splits   $SPLITS \
+        --workers  "$WORKERS"
 }
 
 case "$MODE" in

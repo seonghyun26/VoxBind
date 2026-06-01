@@ -45,7 +45,7 @@ run_probe() {
     # Phase 5 (merged_density only — the others have v1 features already) + Phase 6.
     local ver="$1"
     echo "[$(ts)] [$ver] Phase 5 extraction (atomblob_merged_density only)" >> "$W_LOG"
-    CUDA_VISIBLE_DEVICES=5 $PY/python "$VOX/dataset/01e_pdbbind_features.py" \
+    CUDA_VISIBLE_DEVICES=5 $PY/python "$VOX/dataset/01c_pdbbind_probe.py" features \
         --condition atomblob_merged_density --voxel_version "$ver" \
         >> "$LOG/01e_features_${ver}.log" 2>&1
     RC=$?
@@ -55,12 +55,12 @@ run_probe() {
     fi
     # Also ensure the atom-only conditions have symlinked features for this ver.
     for cond in atomblob atomblob_weighted; do
-        CUDA_VISIBLE_DEVICES=5 $PY/python "$VOX/dataset/01e_pdbbind_features.py" \
+        CUDA_VISIBLE_DEVICES=5 $PY/python "$VOX/dataset/01c_pdbbind_probe.py" features \
             --condition "$cond" --voxel_version "$ver" \
             >> "$LOG/01e_features_${ver}.log" 2>&1
     done
     echo "[$(ts)] [$ver] Phase 6 probe" >> "$W_LOG"
-    CUDA_VISIBLE_DEVICES=5 $PY/python "$VOX/dataset/01f_pdbbind_probe.py" \
+    CUDA_VISIBLE_DEVICES=5 $PY/python "$VOX/dataset/01c_pdbbind_probe.py" probe \
         --voxel_version "$ver" \
         --conditions atomblob atomblob_weighted atomblob_merged_density \
         >> "$LOG/01f_probe_${ver}.log" 2>&1
