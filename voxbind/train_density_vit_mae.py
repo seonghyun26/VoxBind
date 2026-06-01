@@ -384,22 +384,30 @@ def compute_losses(
     patch_size: int = 8,
     input_mode: str = "density",
     ch_weight: torch.Tensor = None,
+    atom_pos_weight: float = 1.0,
+    atom_pos_thresh: float = 0.05,
 ):
     """Returns a dict of named losses.
 
     mae path:
       L_dens : masked-voxel MSE between out_pretext (B,C,G,G,G) and x_clean,
-               where C = 1 / 11 / 12 per input_mode.
+               where C = 1 / 7 / 8 / 11 / 12 per input_mode.
       L_str  : 11-ch atom structure MSE (pos-weighted), only if a_hat is given.
 
-      For input_mode='atomblob_density' also returns the per-modality split:
-        L_dens_atom    — MSE on the 11 atom channels in masked positions
+      For *_density modes also returns the per-modality split:
+        L_dens_atom    — MSE on the atom channels in masked positions
         L_dens_density — MSE on the trailing density channel in masked positions
 
-      `ch_weight` (optional): 1-D tensor of length out_pretext.shape[1] applied
-      to the per-channel MSE — used to up-weight rare atom types in atomblob.
-      Per-channel weighting also rescales `L_dens_atom`; `L_dens_density` is
-      always unweighted (single density channel).
+      Two complementary weighting axes (composable):
+        `ch_weight`        : 1-D tensor of length n_channels, applied per-channel.
+                             Used by inv-sqrt-freq to balance across atom-type
+                             channels (rare F/Cl/P up-weighted vs common C).
+        `atom_pos_weight`  : scalar > 1, applied per-voxel within atom channels.
+                             At voxels where target > `atom_pos_thresh`, the
+                             squared error is multiplied by atom_pos_weight.
+                             Density and atom-off voxels are unchanged. Targets
+                             the SECOND sparsity axis: within-channel atom-on
+                             voxels are still rare even after channel weighting.
 
     electra path:
       L_rtd  : per-patch BCE-with-logits between out_pretext (B,1,Gp,Gp,Gp)
@@ -420,6 +428,30 @@ def compute_losses(
         n_masked_spatial = m.sum().clamp(min=1.0)
         diff_sq = (out_pretext - x_clean) ** 2 * m
         n_channels = out_pretext.shape[1]
+
+        # ── atom_pos_weight: up-weight error² at atom-on voxels in atom channels.
+        # Determine n_atom = number of leading atom channels in the output.
+        if input_mode == "atomblob":                          n_atom = 11
+        elif input_mode == "atomblob_density":                n_atom = 11
+        elif input_mode == "atomblob_merged":                 n_atom = 7
+        elif input_mode == "atomblob_merged_density":         n_atom = 7
+        else:                                                  n_atom = 0    # density-only
+        if atom_pos_weight > 1.0 and n_atom > 0:
+            # Mask of atom-on positions for the leading atom channels.
+            pos_atom = (x_clean[:, :n_atom] > atom_pos_thresh).to(diff_sq.dtype)
+            # Multiplier: atom-on voxels get atom_pos_weight, atom-off get 1.
+            atom_mult = 1.0 + (atom_pos_weight - 1.0) * pos_atom              # (B, n_atom, G³)
+            if n_atom < n_channels:
+                # Density (and any trailing non-atom channels) get 1× (no boost).
+                pad = torch.ones(
+                    (atom_mult.shape[0], n_channels - n_atom, *atom_mult.shape[2:]),
+                    device=atom_mult.device, dtype=atom_mult.dtype,
+                )
+                full_mult = torch.cat([atom_mult, pad], dim=1)
+            else:
+                full_mult = atom_mult
+            diff_sq = diff_sq * full_mult
+
         if ch_weight is not None:
             assert ch_weight.shape[0] == n_channels, (
                 f"ch_weight has {ch_weight.shape[0]} entries but out_pretext has "
@@ -436,7 +468,7 @@ def compute_losses(
         # Per-modality split for any *_density mode. Atom channels are the
         # leading `n_atom` slice; density is the trailing channel.
         if input_mode in ("atomblob_density", "atomblob_merged_density"):
-            n_atom = 11 if input_mode == "atomblob_density" else 7
+            # Note: `diff_sq` already reflects atom_pos_weight if active.
             if ch_weight is not None:
                 atom_diff = (diff_sq[:, :n_atom] * w_full[:, :n_atom]).sum() / (n_masked_spatial * n_atom)
             else:
@@ -731,6 +763,8 @@ def val_epoch(cfg, model, val_cache, device, ch_weight=None) -> dict:
                 patch_size=patch_size,
                 input_mode=input_mode,
                 ch_weight=ch_weight,
+                atom_pos_weight=float(cfg.mae.get("atom_pos_weight", 1.0)),
+                atom_pos_thresh=float(cfg.mae.get("atom_pos_thresh", 0.05)),
             )
             L_pretext_sum += losses[pretext_key].item()
             L_str_sum += losses["L_str"].item()
@@ -791,6 +825,8 @@ def train_epoch(cfg, prefetcher, model, optimizer, model_ema, device, global_ste
                 patch_size=patch_size,
                 input_mode=input_mode,
                 ch_weight=ch_weight,
+                atom_pos_weight=float(cfg.mae.get("atom_pos_weight", 1.0)),
+                atom_pos_thresh=float(cfg.mae.get("atom_pos_thresh", 0.05)),
             )
             L_pretext = losses[pretext_key]
             L_str = losses["L_str"]
@@ -880,11 +916,16 @@ def main(cfg: DictConfig) -> None:
         try:
             _tags = cfg.get("wandb_tags", None)
             _tags = list(_tags) if _tags else None
+            # Strip leading YYMMDD_ from the exp_name for the wandb display name.
+            # exp_name on disk keeps the date (per the exp-dir naming convention);
+            # only the wandb run name shows the bare topic.
+            import re as _re
+            _wandb_name = _re.sub(r"^\d{6}_", "", cfg.exp_name)
             wandb.init(
                 project="voxbind",
                 entity="eddy26",
                 config=OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True),
-                name=cfg.exp_name,
+                name=_wandb_name,
                 tags=_tags,
                 dir=cfg.output_dir,
                 resume="allow",
@@ -911,6 +952,9 @@ def main(cfg: DictConfig) -> None:
     input_mode = str(cfg.get("input_mode", "density"))
     torch.manual_seed(cfg.seed)
     torch.cuda.manual_seed(cfg.seed)
+    dual_head       = bool(cfg.model.get("dual_head", False))
+    head_hidden_dim = int(cfg.model.get("head_hidden_dim", 0))   # 0 → defaults to c_half
+    head_depth      = int(cfg.model.get("head_depth", 2))
     model = DensityViTMAE(
         grid_dim=int(cfg.vox.grid_dim),
         patch_size=int(cfg.model.patch_size),
@@ -923,11 +967,15 @@ def main(cfg: DictConfig) -> None:
         dropout=float(cfg.model.dropout),
         n_struct_channels=int(cfg.model.n_struct_channels),
         pretext_style=pretext_style,
+        dual_head=dual_head,
+        head_hidden_dim=head_hidden_dim,
+        head_depth=head_depth,
     ).to(device)
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     if is_main:
         logger.info(f"DensityViTMAE has {(n_params/1e6):.02f}M parameters "
-                    f"(pretext_style={pretext_style}, input_mode={input_mode})")
+                    f"(pretext_style={pretext_style}, input_mode={input_mode}, "
+                    f"dual_head={dual_head}, head_hidden_dim={head_hidden_dim or '(c_half)'}, head_depth={head_depth})")
 
     optimizer = AdamW(model.parameters(), lr=cfg.lr, weight_decay=cfg.wd)
     optimizer.zero_grad()

@@ -14,7 +14,7 @@ VoxBind already supports a density_encoder branch via with_density=True (see
 models/voxbind.py). The branch takes a (B, 1, G, G, G) tensor and its output
 is summed with the pocket encoding before entering the U-Net. This script
 reuses that branch — just feeding real X-ray density instead of simulated
-pdb2vol density.
+atom-blob density.
 
 Training strategy
 -----------------
