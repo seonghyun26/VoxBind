@@ -20,6 +20,11 @@
 #   --weighted      weighted recipe (atom_biased mask + inv_sqrt_freq
 #                   [+ density downweight]). Required for atomblob_merged_density;
 #                   not available for density (ignored with a warning).
+#   --gradmag       append a gradient-magnitude ‖∇ρ‖ channel to the density input
+#                   (density-bearing modes only). Sets with_gradmag=true, bumps
+#                   n_in by 1, and makes gradmag an MAE reconstruction target
+#                   (gradmag_reconstruct=true → recon width = n_in). Tags +gradmag;
+#                   auto-name +_gradmag.
 #   --epochs N      num_epochs              (default 100)
 #   --bsz N         per-GPU batch size      (default 8)
 #   --target N      target effective batch for accum auto-calc (default 80)
@@ -51,7 +56,7 @@ ts(){ date "+%Y-%m-%d %H:%M:%S"; }
 die(){ echo "pretrain.sh: $*" >&2; exit 1; }
 
 # ── Defaults ──────────────────────────────────────────────────────────────────
-MODE=""; GPUS=""; DATA_VER="v1"; WEIGHTED=0
+MODE=""; GPUS=""; DATA_VER="v1"; WEIGHTED=0; GRADMAG=0
 EPOCHS=100; BSZ=8; TARGET=80; ACCUM=""; LR=1e-4; WD=5e-2; SEED=42
 NAME=""; EXTRA_TAGS=""; DRYRUN=0
 PASSTHRU=()
@@ -63,6 +68,7 @@ while [[ $# -gt 0 ]]; do
         --gpus)     GPUS="$2"; shift 2;;
         --data)     DATA_VER="$2"; shift 2;;
         --weighted) WEIGHTED=1; shift;;
+        --gradmag)  GRADMAG=1; shift;;
         --epochs)   EPOCHS="$2"; shift 2;;
         --bsz)      BSZ="$2"; shift 2;;
         --target)   TARGET="$2"; shift 2;;
@@ -137,6 +143,20 @@ case "$MODE" in
         die "unknown --mode '$MODE'";;
 esac
 
+# ── Gradmag: append ‖∇ρ‖ channel (density-bearing modes only) ──────────────────
+# Overrides n_in to include the trailing gradmag channel; with_gradmag and
+# gradmag_reconstruct ride in as ++ overrides in the command assembly below.
+# Per-mode n_in = (base atoms + density) + 1: density 1→2, atomblob_density
+# 12→13, atomblob_merged_density 8→9.
+if [[ "$GRADMAG" -eq 1 ]]; then
+    case "$MODE" in
+        density)                 N_IN=2;;
+        atomblob_density)        N_IN=13;;
+        atomblob_merged_density) N_IN=9;;
+        *) die "--gradmag requires a density-bearing --mode (density|atomblob_density|atomblob_merged_density); got '$MODE'";;
+    esac
+fi
+
 # ── Data version → crops_dir / normalize ──────────────────────────────────────
 # v1 = xray_crops_aligned (per-crop ±3σ z-score; dset.normalize default true).
 # vN (N≥2) = xray_crops_aligned_vN, pre-normalised by 00b_density_preprocess.py → normalize=false.
@@ -156,6 +176,7 @@ if [[ -z "$NAME" ]]; then
     NAME="$(date +%y%m%d)_${namebase}_vit_mae_40m"
     [[ -n "$W_TAG"  ]] && NAME="${NAME}_weighted"
     [[ -n "$DV_TAG" ]] && NAME="${NAME}_${DV_TAG}"
+    [[ "$GRADMAG" -eq 1 ]] && NAME="${NAME}_gradmag"
     NAME="${NAME}_pretrain"
 fi
 EXP="$NAME"
@@ -164,6 +185,7 @@ EXP="$NAME"
 TAGS="pretrain,${MODE},40m"
 [[ -n "$W_TAG"  ]] && TAGS="${TAGS},weighted"
 [[ -n "$DV_TAG" ]] && TAGS="${TAGS},${DV_TAG}"
+[[ "$GRADMAG" -eq 1 ]] && TAGS="${TAGS},gradmag"
 TAGS="${TAGS},crossdocked_xray"
 [[ -n "$EXTRA_TAGS" ]] && TAGS="${TAGS},${EXTRA_TAGS}"
 
@@ -180,6 +202,7 @@ CMD=( "$PY/torchrun" --standalone --nproc_per_node="$NPROC" train_density_vit_ma
 [[ -n "$NORMALIZE"  ]] && CMD+=( dset.normalize="$NORMALIZE" )
 [[ -n "$INPUT_MODE" ]] && CMD+=( input_mode="$INPUT_MODE" )
 [[ -n "$N_IN"       ]] && CMD+=( model.n_in_channels="$N_IN" )
+[[ "$GRADMAG" -eq 1 ]] && CMD+=( ++with_gradmag=true ++mae.gradmag_reconstruct=true )
 CMD+=( num_epochs="$EPOCHS" bsz="$BSZ" accum_steps="$ACCUM"
        "wandb_tags=[${TAGS}]"
        lr="$LR" wd="$WD" seed="$SEED"
@@ -187,7 +210,7 @@ CMD+=( num_epochs="$EPOCHS" bsz="$BSZ" accum_steps="$ACCUM"
 [[ ${#PASSTHRU[@]} -gt 0 ]] && CMD+=( "${PASSTHRU[@]}" )
 
 # ── Report / run ──────────────────────────────────────────────────────────────
-echo "[$(ts)] pretrain  mode=$MODE  data=$DATA_VER  weighted=$WEIGHTED  config=$CFG"
+echo "[$(ts)] pretrain  mode=$MODE  data=$DATA_VER  weighted=$WEIGHTED  gradmag=$GRADMAG  config=$CFG"
 echo "          GPUs=$CUDA_LIST  nproc=$NPROC  bsz=$BSZ  accum=$ACCUM  eff_batch=$EFF"
 echo "          exp=$EXP"
 if [[ "$DRYRUN" -eq 1 ]]; then
