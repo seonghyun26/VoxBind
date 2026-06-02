@@ -532,11 +532,12 @@ def build_parser() -> argparse.ArgumentParser:
     pf.add_argument("--condition", choices=_CONDITION_CHOICES, required=True)
     pf.add_argument("--epoch",      type=int, default=99,
                     help="Checkpoint epoch to use (matched across conditions)")
-    pf.add_argument("--voxel_version", choices=["v1", "v2", "v3"], default="v1",
+    pf.add_argument("--voxel_version", choices=["v1", "v2", "v3", "v4"], default="v1",
                     help="Density-normalisation version: v1 = per-map z-score + "
                          "per-crop ±3σ clip; v2 = pocket-pool z-score; "
-                         "v3 = pocket-pool symmetric max-abs. Atom voxels are "
-                         "identical across versions (symlinked).")
+                         "v3 = pocket-pool symmetric max-abs; v4 = pocket-pool "
+                         "clip + z-score. Atom voxels are identical across "
+                         "versions (symlinked).")
     pf.add_argument("--batch_size", type=int, default=16)
     pf.add_argument("--device",     default="cuda" if torch.cuda.is_available() else "cpu")
     pf.add_argument("--out_dir",    default=str(FEAT_DIR))
@@ -552,7 +553,7 @@ def build_parser() -> argparse.ArgumentParser:
     pr.add_argument("--conditions", nargs="+",
                     default=_CONDITION_CHOICES, choices=_CONDITION_CHOICES)
     pr.add_argument("--epoch",         type=int,   default=99)
-    pr.add_argument("--voxel_version", choices=["v1", "v2", "v3"], default="v1",
+    pr.add_argument("--voxel_version", choices=["v1", "v2", "v3", "v4"], default="v1",
                     help="Selects which density-normalisation variant's features "
                          "to probe. Adds matching suffix to feature paths + output CSV.")
     pr.add_argument("--seeds",         type=int,   default=3)

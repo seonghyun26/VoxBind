@@ -4,7 +4,7 @@ Consolidated Phase 4 / 4b entry point. Two subcommands:
 
     cd voxbind
     python dataset/01b_pdbbind_preprocess.py voxelize   # atoms (+ density) → voxels/  (v1)
-    python dataset/01b_pdbbind_preprocess.py poolnorm    # pocket-pool density → voxels_v2/, voxels_v3/
+    python dataset/01b_pdbbind_preprocess.py poolnorm    # pocket-pool density → voxels_v2/, voxels_v3/, voxels_v4/
 
 ──────────────────────────────────────────────────────────────────────────────
 voxelize — voxelize PDBbind v2020 refined complexes (atoms + v1 density crop)
@@ -38,9 +38,9 @@ the ligand's center of mass") and the existing VoxBind training pipeline.
   → voxels/atoms/{pid}.npy  voxels/density/{pid}.npy  voxels/availability.csv
 
 ──────────────────────────────────────────────────────────────────────────────
-poolnorm — pocket-pool density normalisations (v2: z-score, v3: max-abs)
+poolnorm — pocket-pool density normalisations (v2: z-score, v3: max-abs, v4: clip+z)
 ──────────────────────────────────────────────────────────────────────────────
-Produces TWO new density-crop variants from the raw CCP4 maps in
+Produces THREE new density-crop variants from the raw CCP4 maps in
 dataset/data/pdbbind/ccp4/, normalised against the pool of all pocket crops
 (not per-map, not per-crop):
 
@@ -52,17 +52,27 @@ dataset/data/pdbbind/ccp4/, normalised against the pool of all pocket crops
        x' = x / max_abs_pool
        max_abs_pool = max(|x|) across the same pool. Output strict [−1, +1].
 
-Both schemes:
+  v4 — pocket-pool clip + z-score
+       x' = (clip(x, [CLIP_LO, CLIP_HI]) − μ_clip) / σ_clip
+       Clip raw values to a fixed window (default −0.578 / +1.647, the CrossDocked
+       pool P0.1%/P99.9%; valid here since the PDBbind raw pool range matches),
+       then z-score over the CLIPPED pool (μ_clip, σ_clip computed directly from
+       the clipped raw crops — no v2 round-trip). Bounds v2's bright metal/heavy-
+       atom tail to a ≈ +5σ ceiling while keeping atom signal at unit scale that
+       v3's max-abs collapses to ~0.01. Override the window with --clip_lo/--clip_hi.
+
+All three schemes:
   - SKIP the per-map z-score that `_load_grid` does in v1 (use raw CCP4 values)
   - SKIP the per-crop ±3σ clip that `normalize_crop` does in v1
   - apply ONE dataset-wide statistic derived from all pocket crops
 
-Atom voxels (11, 64, 64, 64) are NOT affected — v2 and v3 reuse the existing
+Atom voxels (11, 64, 64, 64) are NOT affected — v2/v3/v4 reuse the existing
 voxels/atoms/ directory via symlinks.
 
     python dataset/01b_pdbbind_preprocess.py poolnorm
   → voxels_v2/density/{pid}.npy  voxels_v2/atoms→../voxels/atoms  voxels_v2/stats.json
     voxels_v3/density/{pid}.npy  voxels_v3/atoms→../voxels/atoms  voxels_v3/stats.json
+    voxels_v4/density/{pid}.npy  voxels_v4/atoms→../voxels/atoms  voxels_v4/stats.json
 """
 
 import argparse
@@ -100,6 +110,7 @@ VOX_DIR      = PDBBIND_DIR / "voxels"
 ATOMS_DIR_V1 = VOX_DIR / "atoms"
 V2_DIR       = PDBBIND_DIR / "voxels_v2"
 V3_DIR       = PDBBIND_DIR / "voxels_v3"
+V4_DIR       = PDBBIND_DIR / "voxels_v4"
 
 N_LIG_CH = 7   # C,O,N,S,F,Cl,P
 N_POC_CH = 4   # C,O,N,S
@@ -107,6 +118,13 @@ GRID_DIM     = 64
 RESOLUTION   = 0.25
 LIGAND_RAD   = 0.5
 CUBES_AROUND = 8
+
+# v4 clip thresholds (raw 2Fo-Fc units): CrossDocked pool P0.1%/P99.9% (see 00b).
+# Asymmetric — the positive tail is atom-peak signal, the negative tail is noise
+# floor. Valid for PDBbind: its raw pool range (≈[-2.30, +30.30], voxels_v2/
+# stats.json) matches CrossDocked's (≈[-2.62, +31.34]). Override via --clip_lo/_hi.
+CLIP_LO = -0.578
+CLIP_HI = +1.647
 
 # Element → channel index lookup (matches voxbind.constants.ELEMENTS_HASH_CROSSDOCKED)
 _E2CH = ELEMENTS_HASH_CROSSDOCKED   # {"C":0, "O":1, "N":2, "S":3, "F":4, "Cl":5, "P":6, "H":7}
@@ -417,22 +435,26 @@ def run_poolnorm(args: argparse.Namespace) -> None:
     atoms_dir  = Path(args.atoms_dir).resolve()
     v2_dir     = Path(args.v2_dir)
     v3_dir     = Path(args.v3_dir)
+    v4_dir     = Path(args.v4_dir)
 
     v2_dens = v2_dir / "density"; v2_dens.mkdir(parents=True, exist_ok=True)
     v3_dens = v3_dir / "density"; v3_dens.mkdir(parents=True, exist_ok=True)
+    v4_dens = v4_dir / "density"; v4_dens.mkdir(parents=True, exist_ok=True)
 
-    # Symlink atoms (v2/v3 reuse v1's atom voxels)
-    for parent in (v2_dir, v3_dir):
+    # Symlink atoms (v2/v3/v4 reuse v1's atom voxels)
+    for parent in (v2_dir, v3_dir, v4_dir):
         link = parent / "atoms"
         if not link.exists() and not link.is_symlink():
             os.symlink(atoms_dir, link)
             print(f"  [symlink] {link} → {atoms_dir}")
 
-    print("=== PDBbind v2/v3 density normalisations (pocket dataset-wide) ===")
+    print("=== PDBbind v2/v3/v4 density normalisations (pocket dataset-wide) ===")
     print(f"  index_csv : {index_csv}")
     print(f"  ccp4_dir  : {ccp4_dir}")
     print(f"  v2_dir    : {v2_dir}")
     print(f"  v3_dir    : {v3_dir}")
+    print(f"  v4_dir    : {v4_dir}")
+    print(f"  clip      : [{args.clip_lo:+.3f}, {args.clip_hi:+.3f}]  (raw 2Fo-Fc units)")
 
     df = pd.read_csv(index_csv)
     df = df[df["has_struct"].astype(bool)].reset_index(drop=True)
@@ -448,6 +470,8 @@ def run_poolnorm(args: argparse.Namespace) -> None:
     crops: dict[str, np.ndarray] = {}    # pid → float16 (G, G, G)
     sum_v = 0.0
     sum_v2 = 0.0
+    sum_cv = 0.0     # clipped sum   → v4 μ_clip
+    sum_cv2 = 0.0    # clipped sum²  → v4 σ_clip
     n_voxels = 0
     min_v = +np.inf
     max_v = -np.inf
@@ -479,6 +503,11 @@ def run_poolnorm(args: argparse.Namespace) -> None:
         min_v = min(min_v, float(c64.min()))
         max_v = max(max_v, float(c64.max()))
 
+        # v4: same pool, accumulated over the CLIPPED values → μ_clip, σ_clip.
+        cc64 = np.clip(c64, args.clip_lo, args.clip_hi)
+        sum_cv  += cc64.sum()
+        sum_cv2 += (cc64 * cc64).sum()
+
         crops[pid] = crop.astype(np.float16)        # save mem for pass 2
 
     if n_voxels == 0:
@@ -490,6 +519,10 @@ def run_poolnorm(args: argparse.Namespace) -> None:
     sigma_pool   = float(np.sqrt(max(var_pool, 0.0)))
     max_abs_pool = max(abs(min_v), abs(max_v))
 
+    mu_clip      = sum_cv / n_voxels
+    var_clip     = sum_cv2 / n_voxels - mu_clip * mu_clip
+    sigma_clip   = float(np.sqrt(max(var_clip, 0.0)))
+
     print(f"\n── pocket-pool dataset-wide stats ─────────────────────────────")
     print(f"  n_crops          : {len(crops):,}")
     print(f"  n_voxels (total) : {n_voxels:,}")
@@ -497,6 +530,9 @@ def run_poolnorm(args: argparse.Namespace) -> None:
     print(f"  μ_pool           : {mu_pool:+.6f}")
     print(f"  σ_pool           : {sigma_pool:.6f}")
     print(f"  max_abs_pool     : {max_abs_pool:.6f}")
+    print(f"  v4 clip          : [{args.clip_lo:+.3f}, {args.clip_hi:+.3f}]")
+    print(f"  μ_clip           : {mu_clip:+.6f}")
+    print(f"  σ_clip           : {sigma_clip:.6f}")
     print(f"  skipped          : {n_skipped:,}")
 
     stats_v2 = {
@@ -518,27 +554,43 @@ def run_poolnorm(args: argparse.Namespace) -> None:
         "raw_min":        min_v,
         "raw_max":        max_v,
     }
+    stats_v4 = {
+        "scheme":         "pocket-pool clip + z-score",
+        "formula":        "x' = (clip(x, [clip_lo, clip_hi]) - mu_clip) / sigma_clip",
+        "clip_lo_raw":    args.clip_lo,
+        "clip_hi_raw":    args.clip_hi,
+        "mu_clip":        mu_clip,
+        "sigma_clip":     sigma_clip,
+        "n_crops":        len(crops),
+        "n_voxels_total": n_voxels,
+        "raw_min":        min_v,
+        "raw_max":        max_v,
+    }
     (v2_dir / "stats.json").write_text(json.dumps(stats_v2, indent=2))
     (v3_dir / "stats.json").write_text(json.dumps(stats_v3, indent=2))
+    (v4_dir / "stats.json").write_text(json.dumps(stats_v4, indent=2))
 
-    # ── Pass 2: apply v2 and v3 normalisations, save to disk ──────────────────
+    # ── Pass 2: apply v2, v3, v4 normalisations, save to disk ─────────────────
     print(f"\n── pass 2: apply normalisations + save ────────────────────────")
     for pid, crop16 in tqdm(crops.items(), desc="pass 2: normalise + save", unit="cplx"):
         c = crop16.astype(np.float32)
         c_v2 = ((c - mu_pool) / sigma_pool).astype(np.float16)
         c_v3 = (c / max_abs_pool).astype(np.float16)
+        c_v4 = ((np.clip(c, args.clip_lo, args.clip_hi) - mu_clip) / sigma_clip).astype(np.float16)
         np.save(str(v2_dens / f"{pid}.npy"), c_v2)
         np.save(str(v3_dens / f"{pid}.npy"), c_v3)
+        np.save(str(v4_dens / f"{pid}.npy"), c_v4)
 
     if skip_log:
-        skip_path = PDBBIND_DIR / "voxels_v2_v3_skip_log.txt"
+        skip_path = PDBBIND_DIR / "voxels_v2_v3_v4_skip_log.txt"
         skip_path.write_text("\n".join(f"{p}\t{m}" for p, m in skip_log) + "\n")
         print(f"  skip log         : {skip_path}")
 
     print(f"\n  v2 crops written : {len(crops):,} → {v2_dens}")
     print(f"  v3 crops written : {len(crops):,} → {v3_dens}")
-    print(f"  stats jsons      : {v2_dir / 'stats.json'} | {v3_dir / 'stats.json'}")
-    print("\n  Next:  python dataset/01c_pdbbind_probe.py features --voxel_version v2  (or v3)")
+    print(f"  v4 crops written : {len(crops):,} → {v4_dens}")
+    print(f"  stats jsons      : {v2_dir / 'stats.json'} | {v3_dir / 'stats.json'} | {v4_dir / 'stats.json'}")
+    print("\n  Next:  python dataset/01c_pdbbind_probe.py features --voxel_version v2  (or v3, v4)")
 
 
 # ── CLI ────────────────────────────────────────────────────────────────────────
@@ -570,16 +622,21 @@ def build_parser() -> argparse.ArgumentParser:
 
     pp = sub.add_parser(
         "poolnorm",
-        help="Pocket-pool density normalisations (v2: z-score, v3: max-abs)",
+        help="Pocket-pool density normalisations (v2: z-score, v3: max-abs, v4: clip+z)",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     pp.add_argument("--index_csv",  default=str(INDEX_CSV))
     pp.add_argument("--struct_dir", default=str(STRUCT_DIR))
     pp.add_argument("--ccp4_dir",   default=str(CCP4_DIR))
     pp.add_argument("--atoms_dir",  default=str(ATOMS_DIR_V1),
-                    help="Existing v1 atom voxels to symlink from v2/v3")
+                    help="Existing v1 atom voxels to symlink from v2/v3/v4")
     pp.add_argument("--v2_dir",     default=str(V2_DIR))
     pp.add_argument("--v3_dir",     default=str(V3_DIR))
+    pp.add_argument("--v4_dir",     default=str(V4_DIR))
+    pp.add_argument("--clip_lo", type=float, default=CLIP_LO,
+                    help="v4 lower clip threshold (raw 2Fo-Fc units)")
+    pp.add_argument("--clip_hi", type=float, default=CLIP_HI,
+                    help="v4 upper clip threshold (raw 2Fo-Fc units)")
     pp.add_argument("--max_complexes", type=int, default=0,
                     help="Limit to first N (0 = all). Smoke testing.")
     pp.set_defaults(func=run_poolnorm)
