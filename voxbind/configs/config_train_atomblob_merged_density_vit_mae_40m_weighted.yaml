@@ -1,0 +1,107 @@
+defaults:
+  - dset: crossdocked_xray     # real 2Fo-Fc crops in xray_crops_aligned/
+  - model: atomblob_density_vit_mae_40m
+  - vox: default
+  - override hydra/job_logging: custom
+  - _self_
+
+# Merged-atomblob (7 ch) + X-ray density ViT-MAE — fully-weighted variant.
+#
+# Two changes from config_train_atomblob_density_vit_mae_40m_weighted.yaml:
+#
+#   1. Atom layout collapsed lig-vs-pocket. Pocket C/O/N/S atoms are folded
+#      into the first 4 channels of the ligand 7-vec (handled in
+#      MAEPrefetcher._step via _build_merged_atoms), so the pretext only
+#      asks "is element-X at this voxel?", not "is this a ligand-X or
+#      pocket-X?". This removes the lig-vs-poc disambiguation task that
+#      made the rare-ligand channels under-supervised in 260529.
+#
+#   2. n_in_channels override: 8 = 7 merged atoms + 1 density. The model
+#      cfg defaults file ships n_in_channels=12 for atomblob_density; we
+#      override via cli in the launch script (and again here for safety).
+#
+# Channel-frequency cache is independent of the 11-channel cache (the
+# precompute path includes a merge_lig_poc flag in its hash). Expected
+# inv-sqrt-freq weights for the merged channels (from baseline stats):
+#   merged_C ~0.03   merged_O ~0.04   merged_N ~0.05   merged_S ~0.16
+#   merged_F ~1.9    merged_Cl ~2.8   merged_P ~2.0   ← rare lig-only atoms
+# So the gradient signal during pretraining is heavily focused on rare
+# ligand element types (which is the regime we couldn't learn in 260529).
+#
+# Companion configs:
+#   - config_train_atomblob_density_vit_mae_40m_weighted.yaml  : 11+1 ch baseline (260529)
+#   - config_train_atomblob_density_vit_mae_40m.yaml           : unweighted +density baseline
+#   - config_train_atomblob_vit_mae_40m_weighted.yaml          : atomblob-only weighted
+
+debug: False
+wandb: True
+wandb_tags: []          # e.g. [pretrain, atomblob_merged_density_vit_mae, 40m, weighted, merged7, crossdocked_xray]
+num_workers: 4
+resume: null
+resume_epoch: null
+exp_dir: exps
+exp_name: atomblob_merged_density_vit_mae_40m_weighted${hydra.job.override_dirname}
+output_dir: null
+
+seed: 42
+num_epochs: 100
+aug: True
+bsz: 8                   # per-GPU; launcher tunes accum_steps to land effective batch ≈ 80
+accum_steps: 2
+lr: 1e-4
+wd: 5e-2
+
+# ── Input-mode selector ─────────────────────────────────────────────────────
+input_mode: atomblob_merged_density
+
+# ── Dataset overrides ────────────────────────────────────────────────────────
+dset:
+  subset_xray_only: true
+  subset_n: 78428
+  subset_val_n: 100
+  use_xray: true
+
+# ── Model override: 7 merged atoms + 1 density = 8 input channels ──────────
+# The model.atomblob_density_vit_mae_40m defaults file ships n_in_channels=12
+# for the 11+1 layout; we shrink it to 8 here for the merged variant.
+model:
+  n_in_channels: 8
+
+# ── MAE knobs ────────────────────────────────────────────────────────────────
+mae:
+  pretext_style: mae
+  density_source: xray
+  sigma_blur_a_lo: 0.30
+  sigma_blur_a_hi: 0.80
+  sigma_noise: 0.0
+  block_size: 8
+  mask_ratio: 0.60
+  # Composed knobs (same recipe as 260529 atomblob_density_weighted):
+  mask_strategy: atom_biased
+  mask_atom_tau: 1.0
+  channel_weighting: inv_sqrt_freq   # operates on the 7 merged channels
+  density_channel_weight: 0.1        # density downweighted inside joint MAE loss
+  lambda_dens: 1.0
+  lambda_str: 1.0
+  struct_pos_weight: 100.0
+  struct_pos_thresh: 0.05
+  ema_decay: 0.999
+  grad_clip: 1.0
+  val_every: 1
+  ckpt_every: 20
+
+# Hydra
+hydra:
+  run:
+    dir: ./${exp_dir}/${exp_name}
+  job:
+    config:
+      override_dirname:
+        kv_sep: ""
+        item_sep: "_"
+        exclude_keys: [
+            "exp_dir", "lr", vox.grid_dim, "wd", "resume", "resume_epoch", "wandb",
+            "num_workers", "exp_name", "output_dir", "out_dir",
+            "bsz", "accum_steps", "seed", "num_epochs", "aug", "pocket_radius",
+            "grid_dim", "debug"
+]

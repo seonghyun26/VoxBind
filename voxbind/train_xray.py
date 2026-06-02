@@ -5,7 +5,7 @@ Adds an X-ray density conditioning branch to a pretrained VoxBind model and
 finetunes *only* that branch (density_encoder) while freezing everything else.
 
 The X-ray density is the 2Fo-Fc CCP4 electron density map cropped and aligned
-to the 64³ × 0.25 Å VoxBind pocket grid (downloaded by dataset/00a_data_density_download.py
+to the 64³ × 0.25 Å VoxBind pocket grid (downloaded by dataset/00a_density_download.py
 and loaded on-the-fly by DatasetCrossDockedXray).
 
 Architecture
@@ -14,7 +14,7 @@ VoxBind already supports a density_encoder branch via with_density=True (see
 models/voxbind.py). The branch takes a (B, 1, G, G, G) tensor and its output
 is summed with the pocket encoding before entering the U-Net. This script
 reuses that branch — just feeding real X-ray density instead of simulated
-pdb2vol density.
+atom-blob density.
 
 Training strategy
 -----------------

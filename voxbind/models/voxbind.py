@@ -48,7 +48,7 @@ class VoxBind(torch.nn.Module):
             dropout (float): Dropout rate. Defaults to 0.1.
             smooth_sigma (float): Sigma value for smoothing. Defaults to 0.0.
             with_density (bool): If True, add a density_encoder branch that accepts a
-                single-channel Gaussian density map (e.g. from pdb2vol). The branch is
+                single-channel Gaussian density map (e.g. an atom-blob or X-ray crop). The branch is
                 summed with the ligand and pocket encodings. Checkpoint-compatible: old
                 checkpoints load fine with with_density=False (default). Defaults to False.
             density_encoder_type (str): "cnn" (default; Conv3d + N×ResidualBlock, matches
@@ -160,8 +160,8 @@ class VoxBind(torch.nn.Module):
         Args:
             ligand (torch.Tensor): Input tensor for the ligand. Shape (B, 7, G, G, G).
             pocket (torch.Tensor): Input tensor for the pocket. Shape (B, 4, G, G, G).
-            density (torch.Tensor, optional): Single-channel Gaussian density map from
-                pdb2vol, shape (B, 1, G, G, G). Only used when with_density=True.
+            density (torch.Tensor, optional): Single-channel Gaussian density map
+                (atom-blob or X-ray crop), shape (B, 1, G, G, G). Only used when with_density=True.
                 Defaults to None (standard baseline behaviour).
 
         Returns:

@@ -105,7 +105,7 @@ def main():
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     ap.add_argument("--real_crops_dir", default="dataset/data/xray_crops",
-                    help="Real density crops dir (output of 00b_data_density_preprocess.py)")
+                    help="Real density crops dir (e.g. xray_crops_aligned/, from dataset/00b_density_preprocess.py)")
     ap.add_argument("--out_dir", default="dataset/data/xray_crops_noise",
                     help="Output dir for the smoothed-noise crops")
     ap.add_argument("--n_subset", type=int, default=200,

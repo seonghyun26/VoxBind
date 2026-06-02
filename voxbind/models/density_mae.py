@@ -64,6 +64,49 @@ def make_block_mask(
     return mask  # (B, 1, G, G, G) bool
 
 
+def make_atom_biased_block_mask(
+    atoms_sum: torch.Tensor,
+    block_size: int,
+    ratio: float,
+    tau: float = 1.0,
+    generator: torch.Generator = None,
+) -> torch.Tensor:
+    """Sample a (B, 1, G, G, G) bool mask biased toward atom-occupied blocks.
+
+    `atoms_sum` is (B, 1, G, G, G) — sum of all atom-voxel channels. For each
+    sample we score each block by its atom-mass via avg_pool3d, add Gaussian
+    noise scaled by `tau · std(scores)`, and take the top floor(ratio · gb³)
+    blocks. Mask cardinality is exact per sample.
+
+      tau → 0   : deterministic top-K (every most-atom-occupied block masked first)
+      tau → ∞   : equivalent to uniform random masking (noise dominates)
+      tau = 1   : moderate bias — atom-occupied blocks dominate but training
+                  still sees some empty-space variety.
+    """
+    B, _, G, _, _ = atoms_sum.shape
+    assert G % block_size == 0, f"grid_dim {G} % block_size {block_size} != 0"
+    gb = G // block_size
+    n_blocks = gb ** 3
+    n_mask = int(round(ratio * n_blocks))
+    # Per-block atom mass: avg_pool3d gives mean; × block³ = sum over the block.
+    score = F.avg_pool3d(atoms_sum, block_size) * (block_size ** 3)  # (B, 1, gb, gb, gb)
+    score = score.flatten(2)                                        # (B, 1, gb³)
+    std = score.std(dim=2, keepdim=True).clamp(min=1e-6)
+    if generator is not None:
+        noise = torch.randn(score.shape, device=score.device, generator=generator)
+    else:
+        noise = torch.randn_like(score)
+    priority = score + noise * std * tau
+    _, top_idx = priority.topk(n_mask, dim=2)
+    blocks_flat = torch.zeros_like(score, dtype=torch.bool)
+    blocks_flat.scatter_(2, top_idx, True)
+    blocks = blocks_flat.view(B, 1, gb, gb, gb)
+    mask = blocks.repeat_interleave(block_size, dim=2)\
+                 .repeat_interleave(block_size, dim=3)\
+                 .repeat_interleave(block_size, dim=4)
+    return mask  # (B, 1, G, G, G) bool
+
+
 def per_sample_zscore(x: torch.Tensor, eps: float = 1e-6) -> torch.Tensor:
     """Z-score each (C, G, G, G) volume independently along spatial dims."""
     mu = x.mean(dim=(2, 3, 4), keepdim=True)

@@ -51,8 +51,8 @@ from voxbind.dataset import create_dataloaders
 from voxbind.models.adamw import AdamW
 from voxbind.models.density_mae import (
     corrupt_noise, corrupt_reblur, corrupt_swap,
-    gaussian_blur3d, make_block_mask, per_sample_zscore,
-    voxel_mask_to_patch_target,
+    gaussian_blur3d, make_atom_biased_block_mask, make_block_mask,
+    per_sample_zscore, voxel_mask_to_patch_target,
 )
 from voxbind.models.density_vit import DensityViTMAE
 from voxbind.models.ema import ModelEma
@@ -141,7 +141,27 @@ def _sample_op(
     return ops[idx]
 
 
-_VALID_INPUT_MODES = ("density", "atomblob", "atomblob_density")
+_VALID_INPUT_MODES = (
+    "density",
+    "atomblob",
+    "atomblob_density",
+    "atomblob_merged",            # 7 atom ch: pocket C/O/N/S folded into ligand C/O/N/S
+    "atomblob_merged_density",    # 8 ch: merged-7 atoms + 1 density
+)
+
+
+def _build_merged_atoms(v_lig: torch.Tensor, v_poc: torch.Tensor) -> torch.Tensor:
+    """Fold pocket atoms into the first 4 channels of the ligand 7-channel tensor.
+
+    CrossDocked element vocab is C/O/N/S/F/Cl/P for ligand and C/O/N/S for
+    pocket (pocket has no F/Cl/P). After this op every channel encodes
+    'atoms-of-element-X' regardless of source — the lig-vs-pocket
+    disambiguation drops out of the pretext.
+    """
+    # v_lig (B, 7, G³)  +  v_poc (B, 4, G³) summed into channels [0..4)
+    v_merged = v_lig.clone()
+    v_merged[:, :4] = v_merged[:, :4] + v_poc
+    return v_merged                                                 # (B, 7, G³)
 
 
 class MAEPrefetcher:
@@ -176,6 +196,8 @@ class MAEPrefetcher:
         corruption_op_weights: tuple = (1.0,),
         density_source: str = "synthetic",
         input_mode: str = "density",
+        mask_strategy: str = "uniform",
+        mask_atom_tau: float = 1.0,
     ):
         assert pretext_style in ("mae", "electra")
         assert density_source in ("synthetic", "xray"), (
@@ -183,6 +205,9 @@ class MAEPrefetcher:
         )
         assert input_mode in _VALID_INPUT_MODES, (
             f"input_mode={input_mode!r}; expected one of {_VALID_INPUT_MODES}"
+        )
+        assert mask_strategy in ("uniform", "atom_biased"), (
+            f"mask_strategy={mask_strategy!r}; expected 'uniform' or 'atom_biased'"
         )
         for op in corruption_ops:
             if op not in _RULE_BASED_OPS:
@@ -206,6 +231,8 @@ class MAEPrefetcher:
         self.corruption_op_weights = tuple(corruption_op_weights)
         self.density_source = density_source
         self.input_mode = input_mode
+        self.mask_strategy = mask_strategy
+        self.mask_atom_tau = mask_atom_tau
         self.stream = torch.cuda.Stream()
 
     def _step(self, batch):
@@ -216,14 +243,19 @@ class MAEPrefetcher:
                 v_poc = self.voxelizer.forward(batch["pocket"], num_channels=4)
 
                 # Density is only synthesized / loaded when the input actually
-                # needs it. atomblob skips this entirely — no I/O via the
+                # needs it. atomblob* modes skip this entirely — no I/O via the
                 # xray path, no blur on the synthetic path.
-                need_density = self.input_mode in ("density", "atomblob_density")
+                need_density = self.input_mode in (
+                    "density", "atomblob_density", "atomblob_merged_density",
+                )
+                # atom-biased mask needs the all-channel atom sum even in atomblob mode
+                need_atoms_sum = need_density or self.mask_strategy == "atom_biased"
                 d_clean = None
                 atoms_sum = None
                 sigma_lo, sigma_hi = self.sigma_range  # always defined for reblur
-                if need_density:
+                if need_atoms_sum:
                     atoms_sum = v_lig.sum(dim=1, keepdim=True) + v_poc.sum(dim=1, keepdim=True)
+                if need_density:
                     if self.density_source == "xray":
                         # Real 2Fo-Fc crop, already locally ±3σ-clipped + z-scored
                         # by DatasetCrossDockedXray.normalize_crop. Lift to (B,1,G³).
@@ -242,19 +274,27 @@ class MAEPrefetcher:
                     x_clean = d_clean                                       # (B, 1, G³)
                 elif self.input_mode == "atomblob":
                     x_clean = torch.cat([v_lig, v_poc], dim=1)              # (B, 11, G³)
-                else:                                                       # atomblob_density
+                elif self.input_mode == "atomblob_density":
                     x_clean = torch.cat([v_lig, v_poc, d_clean], dim=1)     # (B, 12, G³)
+                elif self.input_mode == "atomblob_merged":
+                    x_clean = _build_merged_atoms(v_lig, v_poc)             # (B, 7, G³)
+                elif self.input_mode == "atomblob_merged_density":
+                    v_merged = _build_merged_atoms(v_lig, v_poc)
+                    x_clean = torch.cat([v_merged, d_clean], dim=1)         # (B, 8, G³)
+                else:
+                    raise RuntimeError(f"unexpected input_mode={self.input_mode!r}")
 
-                # Noise is a density-only augmentation. atomblob skips it;
-                # atomblob_density noises only the trailing density channel.
-                if self.sigma_noise > 0 and self.input_mode != "atomblob":
+                # Noise is a density-only augmentation. Atom-only modes skip it;
+                # joint modes noise only the trailing density channel.
+                atom_only = self.input_mode in ("atomblob", "atomblob_merged")
+                if self.sigma_noise > 0 and not atom_only:
                     if self.input_mode == "density":
                         if self.generator is not None:
                             noise = torch.randn(x_clean.shape, device=device, generator=self.generator)
                         else:
                             noise = torch.randn_like(x_clean)
                         x_noisy = x_clean + noise * self.sigma_noise
-                    else:  # atomblob_density: noise only on the density channel
+                    else:  # *_density: noise only on the trailing density channel
                         if self.generator is not None:
                             n_dens = torch.randn(
                                 (x_clean.shape[0], 1, *x_clean.shape[2:]),
@@ -271,7 +311,13 @@ class MAEPrefetcher:
 
                 B = x_clean.shape[0]
                 G = x_clean.shape[-1]
-                mask = make_block_mask(B, G, self.block_size, self.mask_ratio, device)
+                if self.mask_strategy == "atom_biased":
+                    mask = make_atom_biased_block_mask(
+                        atoms_sum, self.block_size, self.mask_ratio,
+                        tau=self.mask_atom_tau, generator=self.generator,
+                    )
+                else:
+                    mask = make_block_mask(B, G, self.block_size, self.mask_ratio, device)
                 # mask: (B, 1, G, G, G) — broadcasts across all input channels
 
                 if self.pretext_style == "mae":
@@ -337,17 +383,31 @@ def compute_losses(
     pretext_style: str = "mae",
     patch_size: int = 8,
     input_mode: str = "density",
+    ch_weight: torch.Tensor = None,
+    atom_pos_weight: float = 1.0,
+    atom_pos_thresh: float = 0.05,
 ):
     """Returns a dict of named losses.
 
     mae path:
       L_dens : masked-voxel MSE between out_pretext (B,C,G,G,G) and x_clean,
-               where C = 1 / 11 / 12 per input_mode.
+               where C = 1 / 7 / 8 / 11 / 12 per input_mode.
       L_str  : 11-ch atom structure MSE (pos-weighted), only if a_hat is given.
 
-      For input_mode='atomblob_density' also returns the per-modality split:
-        L_dens_atom    — MSE on the 11 atom channels in masked positions
+      For *_density modes also returns the per-modality split:
+        L_dens_atom    — MSE on the atom channels in masked positions
         L_dens_density — MSE on the trailing density channel in masked positions
+
+      Two complementary weighting axes (composable):
+        `ch_weight`        : 1-D tensor of length n_channels, applied per-channel.
+                             Used by inv-sqrt-freq to balance across atom-type
+                             channels (rare F/Cl/P up-weighted vs common C).
+        `atom_pos_weight`  : scalar > 1, applied per-voxel within atom channels.
+                             At voxels where target > `atom_pos_thresh`, the
+                             squared error is multiplied by atom_pos_weight.
+                             Density and atom-off voxels are unchanged. Targets
+                             the SECOND sparsity axis: within-channel atom-on
+                             voxels are still rare even after channel weighting.
 
     electra path:
       L_rtd  : per-patch BCE-with-logits between out_pretext (B,1,Gp,Gp,Gp)
@@ -368,13 +428,52 @@ def compute_losses(
         n_masked_spatial = m.sum().clamp(min=1.0)
         diff_sq = (out_pretext - x_clean) ** 2 * m
         n_channels = out_pretext.shape[1]
-        L_pretext = diff_sq.sum() / (n_masked_spatial * n_channels)
+
+        # ── atom_pos_weight: up-weight error² at atom-on voxels in atom channels.
+        # Determine n_atom = number of leading atom channels in the output.
+        if input_mode == "atomblob":                          n_atom = 11
+        elif input_mode == "atomblob_density":                n_atom = 11
+        elif input_mode == "atomblob_merged":                 n_atom = 7
+        elif input_mode == "atomblob_merged_density":         n_atom = 7
+        else:                                                  n_atom = 0    # density-only
+        if atom_pos_weight > 1.0 and n_atom > 0:
+            # Mask of atom-on positions for the leading atom channels.
+            pos_atom = (x_clean[:, :n_atom] > atom_pos_thresh).to(diff_sq.dtype)
+            # Multiplier: atom-on voxels get atom_pos_weight, atom-off get 1.
+            atom_mult = 1.0 + (atom_pos_weight - 1.0) * pos_atom              # (B, n_atom, G³)
+            if n_atom < n_channels:
+                # Density (and any trailing non-atom channels) get 1× (no boost).
+                pad = torch.ones(
+                    (atom_mult.shape[0], n_channels - n_atom, *atom_mult.shape[2:]),
+                    device=atom_mult.device, dtype=atom_mult.dtype,
+                )
+                full_mult = torch.cat([atom_mult, pad], dim=1)
+            else:
+                full_mult = atom_mult
+            diff_sq = diff_sq * full_mult
+
+        if ch_weight is not None:
+            assert ch_weight.shape[0] == n_channels, (
+                f"ch_weight has {ch_weight.shape[0]} entries but out_pretext has "
+                f"{n_channels} channels"
+            )
+            w_full = ch_weight.to(diff_sq.device, diff_sq.dtype).view(1, n_channels, 1, 1, 1)
+            diff_sq_weighted = diff_sq * w_full
+            # Weights are normalized to sum=n_channels, so total mass is preserved.
+            L_pretext = diff_sq_weighted.sum() / (n_masked_spatial * n_channels)
+        else:
+            L_pretext = diff_sq.sum() / (n_masked_spatial * n_channels)
         out_key = "L_dens"
 
-        if input_mode == "atomblob_density":
-            # First 11 channels = atom voxels; last 1 = density.
-            atom_diff = diff_sq[:, :11].sum() / (n_masked_spatial * 11)
-            dens_diff = diff_sq[:, 11:].sum() / (n_masked_spatial * 1)
+        # Per-modality split for any *_density mode. Atom channels are the
+        # leading `n_atom` slice; density is the trailing channel.
+        if input_mode in ("atomblob_density", "atomblob_merged_density"):
+            # Note: `diff_sq` already reflects atom_pos_weight if active.
+            if ch_weight is not None:
+                atom_diff = (diff_sq[:, :n_atom] * w_full[:, :n_atom]).sum() / (n_masked_spatial * n_atom)
+            else:
+                atom_diff = diff_sq[:, :n_atom].sum() / (n_masked_spatial * n_atom)
+            dens_diff = diff_sq[:, n_atom:].sum() / (n_masked_spatial * 1)
             losses["L_dens_atom"] = atom_diff
             losses["L_dens_density"] = dens_diff
     losses[out_key] = L_pretext
@@ -443,7 +542,102 @@ def precompute_val(loader_val, voxelizer, cfg) -> dict:
     return cache
 
 
-def val_epoch(cfg, model, val_cache, device) -> dict:
+# ── Channel-frequency cache + inv-sqrt-freq weights ──────────────────────────
+
+_CH_FREQ_POS_THRESH = 0.05            # voxel "atom-present" threshold (matches struct head)
+_CH_FREQ_DEFAULT_N_SAMPLES = 2000     # samples scanned for the one-time precompute
+
+
+def _ch_freq_cache_path(cfg, n_samples: int, merge_lig_poc: bool = False) -> str:
+    key = {
+        "dset_name": cfg.dset.dset_name,
+        "subset_n": cfg.dset.get("subset_n", None),
+        "subset_xray_only": cfg.dset.get("subset_xray_only", False),
+        "grid_dim": cfg.vox.grid_dim,
+        "resolution": cfg.vox.resolution,
+        "n_samples": n_samples,
+        "pos_thresh": _CH_FREQ_POS_THRESH,
+        "merge_lig_poc": merge_lig_poc,
+        "task": "channel_freq_v1",
+    }
+    h = hashlib.md5(json.dumps(key, sort_keys=True).encode()).hexdigest()[:8]
+    return os.path.join(cfg.dset.data_dir, f"channel_freq_{h}.pt")
+
+
+def precompute_channel_weights(
+    train_dataset, voxelizer, cfg, device,
+    n_samples: int = _CH_FREQ_DEFAULT_N_SAMPLES,
+    merge_lig_poc: bool = False,
+) -> torch.Tensor:
+    """Compute per-channel atom-positive-voxel frequencies over a training subsample
+    and return inv-sqrt-frequency weights, normalized so sum = n_atom_channels
+    (= 11 when merge_lig_poc=False; = 7 when True) so the overall loss scale
+    matches the unweighted case.
+
+    With `merge_lig_poc=True`, pocket atoms are folded into the first 4 channels
+    of the ligand 7-vec before counting — so the produced 7-vec corresponds to
+    'atoms-of-element-X' frequencies across both lig+poc.
+
+    Cached to disk under cfg.dset.data_dir; key includes dataset, grid, and
+    merge flag so the two variants don't collide.
+    """
+    path = _ch_freq_cache_path(cfg, n_samples, merge_lig_poc=merge_lig_poc)
+    if os.path.isfile(path):
+        logger.info(f"loading channel-frequency cache from {path}")
+        blob = torch.load(path, weights_only=True)
+        return blob["weights"]
+
+    n_atom_channels = 7 if merge_lig_poc else 11
+    n = min(n_samples, len(train_dataset))
+    logger.info(
+        f"computing per-channel atom-voxel frequencies "
+        f"(merge_lig_poc={merge_lig_poc}, n_channels={n_atom_channels}) "
+        f"over {n} training samples..."
+    )
+    sum_per_ch = torch.zeros(n_atom_channels, dtype=torch.float64)
+    n_voxels_total = 0
+    with torch.no_grad():
+        for i in range(n):
+            sample = train_dataset[i]
+            lig = {k: sample["ligand"][k].unsqueeze(0).to(device)
+                   for k in ("coords", "radius", "atoms_channel")}
+            poc = {k: sample["pocket"][k].unsqueeze(0).to(device)
+                   for k in ("coords", "radius", "atoms_channel")}
+            v_lig = voxelizer.forward(lig, num_channels=7)
+            v_poc = voxelizer.forward(poc, num_channels=4)
+            if merge_lig_poc:
+                atoms = _build_merged_atoms(v_lig, v_poc)          # (1, 7, G, G, G)
+            else:
+                atoms = torch.cat([v_lig, v_poc], dim=1)           # (1, 11, G, G, G)
+            pos = (atoms > _CH_FREQ_POS_THRESH).float()
+            sum_per_ch += pos.sum(dim=(0, 2, 3, 4)).cpu().to(torch.float64)
+            n_voxels_total += atoms.shape[2] * atoms.shape[3] * atoms.shape[4]
+
+    freq = (sum_per_ch / max(1, n_voxels_total)).clamp(min=1e-8)   # per-channel pos-voxel frac
+    w = 1.0 / freq.sqrt()
+    w = w / w.sum() * float(n_atom_channels)
+    w = w.to(torch.float32)
+
+    elem_lig = ["C", "O", "N", "S", "F", "Cl", "P"]
+    elem_poc = ["C", "O", "N", "S"]
+    if merge_lig_poc:
+        names = [f"merged_{e}" for e in elem_lig]                  # 7 element types, lig+poc folded
+    else:
+        names = [f"lig_{e}" for e in elem_lig] + [f"poc_{e}" for e in elem_poc]
+    logger.info(
+        f"per-channel atom frequencies (inv-sqrt-freq weights, norm to sum={n_atom_channels}):"
+    )
+    for i, name in enumerate(names):
+        logger.info(f"  {name:>9}: freq={float(freq[i]):.3e}  weight={float(w[i]):.3f}")
+
+    blob = {"weights": w, "freq": freq.to(torch.float32), "n_samples": n,
+            "pos_thresh": _CH_FREQ_POS_THRESH, "merge_lig_poc": merge_lig_poc}
+    torch.save(blob, path)
+    logger.info(f"saved channel-frequency weights to {path}")
+    return w
+
+
+def val_epoch(cfg, model, val_cache, device, ch_weight=None) -> dict:
     """Deterministic val pass — fixed-seed σ_blur / noise / mask per sample.
 
     In electra mode, cycles deterministically through `cfg.electra.corruption_ops`
@@ -458,8 +652,13 @@ def val_epoch(cfg, model, val_cache, device) -> dict:
     pretext_style = str(cfg.mae.get("pretext_style", "mae"))
     density_source = str(cfg.mae.get("density_source", "synthetic"))
     input_mode = str(cfg.get("input_mode", "density"))
+    mask_strategy = str(cfg.mae.get("mask_strategy", "uniform"))
+    mask_atom_tau = float(cfg.mae.get("mask_atom_tau", 1.0))
     patch_size = int(cfg.model.patch_size)
-    need_density = input_mode in ("density", "atomblob_density")
+    need_density = input_mode in (
+        "density", "atomblob_density", "atomblob_merged_density",
+    )
+    need_atoms_sum = need_density or mask_strategy == "atom_biased"
 
     if pretext_style == "electra":
         corruption_ops = tuple(cfg.electra.corruption_ops)
@@ -486,8 +685,9 @@ def val_epoch(cfg, model, val_cache, device) -> dict:
             v_poc = voxels_poc[start:start + cfg.bsz].to(device, non_blocking=True)
             d_clean = None
             atoms_sum = None
-            if need_density:
+            if need_atoms_sum:
                 atoms_sum = v_lig.sum(dim=1, keepdim=True) + v_poc.sum(dim=1, keepdim=True)
+            if need_density:
                 if density_source == "xray":
                     d_clean = cached_xray[start:start + cfg.bsz].to(device, non_blocking=True).unsqueeze(1)
                 else:
@@ -499,13 +699,21 @@ def val_epoch(cfg, model, val_cache, device) -> dict:
                 x_clean = d_clean
             elif input_mode == "atomblob":
                 x_clean = torch.cat([v_lig, v_poc], dim=1)
-            else:  # atomblob_density
+            elif input_mode == "atomblob_density":
                 x_clean = torch.cat([v_lig, v_poc, d_clean], dim=1)
+            elif input_mode == "atomblob_merged":
+                x_clean = _build_merged_atoms(v_lig, v_poc)
+            elif input_mode == "atomblob_merged_density":
+                v_merged = _build_merged_atoms(v_lig, v_poc)
+                x_clean = torch.cat([v_merged, d_clean], dim=1)
+            else:
+                raise RuntimeError(f"unexpected input_mode={input_mode!r}")
 
-            if sigma_noise > 0 and input_mode != "atomblob":
+            atom_only = input_mode in ("atomblob", "atomblob_merged")
+            if sigma_noise > 0 and not atom_only:
                 if input_mode == "density":
                     x_noisy = x_clean + torch.randn(x_clean.shape, device=device, generator=gen) * sigma_noise
-                else:  # atomblob_density: noise on density channel only
+                else:  # *_density: noise on trailing density channel only
                     n_dens = torch.randn(
                         (x_clean.shape[0], 1, *x_clean.shape[2:]),
                         device=device, generator=gen,
@@ -516,11 +724,16 @@ def val_epoch(cfg, model, val_cache, device) -> dict:
                 x_noisy = x_clean
 
             B, G = x_clean.shape[0], x_clean.shape[-1]
-            blocks = torch.rand(B, 1, G // block, G // block, G // block,
-                                device=device, generator=gen) < ratio
-            mask = blocks.repeat_interleave(block, 2)\
-                         .repeat_interleave(block, 3)\
-                         .repeat_interleave(block, 4)
+            if mask_strategy == "atom_biased":
+                mask = make_atom_biased_block_mask(
+                    atoms_sum, block, ratio, tau=mask_atom_tau, generator=gen,
+                )
+            else:
+                blocks = torch.rand(B, 1, G // block, G // block, G // block,
+                                    device=device, generator=gen) < ratio
+                mask = blocks.repeat_interleave(block, 2)\
+                             .repeat_interleave(block, 3)\
+                             .repeat_interleave(block, 4)
 
             if pretext_style == "mae":
                 x_in = x_noisy * (~mask).to(x_noisy.dtype)
@@ -549,6 +762,9 @@ def val_epoch(cfg, model, val_cache, device) -> dict:
                 pretext_style=pretext_style,
                 patch_size=patch_size,
                 input_mode=input_mode,
+                ch_weight=ch_weight,
+                atom_pos_weight=float(cfg.mae.get("atom_pos_weight", 1.0)),
+                atom_pos_thresh=float(cfg.mae.get("atom_pos_thresh", 0.05)),
             )
             L_pretext_sum += losses[pretext_key].item()
             L_str_sum += losses["L_str"].item()
@@ -565,7 +781,7 @@ def val_epoch(cfg, model, val_cache, device) -> dict:
         "L_str": L_str_sum / n_b,
         "loss": (lambda_pretext * L_pretext_sum + lambda_str * L_str_sum) / n_b,
     }
-    if input_mode == "atomblob_density":
+    if input_mode in ("atomblob_density", "atomblob_merged_density"):
         metrics["L_dens_atom"] = L_dens_atom_sum / n_b
         metrics["L_dens_density"] = L_dens_density_sum / n_b
     return metrics
@@ -573,7 +789,7 @@ def val_epoch(cfg, model, val_cache, device) -> dict:
 
 # ── Train loop ────────────────────────────────────────────────────────────────
 
-def train_epoch(cfg, prefetcher, model, optimizer, model_ema, device, global_step) -> tuple:
+def train_epoch(cfg, prefetcher, model, optimizer, model_ema, device, global_step, ch_weight=None) -> tuple:
     model.train()
     pretext_style = str(cfg.mae.get("pretext_style", "mae"))
     input_mode = str(cfg.get("input_mode", "density"))
@@ -608,6 +824,9 @@ def train_epoch(cfg, prefetcher, model, optimizer, model_ema, device, global_ste
                 pretext_style=pretext_style,
                 patch_size=patch_size,
                 input_mode=input_mode,
+                ch_weight=ch_weight,
+                atom_pos_weight=float(cfg.mae.get("atom_pos_weight", 1.0)),
+                atom_pos_thresh=float(cfg.mae.get("atom_pos_thresh", 0.05)),
             )
             L_pretext = losses[pretext_key]
             L_str = losses["L_str"]
@@ -638,7 +857,7 @@ def train_epoch(cfg, prefetcher, model, optimizer, model_ema, device, global_ste
         "L_str": L_str_sum / n_b,
         "loss": (lambda_pretext * L_pretext_sum + lambda_str * L_str_sum) / n_b,
     }
-    if input_mode == "atomblob_density":
+    if input_mode in ("atomblob_density", "atomblob_merged_density"):
         metrics["L_dens_atom"] = L_dens_atom_sum / n_b
         metrics["L_dens_density"] = L_dens_density_sum / n_b
     if grad_clip > 0:
@@ -697,11 +916,16 @@ def main(cfg: DictConfig) -> None:
         try:
             _tags = cfg.get("wandb_tags", None)
             _tags = list(_tags) if _tags else None
+            # Strip leading YYMMDD_ from the exp_name for the wandb display name.
+            # exp_name on disk keeps the date (per the exp-dir naming convention);
+            # only the wandb run name shows the bare topic.
+            import re as _re
+            _wandb_name = _re.sub(r"^\d{6}_", "", cfg.exp_name)
             wandb.init(
                 project="voxbind",
                 entity="eddy26",
                 config=OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True),
-                name=cfg.exp_name,
+                name=_wandb_name,
                 tags=_tags,
                 dir=cfg.output_dir,
                 resume="allow",
@@ -728,6 +952,9 @@ def main(cfg: DictConfig) -> None:
     input_mode = str(cfg.get("input_mode", "density"))
     torch.manual_seed(cfg.seed)
     torch.cuda.manual_seed(cfg.seed)
+    dual_head       = bool(cfg.model.get("dual_head", False))
+    head_hidden_dim = int(cfg.model.get("head_hidden_dim", 0))   # 0 → defaults to c_half
+    head_depth      = int(cfg.model.get("head_depth", 2))
     model = DensityViTMAE(
         grid_dim=int(cfg.vox.grid_dim),
         patch_size=int(cfg.model.patch_size),
@@ -740,11 +967,15 @@ def main(cfg: DictConfig) -> None:
         dropout=float(cfg.model.dropout),
         n_struct_channels=int(cfg.model.n_struct_channels),
         pretext_style=pretext_style,
+        dual_head=dual_head,
+        head_hidden_dim=head_hidden_dim,
+        head_depth=head_depth,
     ).to(device)
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     if is_main:
         logger.info(f"DensityViTMAE has {(n_params/1e6):.02f}M parameters "
-                    f"(pretext_style={pretext_style}, input_mode={input_mode})")
+                    f"(pretext_style={pretext_style}, input_mode={input_mode}, "
+                    f"dual_head={dual_head}, head_hidden_dim={head_hidden_dim or '(c_half)'}, head_depth={head_depth})")
 
     optimizer = AdamW(model.parameters(), lr=cfg.lr, weight_decay=cfg.wd)
     optimizer.zero_grad()
@@ -792,6 +1023,95 @@ def main(cfg: DictConfig) -> None:
     if not is_main:
         val_cache = precompute_val(loader_val, voxelizer, cfg)
 
+    # Per-channel loss weighting.
+    # Two orthogonal knobs that compose into a single 11- or 12-vector:
+    #   mae.channel_weighting : 'uniform' | 'inv_sqrt_freq'    (atom-channel side)
+    #   mae.density_channel_weight : float, default 1.0        (density-channel side,
+    #                                                           only used when
+    #                                                           input_mode='atomblob_density')
+    # When both are at defaults (`uniform` + `1.0`), `ch_weight` stays None
+    # and compute_losses takes the unweighted code path — preserving baseline behavior.
+    # When either is non-default for atomblob_density, the final 12-vec is
+    # renormalized to sum=n_channels so the overall L_pretext scale matches the
+    # unweighted case (gradient share shifts; total mass preserved).
+    ch_weight = None
+    ch_weighting = str(cfg.mae.get("channel_weighting", "uniform"))
+    if ch_weighting not in ("uniform", "inv_sqrt_freq"):
+        raise ValueError(
+            f"unknown channel_weighting={ch_weighting!r}; expected 'uniform' or 'inv_sqrt_freq'"
+        )
+    density_channel_weight = float(cfg.mae.get("density_channel_weight", 1.0))
+    needs_atom_weights = (ch_weighting == "inv_sqrt_freq")
+    _atomblob_modes = ("atomblob", "atomblob_density", "atomblob_merged", "atomblob_merged_density")
+    _density_modes = ("atomblob_density", "atomblob_merged_density")
+    _merged_modes  = ("atomblob_merged", "atomblob_merged_density")
+    needs_dens_downweight = (
+        input_mode in _density_modes and density_channel_weight != 1.0
+    )
+    if needs_atom_weights or needs_dens_downweight:
+        if needs_atom_weights and input_mode not in _atomblob_modes:
+            raise ValueError(
+                f"channel_weighting='inv_sqrt_freq' requires an atomblob* input_mode; "
+                f"got input_mode={input_mode!r}"
+            )
+        if needs_dens_downweight and input_mode not in _density_modes:
+            raise ValueError(
+                f"density_channel_weight={density_channel_weight} is only meaningful "
+                f"with a *_density input_mode; got input_mode={input_mode!r}"
+            )
+
+        merge_lig_poc = input_mode in _merged_modes
+        n_atom = 7 if merge_lig_poc else 11
+        # n_in expected per mode: atomblob=11, atomblob_density=12,
+        #                         atomblob_merged=7, atomblob_merged_density=8.
+        n_in_expected = n_atom + (1 if input_mode in _density_modes else 0)
+
+        # Atom-side weights: inv-sqrt-freq (rank 0 computes + caches; all ranks
+        # load from disk) OR uniform ones if only the density downweight is active.
+        if needs_atom_weights:
+            if is_main:
+                atom_w = precompute_channel_weights(
+                    loader_train.dataset, voxelizer, cfg, device=device,
+                    merge_lig_poc=merge_lig_poc,
+                )
+            if world_size > 1:
+                dist.barrier()
+            if not is_main:
+                atom_w = precompute_channel_weights(
+                    loader_train.dataset, voxelizer, cfg, device=device,
+                    merge_lig_poc=merge_lig_poc,
+                )
+        else:
+            atom_w = torch.ones(n_atom)
+
+        n_in = int(cfg.model.get("n_in_channels", 1))
+        if n_in != n_in_expected:
+            raise RuntimeError(
+                f"input_mode={input_mode!r} expects n_in_channels={n_in_expected}, got {n_in}"
+            )
+        if input_mode in _density_modes:
+            raw = torch.cat([atom_w, torch.tensor([density_channel_weight])], dim=0)
+            # Renormalize to sum = n_channels so L_pretext magnitude matches the
+            # unweighted (ch_weight=None) case. The atom:density gradient ratio is
+            # preserved through this rescale.
+            ch_weight = raw * (float(n_in) / float(raw.sum()))
+        else:
+            ch_weight = atom_w
+
+        ch_weight = ch_weight.to(device)
+        if is_main:
+            logger.info(
+                f"using channel weights on {ch_weight.shape[0]} channels "
+                f"(sum={float(ch_weight.sum()):.3f})  "
+                f"channel_weighting={ch_weighting}  density_channel_weight={density_channel_weight}  "
+                f"merge_lig_poc={merge_lig_poc}"
+            )
+            if input_mode in _density_modes:
+                logger.info(
+                    f"  effective atom weights sum = {float(ch_weight[:n_atom].sum()):.3f}  |  "
+                    f"effective density weight = {float(ch_weight[n_atom]):.4f}"
+                )
+
     sigma_blur_vox_range = (
         cfg.mae.sigma_blur_a_lo / cfg.vox.resolution,
         cfg.mae.sigma_blur_a_hi / cfg.vox.resolution,
@@ -830,14 +1150,18 @@ def main(cfg: DictConfig) -> None:
             corruption_op_weights=corruption_op_weights,
             density_source=str(cfg.mae.get("density_source", "synthetic")),
             input_mode=input_mode,
+            mask_strategy=str(cfg.mae.get("mask_strategy", "uniform")),
+            mask_atom_tau=float(cfg.mae.get("mask_atom_tau", 1.0)),
         )
         train_metrics, global_step = train_epoch(
             cfg, prefetcher, model, optimizer, model_ema, device, global_step,
+            ch_weight=ch_weight,
         )
 
         val_metrics = None
         if epoch % max(1, int(cfg.mae.val_every)) == 0:
-            val_metrics = val_epoch(cfg, model_ema.module, val_cache, device)
+            val_metrics = val_epoch(cfg, model_ema.module, val_cache, device,
+                                    ch_weight=ch_weight)
 
         if is_main:
             log_metrics(epoch, train_metrics, val_metrics, time.time() - t0)

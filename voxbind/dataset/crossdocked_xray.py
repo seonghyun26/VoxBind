@@ -5,7 +5,7 @@ density map as an additional input channel.
 
 Design
 ------
-- CCP4 maps (downloaded by dataset/00a_data_density_download.py) are loaded lazily
+- CCP4 maps (downloaded by dataset/00a_density_download.py) are loaded lazily
   and cached per worker process (one OrderedDict per DataLoader worker).
 - The density box is cropped at the ligand centroid (PDB Cartesian frame),
   matching the VoxBind 64³ × 0.25 Å grid convention exactly.
@@ -119,7 +119,7 @@ def _crop_density(
     transform     : optional (R, t) rigid frame correction, applied as
                     x_dep = x_cd @ R.T + t before the map is sampled. Recovered
                     per structure by residue-matched Kabsch vs the deposited PDB
-                    (see dataset/00d_align_xray_density.py). None = no correction.
+                    (see dataset/00b_density_preprocess.py). None = no correction.
 
     Returns
     -------
@@ -256,7 +256,7 @@ class DatasetCrossDockedXray(Dataset):
     Two density loading modes (mutually exclusive, crops_dir takes priority):
 
     crops_dir (preferred for training)
-        Load precomputed float16 numpy arrays produced by dataset/00b_data_density_preprocess.py.
+        Load precomputed float16 numpy arrays produced by dataset/00b_density_preprocess.py.
         Fast — no CCP4 I/O at training time. Rotation is still applied on-the-fly.
 
     ccp4_dir (on-the-fly, no preprocessing required)
@@ -266,7 +266,7 @@ class DatasetCrossDockedXray(Dataset):
     Parameters
     ----------
     data_dir      : directory containing data_train.pt / data_test.pt
-    crops_dir     : directory of precomputed crops (output of dataset/00b_data_density_preprocess.py).
+    crops_dir     : directory of precomputed crops (output of dataset/00b_density_preprocess.py).
                     When set, ccp4_dir is ignored.
     ccp4_dir      : directory containing {pdb_id}.map CCP4 files (on-the-fly mode)
     split         : "train", "val", or "test"
@@ -328,7 +328,7 @@ class DatasetCrossDockedXray(Dataset):
         self._val_from_train_pool = (split == "val" and subset_val_n is not None)
         phys_split = "train" if self._val_from_train_pool else split
 
-        # Precomputed crops mode: load float16 .npy files produced by dataset/00b_data_density_preprocess.py.
+        # Precomputed crops mode: load float16 .npy files produced by dataset/00b_density_preprocess.py.
         # Manifest discovery is decoupled from `use_xray` so that `subset_xray_only=True`
         # can filter to the X-ray-available pool even when actual density I/O is
         # skipped (use_xray=False) — needed for the atomblob pretraining variant,

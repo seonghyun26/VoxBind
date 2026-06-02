@@ -1,0 +1,78 @@
+defaults:
+  - dset: crossdocked_xray
+  - model: atomblob_density_vit_mae_40m
+  - vox: default
+  - override hydra/job_logging: custom
+  - _self_
+
+# V4 clone of config_train_atomblob_merged_density_vit_mae_40m_weighted_v3.yaml.
+# Only delta vs v3: dset.crops_dir points to xray_crops_aligned_v4 (pocket-pool
+# clip + z-score density crops; preserves atom signal scale that v3 collapsed
+# to ~0.01 by max-abs scaling). Same recipe otherwise.
+
+debug: False
+wandb: True
+wandb_tags: []
+num_workers: 4
+resume: null
+resume_epoch: null
+exp_dir: exps
+exp_name: atomblob_merged_density_vit_mae_40m_weighted_v4${hydra.job.override_dirname}
+output_dir: null
+
+seed: 42
+num_epochs: 100
+aug: True
+bsz: 8
+accum_steps: 2
+lr: 1e-4
+wd: 5e-2
+
+input_mode: atomblob_merged_density
+
+dset:
+  crops_dir: /home/shpark/prj-denovo/VoxBind/voxbind/dataset/data/xray_crops_aligned_v4
+  normalize: false
+  subset_xray_only: true
+  subset_n: 78428
+  subset_val_n: 100
+  use_xray: true
+
+model:
+  n_in_channels: 8
+
+mae:
+  pretext_style: mae
+  density_source: xray
+  sigma_blur_a_lo: 0.30
+  sigma_blur_a_hi: 0.80
+  sigma_noise: 0.0
+  block_size: 8
+  mask_ratio: 0.60
+  mask_strategy: atom_biased
+  mask_atom_tau: 1.0
+  channel_weighting: inv_sqrt_freq
+  density_channel_weight: 0.1
+  lambda_dens: 1.0
+  lambda_str: 1.0
+  struct_pos_weight: 100.0
+  struct_pos_thresh: 0.05
+  ema_decay: 0.999
+  grad_clip: 1.0
+  val_every: 1
+  ckpt_every: 20
+
+hydra:
+  run:
+    dir: ./${exp_dir}/${exp_name}
+  job:
+    config:
+      override_dirname:
+        kv_sep: ""
+        item_sep: "_"
+        exclude_keys: [
+            "exp_dir", "lr", vox.grid_dim, "wd", "resume", "resume_epoch", "wandb",
+            "num_workers", "exp_name", "output_dir", "out_dir",
+            "bsz", "accum_steps", "seed", "num_epochs", "aug", "pocket_radius",
+            "grid_dim", "debug"
+]

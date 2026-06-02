@@ -222,13 +222,40 @@ class DensityViTMAE(nn.Module):
         dropout: float = 0.1,
         n_struct_channels: int = 11,  # 7 ligand + 4 pocket; 0 disables the head
         pretext_style: str = "mae",   # "mae" | "electra"
+        dual_head: bool = False,      # split the MAE recon head into atoms vs density branches
+        head_hidden_dim: int = 0,     # MLP-head hidden width; 0 → defaults to c_half (=n_channels//2)
+        head_depth: int = 2,          # total Conv3d layers in each MAE recon head (>=1)
     ):
         super().__init__()
         assert pretext_style in ("mae", "electra"), (
             f"unknown pretext_style: {pretext_style!r} (expected 'mae' or 'electra')"
         )
+        if dual_head:
+            assert pretext_style == "mae", "dual_head only valid with pretext_style='mae'"
+            assert n_in_channels >= 2, (
+                f"dual_head requires n_in_channels >= 2 (atoms + density); "
+                f"got n_in_channels={n_in_channels}"
+            )
+        assert head_depth >= 1, f"head_depth must be >= 1, got {head_depth}"
         self.pretext_style = pretext_style
+        self.dual_head = dual_head
         c_half = n_channels // 2
+        head_h = head_hidden_dim if head_hidden_dim > 0 else c_half
+
+        def _build_head(c_in: int, c_out: int) -> nn.Module:
+            """Conv3d MLP head: `head_depth` total convs, hidden width = head_h.
+
+            depth=1: single Conv3d(c_in→c_out)               — linear projection only
+            depth=2: Conv(c_in→head_h)+SiLU+Conv(head_h→c_out) — current default behavior
+            depth>=3: extra SiLU+Conv(head_h→head_h) blocks inserted in the middle.
+            """
+            if head_depth == 1:
+                return nn.Conv3d(c_in, c_out, kernel_size=3, padding=1)
+            layers = [nn.Conv3d(c_in, head_h, kernel_size=3, padding=1), nn.SiLU()]
+            for _ in range(head_depth - 2):
+                layers += [nn.Conv3d(head_h, head_h, kernel_size=3, padding=1), nn.SiLU()]
+            layers.append(nn.Conv3d(head_h, c_out, kernel_size=3, padding=1))
+            return nn.Sequential(*layers)
 
         self.encoder = DensityViT(
             grid_dim=grid_dim,
@@ -243,12 +270,23 @@ class DensityViTMAE(nn.Module):
         )
 
         if pretext_style == "mae":
-            # Masked-voxel reconstruction head; output width matches input.
-            self.head_density = nn.Sequential(
-                nn.Conv3d(c_half, c_half, kernel_size=3, padding=1),
-                nn.SiLU(),
-                nn.Conv3d(c_half, n_in_channels, kernel_size=3, padding=1),
-            )
+            # Two head modes:
+            #   single-head (default): one MLP head that outputs ALL n_in_channels
+            #     jointly. Hidden representation is shared across all output channels.
+            #   dual_head: two independent heads — `head_atoms` for the leading
+            #     (n_in_channels - 1) atom channels and `head_density` for the
+            #     trailing 1 density channel. Hidden representations decouple,
+            #     so each modality can specialize.
+            #
+            # In dual_head mode `head_density` outputs ONLY the 1 density channel,
+            # not the full recon — concat with `head_atoms` output happens in forward.
+            if dual_head:
+                n_atom = n_in_channels - 1   # density is the trailing channel
+                self.head_atoms = _build_head(c_half, n_atom)
+                self.head_density = _build_head(c_half, 1)
+            else:
+                self.head_atoms = None
+                self.head_density = _build_head(c_half, n_in_channels)
         else:
             # Per-patch RTD logits via a strided Conv3d that pools the full-res
             # encoder feature map (B, c_half, G, G, G) down to the patch grid
@@ -281,9 +319,13 @@ class DensityViTMAE(nn.Module):
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
         z = self.encoder(density)
         if self.pretext_style == "electra":
-            out_pretext = self.head_rtd(z)        # (B, 1, g_p, g_p, g_p)
+            out_pretext = self.head_rtd(z)            # (B, 1, g_p, g_p, g_p)
+        elif self.dual_head:
+            out_atoms   = self.head_atoms(z)          # (B, n_in-1, G, G, G)
+            out_density = self.head_density(z)        # (B, 1,      G, G, G)
+            out_pretext = torch.cat([out_atoms, out_density], dim=1)  # (B, n_in, G³)
         else:
-            out_pretext = self.head_density(z)    # (B, n_in_channels, G, G, G)
+            out_pretext = self.head_density(z)        # (B, n_in_channels, G, G, G)
         out_structure = (
             self.head_structure(z) if self.head_structure is not None else None
         )
