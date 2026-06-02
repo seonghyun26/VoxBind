@@ -62,10 +62,17 @@ def main(cfg: DictConfig) -> None:
         # skipped, so every sampled pocket is genuinely density-conditioned.
         density = None
         with_density = cfg.model.get("with_density", False)
+        with_gradmag = bool(cfg.get("with_gradmag", False))
         if with_density and "xray_density" in batch:
             avail = batch.get("xray_available")
             if avail is None or bool(avail.flatten()[0].item()):
                 density = batch["xray_density"]
+                if with_gradmag and "xray_gradmag" in batch:
+                    # (1, 2, G, G, G) = [density, gradmag]; sample_molecules sees
+                    # dim==5 and feeds it through to the 2-ch density branch as-is.
+                    density = torch.stack(
+                        [batch["xray_density"], batch["xray_gradmag"]], dim=1
+                    )
         if with_density and density is None:
             logger.info(f"| pocket {pocket_id}: no x-ray density -> skipped")
             continue

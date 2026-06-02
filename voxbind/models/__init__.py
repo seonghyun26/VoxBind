@@ -31,6 +31,9 @@ def create_model(cfg, device="cuda") -> VoxBind:
     `model.train()` call doesn't flip dropout back on.
     """
     with_density = cfg.model.get("with_density", False)
+    # Master gradmag flag lives at the top level (shared with the dataset /
+    # pretraining), and widens the density branch 1→2 ch (density + gradmag).
+    with_gradmag = bool(cfg.get("with_gradmag", False))
     density_encoder_type = cfg.model.get("density_encoder_type", "cnn")
     # vit knobs (only consulted when density_encoder_type == "vit"; safe defaults
     # otherwise so older configs without the `density_vit:` block still load).
@@ -46,6 +49,7 @@ def create_model(cfg, device="cuda") -> VoxBind:
         dropout=cfg.model.dropout,
         smooth_sigma=cfg.smooth_sigma,
         with_density=with_density,
+        with_gradmag=with_gradmag,
         density_encoder_type=density_encoder_type,
         density_encoder_blocks=int(cfg.model.get("density_encoder_blocks", 1)),
         density_grid_dim=int(cfg.vox.grid_dim),

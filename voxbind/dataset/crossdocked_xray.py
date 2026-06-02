@@ -23,6 +23,9 @@ Returned batch fields
     "ligand"       : same as DatasetCrossdocked
     "xray_density" : torch.Tensor (64, 64, 64) float32, z-score normalised
                      OR None if the map is unavailable / use_xray=False
+    "xray_gradmag" : torch.Tensor (64, 64, 64) float32, ‖∇ρ‖ of the density
+                     crop (per-sample z-scored). Present only when
+                     return_gradmag=True; zeros where density is unavailable.
 
 Usage
 -----
@@ -47,6 +50,7 @@ import torch
 from torch.utils.data import Dataset
 
 from voxbind.constants import ELEMENTS_HASH_CROSSDOCKED, RADIUS_PER_ATOM
+from voxbind.models.density_mae import gradient_magnitude3d, per_sample_zscore
 from voxbind.utils.dataset_utils import (
     filter_atoms_by_distance, pad, recenter_structures,
     random_rot_matrix,
@@ -303,6 +307,7 @@ class DatasetCrossDockedXray(Dataset):
         subset_n: Optional[int] = None,
         subset_xray_only: bool = False,
         subset_val_n: Optional[int] = None,
+        return_gradmag: bool = False,
     ):
         assert split in ("train", "val", "test")
 
@@ -319,6 +324,10 @@ class DatasetCrossDockedXray(Dataset):
         self.delta = delta_translate
         self.normalize = normalize
         self.verbose = verbose
+        # When True, __getitem__ also returns "xray_gradmag" = ‖∇ρ‖ of the final
+        # (normalized + augmented) density crop, per-sample z-scored. Derived
+        # post-augmentation so it stays aligned with the density channel.
+        self.return_gradmag = return_gradmag
 
         # When subset_val_n is set, the val split is carved from the TRAIN
         # slice's x-ray pool — held out after the train subset (so train and
@@ -562,9 +571,25 @@ class DatasetCrossDockedXray(Dataset):
         else:
             xray_available = torch.tensor(True)
 
-        return {
+        out = {
             "pocket": pocket,
             "ligand": ligand,
             "xray_density": xray_density,    # (G, G, G) float32
             "xray_available": xray_available, # scalar bool
         }
+
+        # Gradient-magnitude channel ‖∇ρ‖ — derived from the FINAL (normalized +
+        # augmented) density above so it stays voxel-aligned with the density
+        # channel the model consumes. Per-sample z-scored to match the density
+        # scale; zeros when density is unavailable (mirrors xray_density).
+        if self.return_gradmag:
+            if bool(xray_available):
+                g = gradient_magnitude3d(
+                    xray_density.view(1, 1, _GRID_DIM, _GRID_DIM, _GRID_DIM)
+                )
+                g = per_sample_zscore(g)
+                out["xray_gradmag"] = g.view(_GRID_DIM, _GRID_DIM, _GRID_DIM)
+            else:
+                out["xray_gradmag"] = torch.zeros(_GRID_DIM, _GRID_DIM, _GRID_DIM)
+
+        return out

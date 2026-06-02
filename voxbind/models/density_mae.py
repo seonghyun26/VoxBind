@@ -46,6 +46,33 @@ def gaussian_blur3d(x: torch.Tensor, sigma_vox: float) -> torch.Tensor:
     return x
 
 
+def gradient_magnitude3d(x: torch.Tensor, spacing: float = 1.0) -> torch.Tensor:
+    """Per-voxel gradient magnitude ‖∇x‖ via central finite differences.
+
+    An edge / iso-surface detector for a density field: large where the density
+    changes fastest (atom-blob shells, 2Fo-Fc iso-surfaces), complementing the
+    raw density magnitude. Replicate padding preserves the G³ shape and avoids
+    spurious large gradients at the boundary faces.
+
+    `spacing` (voxel size) only rescales the output globally, so when the result
+    is subsequently per-sample z-scored it is irrelevant (default 1.0 = voxel
+    units, matching the rest of the density pipeline).
+
+    Args
+    ----
+    x : (B, 1, G, G, G) tensor (CPU or CUDA).
+
+    Returns
+    -------
+    (B, 1, G, G, G) non-negative tensor, same dtype/device as `x`.
+    """
+    xp = F.pad(x, (1, 1, 1, 1, 1, 1), mode="replicate")
+    gx = (xp[:, :, 2:, 1:-1, 1:-1] - xp[:, :, :-2, 1:-1, 1:-1]) / (2.0 * spacing)
+    gy = (xp[:, :, 1:-1, 2:, 1:-1] - xp[:, :, 1:-1, :-2, 1:-1]) / (2.0 * spacing)
+    gz = (xp[:, :, 1:-1, 1:-1, 2:] - xp[:, :, 1:-1, 1:-1, :-2]) / (2.0 * spacing)
+    return torch.sqrt(gx * gx + gy * gy + gz * gz + 1e-12)
+
+
 def make_block_mask(
     bsz: int, grid_dim: int, block_size: int, ratio: float,
     device: torch.device,

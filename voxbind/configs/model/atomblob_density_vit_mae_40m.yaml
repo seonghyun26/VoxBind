@@ -19,3 +19,8 @@ heads: 8
 mlp_ratio: 4
 dropout: 0.1
 n_struct_channels: 0    # disabled: atoms ARE part of the input
+
+# ── MAE head knobs (no-op defaults — override per run) ─────────────────────────
+dual_head: false        # true → split atom vs density branches in the recon head
+head_hidden_dim: 0      # 0 → defaults to c_half (= n_channels // 2 = 16)
+head_depth: 2           # # of Conv3d layers in each head (>=1); 2 = current

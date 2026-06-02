@@ -213,7 +213,10 @@ class DensityViTMAE(nn.Module):
         self,
         grid_dim: int = 64,
         patch_size: int = 8,
-        n_in_channels: int = 1,       # patch-embed input + MAE recon output channels
+        n_in_channels: int = 1,       # patch-embed input width (atoms + density + gradmag)
+        n_recon_channels: Optional[int] = None,  # MAE recon / loss-target width; None → n_in_channels.
+                                      # Set < n_in to make trailing channels (e.g. an input-only
+                                      # gradmag) encoded but NOT reconstructed.
         n_channels: int = 32,         # backbone width; c_out = n_channels // 2
         dim: int = 192,
         depth: int = 6,
@@ -236,7 +239,15 @@ class DensityViTMAE(nn.Module):
                 f"dual_head requires n_in_channels >= 2 (atoms + density); "
                 f"got n_in_channels={n_in_channels}"
             )
+            assert n_recon_channels is None or n_recon_channels == n_in_channels, (
+                "dual_head assumes the trailing channel is the lone density channel; "
+                "it is incompatible with an input-only (n_recon < n_in) layout."
+            )
         assert head_depth >= 1, f"head_depth must be >= 1, got {head_depth}"
+        n_recon = n_recon_channels if n_recon_channels is not None else n_in_channels
+        assert 1 <= n_recon <= n_in_channels, (
+            f"n_recon_channels={n_recon} must be in [1, n_in_channels={n_in_channels}]"
+        )
         self.pretext_style = pretext_style
         self.dual_head = dual_head
         c_half = n_channels // 2
@@ -286,7 +297,7 @@ class DensityViTMAE(nn.Module):
                 self.head_density = _build_head(c_half, 1)
             else:
                 self.head_atoms = None
-                self.head_density = _build_head(c_half, n_in_channels)
+                self.head_density = _build_head(c_half, n_recon)
         else:
             # Per-patch RTD logits via a strided Conv3d that pools the full-res
             # encoder feature map (B, c_half, G, G, G) down to the patch grid
@@ -308,6 +319,7 @@ class DensityViTMAE(nn.Module):
             self.head_structure = None
 
         self.n_in_channels = n_in_channels
+        self.n_recon_channels = n_recon
         self.n_channels = n_channels
         self.n_struct_channels = n_struct_channels
 
@@ -325,7 +337,7 @@ class DensityViTMAE(nn.Module):
             out_density = self.head_density(z)        # (B, 1,      G, G, G)
             out_pretext = torch.cat([out_atoms, out_density], dim=1)  # (B, n_in, G³)
         else:
-            out_pretext = self.head_density(z)        # (B, n_in_channels, G, G, G)
+            out_pretext = self.head_density(z)        # (B, n_recon_channels, G, G, G)
         out_structure = (
             self.head_structure(z) if self.head_structure is not None else None
         )

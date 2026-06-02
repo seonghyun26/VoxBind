@@ -44,12 +44,14 @@ class VoxelPrefetcher:
     density slot in the yielded tuple is None.
     """
 
-    def __init__(self, loader, voxelizer, smooth_sigma, training=True, with_density=False):
+    def __init__(self, loader, voxelizer, smooth_sigma, training=True,
+                 with_density=False, with_gradmag=False):
         self.loader = loader
         self.voxelizer = voxelizer
         self.smooth_sigma = smooth_sigma
         self.training = training
         self.with_density = with_density
+        self.with_gradmag = with_gradmag
         self.stream = torch.cuda.Stream()
 
     def _voxelize(self, batch):
@@ -65,10 +67,16 @@ class VoxelPrefetcher:
                     density = batch["xray_density"].to(
                         self.voxelizer.device, non_blocking=True
                     ).unsqueeze(1)
+                    if self.with_gradmag and "xray_gradmag" in batch:
+                        gradmag = batch["xray_gradmag"].to(
+                            self.voxelizer.device, non_blocking=True
+                        ).unsqueeze(1)
+                        density = torch.cat([density, gradmag], dim=1)  # (B, 2, G³)
                     if "xray_available" in batch:
                         avail = batch["xray_available"].to(
                             self.voxelizer.device, non_blocking=True
                         )
+                        # broadcasts across channels → zeros density+gradmag together
                         density = density * avail.view(-1, 1, 1, 1, 1).float()
         return voxels_lig, smooth_voxels_lig, voxels_poc, density
 
@@ -257,9 +265,10 @@ def train(
     train_miou_interval = max(1, int(cfg.get("train_miou_interval", 8)))
 
     with_density = bool(cfg.model.get("with_density", False))
+    with_gradmag = bool(cfg.get("with_gradmag", False))
     prefetcher = VoxelPrefetcher(
         loader, voxelizer, cfg.smooth_sigma,
-        training=True, with_density=with_density,
+        training=True, with_density=with_density, with_gradmag=with_gradmag,
     )
     for i, (voxels_lig, smooth_voxels_lig, voxels_poc, density) in enumerate(prefetcher):
         # fwd
@@ -313,6 +322,7 @@ def val(
     model.eval()
     device = next(model.parameters()).device
     with_density = bool(cfg.model.get("with_density", False))
+    with_gradmag = bool(cfg.get("with_gradmag", False))
 
     with torch.no_grad():
         if val_cache is not None:
@@ -333,7 +343,7 @@ def val(
         else:
             prefetcher = VoxelPrefetcher(
                 loader, voxelizer, cfg.smooth_sigma,
-                training=False, with_density=with_density,
+                training=False, with_density=with_density, with_gradmag=with_gradmag,
             )
             for i, (voxels_lig, smooth_voxels_lig, voxels_poc, density) in enumerate(prefetcher):
                 pred = model(smooth_voxels_lig, voxels_poc, density=density)
@@ -394,6 +404,7 @@ def _val_cache_path(cfg) -> str:
         "pocket_radius": cfg.dset.pocket_radius,
         "dset_name": cfg.dset.dset_name,
         "with_density": bool(cfg.model.get("with_density", False)),
+        "with_gradmag": bool(cfg.get("with_gradmag", False)),
     }
     h = hashlib.md5(json.dumps(key, sort_keys=True).encode()).hexdigest()[:8]
     return os.path.join(cfg.dset.data_dir, f"val_voxels_{h}.pt")
@@ -415,7 +426,11 @@ def precompute_val_voxels(
         return torch.load(cache_path, weights_only=True)
 
     with_density = bool(cfg.model.get("with_density", False))
-    logger.info(f"pre-computing val voxels (with_density={with_density}); will cache for future runs...")
+    with_gradmag = bool(cfg.get("with_gradmag", False))
+    logger.info(
+        f"pre-computing val voxels (with_density={with_density}, "
+        f"with_gradmag={with_gradmag}); will cache for future runs..."
+    )
     all_lig, all_poc, all_dens = [], [], []
     with torch.no_grad():
         for batch in loader_val:
@@ -423,6 +438,9 @@ def precompute_val_voxels(
             all_poc.append(voxelizer.forward(batch["pocket"], num_channels=4).cpu())
             if with_density and "xray_density" in batch:
                 d = batch["xray_density"].unsqueeze(1)
+                if with_gradmag and "xray_gradmag" in batch:
+                    g = batch["xray_gradmag"].unsqueeze(1)
+                    d = torch.cat([d, g], dim=1)            # (B, 2, G³)
                 if "xray_available" in batch:
                     d = d * batch["xray_available"].view(-1, 1, 1, 1, 1).float()
                 all_dens.append(d.cpu())

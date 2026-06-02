@@ -81,6 +81,9 @@ mae:
   mask_atom_tau: 1.0
   channel_weighting: inv_sqrt_freq   # operates on the 7 merged channels
   density_channel_weight: 0.1        # density downweighted inside joint MAE loss
+  # Positive-voxel up-weighting on atom channels (no-op default — override per run):
+  atom_pos_weight: 1.0               # >1 → boost error² at voxels where target>thresh
+  atom_pos_thresh: 0.05              # atom-present threshold (matches struct head)
   lambda_dens: 1.0
   lambda_str: 1.0
   struct_pos_weight: 100.0

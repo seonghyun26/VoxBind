@@ -51,8 +51,8 @@ from voxbind.dataset import create_dataloaders
 from voxbind.models.adamw import AdamW
 from voxbind.models.density_mae import (
     corrupt_noise, corrupt_reblur, corrupt_swap,
-    gaussian_blur3d, make_atom_biased_block_mask, make_block_mask,
-    per_sample_zscore, voxel_mask_to_patch_target,
+    gaussian_blur3d, gradient_magnitude3d, make_atom_biased_block_mask,
+    make_block_mask, per_sample_zscore, voxel_mask_to_patch_target,
 )
 from voxbind.models.density_vit import DensityViTMAE
 from voxbind.models.ema import ModelEma
@@ -164,6 +164,53 @@ def _build_merged_atoms(v_lig: torch.Tensor, v_poc: torch.Tensor) -> torch.Tenso
     return v_merged                                                 # (B, 7, G³)
 
 
+def _channel_layout(
+    input_mode: str,
+    with_gradmag: bool = False,
+    gradmag_reconstruct: bool = True,
+) -> dict:
+    """Single source of truth for the multi-channel input / reconstruction layout.
+
+    Channel order is always  [ …atoms (n_atom)…, density (n_density), gradmag (n_gradmag) ].
+
+      n_in     : encoder patch-embed input width  (atoms + density + gradmag)
+      n_recon  : MAE head / loss-target width.  Equals n_in when gradmag is a
+                 reconstruction target; n_in − n_gradmag when gradmag is
+                 input-only (encoded as context but not predicted).
+
+    `density_idx` / `gradmag_idx` are the channel offsets of those trailing
+    channels (gradmag_idx is None when with_gradmag is False).
+    """
+    if input_mode == "density":
+        n_atom = 0
+    elif input_mode in ("atomblob", "atomblob_density"):
+        n_atom = 11
+    elif input_mode in ("atomblob_merged", "atomblob_merged_density"):
+        n_atom = 7
+    else:
+        raise RuntimeError(f"unexpected input_mode={input_mode!r}")
+
+    has_density = input_mode in ("density", "atomblob_density", "atomblob_merged_density")
+    n_density = 1 if has_density else 0
+    if with_gradmag and not has_density:
+        raise ValueError(
+            f"with_gradmag=True requires a density-bearing input_mode "
+            f"(density / *_density); got input_mode={input_mode!r}"
+        )
+    n_gradmag = 1 if with_gradmag else 0
+    n_in = n_atom + n_density + n_gradmag
+    n_recon = n_in - (0 if gradmag_reconstruct else n_gradmag)
+    return {
+        "n_atom": n_atom,
+        "n_density": n_density,
+        "n_gradmag": n_gradmag,
+        "n_in": n_in,
+        "n_recon": n_recon,
+        "density_idx": n_atom,
+        "gradmag_idx": (n_atom + n_density) if with_gradmag else None,
+    }
+
+
 class MAEPrefetcher:
     """Voxelize → build per-mode input → mask/corrupt, overlapped with compute.
 
@@ -198,6 +245,9 @@ class MAEPrefetcher:
         input_mode: str = "density",
         mask_strategy: str = "uniform",
         mask_atom_tau: float = 1.0,
+        with_gradmag: bool = False,
+        gradmag_reconstruct: bool = True,
+        gradmag_noise: bool = False,
     ):
         assert pretext_style in ("mae", "electra")
         assert density_source in ("synthetic", "xray"), (
@@ -233,6 +283,10 @@ class MAEPrefetcher:
         self.input_mode = input_mode
         self.mask_strategy = mask_strategy
         self.mask_atom_tau = mask_atom_tau
+        self.with_gradmag = with_gradmag
+        self.gradmag_reconstruct = gradmag_reconstruct
+        self.gradmag_noise = gradmag_noise
+        self.layout = _channel_layout(input_mode, with_gradmag, gradmag_reconstruct)
         self.stream = torch.cuda.Stream()
 
     def _step(self, batch):
@@ -269,6 +323,16 @@ class MAEPrefetcher:
                         d_clean = gaussian_blur3d(atoms_sum, sigma_vox)
                         d_clean = per_sample_zscore(d_clean)
 
+                # Gradient-magnitude channel ‖∇ρ‖. xray: precomputed in the
+                # dataset from the aligned crop (post-augmentation). synthetic:
+                # derived on-GPU from the clean density. Appended as trailing ch.
+                g_clean = None
+                if self.with_gradmag:
+                    if self.density_source == "xray":
+                        g_clean = batch["xray_gradmag"].to(device, non_blocking=True).unsqueeze(1)
+                    else:
+                        g_clean = per_sample_zscore(gradient_magnitude3d(d_clean))
+
                 # Assemble the multi-channel input per mode.
                 if self.input_mode == "density":
                     x_clean = d_clean                                       # (B, 1, G³)
@@ -284,28 +348,30 @@ class MAEPrefetcher:
                 else:
                     raise RuntimeError(f"unexpected input_mode={self.input_mode!r}")
 
-                # Noise is a density-only augmentation. Atom-only modes skip it;
-                # joint modes noise only the trailing density channel.
+                # Append gradmag as the trailing channel: [ …atoms…, density, gradmag ].
+                if self.with_gradmag:
+                    x_clean = torch.cat([x_clean, g_clean], dim=1)
+
+                # Noise is a density-domain augmentation applied to the density
+                # channel BY INDEX (gradmag may trail it). Atom-only modes skip it;
+                # gradmag is noised only when gradmag_noise is set.
                 atom_only = self.input_mode in ("atomblob", "atomblob_merged")
                 if self.sigma_noise > 0 and not atom_only:
-                    if self.input_mode == "density":
+                    def _randn_channel():
+                        shape = (x_clean.shape[0], 1, *x_clean.shape[2:])
                         if self.generator is not None:
-                            noise = torch.randn(x_clean.shape, device=device, generator=self.generator)
-                        else:
-                            noise = torch.randn_like(x_clean)
-                        x_noisy = x_clean + noise * self.sigma_noise
-                    else:  # *_density: noise only on the trailing density channel
-                        if self.generator is not None:
-                            n_dens = torch.randn(
-                                (x_clean.shape[0], 1, *x_clean.shape[2:]),
-                                device=device, generator=self.generator,
-                            )
-                        else:
-                            n_dens = torch.randn(
-                                (x_clean.shape[0], 1, *x_clean.shape[2:]), device=device,
-                            )
-                        x_noisy = x_clean.clone()
-                        x_noisy[:, -1:] = x_noisy[:, -1:] + n_dens * self.sigma_noise
+                            return torch.randn(shape, device=device, generator=self.generator)
+                        return torch.randn(shape, device=device)
+                    x_noisy = x_clean.clone()
+                    d_idx = self.layout["density_idx"]
+                    x_noisy[:, d_idx:d_idx + 1] = (
+                        x_noisy[:, d_idx:d_idx + 1] + _randn_channel() * self.sigma_noise
+                    )
+                    if self.with_gradmag and self.gradmag_noise:
+                        g_idx = self.layout["gradmag_idx"]
+                        x_noisy[:, g_idx:g_idx + 1] = (
+                            x_noisy[:, g_idx:g_idx + 1] + _randn_channel() * self.sigma_noise
+                        )
                 else:
                     x_noisy = x_clean
 
@@ -325,10 +391,11 @@ class MAEPrefetcher:
                 else:
                     # ELECTRA corruption ops are currently single-channel only;
                     # the new multi-channel input modes go through MAE pretext.
-                    if self.input_mode != "density":
+                    if self.input_mode != "density" or self.with_gradmag:
                         raise NotImplementedError(
-                            f"pretext_style='electra' is not yet supported for "
-                            f"input_mode={self.input_mode!r}; use pretext_style='mae'."
+                            f"pretext_style='electra' supports single-channel density "
+                            f"only (input_mode={self.input_mode!r}, "
+                            f"with_gradmag={self.with_gradmag}); use pretext_style='mae'."
                         )
                     op = _sample_op(
                         self.corruption_ops, self.corruption_op_weights, self.generator
@@ -386,6 +453,8 @@ def compute_losses(
     ch_weight: torch.Tensor = None,
     atom_pos_weight: float = 1.0,
     atom_pos_thresh: float = 0.05,
+    with_gradmag: bool = False,
+    gradmag_reconstruct: bool = True,
 ):
     """Returns a dict of named losses.
 
@@ -426,16 +495,16 @@ def compute_losses(
         # mask broadcasts across channels: total masked (B,c,pos) entries =
         # n_masked_spatial × n_channels — keep per-element MSE scale.
         n_masked_spatial = m.sum().clamp(min=1.0)
-        diff_sq = (out_pretext - x_clean) ** 2 * m
-        n_channels = out_pretext.shape[1]
+        n_channels = out_pretext.shape[1]                     # = n_recon
+        # When gradmag is input-only the head emits n_recon < n_in channels;
+        # the recon target is the leading n_recon channels of x_clean (gradmag
+        # trails and is excluded). Prefix slice → atom/density indices unchanged.
+        target = x_clean if n_channels == x_clean.shape[1] else x_clean[:, :n_channels]
+        diff_sq = (out_pretext - target) ** 2 * m
 
         # ── atom_pos_weight: up-weight error² at atom-on voxels in atom channels.
-        # Determine n_atom = number of leading atom channels in the output.
-        if input_mode == "atomblob":                          n_atom = 11
-        elif input_mode == "atomblob_density":                n_atom = 11
-        elif input_mode == "atomblob_merged":                 n_atom = 7
-        elif input_mode == "atomblob_merged_density":         n_atom = 7
-        else:                                                  n_atom = 0    # density-only
+        lay = _channel_layout(input_mode, with_gradmag, gradmag_reconstruct)
+        n_atom = lay["n_atom"]                                # leading atom channels
         if atom_pos_weight > 1.0 and n_atom > 0:
             # Mask of atom-on positions for the leading atom channels.
             pos_atom = (x_clean[:, :n_atom] > atom_pos_thresh).to(diff_sq.dtype)
@@ -465,17 +534,26 @@ def compute_losses(
             L_pretext = diff_sq.sum() / (n_masked_spatial * n_channels)
         out_key = "L_dens"
 
-        # Per-modality split for any *_density mode. Atom channels are the
-        # leading `n_atom` slice; density is the trailing channel.
-        if input_mode in ("atomblob_density", "atomblob_merged_density"):
-            # Note: `diff_sq` already reflects atom_pos_weight if active.
-            if ch_weight is not None:
-                atom_diff = (diff_sq[:, :n_atom] * w_full[:, :n_atom]).sum() / (n_masked_spatial * n_atom)
-            else:
-                atom_diff = diff_sq[:, :n_atom].sum() / (n_masked_spatial * n_atom)
-            dens_diff = diff_sq[:, n_atom:].sum() / (n_masked_spatial * 1)
-            losses["L_dens_atom"] = atom_diff
-            losses["L_dens_density"] = dens_diff
+        # Per-modality split over the RECONSTRUCTED channels — reported whenever
+        # the target mixes ≥2 modalities. Channel order: [atoms, density, gradmag].
+        # `diff_sq` already reflects atom_pos_weight if active.
+        n_density = lay["n_density"]
+        recon_gradmag = with_gradmag and gradmag_reconstruct
+        n_modalities = (n_atom > 0) + (n_density > 0) + (1 if recon_gradmag else 0)
+        if n_modalities >= 2:
+            def _masked_mean(c0, c1):
+                if ch_weight is not None:
+                    num = (diff_sq[:, c0:c1] * w_full[:, c0:c1]).sum()
+                else:
+                    num = diff_sq[:, c0:c1].sum()
+                return num / (n_masked_spatial * (c1 - c0))
+            if n_atom > 0:
+                losses["L_dens_atom"] = _masked_mean(0, n_atom)
+            if n_density > 0:
+                losses["L_dens_density"] = _masked_mean(n_atom, n_atom + n_density)
+            if recon_gradmag:
+                g0 = n_atom + n_density
+                losses["L_dens_gradmag"] = _masked_mean(g0, g0 + 1)
     losses[out_key] = L_pretext
 
     if a_hat is not None:
@@ -507,6 +585,9 @@ def _val_cache_path(cfg) -> str:
         "subset_xray_only": cfg.dset.get("subset_xray_only", False),
         "density_source": cfg.mae.get("density_source", "synthetic"),
         "input_mode": cfg.get("input_mode", "density"),
+        # with_gradmag adds an xray_gradmag tensor to the cache (xray source),
+        # so it must key the cache to avoid reusing a gradmag-less blob.
+        "with_gradmag": cfg.get("with_gradmag", False),
         # `density_mae_v1` is kept identical to cnn-MAE — the cached tensors are
         # just voxelized ligand+pocket (and optionally xray), no encoder-specific
         # content; input_mode only enters the assembly at val_epoch time.
@@ -523,20 +604,29 @@ def precompute_val(loader_val, voxelizer, cfg) -> dict:
         return torch.load(path, weights_only=True)
 
     density_source = str(cfg.mae.get("density_source", "synthetic"))
-    logger.info(f"pre-computing val voxels (density_source={density_source})...")
-    all_lig, all_poc, all_xray = [], [], []
+    with_gradmag = bool(cfg.get("with_gradmag", False))
+    cache_gradmag = with_gradmag and density_source == "xray"
+    logger.info(
+        f"pre-computing val voxels (density_source={density_source}, "
+        f"with_gradmag={with_gradmag})..."
+    )
+    all_lig, all_poc, all_xray, all_gradmag = [], [], [], []
     with torch.no_grad():
         for batch in loader_val:
             all_lig.append(voxelizer.forward(batch["ligand"], num_channels=7).cpu())
             all_poc.append(voxelizer.forward(batch["pocket"], num_channels=4).cpu())
             if density_source == "xray":
                 all_xray.append(batch["xray_density"].cpu())
+            if cache_gradmag:
+                all_gradmag.append(batch["xray_gradmag"].cpu())
     cache = {
         "voxels_lig": torch.cat(all_lig, 0),
         "voxels_poc": torch.cat(all_poc, 0),
     }
     if density_source == "xray":
         cache["xray_density"] = torch.cat(all_xray, 0)
+    if cache_gradmag:
+        cache["xray_gradmag"] = torch.cat(all_gradmag, 0)
     torch.save(cache, path)
     logger.info(f"saved val voxels to {path}")
     return cache
@@ -655,6 +745,10 @@ def val_epoch(cfg, model, val_cache, device, ch_weight=None) -> dict:
     mask_strategy = str(cfg.mae.get("mask_strategy", "uniform"))
     mask_atom_tau = float(cfg.mae.get("mask_atom_tau", 1.0))
     patch_size = int(cfg.model.patch_size)
+    with_gradmag = bool(cfg.get("with_gradmag", False))
+    gradmag_reconstruct = bool(cfg.mae.get("gradmag_reconstruct", True))
+    gradmag_noise = bool(cfg.mae.get("gradmag_noise", False))
+    layout = _channel_layout(input_mode, with_gradmag, gradmag_reconstruct)
     need_density = input_mode in (
         "density", "atomblob_density", "atomblob_merged_density",
     )
@@ -673,10 +767,11 @@ def val_epoch(cfg, model, val_cache, device, ch_weight=None) -> dict:
     voxels_lig = val_cache["voxels_lig"]
     voxels_poc = val_cache["voxels_poc"]
     cached_xray = val_cache.get("xray_density", None)
+    cached_gradmag = val_cache.get("xray_gradmag", None)
     n = voxels_lig.shape[0]
 
     L_pretext_sum, L_str_sum, n_batches = 0.0, 0.0, 0
-    L_dens_atom_sum, L_dens_density_sum = 0.0, 0.0
+    L_dens_atom_sum, L_dens_density_sum, L_dens_gradmag_sum = 0.0, 0.0, 0.0
     gen = torch.Generator(device=device)
     with torch.no_grad():
         for batch_idx, start in enumerate(range(0, n, cfg.bsz)):
@@ -695,6 +790,13 @@ def val_epoch(cfg, model, val_cache, device, ch_weight=None) -> dict:
                     d_clean = gaussian_blur3d(atoms_sum, sigma_vox)
                     d_clean = per_sample_zscore(d_clean)
 
+            g_clean = None
+            if with_gradmag:
+                if density_source == "xray":
+                    g_clean = cached_gradmag[start:start + cfg.bsz].to(device, non_blocking=True).unsqueeze(1)
+                else:
+                    g_clean = per_sample_zscore(gradient_magnitude3d(d_clean))
+
             if input_mode == "density":
                 x_clean = d_clean
             elif input_mode == "atomblob":
@@ -709,17 +811,25 @@ def val_epoch(cfg, model, val_cache, device, ch_weight=None) -> dict:
             else:
                 raise RuntimeError(f"unexpected input_mode={input_mode!r}")
 
+            if with_gradmag:
+                x_clean = torch.cat([x_clean, g_clean], dim=1)
+
             atom_only = input_mode in ("atomblob", "atomblob_merged")
             if sigma_noise > 0 and not atom_only:
-                if input_mode == "density":
-                    x_noisy = x_clean + torch.randn(x_clean.shape, device=device, generator=gen) * sigma_noise
-                else:  # *_density: noise on trailing density channel only
-                    n_dens = torch.randn(
-                        (x_clean.shape[0], 1, *x_clean.shape[2:]),
-                        device=device, generator=gen,
+                x_noisy = x_clean.clone()
+                d_idx = layout["density_idx"]
+                x_noisy[:, d_idx:d_idx + 1] = (
+                    x_noisy[:, d_idx:d_idx + 1]
+                    + torch.randn((x_clean.shape[0], 1, *x_clean.shape[2:]),
+                                  device=device, generator=gen) * sigma_noise
+                )
+                if with_gradmag and gradmag_noise:
+                    g_idx = layout["gradmag_idx"]
+                    x_noisy[:, g_idx:g_idx + 1] = (
+                        x_noisy[:, g_idx:g_idx + 1]
+                        + torch.randn((x_clean.shape[0], 1, *x_clean.shape[2:]),
+                                      device=device, generator=gen) * sigma_noise
                     )
-                    x_noisy = x_clean.clone()
-                    x_noisy[:, -1:] = x_noisy[:, -1:] + n_dens * sigma_noise
             else:
                 x_noisy = x_clean
 
@@ -765,12 +875,17 @@ def val_epoch(cfg, model, val_cache, device, ch_weight=None) -> dict:
                 ch_weight=ch_weight,
                 atom_pos_weight=float(cfg.mae.get("atom_pos_weight", 1.0)),
                 atom_pos_thresh=float(cfg.mae.get("atom_pos_thresh", 0.05)),
+                with_gradmag=with_gradmag,
+                gradmag_reconstruct=gradmag_reconstruct,
             )
             L_pretext_sum += losses[pretext_key].item()
             L_str_sum += losses["L_str"].item()
             if "L_dens_atom" in losses:
                 L_dens_atom_sum += losses["L_dens_atom"].item()
+            if "L_dens_density" in losses:
                 L_dens_density_sum += losses["L_dens_density"].item()
+            if "L_dens_gradmag" in losses:
+                L_dens_gradmag_sum += losses["L_dens_gradmag"].item()
             n_batches += 1
             if cfg.debug and n_batches >= 5:
                 break
@@ -781,9 +896,15 @@ def val_epoch(cfg, model, val_cache, device, ch_weight=None) -> dict:
         "L_str": L_str_sum / n_b,
         "loss": (lambda_pretext * L_pretext_sum + lambda_str * L_str_sum) / n_b,
     }
-    if input_mode in ("atomblob_density", "atomblob_merged_density"):
-        metrics["L_dens_atom"] = L_dens_atom_sum / n_b
-        metrics["L_dens_density"] = L_dens_density_sum / n_b
+    recon_gradmag = with_gradmag and gradmag_reconstruct
+    n_modalities = (layout["n_atom"] > 0) + (layout["n_density"] > 0) + (1 if recon_gradmag else 0)
+    if n_modalities >= 2:
+        if layout["n_atom"] > 0:
+            metrics["L_dens_atom"] = L_dens_atom_sum / n_b
+        if layout["n_density"] > 0:
+            metrics["L_dens_density"] = L_dens_density_sum / n_b
+        if recon_gradmag:
+            metrics["L_dens_gradmag"] = L_dens_gradmag_sum / n_b
     return metrics
 
 
@@ -794,6 +915,9 @@ def train_epoch(cfg, prefetcher, model, optimizer, model_ema, device, global_ste
     pretext_style = str(cfg.mae.get("pretext_style", "mae"))
     input_mode = str(cfg.get("input_mode", "density"))
     patch_size = int(cfg.model.patch_size)
+    with_gradmag = bool(cfg.get("with_gradmag", False))
+    gradmag_reconstruct = bool(cfg.mae.get("gradmag_reconstruct", True))
+    layout = _channel_layout(input_mode, with_gradmag, gradmag_reconstruct)
     if pretext_style == "electra":
         pretext_key = "L_rtd"
         lambda_pretext = float(cfg.mae.get("lambda_rtd", 1.0))
@@ -803,7 +927,7 @@ def train_epoch(cfg, prefetcher, model, optimizer, model_ema, device, global_ste
     lambda_str = float(cfg.mae.get("lambda_str", 1.0))
 
     L_pretext_sum, L_str_sum, grad_norm_sum, n_batches = 0.0, 0.0, 0.0, 0
-    L_dens_atom_sum, L_dens_density_sum = 0.0, 0.0
+    L_dens_atom_sum, L_dens_density_sum, L_dens_gradmag_sum = 0.0, 0.0, 0.0
     accum_steps = max(1, int(cfg.get("accum_steps", 1)))
     grad_clip = float(cfg.mae.get("grad_clip", 0.0))
     optimizer.zero_grad(set_to_none=True)
@@ -827,6 +951,8 @@ def train_epoch(cfg, prefetcher, model, optimizer, model_ema, device, global_ste
                 ch_weight=ch_weight,
                 atom_pos_weight=float(cfg.mae.get("atom_pos_weight", 1.0)),
                 atom_pos_thresh=float(cfg.mae.get("atom_pos_thresh", 0.05)),
+                with_gradmag=with_gradmag,
+                gradmag_reconstruct=gradmag_reconstruct,
             )
             L_pretext = losses[pretext_key]
             L_str = losses["L_str"]
@@ -846,7 +972,10 @@ def train_epoch(cfg, prefetcher, model, optimizer, model_ema, device, global_ste
         L_str_sum += L_str.item()
         if "L_dens_atom" in losses:
             L_dens_atom_sum += losses["L_dens_atom"].item()
+        if "L_dens_density" in losses:
             L_dens_density_sum += losses["L_dens_density"].item()
+        if "L_dens_gradmag" in losses:
+            L_dens_gradmag_sum += losses["L_dens_gradmag"].item()
         n_batches += 1
         if cfg.debug and i == 10:
             break
@@ -857,9 +986,15 @@ def train_epoch(cfg, prefetcher, model, optimizer, model_ema, device, global_ste
         "L_str": L_str_sum / n_b,
         "loss": (lambda_pretext * L_pretext_sum + lambda_str * L_str_sum) / n_b,
     }
-    if input_mode in ("atomblob_density", "atomblob_merged_density"):
-        metrics["L_dens_atom"] = L_dens_atom_sum / n_b
-        metrics["L_dens_density"] = L_dens_density_sum / n_b
+    recon_gradmag = with_gradmag and gradmag_reconstruct
+    n_modalities = (layout["n_atom"] > 0) + (layout["n_density"] > 0) + (1 if recon_gradmag else 0)
+    if n_modalities >= 2:
+        if layout["n_atom"] > 0:
+            metrics["L_dens_atom"] = L_dens_atom_sum / n_b
+        if layout["n_density"] > 0:
+            metrics["L_dens_density"] = L_dens_density_sum / n_b
+        if recon_gradmag:
+            metrics["L_dens_gradmag"] = L_dens_gradmag_sum / n_b
     if grad_clip > 0:
         n_steps = max(1, n_batches // accum_steps)
         metrics["grad_norm"] = grad_norm_sum / n_steps
@@ -950,15 +1085,33 @@ def main(cfg: DictConfig) -> None:
     #   density=1, atomblob=11, atomblob_density=12.
     pretext_style = str(cfg.mae.get("pretext_style", "mae"))
     input_mode = str(cfg.get("input_mode", "density"))
+    with_gradmag = bool(cfg.get("with_gradmag", False))
+    gradmag_reconstruct = bool(cfg.mae.get("gradmag_reconstruct", True))
+    gradmag_noise = bool(cfg.mae.get("gradmag_noise", False))
+    gradmag_channel_weight = float(cfg.mae.get("gradmag_channel_weight", 1.0))
+    layout = _channel_layout(input_mode, with_gradmag, gradmag_reconstruct)
     torch.manual_seed(cfg.seed)
     torch.cuda.manual_seed(cfg.seed)
     dual_head       = bool(cfg.model.get("dual_head", False))
+    if with_gradmag and dual_head:
+        raise ValueError(
+            "dual_head is not yet supported with with_gradmag (the dual head "
+            "assumes a lone trailing density channel); use the single MAE head."
+        )
     head_hidden_dim = int(cfg.model.get("head_hidden_dim", 0))   # 0 → defaults to c_half
     head_depth      = int(cfg.model.get("head_depth", 2))
+    # n_in must match the assembled layout (atoms + density + gradmag).
+    n_in_cfg = int(cfg.model.get("n_in_channels", 1))
+    if n_in_cfg != layout["n_in"]:
+        raise RuntimeError(
+            f"input_mode={input_mode!r} with_gradmag={with_gradmag} expects "
+            f"model.n_in_channels={layout['n_in']}, got {n_in_cfg}"
+        )
     model = DensityViTMAE(
         grid_dim=int(cfg.vox.grid_dim),
         patch_size=int(cfg.model.patch_size),
-        n_in_channels=int(cfg.model.get("n_in_channels", 1)),
+        n_in_channels=n_in_cfg,
+        n_recon_channels=layout["n_recon"],
         n_channels=int(cfg.model.n_channels),
         dim=int(cfg.model.dim),
         depth=int(cfg.model.depth),
@@ -975,6 +1128,8 @@ def main(cfg: DictConfig) -> None:
     if is_main:
         logger.info(f"DensityViTMAE has {(n_params/1e6):.02f}M parameters "
                     f"(pretext_style={pretext_style}, input_mode={input_mode}, "
+                    f"with_gradmag={with_gradmag} (recon={gradmag_reconstruct}), "
+                    f"n_in={layout['n_in']} n_recon={layout['n_recon']}, "
                     f"dual_head={dual_head}, head_hidden_dim={head_hidden_dim or '(c_half)'}, head_depth={head_depth})")
 
     optimizer = AdamW(model.parameters(), lr=cfg.lr, weight_decay=cfg.wd)
@@ -1048,7 +1203,11 @@ def main(cfg: DictConfig) -> None:
     needs_dens_downweight = (
         input_mode in _density_modes and density_channel_weight != 1.0
     )
-    if needs_atom_weights or needs_dens_downweight:
+    # gradmag weight only enters the loss when gradmag is a reconstruction target.
+    needs_gradmag_weight = (
+        with_gradmag and gradmag_reconstruct and gradmag_channel_weight != 1.0
+    )
+    if needs_atom_weights or needs_dens_downweight or needs_gradmag_weight:
         if needs_atom_weights and input_mode not in _atomblob_modes:
             raise ValueError(
                 f"channel_weighting='inv_sqrt_freq' requires an atomblob* input_mode; "
@@ -1061,13 +1220,11 @@ def main(cfg: DictConfig) -> None:
             )
 
         merge_lig_poc = input_mode in _merged_modes
-        n_atom = 7 if merge_lig_poc else 11
-        # n_in expected per mode: atomblob=11, atomblob_density=12,
-        #                         atomblob_merged=7, atomblob_merged_density=8.
-        n_in_expected = n_atom + (1 if input_mode in _density_modes else 0)
+        n_atom = layout["n_atom"]          # 0 (density-only) / 7 (merged) / 11
+        n_density = layout["n_density"]
 
         # Atom-side weights: inv-sqrt-freq (rank 0 computes + caches; all ranks
-        # load from disk) OR uniform ones if only the density downweight is active.
+        # load from disk) OR uniform ones (length-0 when there are no atom channels).
         if needs_atom_weights:
             if is_main:
                 atom_w = precompute_channel_weights(
@@ -1084,33 +1241,32 @@ def main(cfg: DictConfig) -> None:
         else:
             atom_w = torch.ones(n_atom)
 
-        n_in = int(cfg.model.get("n_in_channels", 1))
-        if n_in != n_in_expected:
-            raise RuntimeError(
-                f"input_mode={input_mode!r} expects n_in_channels={n_in_expected}, got {n_in}"
-            )
-        if input_mode in _density_modes:
-            raw = torch.cat([atom_w, torch.tensor([density_channel_weight])], dim=0)
-            # Renormalize to sum = n_channels so L_pretext magnitude matches the
-            # unweighted (ch_weight=None) case. The atom:density gradient ratio is
-            # preserved through this rescale.
-            ch_weight = raw * (float(n_in) / float(raw.sum()))
-        else:
-            ch_weight = atom_w
+        # Reconstructed-channel weight vector [atoms, density?, gradmag?]; length
+        # = n_recon (gradmag excluded when input-only). Renormalized to sum =
+        # n_recon so L_pretext magnitude matches the unweighted case; inter-channel
+        # gradient ratios are preserved.
+        parts = [atom_w]
+        if n_density > 0:
+            parts.append(torch.tensor([density_channel_weight]))
+        if with_gradmag and gradmag_reconstruct:
+            parts.append(torch.tensor([gradmag_channel_weight]))
+        raw = torch.cat(parts, dim=0)
+        assert raw.shape[0] == layout["n_recon"], (
+            f"weight vector length {raw.shape[0]} != n_recon {layout['n_recon']}"
+        )
+        ch_weight = (raw * (float(layout["n_recon"]) / float(raw.sum()))).to(device)
 
-        ch_weight = ch_weight.to(device)
         if is_main:
             logger.info(
                 f"using channel weights on {ch_weight.shape[0]} channels "
                 f"(sum={float(ch_weight.sum()):.3f})  "
                 f"channel_weighting={ch_weighting}  density_channel_weight={density_channel_weight}  "
-                f"merge_lig_poc={merge_lig_poc}"
+                f"gradmag_channel_weight={gradmag_channel_weight}  merge_lig_poc={merge_lig_poc}"
             )
-            if input_mode in _density_modes:
-                logger.info(
-                    f"  effective atom weights sum = {float(ch_weight[:n_atom].sum()):.3f}  |  "
-                    f"effective density weight = {float(ch_weight[n_atom]):.4f}"
-                )
+            if n_density > 0:
+                logger.info(f"  effective density weight = {float(ch_weight[n_atom]):.4f}")
+            if with_gradmag and gradmag_reconstruct:
+                logger.info(f"  effective gradmag weight = {float(ch_weight[n_atom + n_density]):.4f}")
 
     sigma_blur_vox_range = (
         cfg.mae.sigma_blur_a_lo / cfg.vox.resolution,
@@ -1152,6 +1308,9 @@ def main(cfg: DictConfig) -> None:
             input_mode=input_mode,
             mask_strategy=str(cfg.mae.get("mask_strategy", "uniform")),
             mask_atom_tau=float(cfg.mae.get("mask_atom_tau", 1.0)),
+            with_gradmag=with_gradmag,
+            gradmag_reconstruct=gradmag_reconstruct,
+            gradmag_noise=gradmag_noise,
         )
         train_metrics, global_step = train_epoch(
             cfg, prefetcher, model, optimizer, model_ema, device, global_step,
