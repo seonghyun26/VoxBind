@@ -645,6 +645,11 @@ def _ch_freq_cache_path(cfg, n_samples: int, merge_lig_poc: bool = False) -> str
         "subset_xray_only": cfg.dset.get("subset_xray_only", False),
         "grid_dim": cfg.vox.grid_dim,
         "resolution": cfg.vox.resolution,
+        # Blob radii set per-channel atom-positive-voxel frequencies, so they
+        # must key the cache — else an element-wise-ligand run would reuse a
+        # uniform-radius freq blob and get wrong inv-sqrt-freq weights.
+        "ligand_radius": cfg.dset.get("ligand_radius", 0.5),
+        "pocket_radius": cfg.dset.get("pocket_radius", -1),
         "n_samples": n_samples,
         "pos_thresh": _CH_FREQ_POS_THRESH,
         "merge_lig_poc": merge_lig_poc,

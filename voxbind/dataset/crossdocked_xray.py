@@ -367,6 +367,18 @@ class DatasetCrossDockedXray(Dataset):
                 dtype=torch.float32,
             )
 
+        # Same LUT for ligand atoms: ligand_radius <= 0 ⇒ per-element vdW radii
+        # (mirrors the pocket path) instead of a single uniform radius. Used for
+        # the merged-channel pretext so a ligand-C and a pocket-C voxelize to the
+        # SAME blob size (blob width no longer leaks lig-vs-pocket source).
+        self.ligand_radius_lut: Optional[torch.Tensor] = None
+        if self.ligand_radius <= 0:
+            elements = list(ELEMENTS_HASH_CROSSDOCKED.keys())
+            self.ligand_radius_lut = torch.tensor(
+                [RADIUS_PER_ATOM["MOL"][e] for e in elements],
+                dtype=torch.float32,
+            )
+
         # Load data splits (same logic as DatasetCrossdocked). When the val
         # split is carved from the train pool, phys_split == "train" so it
         # reads the train slice of data_train.pt.
@@ -484,13 +496,17 @@ class DatasetCrossDockedXray(Dataset):
 
         # ── Ligand ────────────────────────────────────────────────────────────
         mask = ligand_["atoms_channel"] < 7
+        if self.ligand_radius > 0:
+            lig_radius = torch.full_like(
+                ligand_["atoms_channel"][mask], self.ligand_radius, dtype=torch.float32
+            )
+        else:
+            lig_radius = self.ligand_radius_lut[ligand_["atoms_channel"][mask].long()]
         ligand = {
             "id": ligand_["id"],
             "coords": ligand_["coords"][mask],
             "atoms_channel": ligand_["atoms_channel"][mask],
-            "radius": torch.full_like(
-                ligand_["atoms_channel"][mask], self.ligand_radius, dtype=torch.float32
-            ),
+            "radius": lig_radius,
         }
         # Ligand centroid in PDB Cartesian frame (used for density crop)
         center_coords = ligand["coords"].mean(dim=0)
