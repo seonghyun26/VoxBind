@@ -663,72 +663,82 @@ def precompute_channel_weights(
     train_dataset, voxelizer, cfg, device,
     n_samples: int = _CH_FREQ_DEFAULT_N_SAMPLES,
     merge_lig_poc: bool = False,
+    power: float = 0.5,
+    clip_ratio: float = 0.0,
 ) -> torch.Tensor:
-    """Compute per-channel atom-positive-voxel frequencies over a training subsample
-    and return inv-sqrt-frequency weights, normalized so sum = n_atom_channels
-    (= 11 when merge_lig_poc=False; = 7 when True) so the overall loss scale
-    matches the unweighted case.
+    """Per-channel atom-positive-voxel frequencies → inverse-frequency weights
+    `w = (1 / freq) ** power`, normalized so sum = n_atom_channels (= 11 when
+    merge_lig_poc=False; = 7 when True) so the overall loss scale matches the
+    unweighted case.
+
+        power = 0.5 → 1/sqrt(freq)  (gentle rebalancing)
+        power = 1.0 → 1/freq        (strong: rare atoms much heavier)
+
+    `clip_ratio > 0` caps the max/min weight ratio by raising the floor to
+    `w.max() / clip_ratio` BEFORE normalization, so the rarest atom can't
+    out-weight the most common one by more than `clip_ratio`×. Useful with
+    1/freq, where voxel-dense pocket atoms would otherwise collapse to ~0.01.
+
+    The per-channel frequencies are cached (keyed on dataset / grid / radius /
+    merge — NOT on power or clip), and the weight transform is applied on top,
+    so changing power or clip reuses the one freq scan.
 
     With `merge_lig_poc=True`, pocket atoms are folded into the first 4 channels
-    of the ligand 7-vec before counting — so the produced 7-vec corresponds to
-    'atoms-of-element-X' frequencies across both lig+poc.
-
-    Cached to disk under cfg.dset.data_dir; key includes dataset, grid, and
-    merge flag so the two variants don't collide.
+    of the ligand 7-vec before counting.
     """
+    n_atom_channels = 7 if merge_lig_poc else 11
     path = _ch_freq_cache_path(cfg, n_samples, merge_lig_poc=merge_lig_poc)
     if os.path.isfile(path):
         logger.info(f"loading channel-frequency cache from {path}")
-        blob = torch.load(path, weights_only=True)
-        return blob["weights"]
+        freq = torch.load(path, weights_only=True)["freq"].to(torch.float64)
+    else:
+        n = min(n_samples, len(train_dataset))
+        logger.info(
+            f"computing per-channel atom-voxel frequencies "
+            f"(merge_lig_poc={merge_lig_poc}, n_channels={n_atom_channels}) "
+            f"over {n} training samples..."
+        )
+        sum_per_ch = torch.zeros(n_atom_channels, dtype=torch.float64)
+        n_voxels_total = 0
+        with torch.no_grad():
+            for i in range(n):
+                sample = train_dataset[i]
+                lig = {k: sample["ligand"][k].unsqueeze(0).to(device)
+                       for k in ("coords", "radius", "atoms_channel")}
+                poc = {k: sample["pocket"][k].unsqueeze(0).to(device)
+                       for k in ("coords", "radius", "atoms_channel")}
+                v_lig = voxelizer.forward(lig, num_channels=7)
+                v_poc = voxelizer.forward(poc, num_channels=4)
+                if merge_lig_poc:
+                    atoms = _build_merged_atoms(v_lig, v_poc)          # (1, 7, G, G, G)
+                else:
+                    atoms = torch.cat([v_lig, v_poc], dim=1)           # (1, 11, G, G, G)
+                pos = (atoms > _CH_FREQ_POS_THRESH).float()
+                sum_per_ch += pos.sum(dim=(0, 2, 3, 4)).cpu().to(torch.float64)
+                n_voxels_total += atoms.shape[2] * atoms.shape[3] * atoms.shape[4]
+        freq = (sum_per_ch / max(1, n_voxels_total)).clamp(min=1e-8)   # pos-voxel frac
+        torch.save({"freq": freq.to(torch.float32), "n_samples": n,
+                    "pos_thresh": _CH_FREQ_POS_THRESH, "merge_lig_poc": merge_lig_poc}, path)
+        logger.info(f"saved channel-frequency cache to {path}")
 
-    n_atom_channels = 7 if merge_lig_poc else 11
-    n = min(n_samples, len(train_dataset))
-    logger.info(
-        f"computing per-channel atom-voxel frequencies "
-        f"(merge_lig_poc={merge_lig_poc}, n_channels={n_atom_channels}) "
-        f"over {n} training samples..."
-    )
-    sum_per_ch = torch.zeros(n_atom_channels, dtype=torch.float64)
-    n_voxels_total = 0
-    with torch.no_grad():
-        for i in range(n):
-            sample = train_dataset[i]
-            lig = {k: sample["ligand"][k].unsqueeze(0).to(device)
-                   for k in ("coords", "radius", "atoms_channel")}
-            poc = {k: sample["pocket"][k].unsqueeze(0).to(device)
-                   for k in ("coords", "radius", "atoms_channel")}
-            v_lig = voxelizer.forward(lig, num_channels=7)
-            v_poc = voxelizer.forward(poc, num_channels=4)
-            if merge_lig_poc:
-                atoms = _build_merged_atoms(v_lig, v_poc)          # (1, 7, G, G, G)
-            else:
-                atoms = torch.cat([v_lig, v_poc], dim=1)           # (1, 11, G, G, G)
-            pos = (atoms > _CH_FREQ_POS_THRESH).float()
-            sum_per_ch += pos.sum(dim=(0, 2, 3, 4)).cpu().to(torch.float64)
-            n_voxels_total += atoms.shape[2] * atoms.shape[3] * atoms.shape[4]
-
-    freq = (sum_per_ch / max(1, n_voxels_total)).clamp(min=1e-8)   # per-channel pos-voxel frac
-    w = 1.0 / freq.sqrt()
-    w = w / w.sum() * float(n_atom_channels)
-    w = w.to(torch.float32)
+    w = (1.0 / freq).pow(power)
+    if clip_ratio and clip_ratio > 0:
+        # Raise the floor so max/min ≤ clip_ratio (keeps rare-atom emphasis,
+        # gives crushed common/pocket channels a meaningful weight).
+        w = w.clamp(min=float(w.max()) / float(clip_ratio))
+    w = (w / w.sum() * float(n_atom_channels)).to(torch.float32)
 
     elem_lig = ["C", "O", "N", "S", "F", "Cl", "P"]
     elem_poc = ["C", "O", "N", "S"]
-    if merge_lig_poc:
-        names = [f"merged_{e}" for e in elem_lig]                  # 7 element types, lig+poc folded
-    else:
-        names = [f"lig_{e}" for e in elem_lig] + [f"poc_{e}" for e in elem_poc]
+    names = ([f"merged_{e}" for e in elem_lig] if merge_lig_poc
+             else [f"lig_{e}" for e in elem_lig] + [f"poc_{e}" for e in elem_poc])
+    scheme = "1/freq" if power == 1.0 else ("1/sqrt(freq)" if power == 0.5 else f"1/freq^{power}")
     logger.info(
-        f"per-channel atom frequencies (inv-sqrt-freq weights, norm to sum={n_atom_channels}):"
+        f"per-channel atom weights ({scheme}, clip_ratio={clip_ratio or 'off'}, "
+        f"norm to sum={n_atom_channels}; max/min={float(w.max()/w.min()):.1f}x):"
     )
     for i, name in enumerate(names):
         logger.info(f"  {name:>9}: freq={float(freq[i]):.3e}  weight={float(w[i]):.3f}")
-
-    blob = {"weights": w, "freq": freq.to(torch.float32), "n_samples": n,
-            "pos_thresh": _CH_FREQ_POS_THRESH, "merge_lig_poc": merge_lig_poc}
-    torch.save(blob, path)
-    logger.info(f"saved channel-frequency weights to {path}")
     return w
 
 
@@ -1196,12 +1206,18 @@ def main(cfg: DictConfig) -> None:
     # unweighted case (gradient share shifts; total mass preserved).
     ch_weight = None
     ch_weighting = str(cfg.mae.get("channel_weighting", "uniform"))
-    if ch_weighting not in ("uniform", "inv_sqrt_freq"):
+    if ch_weighting not in ("uniform", "inv_sqrt_freq", "inv_freq"):
         raise ValueError(
-            f"unknown channel_weighting={ch_weighting!r}; expected 'uniform' or 'inv_sqrt_freq'"
+            f"unknown channel_weighting={ch_weighting!r}; expected "
+            f"'uniform', 'inv_sqrt_freq', or 'inv_freq'"
         )
+    # Exponent on (1/freq): inv_sqrt_freq → 0.5 (gentle), inv_freq → 1.0 (strong).
+    freq_power = 1.0 if ch_weighting == "inv_freq" else 0.5
+    # Optional cap on the rare/common atom-weight ratio (0 = off); floors crushed
+    # channels so 1/freq doesn't collapse voxel-dense pocket atoms to ~0.01.
+    channel_weight_clip = float(cfg.mae.get("channel_weight_clip_ratio", 0.0))
     density_channel_weight = float(cfg.mae.get("density_channel_weight", 1.0))
-    needs_atom_weights = (ch_weighting == "inv_sqrt_freq")
+    needs_atom_weights = ch_weighting in ("inv_sqrt_freq", "inv_freq")
     _atomblob_modes = ("atomblob", "atomblob_density", "atomblob_merged", "atomblob_merged_density")
     _density_modes = ("atomblob_density", "atomblob_merged_density")
     _merged_modes  = ("atomblob_merged", "atomblob_merged_density")
@@ -1215,7 +1231,7 @@ def main(cfg: DictConfig) -> None:
     if needs_atom_weights or needs_dens_downweight or needs_gradmag_weight:
         if needs_atom_weights and input_mode not in _atomblob_modes:
             raise ValueError(
-                f"channel_weighting='inv_sqrt_freq' requires an atomblob* input_mode; "
+                f"channel_weighting={ch_weighting!r} requires an atomblob* input_mode; "
                 f"got input_mode={input_mode!r}"
             )
         if needs_dens_downweight and input_mode not in _density_modes:
@@ -1235,6 +1251,7 @@ def main(cfg: DictConfig) -> None:
                 atom_w = precompute_channel_weights(
                     loader_train.dataset, voxelizer, cfg, device=device,
                     merge_lig_poc=merge_lig_poc,
+                    power=freq_power, clip_ratio=channel_weight_clip,
                 )
             if world_size > 1:
                 dist.barrier()
@@ -1242,6 +1259,7 @@ def main(cfg: DictConfig) -> None:
                 atom_w = precompute_channel_weights(
                     loader_train.dataset, voxelizer, cfg, device=device,
                     merge_lig_poc=merge_lig_poc,
+                    power=freq_power, clip_ratio=channel_weight_clip,
                 )
         else:
             atom_w = torch.ones(n_atom)
@@ -1265,7 +1283,8 @@ def main(cfg: DictConfig) -> None:
             logger.info(
                 f"using channel weights on {ch_weight.shape[0]} channels "
                 f"(sum={float(ch_weight.sum()):.3f})  "
-                f"channel_weighting={ch_weighting}  density_channel_weight={density_channel_weight}  "
+                f"channel_weighting={ch_weighting}  channel_weight_clip_ratio={channel_weight_clip or 'off'}  "
+                f"density_channel_weight={density_channel_weight}  "
                 f"gradmag_channel_weight={gradmag_channel_weight}  merge_lig_poc={merge_lig_poc}"
             )
             if n_density > 0:
