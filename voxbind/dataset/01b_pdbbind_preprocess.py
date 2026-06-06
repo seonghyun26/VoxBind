@@ -40,7 +40,7 @@ the ligand's center of mass") and the existing VoxBind training pipeline.
 ──────────────────────────────────────────────────────────────────────────────
 poolnorm — pocket-pool density normalisations (v2: z-score, v3: max-abs, v4: clip+z)
 ──────────────────────────────────────────────────────────────────────────────
-Produces THREE new density-crop variants from the raw CCP4 maps in
+Produces FOUR new density-crop variants from the raw CCP4 maps in
 dataset/data/pdbbind/ccp4/, normalised against the pool of all pocket crops
 (not per-map, not per-crop):
 
@@ -61,18 +61,27 @@ dataset/data/pdbbind/ccp4/, normalised against the pool of all pocket crops
        atom tail to a ≈ +5σ ceiling while keeping atom signal at unit scale that
        v3's max-abs collapses to ~0.01. Override the window with --clip_lo/--clip_hi.
 
-All three schemes:
+  v5 — pocket-pool arcsinh soft-squash + z-score (NO clip)
+       x' = (arcsinh(x / s) − μ_a) / σ_a
+       Instead of clipping, squash the bright-peak tail SMOOTHLY: arcsinh(x/s) is
+       ~linear for |x|<<s and ~log for |x|>>s, so the near-zero bulk is preserved
+       and the +30 metal peaks compress to ≈+9 (s=0.5) with NO clip and NO pile-up
+       spike — every voxel kept. Contrast: plain z-score (v2) leaves that peak at
+       +92. Tune the squash with --v5_arcsinh_scale (smaller = harder).
+
+All four schemes:
   - SKIP the per-map z-score that `_load_grid` does in v1 (use raw CCP4 values)
   - SKIP the per-crop ±3σ clip that `normalize_crop` does in v1
   - apply ONE dataset-wide statistic derived from all pocket crops
 
-Atom voxels (11, 64, 64, 64) are NOT affected — v2/v3/v4 reuse the existing
+Atom voxels (11, 64, 64, 64) are NOT affected — v2/v3/v4/v5 reuse the existing
 voxels/atoms/ directory via symlinks.
 
     python dataset/01b_pdbbind_preprocess.py poolnorm
   → voxels_v2/density/{pid}.npy  voxels_v2/atoms→../voxels/atoms  voxels_v2/stats.json
     voxels_v3/density/{pid}.npy  voxels_v3/atoms→../voxels/atoms  voxels_v3/stats.json
     voxels_v4/density/{pid}.npy  voxels_v4/atoms→../voxels/atoms  voxels_v4/stats.json
+    voxels_v5/density/{pid}.npy  voxels_v5/atoms→../voxels/atoms  voxels_v5/stats.json
 """
 
 import argparse
@@ -111,6 +120,7 @@ ATOMS_DIR_V1 = VOX_DIR / "atoms"
 V2_DIR       = PDBBIND_DIR / "voxels_v2"
 V3_DIR       = PDBBIND_DIR / "voxels_v3"
 V4_DIR       = PDBBIND_DIR / "voxels_v4"
+V5_DIR       = PDBBIND_DIR / "voxels_v5"
 
 N_LIG_CH = 7   # C,O,N,S,F,Cl,P
 N_POC_CH = 4   # C,O,N,S
@@ -126,9 +136,18 @@ CUBES_AROUND = 8
 CLIP_LO = -0.578
 CLIP_HI = +1.647
 
+# v5 soft-squashes the bright-peak tail with arcsinh (NO clip → no pile-up spike),
+# then z-scores. arcsinh(x/s) is ~linear for |x|<<s and ~log for |x|>>s, so the
+# near-zero bulk is preserved and the +30 metal peaks compress smoothly (s=0.5 →
+# raw +30 maps to ≈+9 after z-score, vs +92 for a plain z-score / v2). Every voxel
+# is kept. Tune with --v5_arcsinh_scale (smaller s = harder tail squash).
+V5_ARCSINH_SCALE = 0.5
+
 # Element → channel index lookup (matches voxbind.constants.ELEMENTS_HASH_CROSSDOCKED)
 _E2CH = ELEMENTS_HASH_CROSSDOCKED   # {"C":0, "O":1, "N":2, "S":3, "F":4, "Cl":5, "P":6, "H":7}
-_POCKET_RADIUS_LUT = torch.tensor(
+# Element-wise vdW radii (Å), shared by pocket atoms and — when --ligand_vdw is
+# set — ligand atoms (mirrors crossdocked_xray's pocket / ligand_radius<=0 path).
+_VDW_RADIUS_LUT = torch.tensor(
     [RADIUS_PER_ATOM["MOL"][e] for e in _E2CH.keys()],
     dtype=torch.float32,
 )
@@ -216,8 +235,13 @@ def voxelize_complex(
     poc_xyz: torch.Tensor, poc_ch: torch.Tensor,
     voxelizer: Voxelizer,
     device: str,
+    ligand_vdw: bool = False,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Return ((11,G,G,G) atom voxels, (3,) ligand COM in deposited frame)."""
+    """Return ((11,G,G,G) atom voxels, (3,) ligand COM in deposited frame).
+
+    ligand_vdw=True gives ligand atoms element-wise vdW radii (instead of the
+    uniform LIGAND_RAD blob), matching an encoder trained with ligand_radius<=0.
+    """
     # Heavy-atom COM in deposited frame (used later for density cropping).
     lig_com = lig_xyz.mean(dim=0)
 
@@ -225,8 +249,11 @@ def voxelize_complex(
     lig_xyz_c = (lig_xyz - lig_com).clamp(-25, 25)
     poc_xyz_c = (poc_xyz - lig_com).clamp(-25, 25)
 
-    lig_rad = torch.full_like(lig_ch, LIGAND_RAD, dtype=torch.float32)
-    poc_rad = _POCKET_RADIUS_LUT[poc_ch]
+    if ligand_vdw:
+        lig_rad = _VDW_RADIUS_LUT[lig_ch]                # element-wise vdW (ligand_radius<=0 path)
+    else:
+        lig_rad = torch.full_like(lig_ch, LIGAND_RAD, dtype=torch.float32)
+    poc_rad = _VDW_RADIUS_LUT[poc_ch]
 
     # Voxelizer expects (B, N, *) shapes; B=1 here.
     lig_dict = {
@@ -283,6 +310,7 @@ def run_voxelize(args: argparse.Namespace) -> None:
     print(f"  out_dir    : {out_dir}")
     print(f"  device     : {args.device}")
     print(f"  no_density : {args.no_density}")
+    print(f"  ligand_vdw : {args.ligand_vdw}")
     print(f"  overwrite  : {args.overwrite}")
 
     df = pd.read_csv(index_csv)
@@ -334,6 +362,7 @@ def run_voxelize(args: argparse.Namespace) -> None:
 
             v_atom, lig_com = voxelize_complex(
                 lig_xyz, lig_ch, poc_xyz, poc_ch, voxelizer, args.device,
+                ligand_vdw=args.ligand_vdw,
             )
             if wants_atom:
                 np.save(str(atom_path), v_atom.astype(np.float16))
@@ -436,25 +465,29 @@ def run_poolnorm(args: argparse.Namespace) -> None:
     v2_dir     = Path(args.v2_dir)
     v3_dir     = Path(args.v3_dir)
     v4_dir     = Path(args.v4_dir)
+    v5_dir     = Path(args.v5_dir)
 
     v2_dens = v2_dir / "density"; v2_dens.mkdir(parents=True, exist_ok=True)
     v3_dens = v3_dir / "density"; v3_dens.mkdir(parents=True, exist_ok=True)
     v4_dens = v4_dir / "density"; v4_dens.mkdir(parents=True, exist_ok=True)
+    v5_dens = v5_dir / "density"; v5_dens.mkdir(parents=True, exist_ok=True)
 
-    # Symlink atoms (v2/v3/v4 reuse v1's atom voxels)
-    for parent in (v2_dir, v3_dir, v4_dir):
+    # Symlink atoms (v2/v3/v4/v5 reuse v1's atom voxels)
+    for parent in (v2_dir, v3_dir, v4_dir, v5_dir):
         link = parent / "atoms"
         if not link.exists() and not link.is_symlink():
             os.symlink(atoms_dir, link)
             print(f"  [symlink] {link} → {atoms_dir}")
 
-    print("=== PDBbind v2/v3/v4 density normalisations (pocket dataset-wide) ===")
+    print("=== PDBbind v2/v3/v4/v5 density normalisations (pocket dataset-wide) ===")
     print(f"  index_csv : {index_csv}")
     print(f"  ccp4_dir  : {ccp4_dir}")
     print(f"  v2_dir    : {v2_dir}")
     print(f"  v3_dir    : {v3_dir}")
     print(f"  v4_dir    : {v4_dir}")
-    print(f"  clip      : [{args.clip_lo:+.3f}, {args.clip_hi:+.3f}]  (raw 2Fo-Fc units)")
+    print(f"  v5_dir    : {v5_dir}")
+    print(f"  v4 clip   : [{args.clip_lo:+.3f}, {args.clip_hi:+.3f}]  (raw 2Fo-Fc units)")
+    print(f"  v5 norm   : arcsinh(x / {args.v5_arcsinh_scale}) → z-score  (soft-squash, no clip)")
 
     df = pd.read_csv(index_csv)
     df = df[df["has_struct"].astype(bool)].reset_index(drop=True)
@@ -523,6 +556,18 @@ def run_poolnorm(args: argparse.Namespace) -> None:
     var_clip     = sum_cv2 / n_voxels - mu_clip * mu_clip
     sigma_clip   = float(np.sqrt(max(var_clip, 0.0)))
 
+    # v5: arcsinh soft-squash (NO clip → no pile-up spike), then z-score over the
+    # squashed pool. arcsinh(x/s) is ~linear for |x|<<s and ~log for |x|>>s, so the
+    # near-zero bulk is preserved and the bright metal-peak tail compresses smoothly
+    # (raw +30 → ~+9 vs +92 for plain z-score). Every voxel is used. s = scale.
+    s5 = args.v5_arcsinh_scale
+    sum_a5 = sum_a2_5 = 0.0
+    for _c in crops.values():
+        _a = np.arcsinh(_c.astype(np.float64) / s5)
+        sum_a5 += _a.sum(); sum_a2_5 += (_a * _a).sum()
+    mu_a5    = sum_a5 / n_voxels
+    sigma_a5 = float(np.sqrt(max(sum_a2_5 / n_voxels - mu_a5 * mu_a5, 0.0)))
+
     print(f"\n── pocket-pool dataset-wide stats ─────────────────────────────")
     print(f"  n_crops          : {len(crops):,}")
     print(f"  n_voxels (total) : {n_voxels:,}")
@@ -533,6 +578,7 @@ def run_poolnorm(args: argparse.Namespace) -> None:
     print(f"  v4 clip          : [{args.clip_lo:+.3f}, {args.clip_hi:+.3f}]")
     print(f"  μ_clip           : {mu_clip:+.6f}")
     print(f"  σ_clip           : {sigma_clip:.6f}")
+    print(f"  v5 arcsinh s={args.v5_arcsinh_scale} : μ_a {mu_a5:+.6f}  σ_a {sigma_a5:.6f}")
     print(f"  skipped          : {n_skipped:,}")
 
     stats_v2 = {
@@ -566,9 +612,21 @@ def run_poolnorm(args: argparse.Namespace) -> None:
         "raw_min":        min_v,
         "raw_max":        max_v,
     }
+    stats_v5 = {
+        "scheme":         "pocket-pool arcsinh soft-squash + z-score (no clip)",
+        "formula":        "x' = (arcsinh(x / s) - mu_a) / sigma_a",
+        "arcsinh_scale":  s5,
+        "mu_a":           mu_a5,
+        "sigma_a":        sigma_a5,
+        "n_crops":        len(crops),
+        "n_voxels_total": n_voxels,
+        "raw_min":        min_v,
+        "raw_max":        max_v,
+    }
     (v2_dir / "stats.json").write_text(json.dumps(stats_v2, indent=2))
     (v3_dir / "stats.json").write_text(json.dumps(stats_v3, indent=2))
     (v4_dir / "stats.json").write_text(json.dumps(stats_v4, indent=2))
+    (v5_dir / "stats.json").write_text(json.dumps(stats_v5, indent=2))
 
     # ── Pass 2: apply v2, v3, v4 normalisations, save to disk ─────────────────
     print(f"\n── pass 2: apply normalisations + save ────────────────────────")
@@ -577,20 +635,23 @@ def run_poolnorm(args: argparse.Namespace) -> None:
         c_v2 = ((c - mu_pool) / sigma_pool).astype(np.float16)
         c_v3 = (c / max_abs_pool).astype(np.float16)
         c_v4 = ((np.clip(c, args.clip_lo, args.clip_hi) - mu_clip) / sigma_clip).astype(np.float16)
+        c_v5 = ((np.arcsinh(c / s5) - mu_a5) / sigma_a5).astype(np.float16)
         np.save(str(v2_dens / f"{pid}.npy"), c_v2)
         np.save(str(v3_dens / f"{pid}.npy"), c_v3)
         np.save(str(v4_dens / f"{pid}.npy"), c_v4)
+        np.save(str(v5_dens / f"{pid}.npy"), c_v5)
 
     if skip_log:
-        skip_path = PDBBIND_DIR / "voxels_v2_v3_v4_skip_log.txt"
+        skip_path = PDBBIND_DIR / "voxels_poolnorm_skip_log.txt"
         skip_path.write_text("\n".join(f"{p}\t{m}" for p, m in skip_log) + "\n")
         print(f"  skip log         : {skip_path}")
 
     print(f"\n  v2 crops written : {len(crops):,} → {v2_dens}")
     print(f"  v3 crops written : {len(crops):,} → {v3_dens}")
     print(f"  v4 crops written : {len(crops):,} → {v4_dens}")
-    print(f"  stats jsons      : {v2_dir / 'stats.json'} | {v3_dir / 'stats.json'} | {v4_dir / 'stats.json'}")
-    print("\n  Next:  python dataset/01c_pdbbind_probe.py features --voxel_version v2  (or v3, v4)")
+    print(f"  v5 crops written : {len(crops):,} → {v5_dens}")
+    print(f"  stats jsons      : v2 | v3 | v4 | v5  (each <dir>/stats.json)")
+    print("\n  Next:  python dataset/01c_pdbbind_probe.py features --voxel_version v2  (or v3, v4, v5)")
 
 
 # ── CLI ────────────────────────────────────────────────────────────────────────
@@ -616,13 +677,17 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Limit to first N complexes (0 = all). Smoke testing.")
     pv.add_argument("--no_density", action="store_true",
                     help="Skip CCP4 crop (atom voxels only)")
+    pv.add_argument("--ligand_vdw", action="store_true",
+                    help="Element-wise vdW ligand radii (mirrors crossdocked_xray "
+                         "ligand_radius<=0) instead of the uniform 0.5 A blob. Match "
+                         "to a gradmag/ligvdw encoder; write to a separate --out_dir.")
     pv.add_argument("--overwrite",  action="store_true",
                     help="Recompute outputs even if .npy already exists")
     pv.set_defaults(func=run_voxelize)
 
     pp = sub.add_parser(
         "poolnorm",
-        help="Pocket-pool density normalisations (v2: z-score, v3: max-abs, v4: clip+z)",
+        help="Pocket-pool density normalisations (v2: z-score, v3: max-abs, v4: clip+z, v5: arcsinh+z)",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     pp.add_argument("--index_csv",  default=str(INDEX_CSV))
@@ -633,10 +698,13 @@ def build_parser() -> argparse.ArgumentParser:
     pp.add_argument("--v2_dir",     default=str(V2_DIR))
     pp.add_argument("--v3_dir",     default=str(V3_DIR))
     pp.add_argument("--v4_dir",     default=str(V4_DIR))
+    pp.add_argument("--v5_dir",     default=str(V5_DIR))
     pp.add_argument("--clip_lo", type=float, default=CLIP_LO,
                     help="v4 lower clip threshold (raw 2Fo-Fc units)")
     pp.add_argument("--clip_hi", type=float, default=CLIP_HI,
                     help="v4 upper clip threshold (raw 2Fo-Fc units)")
+    pp.add_argument("--v5_arcsinh_scale", type=float, default=V5_ARCSINH_SCALE,
+                    help="v5 arcsinh scale s in arcsinh(x/s) (smaller = harder tail squash)")
     pp.add_argument("--max_complexes", type=int, default=0,
                     help="Limit to first N (0 = all). Smoke testing.")
     pp.set_defaults(func=run_poolnorm)

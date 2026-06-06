@@ -1,0 +1,159 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"/>
+<title>Does density transfer to protein–drug? — research meeting (2026-06-04)</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+         max-width: 980px; margin: 2.2em auto; padding: 0 1.5em; color: #1a202c; line-height: 1.45; }
+  h1 { font-size: 1.5em; margin-bottom: 0.2em; border-bottom: 2px solid #2d3748; padding-bottom: 0.3em; }
+  h2 { font-size: 1.15em; margin-top: 1.8em; border-left: 4px solid #2b6cb0; padding-left: 0.6em; color: #2d3748; }
+  h3 { font-size: 1.0em; margin-top: 1.4em; color: #2d3748; }
+  h4 { font-size: 0.92em; margin: 0.7em 0 0.3em; color: #4a5568; }
+  .meta { color: #718096; font-size: 0.85em; margin-bottom: 1.5em; }
+  .tldr { background: #ebf8ff; border-left: 4px solid #2b6cb0; padding: 0.8em 1em;
+          border-radius: 4px; margin: 1em 0; font-size: 0.96em; }
+  .key  { background: #f0fff4; border-left: 4px solid #38a169; padding: 0.6em 0.9em;
+          border-radius: 4px; margin: 0.8em 0; font-size: 0.9em; }
+  .warn { background: #fffaf0; border-left: 4px solid #dd6b20; padding: 0.6em 0.9em;
+          border-radius: 4px; margin: 0.8em 0; font-size: 0.9em; }
+  .q    { background: #faf5ff; border-left: 4px solid #805ad5; padding: 0.7em 1em;
+          border-radius: 4px; margin: 0.9em 0; font-size: 0.95em; }
+  table { border-collapse: collapse; width: 100%; margin: 0.7em 0; font-size: 0.86em; }
+  th, td { padding: 5px 8px; text-align: left; border-bottom: 1px solid #e2e8f0; vertical-align: middle; }
+  th { background: #f7fafc; font-weight: 600; color: #2d3748; }
+  td.num { font-family: "SF Mono", Menlo, monospace; text-align: right; }
+  th.num { text-align: right; }
+  .good { color: #38a169; font-weight: 600; }
+  .bad  { color: #e53e3e; font-weight: 600; }
+  .neut { color: #4a5568; }
+  .win  { background: #f0fff4; }
+  code { background: #edf2f7; padding: 0.08em 0.35em; border-radius: 3px; font-size: 0.88em; }
+  pre  { background: #f7fafc; padding: 0.7em 1em; border-radius: 4px; overflow-x: auto;
+         font-size: 0.82em; border: 1px solid #e2e8f0; }
+  .chip { display:inline-block; padding: 0.05em 0.5em; border-radius: 10px; font-size: 0.82em; font-weight:600; }
+  .chip.yes { background:#c6f6d5; color:#22543d; }
+  .chip.no  { background:#fed7d7; color:#742a2a; }
+  .chip.maybe { background:#feebc8; color:#7b341e; }
+  .matrix { width:auto; margin:0.8em 0; }
+  .matrix td, .matrix th { text-align:center; border:1px solid #cbd5e0; padding:8px 14px; }
+  .matrix .done { background:#e6fffa; color:#234e52; }
+  .matrix .ask  { background:#faf5ff; color:#553c9a; font-weight:600; }
+  .matrix .na   { background:#f7fafc; color:#a0aec0; }
+  .appendix { margin-top: 3em; padding-top: 1em; border-top: 2px dashed #cbd5e0;
+              color: #4a5568; font-size: 0.92em; }
+  .appendix h2 { border-left-color: #a0aec0; }
+  .footnote { font-size: 0.8em; color: #718096; margin-top: 0.4em; }
+  ol li, ul li { margin: 0.25em 0; }
+</style></head><body>
+<h1>Does experimental density transfer to protein&ndash;drug tasks?</h1>
+<div class="meta">Hyun &middot; research meeting 2026-06-04 &middot; covers experiments 2026-05-17 &rarr; 2026-06-04 &middot; branch <code>main</code></div>
+
+<div class="tldr">
+<b>Question.</b> Electron-density inputs have helped in <b>protein&ndash;protein</b> structure work and on <b>regression</b> read-outs. Does that benefit carry over to the <b>protein&ndash;drug</b> setting, on both a <b>regression</b> task (binding-affinity prediction) and a <b>generative</b> task (de&nbsp;novo ligand design)?<br>
+<b>Answer (so far): transfer is partial and asymmetric.</b>
+On the <b>generative</b> task density is a <i>conditional</i> win &mdash; the model demonstrably uses real density (beats a structureless-noise control) and, once self-supervised pre-training + crop alignment are added, the density branch buys <b>&minus;0.67&nbsp;kcal/mol Vina-dock</b> and <b>+15.7&nbsp;pts high-affinity</b> at 10&times; less data <span class="chip maybe">conditional yes</span>.
+On the <b>regression</b> task density <b>does not help at all</b> &mdash; a coords-only atom encoder (&rho;&nbsp;=&nbsp;<b>0.473</b>) beats every density-fed variant, and feeding experimental density at full strength actively degrades the representation (&rho; down to 0.26) <span class="chip no">no</span>.
+<b>Working interpretation (hypothesis, not yet proven &mdash; see next-step&nbsp;#4):</b> density may act as a spatial <i>prior</i> for <i>where atoms go</i> (helping generation) while carrying little <i>binding-affinity</i> signal beyond atom coordinates (failing regression). Both checks are scored on docking/affinity read-outs, so this placement-vs-affinity split is a conjecture to test, not a measured result.
+</div>
+
+<h2>1. Hypothesis &amp; roadmap</h2>
+<p>Prior evidence establishes density as a useful signal along two separate axes &mdash; in <b>protein&ndash;protein</b> structural modelling, and on <b>regression</b> read-outs generally. VoxBind sits in the unexplored corner: <b>protein&ndash;drug</b>. We test that corner on <i>both</i> task types.</p>
+
+<table class="matrix">
+<thead><tr><th></th><th>Regression task</th><th>Generative task</th></tr></thead>
+<tbody>
+<tr><th>Protein&ndash;protein</th><td class="done">density helps<br><span class="footnote">established (CryoProt)</span></td><td class="na">out of scope</td></tr>
+<tr><th>Protein&ndash;drug</th><td class="ask">CHECK&nbsp;1<br><span class="footnote">PDBbind affinity probe</span></td><td class="ask">CHECK&nbsp;2<br><span class="footnote">VoxBind generation + docking</span></td></tr>
+</tbody></table>
+
+<div class="q">
+<b>H1 (regression).</b> If experimental density encodes binding-relevant chemistry (heavy-atom identity, occupancy, ordered solvent), a frozen density-fed pocket encoder should predict protein&ndash;ligand affinity <i>better</i> than an atom-coordinate-only encoder.<br>
+<b>H2 (generative).</b> Conditioning a voxel-diffusion generator on pocket density should produce <i>better-binding</i> ligands than conditioning on atom coordinates alone (or on no pocket signal).
+</div>
+
+<h2>2. Experiments</h2>
+
+<h3>2.1 &nbsp;Check&nbsp;1 &mdash; Protein&ndash;drug &times; regression (PDBbind affinity probe)</h3>
+<p><b>Setup.</b> Freeze each pre-trained 40M ViT-MAE pocket encoder, extract pocket features, fit a 2-layer MLP head to predict PDBbind binding affinity (&minus;log<i>K</i>). Report rank correlation (<b>Spearman&nbsp;&rho;</b>) and linear correlation (<b>Pearson&nbsp;r</b>, on both the held-out <b>test</b> and the model-selection <b>val</b> split), mean&nbsp;&plusmn;&nbsp;std over 3 seeds on a fixed split (train&nbsp;2,704&nbsp;/ val&nbsp;580&nbsp;/ test&nbsp;1,310), drawn from the 4,827-complex shared-encoder intersection. The only thing that changes between rows is <i>what the encoder was fed during pre-training</i>: atom voxels alone vs. atom voxels + experimental X-ray density (with various density normalisations).</p>
+
+<table>
+<thead><tr><th>Encoder input (pre-training)</th><th>density&nbsp;norm.</th><th class="num">test&nbsp;&rho;<br><span class="footnote">Spearman</span></th><th class="num">test&nbsp;r<br><span class="footnote">Pearson</span></th><th class="num">val&nbsp;r<br><span class="footnote">Pearson</span></th><th>vs. coords<br><span class="footnote">(test &rho;)</span></th></tr></thead>
+<tbody>
+<!-- <tr class="win"><td><b>atom voxels only</b> (<code>atomblob_weighted</code>)</td><td class="neut">&mdash;</td><td class="num"><b>0.473 &plusmn; 0.005</b></td><td class="num"><b>0.511 &plusmn; 0.003</b></td><td class="num"><b>0.558 &plusmn; 0.002</b></td><td><span class="chip yes">best overall</span></td></tr> -->
+<tr class=""win"><td>atom voxels only (<code>atomblob</code>)</td><td class="neut">&mdash;</td><td class="num">0.421 &plusmn; 0.004</td><td class="num">0.452 &plusmn; 0.003</td><td class="num">0.510 &plusmn; 0.002</td><td class="neut">reference</td></tr>
+<tr><td>atoms + density (merged, max-abs)</td><td>v3</td><td class="num">0.422 &plusmn; 0.009</td><td class="num">0.461 &plusmn; 0.009</td><td class="num">0.526 &plusmn; 0.004</td><td class="neut">ties coords*</td></tr>
+<tr><td>atoms + density (merged, pool z-score)</td><td>v2</td><td class="num">0.342 &plusmn; 0.005</td><td class="num">0.362 &plusmn; 0.005</td><td class="num">0.485 &plusmn; 0.005</td><td class="bad">&minus;0.08</td></tr>
+<tr><td>atoms + density (12-ch separate)</td><td>v1 (clip)</td><td class="num">0.328 &plusmn; 0.005</td><td class="num">0.351 &plusmn; 0.006</td><td class="num">0.421 &plusmn; 0.003</td><td class="bad">&minus;0.09</td></tr>
+<tr><td>atoms + density + &Vert;&nabla;&rho;&Vert; edge ch.</td><td>v4 + zscore</td><td class="num">0.304 &plusmn; 0.017</td><td class="num">0.331 &plusmn; 0.015</td><td class="num">0.473 &plusmn; 0.009</td><td class="bad">&minus;0.12</td></tr>
+<tr><td>atoms + density (merged, clip)</td><td>v1</td><td class="num">0.296 &plusmn; 0.004</td><td class="num">0.317 &plusmn; 0.005</td><td class="num">0.456 &plusmn; 0.002</td><td class="bad">&minus;0.13</td></tr>
+<tr><td>atoms + density (merged, clip+z, dual-head)</td><td>v4</td><td class="num">0.261 &plusmn; 0.007</td><td class="num">0.258 &plusmn; 0.014</td><td class="num">0.392 &plusmn; 0.004</td><td class="bad">&minus;0.16</td></tr>
+</tbody></table>
+<p class="footnote">*v3 (max-abs) is the only density variant to reach the plain-<code>atomblob</code> level &mdash; it ties it on Spearman (0.422 vs 0.421) and slightly edges it on Pearson (test r 0.461 vs 0.452), but still trails the best coords encoder <code>atomblob_weighted</code> (r 0.511) on every metric. It reaches even that level only by <i>shrinking the density channel ~92&times;</i> &mdash; v3 is exactly v2&times;0.011, the same map scaled down. Verified in code: the MAE reconstructs density with plain MSE and no per-channel re-norm, so a channel's training weight &prop; (its scale)&sup2;. The ranking is monotonic in density "loudness": the quieter the density channel, the closer the encoder reverts to the atom-only baseline. v3 effectively <i>mutes</i> density rather than representing it.</p>
+<div class="warn">
+<b>Check&nbsp;1 verdict <span class="chip no">density does NOT help regression</span>.</b> No density-fed encoder beats the best coords-only encoder on any metric: <code>atomblob_weighted</code> (&rho;&nbsp;0.473&nbsp;/ test&nbsp;r&nbsp;0.511&nbsp;/ val&nbsp;r&nbsp;0.558) leads everything. The best density variant (v3) only reaches the <i>plain</i>-<code>atomblob</code> level &mdash; and only by nearly disabling its own density input. When density is given real training weight (v1/v2/v4) the representation gets <i>worse</i>, not better &mdash; consistently across both Spearman and Pearson, val and test. <b>Experimental density adds no usable affinity signal on top of atom coordinates.</b>
+</div>
+
+<h3>2.2 &nbsp;Check&nbsp;2 &mdash; Protein&ndash;drug &times; generative (VoxBind generation + Vina docking)</h3>
+<p><b>Setup.</b> VoxBind is a 3-D voxel-diffusion ligand generator conditioned on a pocket density branch. We ran two complementary tests. <b>(a)&nbsp;Content A/B:</b> identical architecture &amp; data, swapping the density channel between <i>real</i> X-ray density, a <i>structureless smoothed-noise</i> control (density-like texture, no ligand signal), and <i>no</i> density branch &mdash; isolates whether the model uses density <i>content</i>. <b>(b)&nbsp;Capability test:</b> add self-supervised (ViT-MAE) pre-training of the density encoder + crop-frame alignment, at a fixed 10k-pocket budget. Vina-dock energy, kcal/mol, lower&nbsp;=&nbsp;stronger.</p>
+
+<h4>(a) Content A/B &mdash; does the generator use real density? (Vina-dock mean)</h4>
+<table>
+<thead><tr><th>Arm</th><th class="num">pilot (11 val pockets)</th><th class="num">10k subset (test)</th></tr></thead>
+<tbody>
+<tr class="win"><td><b>real density</b></td><td class="num">&minus;8.24</td><td class="num">&minus;7.49&nbsp;<span class="footnote">(65p)</span></td></tr>
+<tr><td>no-density baseline</td><td class="num">&minus;8.36</td><td class="num">&mdash;</td></tr>
+<tr><td>structureless noise</td><td class="num">&minus;7.70</td><td class="num">&minus;7.37&nbsp;<span class="footnote">(62p)</span></td></tr>
+</tbody></table>
+<p class="footnote">Real density beats the noise control by <b>+0.54</b> (pilot) and <b>+0.11</b> (10k) kcal/mol &mdash; the generator genuinely exploits density <i>content</i>, not just "having a smooth extra channel." But raw density-conditioning only <i>ties</i> the no-density baseline (&minus;8.24 vs &minus;8.36) at small scale.</p>
+
+<h4>(b) Capability test &mdash; SSL-pre-trained density branch at 10k (overlap-only &Delta; vs no-density baseline)</h4>
+<table>
+<thead><tr>
+  <th>Density configuration</th><th class="num">n overlap</th>
+  <th class="num">&Delta; Vina-dock</th><th class="num">&Delta; high-affinity&nbsp;%</th>
+</tr></thead><tbody>
+<tr><td>density branch only (aligned crops, no SSL)</td><td class="num">50</td><td class="num good">&minus;0.26</td><td class="num good">+2.4</td></tr>
+<tr class="win"><td><b>+ ViT-MAE self-supervised pre-training</b></td><td class="num">79</td><td class="num good">&minus;0.67</td><td class="num good">+15.7</td></tr>
+</tbody></table>
+<p class="footnote">Full-arm aggregates: no-density 10k &minus;7.14 / 45.7&nbsp;HA% &middot; aligned density (no SSL) &minus;7.35 / 52.4 &middot; ViT-MAE density &minus;7.85 / 64.3 &middot; full-data coords-only reproduction &minus;7.99 / 62.5. The SSL density branch (10&times; less data) lands within 0.14&nbsp;kcal/mol of the full-data reproduction on Vina-dock &mdash; where full-data coords-only is still strongest (&minus;7.99). Note on high-affinity&nbsp;% the SSL density arm (64.3) actually edges the full-data reproduction (62.5), so "ceiling" applies to dock energy, not to every metric.</p>
+<div class="key">
+<b>Check&nbsp;2 verdict <span class="chip maybe">density helps generation, conditionally</span>.</b> The generator uses real density (beats the noise control), and with SSL pre-training + alignment the density branch becomes a clear <b>data-efficiency</b> lever: <b>&minus;0.67&nbsp;kcal/mol</b> and <b>+15.7&nbsp;HA%</b> over no-density at the same 10k budget. The caveat: <i>raw</i> density-conditioning (no SSL) only matches the no-density baseline, and full-data coords-only is still strongest on Vina-dock energy (&minus;7.99 vs &minus;7.85) &mdash; so the gain is mostly in <i>data efficiency</i>, not a new dock-energy <i>ceiling</i> (though SSL density does edge full-data on high-affinity&nbsp;%).</p>
+</div>
+
+<h2>3. Conclusions</h2>
+<ol>
+<li><b>Transfer is asymmetric across task type.</b> The same experimental-density signal that <i>fails</i> the protein&ndash;drug regression task <i>helps</i> the protein&ndash;drug generative task. A plausible (but not-yet-tested) explanation: density informs <b>where atoms sit</b> &mdash; a spatial prior the generator can use &mdash; more than it adds to <b>affinity prediction</b> beyond atom coordinates. This placement-vs-affinity story is the hypothesis behind next-step&nbsp;#4, not a measured conclusion.</li>
+<li><b>Regression: no.</b> Coords-only encoders dominate (&rho; 0.473); every density-fed encoder is equal-or-worse, and "louder" density monotonically <i>degrades</i> the representation. The one tie (v3) is an artifact of muting density, not of representing it.</li>
+<li><b>Generative: conditional yes.</b> Density content is demonstrably used (beats noise), and SSL pre-training converts the density branch into a real data-efficiency win (&minus;0.67 kcal/mol, +15.7 HA% at 10&times; less data) &mdash; but it needs SSL + alignment to pay off, and does not beat full-data coords-only on dock energy (it does edge it on high-affinity&nbsp;%).</li>
+<li><b>Net.</b> Density's protein&ndash;protein / regression track record does <i>not</i> cleanly generalise to protein&ndash;drug. It generalises to <i>generative conditioning</i> (partially, fragilely) and <i>not</i> to <i>affinity regression</i>.</li>
+</ol>
+
+<h2>4. Next experiments</h2>
+<ol>
+<li><b>Fair regression re-test.</b> The current ranking is confounded by density <i>loudness</i> (scale = hidden loss weight). Equalise the density-channel input variance (or add per-channel loss normalisation) so normalisation <i>shape</i> is compared fairly &mdash; and probe the still-pending plain-<code>v4</code> control to separate "dual-head decoder" from "v4 norm." If a fairly-weighted density rep <i>still</i> can't beat coords, the regression verdict is firm.</li>
+<li><b>Real density, not synthetic.</b> Pre-training density is currently Gaussian-blurred atom voxels. Swap in real 2F<sub>o</sub>&ndash;F<sub>c</sub> maps (PDB-REDO MTZ &rarr; gemmi FFT, already validated as a drop-in) so the encoder sees true noise / resolution / missing density &mdash; the regime where density is supposed to add information.</li>
+<li><b>Close the generative loop.</b> Confirm the SSL-density gain on the full 79-pocket aligned re-sample, and test whether SSL-density can beat <i>full-data coords-only</i> &mdash; i.e. does density raise the ceiling or only the efficiency?</li>
+<li><b>Explain the dissociation.</b> Linear-probe the density encoder for atom-type recovery vs. pose/affinity-correlated features to mechanistically explain why density helps placement but not affinity.</li>
+</ol>
+
+<div class="appendix">
+<h2>Appendix A &middot; Provenance &amp; methods</h2>
+<h4>Check 1 &mdash; PDBbind affinity probe</h4>
+<ul>
+<li>Encoders: 40M-param 3-D ViT-MAE pre-trained on CrossDocked X-ray-available subset (n=78,428). Atom-only arms <code>260528_atomblob_vit_mae_40m_weighted</code> (+ atom-biased mask, inv-sqrt-freq channel weights) and plain <code>atomblob</code>; density arms <code>atomblob_(merged_)density</code> with normalisations v1&ndash;v4 (per-map z+&plusmn;3&sigma; clip / pool z-score / pool max-abs / pool clip+z).</li>
+<li>Probe: frozen encoder &rarr; pocket feature (dim 512) &rarr; 2-layer MLP, early-stopped on val Spearman, 3 seeds. Code <code>dataset/01c_pdbbind_probe.py</code>; results <code>dataset/data/pdbbind/probe_results_e99_*.csv</code>; logs <code>log/01f_probe_*.log</code>.</li>
+<li>Mechanism note verified in code: density fed to MAE un-normalised (<code>train_density_vit_mae.py</code>), reconstructed with plain MSE (<code>compute_losses</code>) &rArr; recon-loss weight &prop; (density scale)&sup2;; v3 = v2 &times; (&sigma;<sub>pool</sub>/max_abs) &asymp; v2 &times; 0.011.</li>
+</ul>
+<h4>Check 2 &mdash; VoxBind generation + docking</h4>
+<ul>
+<li>Content A/B: <code>260515_voxbind_100ep_density</code> / <code>..._noise</code> / <code>260514_..._baseline</code> (pilot, 100-pocket subset, sampled on 11 val pockets, dock-eval <code>log/260517_dock_eval_density_ab.log</code>); 10k arms <code>260518_voxbind_10k_{density,noise}</code> (<code>log/260519_dock_eval_10k_test_ab.log</code>).</li>
+<li>Noise control = smoothed Gaussian-noise crops, density-like texture (corr length ~5.4 vox), no ligand signal (<code>dataset/00c_make_noise_density.py</code>).</li>
+<li>SSL capability test: aligned-density branch <code>260519_voxbind_10k_density_aligned</code> (ep138) and ViT-MAE-pre-trained branch (<code>260523_voxbind_10k_density_vit_mae_frozen</code>, ep379); overlap-only target means; see the 2026-05-26 pre-training meeting summary for the full Vina table.</li>
+<li>Generation &amp; evaluation are decoupled: <code>sample.py</code> generates SDFs; standalone <code>notebook/webapp/metrics.py</code> docks (AutoDock Vina, exhaustiveness 8) and writes per-target <code>metrics.json</code>. High-affinity&nbsp;% = fraction of generated ligands docking stronger than the reference.</li>
+</ul>
+<h4>Caveats</h4>
+<ul>
+<li>Docking means use small/medium target sets (11 pilot, 50&ndash;79 at 10k) and a few clash-explosion outliers; medians track the means but magnitudes are noisy at this n.</li>
+<li>The 10k content A/B reports density vs. noise only (the 10k no-density baseline finished later and is only partially dock-evaluated); the cleanest density-vs-baseline comparison is the pilot row.</li>
+<li>Probe numbers are on a frozen encoder + shallow head &mdash; a lower bound on extractable affinity signal, not a tuned affinity model.</li>
+</ul>
+</div></body></html>

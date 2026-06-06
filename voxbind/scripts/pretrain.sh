@@ -201,7 +201,7 @@ CMD=( "$PY/torchrun" --standalone --nproc_per_node="$NPROC" train_density_vit_ma
       dset.use_xray="$USE_XRAY" )
 [[ -n "$NORMALIZE"  ]] && CMD+=( dset.normalize="$NORMALIZE" )
 [[ -n "$INPUT_MODE" ]] && CMD+=( input_mode="$INPUT_MODE" )
-[[ -n "$N_IN"       ]] && CMD+=( model.n_in_channels="$N_IN" )
+[[ -n "$N_IN"       ]] && CMD+=( ++model.n_in_channels="$N_IN" )
 [[ "$GRADMAG" -eq 1 ]] && CMD+=( ++with_gradmag=true ++mae.gradmag_reconstruct=true )
 CMD+=( num_epochs="$EPOCHS" bsz="$BSZ" accum_steps="$ACCUM"
        "wandb_tags=[${TAGS}]"

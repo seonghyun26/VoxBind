@@ -10,9 +10,10 @@ they differ only in the normalisation applied to the voxel values — that is th
     v2  xray_crops_aligned_v2   pocket-pool z-score        x' = (x − μ)   / σ
     v3  xray_crops_aligned_v3   pocket-pool symmetric      x' =  x        / max_abs   → [−1, +1]
     v4  xray_crops_aligned_v4   pocket-pool clip+z-score   x' = (clip(x) − μ_c) / σ_c
+    v5  xray_crops_aligned_v5   pocket-pool arcsinh+z      x' = (arcsinh(x/s) − μ_a) / σ_a
 
-v2/v3/v4 are stored pre-normalised → load them with dset.normalize=false.
-v2 and v3 (and v4's clip stats) are derived from a SINGLE pocket pool, so when
+v2/v3/v4/v5 are stored pre-normalised → load them with dset.normalize=false.
+v2/v3 (and v4's clip / v5's arcsinh stats) are derived from a SINGLE pocket pool, so when
 several are requested in one run they share one cropping pass and one stat pass.
 
 This file consolidates the former 00d (align + v1), 00e (v2/v3) and 00f (v4).
@@ -87,6 +88,7 @@ DIR_NAME = {
     "v2": "xray_crops_aligned_v2",
     "v3": "xray_crops_aligned_v3",
     "v4": "xray_crops_aligned_v4",
+    "v5": "xray_crops_aligned_v5",
 }
 
 # v4 clip thresholds (raw 2Fo-Fc units), from the 200-sample voxel-pool quantile
@@ -94,6 +96,11 @@ DIR_NAME = {
 # atom-peak signal, the negative tail is noise floor.
 CLIP_LO = -0.578
 CLIP_HI = +1.647
+
+# v5 arcsinh soft-squash scale: x' = z-score(arcsinh(x / s)). arcsinh is ~linear
+# for |x|<<s and ~log for |x|>>s, so the bright-atom tail compresses smoothly with
+# NO clip and no pile-up spike (raw +30 → ~+9 at s=0.5). Mirrors 01b's v5.
+V5_ARCSINH_SCALE = 0.5
 
 
 # ── Sample list (mirrors DatasetCrossDockedXray's load order) ───────────────────
@@ -360,12 +367,14 @@ def crop_pdb(pdb_id, jobs, cfg):
     Returns (partial_stats, n_written). Partial stats accumulate over this PDB's
     RAW crops in float64 (sum, sum_sq, n, min, max, plus clipped sum/sum_sq for v4)."""
     write_v1 = cfg["write_v1"]
-    need_raw = cfg["need_raw"]; need_v4 = cfg["need_v4"]
+    need_raw = cfg["need_raw"]; need_v4 = cfg["need_v4"]; need_v5 = cfg["need_v5"]
     aligned_dir, scratch_dir = cfg["aligned_dir"], cfg["scratch_dir"]
     overwrite = cfg["overwrite"]
     clip_lo, clip_hi = cfg["clip_lo"], cfg["clip_hi"]
+    s5 = cfg["arcsinh_scale"]
 
-    st = dict(sum=0.0, sum_sq=0.0, n=0, min=np.inf, max=-np.inf, csum=0.0, csum_sq=0.0)
+    st = dict(sum=0.0, sum_sq=0.0, n=0, min=np.inf, max=-np.inf,
+              csum=0.0, csum_sq=0.0, asum=0.0, asum_sq=0.0)
     written = 0
 
     ccp4 = cfg["ccp4"] / f"{pdb_id}.ccp4"
@@ -395,6 +404,9 @@ def crop_pdb(pdb_id, jobs, cfg):
             if need_v4:
                 cc = np.clip(c64, clip_lo, clip_hi)
                 st["csum"] += cc.sum(); st["csum_sq"] += (cc * cc).sum()
+            if need_v5:
+                aa = np.arcsinh(c64 / s5)
+                st["asum"] += aa.sum(); st["asum_sq"] += (aa * aa).sum()
             np.save(str(scratch_dir / split / f"{idx:06d}.npy"), crop.astype(np.float16))
 
         written += 1
@@ -429,10 +441,12 @@ def run_crop(split, samples, R, t, ok, cfg):
 
     # Sum partials in sorted-PDB order so pool stats are independent of the
     # process completion order (float addition is not associative).
-    total = dict(sum=0.0, sum_sq=0.0, n=0, min=np.inf, max=-np.inf, csum=0.0, csum_sq=0.0)
+    total = dict(sum=0.0, sum_sq=0.0, n=0, min=np.inf, max=-np.inf,
+                 csum=0.0, csum_sq=0.0, asum=0.0, asum_sq=0.0)
     for _, stp in sorted(partials, key=lambda x: x[0]):
         total["sum"] += stp["sum"]; total["sum_sq"] += stp["sum_sq"]; total["n"] += stp["n"]
         total["csum"] += stp["csum"]; total["csum_sq"] += stp["csum_sq"]
+        total["asum"] += stp["asum"]; total["asum_sq"] += stp["asum_sq"]
         total["min"] = min(total["min"], stp["min"]); total["max"] = max(total["max"], stp["max"])
     print(f"[{split}] CROP done: {written:,} crops")
     return total, written
@@ -446,7 +460,7 @@ def parse_args():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     p.add_argument("--version", nargs="+", default=["v3"],
-                   choices=["v1", "v2", "v3", "v4"],
+                   choices=["v1", "v2", "v3", "v4", "v5"],
                    help="Which crop version(s) to produce (the normalisation if-branch)")
     p.add_argument("--data_dir", default=str(VOXDATA))
     p.add_argument("--ccp4_dir", default=str(VOXDATA / "ccp4"))
@@ -472,6 +486,9 @@ def parse_args():
     # v4 clip
     p.add_argument("--clip_lo", type=float, default=CLIP_LO, help="v4 lower clip (raw units)")
     p.add_argument("--clip_hi", type=float, default=CLIP_HI, help="v4 upper clip (raw units)")
+    # v5 arcsinh
+    p.add_argument("--v5_arcsinh_scale", type=float, default=V5_ARCSINH_SCALE,
+                   help="v5 arcsinh scale s in arcsinh(x/s) (smaller = harder tail squash)")
     # control
     p.add_argument("--force_realign", action="store_true",
                    help="Recompute Kabsch transforms even if cached")
@@ -487,8 +504,9 @@ def parse_args():
 def main():
     args = parse_args()
     versions = list(dict.fromkeys(args.version))  # dedup, preserve order
-    need_raw = any(v in versions for v in ("v2", "v3", "v4"))
+    need_raw = any(v in versions for v in ("v2", "v3", "v4", "v5"))
     need_v4 = "v4" in versions
+    need_v5 = "v5" in versions
 
     out_root = Path(args.out_root)
     aligned_dir = out_root / DIR_NAME["v1"]
@@ -522,10 +540,10 @@ def main():
         ccp4=Path(args.ccp4_dir), pdb=Path(args.pdb_dir),
         min_atoms=args.min_atoms, max_rmsd=args.max_rmsd, min_density=args.min_density,
         chain_select=args.chain_select,
-        write_v1=("v1" in versions), need_raw=need_raw, need_v4=need_v4,
+        write_v1=("v1" in versions), need_raw=need_raw, need_v4=need_v4, need_v5=need_v5,
         aligned_dir=aligned_dir, scratch_dir=scratch_dir,
         overwrite=args.overwrite, workers=args.workers,
-        clip_lo=args.clip_lo, clip_hi=args.clip_hi,
+        clip_lo=args.clip_lo, clip_hi=args.clip_hi, arcsinh_scale=args.v5_arcsinh_scale,
     )
 
     per_split_stats, per_split_ok = {}, {}
@@ -567,10 +585,20 @@ def main():
         print(f"  v4 clip [{args.clip_lo:+.3f}, {args.clip_hi:+.3f}] | "
               f"μ_clip {mu_clip:+.6f} | σ_clip {sigma_clip:.6f}")
 
+    mu_a = sigma_a = None
+    if need_v5:
+        AS = sum(s["asum"] for s in per_split_stats.values())
+        ASS = sum(s["asum_sq"] for s in per_split_stats.values())
+        mu_a = AS / N
+        sigma_a = float(np.sqrt(max(ASS / N - mu_a * mu_a, 0.0)))
+        print(f"  v5 arcsinh s={args.v5_arcsinh_scale} | "
+              f"μ_a {mu_a:+.6f} | σ_a {sigma_a:.6f}")
+
     def v2n(x): return (x - mu) / sigma
     def v3n(x): return x / max_abs
     def v4n(x): return (np.clip(x, args.clip_lo, args.clip_hi) - mu_clip) / sigma_clip
-    NORM = {"v2": v2n, "v3": v3n, "v4": v4n}
+    def v5n(x): return (np.arcsinh(x / args.v5_arcsinh_scale) - mu_a) / sigma_a
+    NORM = {"v2": v2n, "v3": v3n, "v4": v4n, "v5": v5n}
 
     # ── stats.json per version ──────────────────────────────────────────────────
     common = dict(splits=args.splits, n_voxels=N, raw_min=MIN, raw_max=MAX,
@@ -591,9 +619,17 @@ def main():
             "mu_clipped": mu_clip, "sigma_clipped": sigma_clip,
             "note": "clip stats computed directly from raw aligned crops (no v2 round-trip)",
             **common}, indent=2))
+    if "v5" in versions:
+        (ver_dirs["v5"] / "stats.json").write_text(json.dumps({
+            "scheme": "pocket-pool arcsinh soft-squash + z-score (CrossDocked v5)",
+            "formula": "x' = (arcsinh(x / s) - mu_a) / sigma_a",
+            "arcsinh_scale": args.v5_arcsinh_scale,
+            "mu_a": mu_a, "sigma_a": sigma_a,
+            "note": "arcsinh stats computed directly from raw aligned crops",
+            **common}, indent=2))
 
     # ── Pass B: read raw scratch once, write each requested version ─────────────
-    raw_versions = [v for v in versions if v in ("v2", "v3", "v4")]
+    raw_versions = [v for v in versions if v in ("v2", "v3", "v4", "v5")]
     print()
     for split in args.splits:
         idxs = np.where(per_split_ok[split])[0]
