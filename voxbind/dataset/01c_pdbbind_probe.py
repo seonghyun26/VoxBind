@@ -843,7 +843,7 @@ def train_finetune(splits, factory, *, seed, device, condition, n_in,
 
     amp_dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
     use_scaler = amp and amp_dtype == torch.float16
-    scaler = torch.cuda.amp.GradScaler(enabled=use_scaler)
+    scaler = torch.amp.GradScaler("cuda", enabled=use_scaler)
 
     def make_loader(split, shuffle):
         sdf = splits[split]
