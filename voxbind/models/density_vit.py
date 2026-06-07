@@ -30,6 +30,26 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
+# ── Patch <-> voxel reshape helpers (for the patch-MLP recon head) ────────────
+# Inverses of each other; `_unpatchify` matches DensityViT._tokens_to_voxels, so
+# a reconstruction laid out this way is voxel-aligned with the patch-embed input.
+
+def _patchify(x: torch.Tensor, gp: int, p: int) -> torch.Tensor:
+    """(B, c, G, G, G) → (B, gp³, c·p³): gather each p³ patch's voxels per token."""
+    B, c = x.shape[0], x.shape[1]
+    x = x.reshape(B, c, gp, p, gp, p, gp, p)
+    x = x.permute(0, 2, 4, 6, 1, 3, 5, 7).contiguous()   # (B, gp,gp,gp, c, p,p,p)
+    return x.reshape(B, gp * gp * gp, c * p * p * p)
+
+
+def _unpatchify(t: torch.Tensor, gp: int, p: int, c: int) -> torch.Tensor:
+    """(B, gp³, c·p³) → (B, c, G, G, G): inverse of `_patchify` (matches _tokens_to_voxels)."""
+    B = t.shape[0]
+    x = t.reshape(B, gp, gp, gp, c, p, p, p)
+    x = x.permute(0, 4, 1, 5, 2, 6, 3, 7).contiguous()   # (B, c, gp,p, gp,p, gp,p)
+    return x.reshape(B, c, gp * p, gp * p, gp * p)
+
+
 # ── Transformer building blocks ───────────────────────────────────────────────
 
 class MultiHeadSelfAttention(nn.Module):
@@ -228,6 +248,7 @@ class DensityViTMAE(nn.Module):
         dual_head: bool = False,      # split the MAE recon head into atoms vs density branches
         head_hidden_dim: int = 0,     # MLP-head hidden width; 0 → defaults to c_half (=n_channels//2)
         head_depth: int = 2,          # total Conv3d layers in each MAE recon head (>=1)
+        head_style: str = "conv",     # "conv" = full-res Conv3d head; "patch_mlp" = per-patch token MLP
     ):
         super().__init__()
         assert pretext_style in ("mae", "electra"), (
@@ -244,6 +265,10 @@ class DensityViTMAE(nn.Module):
                 "it is incompatible with an input-only (n_recon < n_in) layout."
             )
         assert head_depth >= 1, f"head_depth must be >= 1, got {head_depth}"
+        assert head_style in ("conv", "patch_mlp"), f"unknown head_style: {head_style!r}"
+        assert not (dual_head and head_style == "patch_mlp"), (
+            "head_style='patch_mlp' is incompatible with dual_head"
+        )
         n_recon = n_recon_channels if n_recon_channels is not None else n_in_channels
         assert 1 <= n_recon <= n_in_channels, (
             f"n_recon_channels={n_recon} must be in [1, n_in_channels={n_in_channels}]"
@@ -291,10 +316,25 @@ class DensityViTMAE(nn.Module):
             #
             # In dual_head mode `head_density` outputs ONLY the 1 density channel,
             # not the full recon — concat with `head_atoms` output happens in forward.
+            self.recon_mlp = None
             if dual_head:
                 n_atom = n_in_channels - 1   # density is the trailing channel
                 self.head_atoms = _build_head(c_half, n_atom)
                 self.head_density = _build_head(c_half, 1)
+            elif head_style == "patch_mlp":
+                # Per-patch token MLP recon head: each patch's c_half·p³ encoder
+                # features → 2-layer MLP → n_recon·p³ → unpatchify. Runs at token
+                # resolution (g_p³ patches) so it scales to ~1M params cheaply
+                # (vs a full-res Conv3d head, where FLOPs ≈ params × G³). Reads the
+                # encoder OUTPUT, so the whole encoder (incl. its to-voxel
+                # projection) is trained by the reconstruction.
+                self.head_atoms = None
+                self.head_density = None
+                pv = patch_size ** 3
+                h = head_hidden_dim if head_hidden_dim > 0 else c_half
+                self.recon_mlp = nn.Sequential(
+                    nn.Linear(c_half * pv, h), nn.GELU(), nn.Linear(h, n_recon * pv),
+                )
             else:
                 self.head_atoms = None
                 self.head_density = _build_head(c_half, n_recon)
@@ -302,6 +342,7 @@ class DensityViTMAE(nn.Module):
             # Per-patch RTD logits via a strided Conv3d that pools the full-res
             # encoder feature map (B, c_half, G, G, G) down to the patch grid
             # (B, 1, g_p, g_p, g_p). Mirrors `head_density`'s 2-layer pattern.
+            self.recon_mlp = None
             self.head_rtd = nn.Sequential(
                 nn.Conv3d(c_half, c_half, kernel_size=3, padding=1),
                 nn.SiLU(),
@@ -322,6 +363,10 @@ class DensityViTMAE(nn.Module):
         self.n_recon_channels = n_recon
         self.n_channels = n_channels
         self.n_struct_channels = n_struct_channels
+        self.head_style = head_style
+        self.g_p = grid_dim // patch_size
+        self.patch_size = patch_size
+        self.n_recon = n_recon
 
     def encode(self, density: torch.Tensor) -> torch.Tensor:
         return self.encoder(density)
@@ -336,6 +381,10 @@ class DensityViTMAE(nn.Module):
             out_atoms   = self.head_atoms(z)          # (B, n_in-1, G, G, G)
             out_density = self.head_density(z)        # (B, 1,      G, G, G)
             out_pretext = torch.cat([out_atoms, out_density], dim=1)  # (B, n_in, G³)
+        elif self.head_style == "patch_mlp":
+            tok = _patchify(z, self.g_p, self.patch_size)      # (B, g_p³, c_half·p³)
+            tok = self.recon_mlp(tok)                          # (B, g_p³, n_recon·p³)
+            out_pretext = _unpatchify(tok, self.g_p, self.patch_size, self.n_recon)
         else:
             out_pretext = self.head_density(z)        # (B, n_recon_channels, G, G, G)
         out_structure = (

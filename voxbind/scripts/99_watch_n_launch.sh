@@ -49,7 +49,7 @@
 #                   bash scripts/pretrain.sh --mode atomblob_merged_density --weighted --data v2 --gpus 4-7'
 set -u
 
-VOX=/home/shpark/prj-denovo/VoxBind/voxbind
+VOX=${VOX:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
 LOG=$VOX/log
 SELF=$(basename "$0")          # this script's filename — used to exclude watcher infra from proc_alive
 ts(){ date "+%Y-%m-%d %H:%M:%S"; }

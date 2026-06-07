@@ -45,7 +45,7 @@ with_gradmag: true                 # + gradmag trailing channel → 13 total
 
 # ── Dataset ──────────────────────────────────────────────────────────────────
 dset:
-  crops_dir: /home/shpark/prj-denovo/VoxBind/voxbind/dataset/data/xray_crops_aligned_v4
+  crops_dir: /home1/irteam/VoxBind/voxbind/dataset/data/xray_crops_aligned_v4
   normalize: false                 # v4 crops are pre-normalized on disk
   ligand_radius: -1                # element-wise vdW radii for ligand atoms (pocket already -1)
   subset_xray_only: true
@@ -56,8 +56,12 @@ dset:
 # ── Model ────────────────────────────────────────────────────────────────────
 model:
   n_in_channels: 13                # 11 atoms + density + gradmag
-  # dual_head: false / head_depth: 2 / n_struct_channels: 0  (defaults) →
-  # single MLP head reconstructs all 13 channels jointly.
+  # Single recon head predicts all 13 channels jointly (dual_head=false,
+  # n_struct_channels=0). Per-patch token-MLP head (~1.0M params) reads the
+  # encoder OUTPUT, so the whole encoder is pre-trained; the head is discarded after.
+  head_style: patch_mlp            # per-patch 2-layer MLP recon head (vs full-res conv)
+  head_hidden_dim: 67              # hidden width → ~1.0M-param head (8192→67→6656)
+  head_depth: 2
 
 # ── MAE knobs ────────────────────────────────────────────────────────────────
 mae:

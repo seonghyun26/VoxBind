@@ -132,7 +132,7 @@ DENSITY_CONSUMING = {"atomblob_density", "atomblob_merged_density",
                      "atomblob_merged_density_gradmag", "atomblob_density_gradmag"}
 
 EXPS = {
-    "atomblob":               Path("exps") / "260526_atomblob_vit_mae_40m_pretrain",
+    "atomblob":               Path("exps") / "260606_atomblob_vit_mae_40m_invfreq_pretrain",   # 260606 v5-ablation (atom-only, version-agnostic)
     "atomblob_density":       Path("exps") / "260526_atomblob_density_vit_mae_40m_pretrain",
     "atomblob_weighted":      Path("exps") / "260528_atomblob_vit_mae_40m_weighted_pretrain",
     "atomblob_merged_density": Path("exps") / "260530_atomblob_merged_density_vit_mae_40m_weighted_pretrain",
@@ -151,6 +151,8 @@ EXPS_OVERRIDE: dict[tuple[str, str], Path] = {
     ("atomblob_merged_density", "v2"): Path("exps") / "260530_atomblob_merged_density_vit_mae_40m_weighted_v2_pretrain",
     ("atomblob_merged_density", "v3"): Path("exps") / "260530_atomblob_merged_density_vit_mae_40m_weighted_v3_pretrain",
     ("atomblob_density",        "v2"): Path("exps") / "260531_atomblob_density_vit_mae_40m_v2_pretrain",
+    # 260606 v5-ablation (this box): separate-channel atomblob_density on v5 arcsinh density.
+    ("atomblob_density",        "v5"): Path("exps") / "260606_atomblob_density_vit_mae_40m_invfreq_v5_pretrain",
     # v4 has two merged_density retrains: 260601 (plain) and 260602 (dual-head,
     # separate atom/density recon heads). We point v4 at the dual-head encoder
     # being evaluated; swap to 260601_..._v4_pretrain to probe the plain variant.
@@ -160,8 +162,9 @@ EXPS_OVERRIDE: dict[tuple[str, str], Path] = {
     # v1-normalization variant (260604): same gradmag/ligvdw recipe, only the density
     # normalization differs (per-crop ±3σ z-score). Probe with --voxel_version v1.
     ("atomblob_merged_density_gradmag", "v1"): Path("exps") / "260604_atomblob_merged_density_vit_mae_40m_weighted_v1_gradmag_ligvdw_pretrain",
-    # SEPARATE-channel gradmag/ligvdw on v5 arcsinh density (260605, swept-balanced weights).
-    ("atomblob_density_gradmag", "v5"): Path("exps") / "260605_atomblob_density_vit_mae_40m_weighted_v5_gradmag_ligvdw_balanced_pretrain",
+    # SEPARATE-channel gradmag/ligvdw on v5 arcsinh density. 260606 v5-ablation (this box,
+    # invfreq recipe, density/gradmag weights 0.1/0.1). [was 260605 svr7 swept-balanced]
+    ("atomblob_density_gradmag", "v5"): Path("exps") / "260606_atomblob_density_gradmag_vit_mae_40m_invfreq_v5_pretrain",
 }
 
 

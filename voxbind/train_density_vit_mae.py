@@ -1115,6 +1115,7 @@ def main(cfg: DictConfig) -> None:
         )
     head_hidden_dim = int(cfg.model.get("head_hidden_dim", 0))   # 0 → defaults to c_half
     head_depth      = int(cfg.model.get("head_depth", 2))
+    head_style      = str(cfg.model.get("head_style", "conv"))   # conv | patch_mlp
     # n_in must match the assembled layout (atoms + density + gradmag).
     n_in_cfg = int(cfg.model.get("n_in_channels", 1))
     if n_in_cfg != layout["n_in"]:
@@ -1138,6 +1139,7 @@ def main(cfg: DictConfig) -> None:
         dual_head=dual_head,
         head_hidden_dim=head_hidden_dim,
         head_depth=head_depth,
+        head_style=head_style,
     ).to(device)
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     if is_main:
@@ -1145,7 +1147,8 @@ def main(cfg: DictConfig) -> None:
                     f"(pretext_style={pretext_style}, input_mode={input_mode}, "
                     f"with_gradmag={with_gradmag} (recon={gradmag_reconstruct}), "
                     f"n_in={layout['n_in']} n_recon={layout['n_recon']}, "
-                    f"dual_head={dual_head}, head_hidden_dim={head_hidden_dim or '(c_half)'}, head_depth={head_depth})")
+                    f"dual_head={dual_head}, head_style={head_style}, "
+                    f"head_hidden_dim={head_hidden_dim or '(c_half)'}, head_depth={head_depth})")
 
     optimizer = AdamW(model.parameters(), lr=cfg.lr, weight_decay=cfg.wd)
     optimizer.zero_grad()
