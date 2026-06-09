@@ -45,16 +45,35 @@ log "STAGE0: waiting for PDBbind acquire (01a)…"
 while pgrep -f '01[a]_pdbbind_acquire' >/dev/null 2>&1; do sleep 60; done
 [ -f "$DATA/pdbbind/index.csv" ] || die "01a incomplete (no index.csv)"
 NV5=$(find "$DATA/pdbbind/voxels_v5/density" -name '*.npy' 2>/dev/null | wc -l)
-if [ "$NV5" -ge 4000 ]; then
-  log "STAGE0: PDBbind voxels already built (voxels_v5/density=$NV5) — skipping 01b"
+V5SRC=$($PY/python -c "import json,os;p='$DATA/pdbbind/voxels_v5/stats.json';print(json.load(open(p)).get('stats_source','pdbbind') if os.path.exists(p) else 'missing')" 2>/dev/null)
+NAT=$(find "$DATA/pdbbind/voxels/atoms" -name '*.npy' 2>/dev/null | wc -l)
+NVDW=$(find "$DATA/pdbbind/voxels_ligvdw/atoms" -name '*.npy' 2>/dev/null | wc -l)
+if [ "$NAT" -lt 5000 ]; then
+  log "STAGE0: 01b voxelize default atoms+density (CPU)…"
+  $PY/python dataset/01b_pdbbind_preprocess.py voxelize --device cpu \
+    --out_dir "$DATA/pdbbind/voxels" >> "$VOX/log/01b_pdbbind.log" 2>&1 || die "01b voxelize default"
 else
-  log "STAGE0: 01a done; 01b voxelize (CPU)…"
-  $PY/python dataset/01b_pdbbind_preprocess.py voxelize --ligand_vdw --device cpu >> "$VOX/log/01b_pdbbind.log" 2>&1 || die "01b voxelize"
-  log "STAGE0: 01b poolnorm (v2..v5)…"
-  $PY/python dataset/01b_pdbbind_preprocess.py poolnorm >> "$VOX/log/01b_pdbbind.log" 2>&1 || die "01b poolnorm"
+  log "STAGE0: default PDBbind atoms ready (n=$NAT)"
+fi
+if [ "$NV5" -lt 4000 ] || [ "$V5SRC" != "reference" ]; then
+  log "STAGE0: 01b poolnorm v2..v5 with CrossDocked v5 reference stats…"
+  $PY/python dataset/01b_pdbbind_preprocess.py poolnorm \
+    --v5_stats_source reference \
+    --v5_reference_stats_json "$DATA/xray_crops_aligned_v5/stats.json" \
+    >> "$VOX/log/01b_pdbbind.log" 2>&1 || die "01b poolnorm"
+else
+  log "STAGE0: PDBbind v5 density ready (n=$NV5, stats_source=$V5SRC)"
+fi
+if [ "$NVDW" -lt 5000 ]; then
+  log "STAGE0: 01b voxelize ligand-vdW atoms only (CPU)…"
+  $PY/python dataset/01b_pdbbind_preprocess.py voxelize --ligand_vdw --no_density --device cpu \
+    --out_dir "$DATA/pdbbind/voxels_ligvdw" >> "$VOX/log/01b_pdbbind.log" 2>&1 || die "01b voxelize ligvdw"
+else
+  log "STAGE0: ligand-vdW PDBbind atoms ready (n=$NVDW)"
 fi
 [ -d "$DATA/pdbbind/voxels_v5/density" ] || die "voxels_v5 missing"
-log "STAGE0: PDBbind voxels ready (v1 + v5)"
+[ -d "$DATA/pdbbind/voxels_ligvdw/atoms" ] || die "voxels_ligvdw atoms missing"
+log "STAGE0: PDBbind voxels ready (default atoms + ligand-vdW atoms + v5 density)"
 
 # ---------- STAGE 1: stop sig=1.0 ----------
 log "STAGE1: stopping sig=1.0 (watcher + scripts/35 + train_ddp)…"
@@ -87,7 +106,7 @@ run_pre config_train_atomblob_density_gradmag_vit_mae_40m_invfreq_v5 260606_atom
 
 # ---------- STAGE 3: probe ----------
 log "STAGE3: frozen features (3x, 1 GPU each)…"
-CUDA_VISIBLE_DEVICES=0 $PY/python dataset/01c_pdbbind_probe.py features --condition atomblob                 --voxel_version v1 --epoch 99 >> "$VOX/log/probe_features.log" 2>&1 &
+CUDA_VISIBLE_DEVICES=0 $PY/python dataset/01c_pdbbind_probe.py features --condition atomblob                 --voxel_version v5 --epoch 99 >> "$VOX/log/probe_features.log" 2>&1 &
 CUDA_VISIBLE_DEVICES=1 $PY/python dataset/01c_pdbbind_probe.py features --condition atomblob_density         --voxel_version v5 --epoch 99 >> "$VOX/log/probe_features.log" 2>&1 &
 CUDA_VISIBLE_DEVICES=2 $PY/python dataset/01c_pdbbind_probe.py features --condition atomblob_density_gradmag --voxel_version v5 --epoch 99 >> "$VOX/log/probe_features.log" 2>&1 &
 wait

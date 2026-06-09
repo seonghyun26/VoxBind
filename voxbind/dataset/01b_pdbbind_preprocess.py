@@ -143,6 +143,10 @@ CLIP_HI = +1.647
 # is kept. Tune with --v5_arcsinh_scale (smaller s = harder tail squash).
 V5_ARCSINH_SCALE = 0.5
 
+DEFAULT_V5_REFERENCE_STATS = (
+    Path(__file__).parent / "data" / "xray_crops_aligned_v5" / "stats.json"
+)
+
 # Element → channel index lookup (matches voxbind.constants.ELEMENTS_HASH_CROSSDOCKED)
 _E2CH = ELEMENTS_HASH_CROSSDOCKED   # {"C":0, "O":1, "N":2, "S":3, "F":4, "Cl":5, "P":6, "H":7}
 # Element-wise vdW radii (Å), shared by pocket atoms and — when --ligand_vdw is
@@ -457,6 +461,26 @@ def parse_ligand_com(sdf_path: Path) -> "np.ndarray | None":
         return None
 
 
+def _read_v5_reference_stats(path: Path) -> dict:
+    """Load CrossDocked-style v5 stats for reference-normalising PDBbind crops."""
+    if not path.exists():
+        raise FileNotFoundError(f"missing v5 reference stats: {path}")
+    stats = json.loads(path.read_text())
+    missing = [k for k in ("mu_a", "sigma_a") if k not in stats]
+    if missing:
+        raise ValueError(f"{path} is missing required v5 stat key(s): {missing}")
+    sigma = float(stats["sigma_a"])
+    if not np.isfinite(sigma) or sigma <= 0:
+        raise ValueError(f"invalid sigma_a in {path}: {sigma}")
+    out = {
+        "path": str(path),
+        "arcsinh_scale": float(stats.get("arcsinh_scale", V5_ARCSINH_SCALE)),
+        "mu_a": float(stats["mu_a"]),
+        "sigma_a": sigma,
+    }
+    return out
+
+
 def run_poolnorm(args: argparse.Namespace) -> None:
     index_csv  = Path(args.index_csv)
     struct_dir = Path(args.struct_dir)
@@ -488,6 +512,7 @@ def run_poolnorm(args: argparse.Namespace) -> None:
     print(f"  v5_dir    : {v5_dir}")
     print(f"  v4 clip   : [{args.clip_lo:+.3f}, {args.clip_hi:+.3f}]  (raw 2Fo-Fc units)")
     print(f"  v5 norm   : arcsinh(x / {args.v5_arcsinh_scale}) → z-score  (soft-squash, no clip)")
+    print(f"  v5 stats  : {args.v5_stats_source}")
 
     df = pd.read_csv(index_csv)
     df = df[df["has_struct"].astype(bool)].reset_index(drop=True)
@@ -556,17 +581,29 @@ def run_poolnorm(args: argparse.Namespace) -> None:
     var_clip     = sum_cv2 / n_voxels - mu_clip * mu_clip
     sigma_clip   = float(np.sqrt(max(var_clip, 0.0)))
 
+    v5_ref = None
+    s5 = args.v5_arcsinh_scale
+    if args.v5_stats_source == "reference":
+        ref_path = Path(args.v5_reference_stats_json)
+        v5_ref = _read_v5_reference_stats(ref_path)
+        s5 = v5_ref["arcsinh_scale"]
+
     # v5: arcsinh soft-squash (NO clip → no pile-up spike), then z-score over the
     # squashed pool. arcsinh(x/s) is ~linear for |x|<<s and ~log for |x|>>s, so the
     # near-zero bulk is preserved and the bright metal-peak tail compresses smoothly
     # (raw +30 → ~+9 vs +92 for plain z-score). Every voxel is used. s = scale.
-    s5 = args.v5_arcsinh_scale
     sum_a5 = sum_a2_5 = 0.0
     for _c in crops.values():
         _a = np.arcsinh(_c.astype(np.float64) / s5)
         sum_a5 += _a.sum(); sum_a2_5 += (_a * _a).sum()
     mu_a5    = sum_a5 / n_voxels
     sigma_a5 = float(np.sqrt(max(sum_a2_5 / n_voxels - mu_a5 * mu_a5, 0.0)))
+    if v5_ref is None:
+        mu_a5_norm = mu_a5
+        sigma_a5_norm = sigma_a5
+    else:
+        mu_a5_norm = v5_ref["mu_a"]
+        sigma_a5_norm = v5_ref["sigma_a"]
 
     print(f"\n── pocket-pool dataset-wide stats ─────────────────────────────")
     print(f"  n_crops          : {len(crops):,}")
@@ -578,7 +615,9 @@ def run_poolnorm(args: argparse.Namespace) -> None:
     print(f"  v4 clip          : [{args.clip_lo:+.3f}, {args.clip_hi:+.3f}]")
     print(f"  μ_clip           : {mu_clip:+.6f}")
     print(f"  σ_clip           : {sigma_clip:.6f}")
-    print(f"  v5 arcsinh s={args.v5_arcsinh_scale} : μ_a {mu_a5:+.6f}  σ_a {sigma_a5:.6f}")
+    print(f"  v5 arcsinh s={s5} : μ_a_fit {mu_a5:+.6f}  σ_a_fit {sigma_a5:.6f}")
+    if v5_ref is not None:
+        print(f"  v5 reference      : μ_a {mu_a5_norm:+.6f}  σ_a {sigma_a5_norm:.6f}  ({v5_ref['path']})")
     print(f"  skipped          : {n_skipped:,}")
 
     stats_v2 = {
@@ -616,8 +655,12 @@ def run_poolnorm(args: argparse.Namespace) -> None:
         "scheme":         "pocket-pool arcsinh soft-squash + z-score (no clip)",
         "formula":        "x' = (arcsinh(x / s) - mu_a) / sigma_a",
         "arcsinh_scale":  s5,
-        "mu_a":           mu_a5,
-        "sigma_a":        sigma_a5,
+        "stats_source":   args.v5_stats_source,
+        "reference_stats_json": v5_ref["path"] if v5_ref is not None else None,
+        "mu_a":           mu_a5_norm,
+        "sigma_a":        sigma_a5_norm,
+        "pdbbind_fit_mu_a":    mu_a5,
+        "pdbbind_fit_sigma_a": sigma_a5,
         "n_crops":        len(crops),
         "n_voxels_total": n_voxels,
         "raw_min":        min_v,
@@ -635,7 +678,7 @@ def run_poolnorm(args: argparse.Namespace) -> None:
         c_v2 = ((c - mu_pool) / sigma_pool).astype(np.float16)
         c_v3 = (c / max_abs_pool).astype(np.float16)
         c_v4 = ((np.clip(c, args.clip_lo, args.clip_hi) - mu_clip) / sigma_clip).astype(np.float16)
-        c_v5 = ((np.arcsinh(c / s5) - mu_a5) / sigma_a5).astype(np.float16)
+        c_v5 = ((np.arcsinh(c / s5) - mu_a5_norm) / sigma_a5_norm).astype(np.float16)
         np.save(str(v2_dens / f"{pid}.npy"), c_v2)
         np.save(str(v3_dens / f"{pid}.npy"), c_v3)
         np.save(str(v4_dens / f"{pid}.npy"), c_v4)
@@ -705,6 +748,14 @@ def build_parser() -> argparse.ArgumentParser:
                     help="v4 upper clip threshold (raw 2Fo-Fc units)")
     pp.add_argument("--v5_arcsinh_scale", type=float, default=V5_ARCSINH_SCALE,
                     help="v5 arcsinh scale s in arcsinh(x/s) (smaller = harder tail squash)")
+    pp.add_argument("--v5_stats_source", choices=["pdbbind", "reference"], default="pdbbind",
+                    help="pdbbind = fit v5 mu/sigma on PDBbind crops; reference = "
+                         "reuse stats from --v5_reference_stats_json, typically the "
+                         "CrossDocked v5 stats used for pretraining")
+    pp.add_argument("--v5_reference_stats_json", default=str(DEFAULT_V5_REFERENCE_STATS),
+                    help="stats.json with CrossDocked-style v5 keys "
+                         "(arcsinh_scale, mu_a, sigma_a) used when "
+                         "--v5_stats_source=reference")
     pp.add_argument("--max_complexes", type=int, default=0,
                     help="Limit to first N (0 = all). Smoke testing.")
     pp.set_defaults(func=run_poolnorm)

@@ -89,8 +89,8 @@ token rep — the ONLY difference is whether encoder gradients flow:
 """
 
 import argparse
-import os
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -121,15 +121,6 @@ PDBBIND_DIR = Path(__file__).parent / "data" / "pdbbind"
 FEAT_DIR    = PDBBIND_DIR / "features"
 LP_CSV      = PDBBIND_DIR / "raw" / "LP_PDBBind.csv"
 RESULTS_DIR = PDBBIND_DIR
-
-# Conditions whose encoder never reads the density channel; their features are
-# identical across v1/v2/v3 (atoms are symlinked).
-ATOM_ONLY_CONDITIONS = {"atomblob", "atomblob_weighted"}
-
-# Conditions whose encoder DOES read the density channel; need has_density pids
-# AND care about which density-version the model was pretrained on.
-DENSITY_CONSUMING = {"atomblob_density", "atomblob_merged_density",
-                     "atomblob_merged_density_gradmag", "atomblob_density_gradmag"}
 
 EXPS = {
     "atomblob":               Path("exps") / "260606_atomblob_vit_mae_40m_invfreq_pretrain",   # 260606 v5-ablation (atom-only, version-agnostic)
@@ -165,12 +156,23 @@ EXPS_OVERRIDE: dict[tuple[str, str], Path] = {
     # SEPARATE-channel gradmag/ligvdw on v5 arcsinh density. 260606 v5-ablation (this box,
     # invfreq recipe, density/gradmag weights 0.1/0.1). [was 260605 svr7 swept-balanced]
     ("atomblob_density_gradmag", "v5"): Path("exps") / "260606_atomblob_density_gradmag_vit_mae_40m_invfreq_v5_pretrain",
+    # density-only (2ch: ρ + ‖∇ρ‖, no atoms) — CrossDocked-v5 pretrain (run #2).
+    ("density_gradmag", "v5"): Path("exps") / "260606_density_vit_mae_40m_xray_v5_gradmag_pretrain",
 }
 
 
 def resolve_exp(condition: str, version: str) -> Path:
-    """Pick the encoder exp dir for a (condition, voxel_version) pair."""
-    return EXPS_OVERRIDE.get((condition, version), EXPS[condition])
+    """Pick the encoder exp dir for a (condition, voxel_version) pair.
+
+    A (condition, version) override wins; otherwise fall back to the base EXPS
+    map. Checked explicitly (not dict.get with an EXPS[...] default) so that
+    conditions that exist ONLY in EXPS_OVERRIDE — e.g. density_gradmag, which
+    has no version-agnostic EXPS entry — resolve instead of KeyError-ing on the
+    eagerly-evaluated default.
+    """
+    if (condition, version) in EXPS_OVERRIDE:
+        return EXPS_OVERRIDE[(condition, version)]
+    return EXPS[condition]
 
 
 def voxel_dir_for(version: str) -> Path:
@@ -185,13 +187,90 @@ def version_suffix(version: str) -> str:
     return "" if version == "v1" else f"_{version}"
 
 
+@dataclass(frozen=True)
+class FeatureSpec:
+    """How a pretrained encoder expects PDBbind voxels to be assembled."""
+
+    input_mode: str
+    with_gradmag: bool
+    ligand_radius: float
+    atom_source: str
+    needs_atoms: bool
+    needs_density: bool
+    expected_channels: int
+
+
+def _fallback_input_mode(condition: str) -> str:
+    """Map legacy condition labels to the training `input_mode` vocabulary."""
+    if condition == "density_gradmag":
+        return "density"
+    if condition == "atomblob_weighted":
+        return "atomblob"
+    if condition == "atomblob_density_gradmag":
+        return "atomblob_density"
+    if condition == "atomblob_merged_density_gradmag":
+        return "atomblob_merged_density"
+    return condition
+
+
+def _expected_channels(input_mode: str, with_gradmag: bool) -> int:
+    if input_mode == "density":
+        n = 1
+    elif input_mode in ("atomblob", "atomblob_density"):
+        n = 11 + (1 if input_mode.endswith("_density") else 0)
+    elif input_mode in ("atomblob_merged", "atomblob_merged_density"):
+        n = 7 + (1 if input_mode.endswith("_density") else 0)
+    else:
+        raise ValueError(f"unsupported input_mode={input_mode!r}")
+    return n + (1 if with_gradmag else 0)
+
+
+def infer_feature_spec(condition: str, cfg, atom_source_arg: str = "auto") -> FeatureSpec:
+    """Infer PDBbind tensor construction from a pretrained cfg.yaml.
+
+    The condition name remains a result label; cfg.yaml is the source of truth for
+    channel layout and ligand radius. This prevents v5 ligvdW encoders from being
+    fed uniform-0.5 ligand blobs just because the label lacks "gradmag".
+    """
+    input_mode = str(cfg.get("input_mode", "") or _fallback_input_mode(condition))
+    with_gradmag = bool(cfg.get("with_gradmag", condition.endswith("gradmag")))
+    ligand_radius = float(OmegaConf.select(cfg, "dset.ligand_radius", default=0.5))
+    expected = _expected_channels(input_mode, with_gradmag)
+    needs_density = input_mode in ("density", "atomblob_density", "atomblob_merged_density") \
+        or with_gradmag
+    needs_atoms = input_mode != "density"
+
+    if atom_source_arg == "auto":
+        atom_source = "ligvdw" if ligand_radius <= 0 else "default"
+    else:
+        atom_source = atom_source_arg
+
+    return FeatureSpec(
+        input_mode=input_mode,
+        with_gradmag=with_gradmag,
+        ligand_radius=ligand_radius,
+        atom_source=atom_source,
+        needs_atoms=needs_atoms,
+        needs_density=needs_density,
+        expected_channels=expected,
+    )
+
+
+def atom_dir_for(vox_dir: Path, atom_source: str) -> Path:
+    if atom_source == "default":
+        return vox_dir / "atoms"
+    if atom_source == "ligvdw":
+        return PDBBIND_DIR / "voxels_ligvdw" / "atoms"
+    raise ValueError(f"unknown atom_source={atom_source!r}")
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # features — frozen-encoder mean-pooled patch tokens
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def load_encoder(exp_dir: Path, epoch: int, device: str) -> DensityViT:
+def load_encoder(exp_dir: Path, epoch: int, device: str, cfg=None) -> DensityViT:
     """Instantiate DensityViT from the exp's cfg.yaml and load EMA weights."""
-    cfg = OmegaConf.load(exp_dir / "cfg.yaml")
+    cfg = cfg if cfg is not None else OmegaConf.load(exp_dir / "cfg.yaml")
     m = cfg.model
 
     encoder = DensityViT(
@@ -244,45 +323,55 @@ def load_voxels_for(
     n_in_channels: int,
     atom_dir: Path,
     dens_dir: Path,
+    input_mode: str = None,
+    with_gradmag: bool = False,
 ) -> torch.Tensor:
     """Build the (n_in_channels, G, G, G) tensor for one complex."""
-    atoms = np.load(atom_dir / f"{pid}.npy")               # (11, G, G, G) float16
-    atoms_t = torch.from_numpy(atoms.astype(np.float32))    # promote to float32
-    if condition in ATOM_ONLY_CONDITIONS:
-        assert n_in_channels == 11
-        return atoms_t                                       # (11, G, G, G)
-    # All density-consuming conditions need the density crop loaded.
-    dens = np.load(dens_dir / f"{pid}.npy")                 # (G, G, G) float16
-    dens_t = torch.from_numpy(dens.astype(np.float32)).unsqueeze(0)  # (1, G, G, G)
-    if condition == "atomblob_density":
-        assert n_in_channels == 12
-        return torch.cat([atoms_t, dens_t], dim=0)          # (12, G, G, G)
-    if condition == "atomblob_merged_density":
+    input_mode = input_mode or _fallback_input_mode(condition)
+    needs_atoms = input_mode != "density"
+    needs_density = input_mode in ("density", "atomblob_density", "atomblob_merged_density") \
+        or with_gradmag
+
+    atoms_t = None
+    if needs_atoms:
+        atoms = np.load(atom_dir / f"{pid}.npy")             # (11, G, G, G) float16
+        atoms_t = torch.from_numpy(atoms.astype(np.float32)) # promote to float32
+
+    dens_t = None
+    if needs_density:
+        dens = np.load(dens_dir / f"{pid}.npy")              # (G, G, G) float16
+        dens_t = torch.from_numpy(dens.astype(np.float32)).unsqueeze(0)
+
+    if input_mode == "density":
+        x = dens_t
+    elif input_mode == "atomblob":
+        x = atoms_t
+    elif input_mode == "atomblob_density":
+        x = torch.cat([atoms_t, dens_t], dim=0)              # (12, G, G, G)
+    elif input_mode == "atomblob_merged":
+        merged = atoms_t[:7].clone()
+        merged[:4] += atoms_t[7:11]
+        x = merged                                           # (7, G, G, G)
+    elif input_mode == "atomblob_merged_density":
         # Pocket {C,O,N,S} (channels 7..10) folded into ligand {C,O,N,S} (0..3).
         # Ligand-only halogens + P (channels 4..6) stay as-is.
-        assert n_in_channels == 8
-        merged = atoms_t[:7].clone()                         # (7, G, G, G)
+        merged = atoms_t[:7].clone()
         merged[:4] += atoms_t[7:11]
-        return torch.cat([merged, dens_t], dim=0)            # (8, G, G, G)
-    if condition == "atomblob_merged_density_gradmag":
-        # merged atoms (7) + density (1) + ‖∇ρ‖ (1) = 9, mirroring training's
-        # channel layout. ‖∇ρ‖ is derived from the (already-normalised) density
-        # crop exactly as dataset/train: per_sample_zscore(gradient_magnitude3d(ρ)).
-        # NB: atoms here come from voxels_ligvdw (element-wise vdW ligand radii) —
-        # run_features overrides atom_dir for this condition.
-        assert n_in_channels == 9
-        merged = atoms_t[:7].clone()                         # (7, G, G, G)
-        merged[:4] += atoms_t[7:11]
-        g = per_sample_zscore(gradient_magnitude3d(dens_t.unsqueeze(0))).squeeze(0)  # (1, G, G, G)
-        return torch.cat([merged, dens_t, g], dim=0)         # (9, G, G, G)
-    if condition == "atomblob_density_gradmag":
-        # SEPARATE atoms (11: 7 lig + 4 poc, NOT merged) + density (1) + ‖∇ρ‖ (1) = 13.
-        # Like atomblob_density but with the trailing gradmag channel; atoms come from
-        # voxels_ligvdw (element-wise vdW radii) via the run_features override below.
-        assert n_in_channels == 13
-        g = per_sample_zscore(gradient_magnitude3d(dens_t.unsqueeze(0))).squeeze(0)  # (1, G, G, G)
-        return torch.cat([atoms_t, dens_t, g], dim=0)        # (13, G, G, G)
-    raise ValueError(f"unknown condition: {condition!r}")
+        x = torch.cat([merged, dens_t], dim=0)                # (8, G, G, G)
+    else:
+        raise ValueError(f"unknown input_mode={input_mode!r} for condition={condition!r}")
+
+    if with_gradmag:
+        # ‖∇ρ‖ is derived from the already-normalised density crop exactly as
+        # train_density_vit_mae.py does for xray source, then appended last.
+        g = per_sample_zscore(gradient_magnitude3d(dens_t.unsqueeze(0))).squeeze(0)
+        x = torch.cat([x, g], dim=0)
+
+    assert x.shape[0] == n_in_channels, (
+        f"{condition}: built {x.shape[0]} channels from input_mode={input_mode}, "
+        f"with_gradmag={with_gradmag}, but encoder expects {n_in_channels}"
+    )
+    return x
 
 
 def run_features(args: argparse.Namespace) -> None:
@@ -291,15 +380,14 @@ def run_features(args: argparse.Namespace) -> None:
     suffix = version_suffix(args.voxel_version)
     out_path = out_dir / f"{args.condition}_e{args.epoch}{suffix}.pt"
 
+    exp_dir = Path(args.exp_dir) if getattr(args, "exp_dir", None) else \
+        resolve_exp(args.condition, args.voxel_version)
+    cfg = OmegaConf.load(exp_dir / "cfg.yaml")
+    spec = infer_feature_spec(args.condition, cfg, args.atom_source)
+
     vox_dir  = voxel_dir_for(args.voxel_version)
-    atom_dir = vox_dir / "atoms"
+    atom_dir = atom_dir_for(vox_dir, spec.atom_source)
     dens_dir = vox_dir / "density"
-    # The gradmag/ligvdw encoder trained on element-wise vdW ligand blobs, so it
-    # needs the vdW atom voxels (voxels_ligvdw/atoms), not the uniform-0.5 set the
-    # version dirs symlink. Density (and the ‖∇ρ‖ derived from it) still come from
-    # the version dir (v4).
-    if args.condition in ("atomblob_merged_density_gradmag", "atomblob_density_gradmag"):
-        atom_dir = PDBBIND_DIR / "voxels_ligvdw" / "atoms"
     # availability.csv only exists in v1; v2/v3 reuse v1's since the pid set
     # is the same (they share the same successful-crop universe).
     avail_csv = vox_dir / "availability.csv"
@@ -311,45 +399,39 @@ def run_features(args: argparse.Namespace) -> None:
     print(f"  epoch          : {args.epoch}")
     print(f"  voxel_version  : {args.voxel_version}")
     print(f"  voxel_dir      : {vox_dir}")
+    print(f"  exp_dir        : {exp_dir}")
+    print(f"  input_mode     : {spec.input_mode}")
+    print(f"  with_gradmag   : {spec.with_gradmag}")
+    print(f"  ligand_radius  : {spec.ligand_radius}")
+    print(f"  atom_source    : {spec.atom_source} ({atom_dir})")
+    print(f"  dens_dir       : {dens_dir}")
     print(f"  device         : {args.device}")
     print(f"  batch_size     : {args.batch_size}")
     print(f"  out            : {out_path}")
-
-    # ── Atom-only conditions: features are version-independent, just symlink ──
-    if args.voxel_version != "v1" and args.condition in ATOM_ONLY_CONDITIONS:
-        src = out_dir / f"{args.condition}_e{args.epoch}.pt"
-        if not src.exists():
-            print(f"\n[error] v1 baseline {src} doesn't exist.")
-            print(f"        Run with --voxel_version v1 first (atom-only conditions "
-                  f"don't depend on density).")
-            sys.exit(1)
-        if not out_path.exists():
-            os.symlink(src.resolve(), out_path)
-        print(f"\n  [skip] {args.condition} doesn't consume density → features "
-              f"identical across versions.")
-        print(f"  [symlink] {out_path}  →  {src.name}")
-        return
 
     # ── Distribution-shift warning when the encoder wasn't retrained on the
     # selected density version. We override the exp dir for (condition, version)
     # combos that have a matching retrain; if no override exists for this combo
     # AND the condition reads density AND version != v1, the encoder is OOD.
-    is_density = args.condition in DENSITY_CONSUMING
     has_override = (args.condition, args.voxel_version) in EXPS_OVERRIDE
-    if is_density and args.voxel_version != "v1" and not has_override:
+    if spec.needs_density and args.voxel_version != "v1" and not has_override:
         print(f"\n  [warn] {args.condition} encoder was pretrained on v1 density.")
         print(f"  [warn] --voxel_version {args.voxel_version} feeds the encoder OOD inputs.")
         print(f"  [warn] Probe results reflect distribution shift, not encoder quality.")
 
-    exp_dir = resolve_exp(args.condition, args.voxel_version)
-    print(f"  exp_dir        : {exp_dir}")
-    encoder = load_encoder(exp_dir, args.epoch, args.device)
+    encoder = load_encoder(exp_dir, args.epoch, args.device, cfg=cfg)
     n_in = encoder.n_in_channels
+    if n_in != spec.expected_channels:
+        raise RuntimeError(
+            f"cfg-derived layout builds {spec.expected_channels} channels "
+            f"(input_mode={spec.input_mode}, with_gradmag={spec.with_gradmag}) "
+            f"but encoder.n_in_channels={n_in}"
+        )
 
     # Pick the right pdb_id pool: density-using conditions need has_density,
     # atom-only conditions (atomblob, atomblob_weighted) just need has_atoms.
     avail = pd.read_csv(avail_csv)
-    if args.condition in DENSITY_CONSUMING:
+    if spec.needs_density:
         pool = avail[avail["has_atoms"] & avail["has_density"]].copy()
     else:
         pool = avail[avail["has_atoms"]].copy()
@@ -371,7 +453,9 @@ def run_features(args: argparse.Namespace) -> None:
         for pid in batch_pids:
             try:
                 tensors.append(load_voxels_for(pid, args.condition, n_in,
-                                                atom_dir, dens_dir))
+                                                atom_dir, dens_dir,
+                                                input_mode=spec.input_mode,
+                                                with_gradmag=spec.with_gradmag))
                 used_pids.append(pid)
             except Exception as e:
                 err_log.append((pid, repr(e)[:160]))
@@ -385,11 +469,21 @@ def run_features(args: argparse.Namespace) -> None:
             features[pid] = vec.contiguous().clone()
         pbar.set_postfix(saved=len(features), err=n_err, refresh=False)
 
+    if out_path.is_symlink():
+        out_path.unlink()
     torch.save({
         "condition": args.condition,
         "epoch":     args.epoch,
         "n_in_channels": n_in,
         "feature_dim": encoder.dim,
+        "exp_dir": str(exp_dir),
+        "voxel_version": args.voxel_version,
+        "input_mode": spec.input_mode,
+        "with_gradmag": spec.with_gradmag,
+        "ligand_radius": spec.ligand_radius,
+        "atom_source": spec.atom_source,
+        "atom_dir": str(atom_dir),
+        "dens_dir": str(dens_dir),
         "features":  features,
     }, out_path)
     print(f"\n  saved {len(features):,} features → {out_path}  "
@@ -665,20 +759,25 @@ class VoxelDataset(Dataset):
     `load_voxels_for`, matching training and frozen feature extraction exactly.
     """
 
-    def __init__(self, pids, ys, condition, n_in, atom_dir, dens_dir):
+    def __init__(self, pids, ys, condition, n_in, atom_dir, dens_dir,
+                 input_mode: str, with_gradmag: bool):
         self.pids = list(pids)
         self.ys = np.asarray(ys, dtype=np.float32)
         self.condition = condition
         self.n_in = n_in
         self.atom_dir = atom_dir
         self.dens_dir = dens_dir
+        self.input_mode = input_mode
+        self.with_gradmag = with_gradmag
 
     def __len__(self) -> int:
         return len(self.pids)
 
     def __getitem__(self, i: int):
         x = load_voxels_for(self.pids[i], self.condition, self.n_in,
-                            self.atom_dir, self.dens_dir)
+                            self.atom_dir, self.dens_dir,
+                            input_mode=self.input_mode,
+                            with_gradmag=self.with_gradmag)
         return x, torch.tensor(self.ys[i], dtype=torch.float32)
 
 
@@ -716,21 +815,21 @@ def make_encoder_factory(exp_dir: Path, epoch: int):
     return factory, cfg
 
 
-def split_exists_filter(splits: dict, condition: str, atom_dir: Path,
-                        dens_dir: Path) -> dict:
+def split_exists_filter(splits: dict, atom_dir: Path, dens_dir: Path,
+                        needs_atoms: bool, needs_density: bool) -> dict:
     """Drop pids whose voxel files are missing so both arms share one pid pool."""
-    needs_density = condition not in ATOM_ONLY_CONDITIONS
     out = {}
     for split, sdf in splits.items():
         keep = [pid for pid in sdf["pdb_id"]
-                if (atom_dir / f"{pid}.npy").exists()
+                if (not needs_atoms or (atom_dir / f"{pid}.npy").exists())
                 and (not needs_density or (dens_dir / f"{pid}.npy").exists())]
         out[split] = sdf[sdf["pdb_id"].isin(keep)].reset_index(drop=True)
     return out
 
 
 def build_splits(condition: str, *, drop_covalent: bool, cl1_only: bool,
-                 atom_dir: Path, dens_dir: Path, avail_csv: Path) -> dict:
+                 atom_dir: Path, dens_dir: Path, avail_csv: Path,
+                 spec: FeatureSpec) -> dict:
     """Train/val/test pdb_id+pK frames for one condition (LP_PDBBind new_split).
 
     Single-condition pool: density-using conditions need has_atoms & has_density;
@@ -738,7 +837,7 @@ def build_splits(condition: str, *, drop_covalent: bool, cl1_only: bool,
     `probe` and this `finetune` see the identical complexes.
     """
     avail = pd.read_csv(avail_csv)
-    if condition in DENSITY_CONSUMING:
+    if spec.needs_density:
         pool = avail[avail["has_atoms"] & avail["has_density"]]
     else:
         pool = avail[avail["has_atoms"]]
@@ -754,12 +853,14 @@ def build_splits(condition: str, *, drop_covalent: bool, cl1_only: bool,
 
     splits = {s: df[df["new_split"] == s][["pdb_id", "pK"]].reset_index(drop=True)
               for s in ("train", "val", "test")}
-    return split_exists_filter(splits, condition, atom_dir, dens_dir)
+    return split_exists_filter(splits, atom_dir, dens_dir,
+                               needs_atoms=spec.needs_atoms,
+                               needs_density=spec.needs_density)
 
 
 @torch.no_grad()
 def encode_split_features(encoder, splits, condition, n_in, atom_dir, dens_dir,
-                          device, batch_size):
+                          device, batch_size, input_mode, with_gradmag):
     """Frozen-encoder mean-pooled features → {split: {X, y, pid}} for train_one."""
     encoder = encoder.to(device).eval()
     data = {}
@@ -773,7 +874,9 @@ def encode_split_features(encoder, splits, condition, n_in, atom_dir, dens_dir,
             for pid in pids[start : start + batch_size]:
                 try:
                     tensors.append(load_voxels_for(pid, condition, n_in,
-                                                   atom_dir, dens_dir)); ok.append(pid)
+                                                   atom_dir, dens_dir,
+                                                   input_mode=input_mode,
+                                                   with_gradmag=with_gradmag)); ok.append(pid)
                 except Exception:
                     pass
             if not tensors:
@@ -830,7 +933,8 @@ def infer_loader(model, loader, device, amp, amp_dtype) -> np.ndarray:
 def train_finetune(splits, factory, *, seed, device, condition, n_in,
                    atom_dir, dens_dir, max_epochs, patience, batch_size,
                    accum_steps, head_lr, encoder_lr, weight_decay, grad_clip,
-                   hidden, dropout, num_workers, amp, ft_scope, last_k) -> dict:
+                   hidden, dropout, num_workers, amp, ft_scope, last_k,
+                   input_mode, with_gradmag) -> dict:
     """Fine-tune encoder + head end-to-end; return metrics (best val ρ → test)."""
     torch.manual_seed(seed); np.random.seed(seed)
 
@@ -851,7 +955,8 @@ def train_finetune(splits, factory, *, seed, device, condition, n_in,
     def make_loader(split, shuffle):
         sdf = splits[split]
         ds = VoxelDataset(sdf["pdb_id"], sdf["pK"].to_numpy(), condition, n_in,
-                          atom_dir, dens_dir)
+                          atom_dir, dens_dir, input_mode=input_mode,
+                          with_gradmag=with_gradmag)
         return DataLoader(ds, batch_size=batch_size, shuffle=shuffle,
                           num_workers=num_workers, pin_memory=True,
                           persistent_workers=num_workers > 0)
@@ -912,21 +1017,19 @@ def run_finetune(args: argparse.Namespace) -> None:
     device = args.device
     amp = (not args.no_amp) and str(device).startswith("cuda")
     exp_dir = resolve_exp(args.condition, args.voxel_version)
+    factory, cfg = make_encoder_factory(exp_dir, args.epoch)
+    spec = infer_feature_spec(args.condition, cfg, args.atom_source)
 
     # Distribution-shift warning: density-consuming encoder fed an un-retrained
     # density version (same rationale as run_features).
-    is_density = args.condition in DENSITY_CONSUMING
     has_override = (args.condition, args.voxel_version) in EXPS_OVERRIDE
-    if is_density and args.voxel_version != "v1" and not has_override:
+    if spec.needs_density and args.voxel_version != "v1" and not has_override:
         print(f"  [warn] {args.condition} encoder pretrained on v1 density; "
               f"--voxel_version {args.voxel_version} is OOD.")
 
     vox_dir  = voxel_dir_for(args.voxel_version)
-    atom_dir = vox_dir / "atoms"
+    atom_dir = atom_dir_for(vox_dir, spec.atom_source)
     dens_dir = vox_dir / "density"
-    # gradmag/ligvdw encoders trained on element-wise vdW atom blobs (see run_features).
-    if args.condition in ("atomblob_merged_density_gradmag", "atomblob_density_gradmag"):
-        atom_dir = PDBBIND_DIR / "voxels_ligvdw" / "atoms"
     avail_csv = vox_dir / "availability.csv"
     if not avail_csv.exists():
         avail_csv = PDBBIND_DIR / "voxels" / "availability.csv"
@@ -940,6 +1043,10 @@ def run_finetune(args: argparse.Namespace) -> None:
     print(f"  epoch          : {args.epoch}")
     print(f"  voxel_version  : {args.voxel_version}")
     print(f"  exp_dir        : {exp_dir}")
+    print(f"  input_mode     : {spec.input_mode}")
+    print(f"  with_gradmag   : {spec.with_gradmag}")
+    print(f"  ligand_radius  : {spec.ligand_radius}")
+    print(f"  atom_source    : {spec.atom_source}")
     print(f"  atom_dir       : {atom_dir}")
     print(f"  dens_dir       : {dens_dir}")
     print(f"  seeds          : {args.seeds}")
@@ -951,13 +1058,19 @@ def run_finetune(args: argparse.Namespace) -> None:
     print(f"  ft max_ep/pat  : {args.max_epochs} / {args.patience}")
     print(f"  out_csv        : {out_csv}")
 
-    factory, cfg = make_encoder_factory(exp_dir, args.epoch)
     n_in = cfg.model.n_in_channels
+    if n_in != spec.expected_channels:
+        raise RuntimeError(
+            f"cfg-derived layout builds {spec.expected_channels} channels "
+            f"(input_mode={spec.input_mode}, with_gradmag={spec.with_gradmag}) "
+            f"but cfg.model.n_in_channels={n_in}"
+        )
 
     splits = build_splits(args.condition,
                           drop_covalent=not args.no_covalent_filter,
                           cl1_only=args.cl1_only, atom_dir=atom_dir,
-                          dens_dir=dens_dir, avail_csv=avail_csv)
+                          dens_dir=dens_dir, avail_csv=avail_csv,
+                          spec=spec)
     if args.max_complexes:
         splits = {s: sdf.head(args.max_complexes) for s, sdf in splits.items()}
         print(f"  [smoke] capped each split to {args.max_complexes} complexes")
@@ -970,7 +1083,8 @@ def run_finetune(args: argparse.Namespace) -> None:
         print("\n── frozen control (encode once → MLP head) ─────────────────────")
         enc = factory()
         data = encode_split_features(enc, splits, args.condition, n_in,
-                                     atom_dir, dens_dir, device, args.feat_batch_size)
+                                     atom_dir, dens_dir, device, args.feat_batch_size,
+                                     spec.input_mode, spec.with_gradmag)
         del enc
         if str(device).startswith("cuda"):
             torch.cuda.empty_cache()
@@ -1001,7 +1115,9 @@ def run_finetune(args: argparse.Namespace) -> None:
                                weight_decay=args.weight_decay, grad_clip=args.grad_clip,
                                hidden=args.hidden, dropout=args.dropout,
                                num_workers=args.num_workers, amp=amp,
-                               ft_scope=args.ft_scope, last_k=args.last_k)
+                               ft_scope=args.ft_scope, last_k=args.last_k,
+                               input_mode=spec.input_mode,
+                               with_gradmag=spec.with_gradmag)
             rows.append({"condition": args.condition, "mode": "finetune",
                          "ft_scope": args.ft_scope, "seed": seed,
                          "encoder_lr": args.encoder_lr, "head_lr": args.head_lr, **m})
@@ -1031,7 +1147,7 @@ def run_finetune(args: argparse.Namespace) -> None:
 
 _CONDITION_CHOICES = ["atomblob", "atomblob_density", "atomblob_weighted",
                       "atomblob_merged_density", "atomblob_merged_density_gradmag",
-                      "atomblob_density_gradmag"]
+                      "atomblob_density_gradmag", "density_gradmag"]
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -1052,13 +1168,22 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Density-normalisation version: v1 = per-map z-score + "
                          "per-crop ±3σ clip; v2 = pocket-pool z-score; "
                          "v3 = pocket-pool symmetric max-abs; v4 = pocket-pool "
-                         "clip + z-score. Atom voxels are identical across "
-                         "versions (symlinked).")
+                         "clip + z-score; v5 = arcsinh + z-score. Atom source "
+                         "is selected by --atom_source / pretrained cfg.")
     pf.add_argument("--batch_size", type=int, default=16)
     pf.add_argument("--device",     default="cuda" if torch.cuda.is_available() else "cpu")
     pf.add_argument("--out_dir",    default=str(FEAT_DIR))
     pf.add_argument("--max_complexes", type=int, default=0,
                     help="Limit to first N (0 = all). Smoke testing.")
+    pf.add_argument("--atom_source", choices=["auto", "default", "ligvdw"], default="auto",
+                    help="PDBbind atom voxel source. auto follows cfg.dset.ligand_radius "
+                         "(<=0 uses voxels_ligvdw/atoms); default uses the version "
+                         "dir's atoms symlink; ligvdw forces voxels_ligvdw/atoms.")
+    pf.add_argument("--exp_dir", default=None,
+                    help="Override the encoder exp dir (default: resolve from "
+                         "condition+voxel_version via EXPS/EXPS_OVERRIDE). Lets "
+                         "multiple same-condition runs be probed against their own "
+                         "checkpoints in an auto-research loop.")
     pf.set_defaults(func=run_features)
 
     pr = sub.add_parser(
@@ -1101,6 +1226,10 @@ def build_parser() -> argparse.ArgumentParser:
     pt.add_argument("--voxel_version", choices=["v1", "v2", "v3", "v4", "v5"], default="v5",
                     help="Density-normalisation variant; picks the matching encoder "
                          "(EXPS_OVERRIDE) + voxel dir. Default v5 (separate gradmag/ligvdw).")
+    pt.add_argument("--atom_source", choices=["auto", "default", "ligvdw"], default="auto",
+                    help="PDBbind atom voxel source. auto follows cfg.dset.ligand_radius "
+                         "(<=0 uses voxels_ligvdw/atoms); default uses the version "
+                         "dir's atoms symlink; ligvdw forces voxels_ligvdw/atoms.")
     pt.add_argument("--epoch",   type=int, default=99, help="Encoder checkpoint epoch")
     pt.add_argument("--modes",   nargs="+", default=["frozen", "finetune"],
                     choices=["frozen", "finetune"],
