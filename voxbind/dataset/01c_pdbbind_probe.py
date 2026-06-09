@@ -50,21 +50,21 @@ implicitly; we test what this representation is worth.
 
     CUDA_VISIBLE_DEVICES=5 python dataset/01c_pdbbind_probe.py probe \
         --epoch 99 --seeds 3
-  → dataset/data/pdbbind/probe_results_e<N>.csv               (this run only)
+  → dataset/data/pdbbind/probe_results_e<N>[_<ver>][_filtered][_<tag>].csv  (this run only)
+        version from --voxel_version, _filtered from --cl1_only, _<tag> from --tag
         cols: condition, seed, n_train, n_val, n_test,
               best_val_spearman, val_pearson, test_spearman, test_pearson,
               test_rmse, epoch_stopped
-  → dataset/data/pdbbind/probe_results_consolidated.csv       (every run, appended)
-        Same rows + provenance cols source_file, epoch, voxel_version, variant
-        (version/variant otherwise live only in the per-run filename). Idempotent
-        per source_file. Rebuild from all per-run CSVs any time with:
-            python dataset/consolidate_probe_results.py [--summary]
+    (Auto-consolidation is OFF — per-run CSVs + the live dashboard are the source of
+     truth. To build a combined table on demand, version/variant lifted from each
+     filename into columns:  python dataset/consolidate_probe_results.py [--summary])
 
   Optional probe flags:
     --conditions COND ...   default: atomblob atomblob_density atomblob_weighted atomblob_merged_density
     --no_intersect          let each condition use its own pdb_id pool (NOT recommended)
     --no_covalent_filter    keep covalent complexes (default: drop)
-    --cl1_only              restrict to LP_PDBBind CL1=True (cleanest subset)
+    --cl1_only              restrict to LP_PDBBind CL1=True (cleanest subset); names the CSV *_filtered*
+    --tag LABEL             optional run label in the CSV name (after the version/_filtered token)
     --max_epochs N          default: 200
     --patience N            default: 30  (epochs of no val-ρ improvement)
 
@@ -83,15 +83,18 @@ token rep — the ONLY difference is whether encoder gradients flow:
 
     CUDA_VISIBLE_DEVICES=6 python dataset/01c_pdbbind_probe.py finetune \
         --condition atomblob_density_gradmag --voxel_version v5 --epoch 99 --seeds 3
-  → dataset/data/pdbbind/finetune_results_e<N>_v<ver>.csv
+  → dataset/data/pdbbind/finetune_results_e<N>[_<ver>][_filtered][_<tag>].csv
+        (same --voxel_version / --cl1_only / --tag naming as `probe`)
         Probe schema + a `mode` (frozen|finetune), `ft_scope`, `encoder_lr`,
         `head_lr` column, plus a printed frozen-vs-finetune Δ summary.
 """
 
 import argparse
+import json
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -124,6 +127,10 @@ RESULTS_DIR = PDBBIND_DIR
 
 EXPS = {
     "atomblob":               Path("exps") / "260606_atomblob_vit_mae_40m_invfreq_pretrain",   # 260606 v5-ablation (atom-only, version-agnostic)
+    # Atom-only matched control that uses element-wise ligand vdW radii. This is
+    # intentionally a separate condition so the lig-vdW control cannot be lost by
+    # forgetting a side-channel --atom_source flag during feature/probe runs.
+    "atomblob_ligvdw":        Path("exps") / "260609_atomblob_vit_mae_40m_invfreq_v5_ligvdw_pretrain",
     "atomblob_density":       Path("exps") / "260526_atomblob_density_vit_mae_40m_pretrain",
     "atomblob_weighted":      Path("exps") / "260528_atomblob_vit_mae_40m_weighted_pretrain",
     "atomblob_merged_density": Path("exps") / "260530_atomblob_merged_density_vit_mae_40m_weighted_pretrain",
@@ -144,6 +151,8 @@ EXPS_OVERRIDE: dict[tuple[str, str], Path] = {
     ("atomblob_density",        "v2"): Path("exps") / "260531_atomblob_density_vit_mae_40m_v2_pretrain",
     # 260606 v5-ablation (this box): separate-channel atomblob_density on v5 arcsinh density.
     ("atomblob_density",        "v5"): Path("exps") / "260606_atomblob_density_vit_mae_40m_invfreq_v5_pretrain",
+    # Atom-only ligand-vdW matched control for the v5 ablation app/table.
+    ("atomblob_ligvdw",         "v5"): Path("exps") / "260609_atomblob_vit_mae_40m_invfreq_v5_ligvdw_pretrain",
     # v4 has two merged_density retrains: 260601 (plain) and 260602 (dual-head,
     # separate atom/density recon heads). We point v4 at the dual-head encoder
     # being evaluated; swap to 260601_..._v4_pretrain to probe the plain variant.
@@ -187,6 +196,32 @@ def version_suffix(version: str) -> str:
     return "" if version == "v1" else f"_{version}"
 
 
+def results_suffix(version: str, *, cl1_only: bool = False,
+                   tag: Optional[str] = None) -> str:
+    """Filename suffix for a results CSV: density version + filtered split + run tag.
+
+    Like version_suffix (v1 stays bare for back-compat), but every part is
+    argument-driven so the name is reproducible and parseable:
+      • `vN`        the density version, always a clean token (never `v5filt`);
+      • `_filtered` when --cl1_only restricts to the LP_PDBBind CL1 subset, so a
+                    filtered run never overwrites the full-split file of its version;
+      • `_<tag>`    an optional free-form run label (encoder variant, date, …).
+    e.g. version=v5, cl1_only=True, tag="invfreq" → "_v5_filtered_invfreq"
+         (probe_results_e99_v5_filtered_invfreq.csv). The leading `vN` stays a clean
+    token so consolidate_probe_results.parse_run_meta can recover the version.
+    """
+    parts: list[str] = []
+    if version != "v1":
+        parts.append(version)
+    if cl1_only:
+        parts.append("filtered")
+    if tag:
+        clean = "_".join(str(tag).split()).strip("_")
+        if clean:
+            parts.append(clean)
+    return ("_" + "_".join(parts)) if parts else ""
+
+
 @dataclass(frozen=True)
 class FeatureSpec:
     """How a pretrained encoder expects PDBbind voxels to be assembled."""
@@ -204,7 +239,7 @@ def _fallback_input_mode(condition: str) -> str:
     """Map legacy condition labels to the training `input_mode` vocabulary."""
     if condition == "density_gradmag":
         return "density"
-    if condition == "atomblob_weighted":
+    if condition in ("atomblob_weighted", "atomblob_ligvdw"):
         return "atomblob"
     if condition == "atomblob_density_gradmag":
         return "atomblob_density"
@@ -240,7 +275,15 @@ def infer_feature_spec(condition: str, cfg, atom_source_arg: str = "auto") -> Fe
         or with_gradmag
     needs_atoms = input_mode != "density"
 
-    if atom_source_arg == "auto":
+    if condition == "atomblob_ligvdw" and atom_source_arg == "default":
+        raise ValueError(
+            "condition=atomblob_ligvdw requires ligand-vdW atom voxels; "
+            "omit --atom_source or pass --atom_source ligvdw"
+        )
+
+    if condition == "atomblob_ligvdw":
+        atom_source = "ligvdw"
+    elif atom_source_arg == "auto":
         atom_source = "ligvdw" if ligand_radius <= 0 else "default"
     else:
         atom_source = atom_source_arg
@@ -264,6 +307,311 @@ def atom_dir_for(vox_dir: Path, atom_source: str) -> Path:
     raise ValueError(f"unknown atom_source={atom_source!r}")
 
 
+CACHE_METADATA_VERSION = 2
+EXPECTED_VOXELIZE_METADATA_VERSION = 2
+EXPECTED_CENTER_SOURCE = "ligand_sdf_all_non_h_geometric_centroid"
+_PATH_SIGNATURE_KEYS = {
+    "exp_dir",
+    "atom_dir",
+    "dens_dir",
+    "stats_path",
+    "reference_stats_json",
+    "metadata_path",
+    "index_csv",
+    "struct_dir",
+    "ccp4_dir",
+}
+_ATOM_METADATA_KEYS = (
+    "metadata_version",
+    "kind",
+    "center_source",
+    "grid_dim",
+    "resolution",
+    "cubes_around",
+    "ligand_channels",
+    "pocket_channels",
+    "element_filter",
+    "ligand_vdw",
+    "ligand_radius",
+    "pocket_radius",
+    "density_enabled",
+    "density_mode",
+    "index_csv",
+    "struct_dir",
+    "ccp4_dir",
+)
+_DENSITY_STAT_KEYS = (
+    "metadata_version",
+    "center_source",
+    "grid_dim",
+    "resolution",
+    "element_filter",
+    "scheme",
+    "formula",
+    "stats_source",
+    "reference_stats_json",
+    "arcsinh_scale",
+    "mu",
+    "sigma",
+    "max_abs",
+    "clip_lo_raw",
+    "clip_hi_raw",
+    "mu_clip",
+    "sigma_clip",
+    "mu_a",
+    "sigma_a",
+    "pdbbind_fit_mu_a",
+    "pdbbind_fit_sigma_a",
+    "n_crops",
+    "n_voxels_total",
+    "raw_min",
+    "raw_max",
+)
+
+
+def _canonical_path(path) -> Optional[str]:
+    if path in (None, ""):
+        return None
+    return str(Path(path).expanduser().resolve())
+
+
+def atom_voxel_metadata(atom_dir: Path) -> dict:
+    """Comparable metadata snapshot for a PDBbind atom voxel cache."""
+    meta_path = atom_dir.resolve().parent / "metadata.json"
+    meta = {
+        "metadata_path": _canonical_path(meta_path),
+        "present": meta_path.exists(),
+    }
+    if not meta_path.exists():
+        return meta
+
+    raw = json.loads(meta_path.read_text())
+    for key in _ATOM_METADATA_KEYS:
+        if key not in raw:
+            continue
+        value = raw[key]
+        if key in _PATH_SIGNATURE_KEYS and value is not None:
+            value = _canonical_path(value)
+        meta[key] = value
+    return meta
+
+
+def density_stats_metadata(voxel_version: str, dens_dir: Path) -> Optional[dict]:
+    """Small, comparable metadata snapshot for density-normalised voxel dirs."""
+    if voxel_version == "v1":
+        return None
+
+    stats_path = dens_dir.parent / "stats.json"
+    meta = {
+        "voxel_version": voxel_version,
+        "stats_path": _canonical_path(stats_path),
+        "present": stats_path.exists(),
+    }
+    if not stats_path.exists():
+        return meta
+
+    stats = json.loads(stats_path.read_text())
+    for key in _DENSITY_STAT_KEYS:
+        if key not in stats:
+            continue
+        value = stats[key]
+        if key in _PATH_SIGNATURE_KEYS and value is not None:
+            value = _canonical_path(value)
+        meta[key] = value
+    return meta
+
+
+def build_cache_signature(
+    *,
+    condition: str,
+    epoch: int,
+    voxel_version: str,
+    exp_dir: Path,
+    spec: FeatureSpec,
+    n_in_channels: int,
+    feature_dim: int,
+    atom_dir: Path,
+    dens_dir: Path,
+    require_density_stats: bool,
+) -> dict:
+    atom_metadata = atom_voxel_metadata(atom_dir) if spec.needs_atoms else None
+    if spec.needs_atoms and not (atom_metadata and atom_metadata.get("present")):
+        raise FileNotFoundError(
+            f"missing atom voxel metadata: {atom_dir.resolve().parent / 'metadata.json'}"
+        )
+    if atom_metadata and atom_metadata.get("present"):
+        if atom_metadata.get("metadata_version") != EXPECTED_VOXELIZE_METADATA_VERSION:
+            raise ValueError(
+                f"atom voxel metadata_version={atom_metadata.get('metadata_version')!r}; "
+                f"expected {EXPECTED_VOXELIZE_METADATA_VERSION}"
+            )
+        if atom_metadata.get("center_source") != EXPECTED_CENTER_SOURCE:
+            raise ValueError(
+                f"atom voxel center_source={atom_metadata.get('center_source')!r}; "
+                f"expected {EXPECTED_CENTER_SOURCE!r}"
+            )
+        if spec.atom_source == "ligvdw" and atom_metadata.get("ligand_vdw") is not True:
+            raise ValueError(f"{atom_dir} is not a ligand-vdW atom cache")
+        if spec.atom_source == "default" and atom_metadata.get("ligand_vdw") is not False:
+            raise ValueError(f"{atom_dir} is not a default ligand-radius atom cache")
+
+    density_stats = density_stats_metadata(voxel_version, dens_dir) if spec.needs_density else None
+    if require_density_stats and spec.needs_density and voxel_version != "v1" \
+            and not (density_stats and density_stats.get("present")):
+        raise FileNotFoundError(
+            f"missing density stats for {voxel_version}: {dens_dir.parent / 'stats.json'}"
+        )
+    if density_stats and density_stats.get("present"):
+        if density_stats.get("metadata_version") != EXPECTED_VOXELIZE_METADATA_VERSION:
+            raise ValueError(
+                f"density stats metadata_version={density_stats.get('metadata_version')!r}; "
+                f"expected {EXPECTED_VOXELIZE_METADATA_VERSION}"
+            )
+        if density_stats.get("center_source") != EXPECTED_CENTER_SOURCE:
+            raise ValueError(
+                f"density stats center_source={density_stats.get('center_source')!r}; "
+                f"expected {EXPECTED_CENTER_SOURCE!r}"
+            )
+        if atom_metadata and atom_metadata.get("present"):
+            atom_filter = atom_metadata.get("element_filter")
+            density_filter = density_stats.get("element_filter")
+            if atom_filter != density_filter:
+                raise ValueError(
+                    f"atom element_filter={atom_filter!r} but density element_filter={density_filter!r}"
+                )
+
+    return {
+        "metadata_version": CACHE_METADATA_VERSION,
+        "condition": condition,
+        "epoch": int(epoch),
+        "voxel_version": voxel_version,
+        "exp_dir": _canonical_path(exp_dir),
+        "input_mode": spec.input_mode,
+        "with_gradmag": bool(spec.with_gradmag),
+        "ligand_radius": float(spec.ligand_radius),
+        "atom_source": spec.atom_source,
+        "n_in_channels": int(n_in_channels),
+        "feature_dim": int(feature_dim),
+        "needs_atoms": bool(spec.needs_atoms),
+        "needs_density": bool(spec.needs_density),
+        "atom_dir": _canonical_path(atom_dir),
+        "atom_metadata": atom_metadata,
+        "dens_dir": _canonical_path(dens_dir) if spec.needs_density else None,
+        "density_stats": density_stats,
+    }
+
+
+def expected_cache_signature(condition: str, args: argparse.Namespace) -> dict:
+    exp_dir = resolve_exp(condition, args.voxel_version)
+    cfg = OmegaConf.load(exp_dir / "cfg.yaml")
+    spec = infer_feature_spec(condition, cfg, "auto")
+    vox_dir = voxel_dir_for(args.voxel_version)
+    atom_dir = atom_dir_for(vox_dir, spec.atom_source)
+    dens_dir = vox_dir / "density"
+    return build_cache_signature(
+        condition=condition,
+        epoch=args.epoch,
+        voxel_version=args.voxel_version,
+        exp_dir=exp_dir,
+        spec=spec,
+        n_in_channels=int(cfg.model.n_in_channels),
+        feature_dim=int(cfg.model.dim),
+        atom_dir=atom_dir,
+        dens_dir=dens_dir,
+        require_density_stats=True,
+    )
+
+
+def _normalise_signature_value(key: str, value):
+    if key in _PATH_SIGNATURE_KEYS and value is not None:
+        return _canonical_path(value)
+    if isinstance(value, dict):
+        return {k: _normalise_signature_value(k, v) for k, v in value.items()}
+    return value
+
+
+def _normalise_signature(sig: Optional[dict]) -> dict:
+    if not isinstance(sig, dict):
+        return {}
+    return {k: _normalise_signature_value(k, v) for k, v in sig.items()}
+
+
+def _legacy_cache_signature(bundle: dict) -> dict:
+    """Best-effort signature for pre-v2 bundles so mismatches are explainable."""
+    keys = (
+        "condition", "epoch", "voxel_version", "exp_dir", "input_mode",
+        "with_gradmag", "ligand_radius", "atom_source", "n_in_channels",
+        "feature_dim", "atom_dir", "dens_dir",
+    )
+    sig = {k: bundle[k] for k in keys if k in bundle}
+    sig["metadata_version"] = bundle.get("metadata_version", 1)
+    return _normalise_signature(sig)
+
+
+def _values_equal(actual, expected) -> bool:
+    if isinstance(expected, float) or isinstance(actual, float):
+        try:
+            return bool(np.isclose(float(actual), float(expected), rtol=1e-6, atol=1e-8))
+        except Exception:
+            return False
+    return actual == expected
+
+
+def _compare_signatures(actual: dict, expected: dict, prefix: str = "") -> list[str]:
+    issues: list[str] = []
+    for key, exp_value in expected.items():
+        name = f"{prefix}.{key}" if prefix else key
+        if key not in actual:
+            issues.append(f"{name}: missing (expected {exp_value!r})")
+            continue
+        act_value = actual[key]
+        if isinstance(exp_value, dict):
+            if not isinstance(act_value, dict):
+                issues.append(f"{name}: expected dict, got {type(act_value).__name__}")
+                continue
+            issues.extend(_compare_signatures(act_value, exp_value, name))
+        elif not _values_equal(act_value, exp_value):
+            issues.append(f"{name}: got {act_value!r}, expected {exp_value!r}")
+    return issues
+
+
+def validate_feature_bundle(bundle: dict, expected: dict, feat_path: Path) -> list[str]:
+    issues: list[str] = []
+    if bundle.get("metadata_version") != CACHE_METADATA_VERSION:
+        issues.append(
+            f"metadata_version: got {bundle.get('metadata_version')!r}, "
+            f"expected {CACHE_METADATA_VERSION}"
+        )
+
+    actual = bundle.get("cache_signature")
+    if not isinstance(actual, dict):
+        issues.append("cache_signature: missing; regenerate features with this script")
+        actual = _legacy_cache_signature(bundle)
+    else:
+        actual = _normalise_signature(actual)
+
+    expected = _normalise_signature(expected)
+    issues.extend(_compare_signatures(actual, expected))
+
+    features = bundle.get("features")
+    if not isinstance(features, dict):
+        issues.append("features: missing or not a dict")
+    elif features:
+        first_key = next(iter(features))
+        first = features[first_key]
+        if getattr(first, "ndim", None) != 1:
+            issues.append(f"features[{first_key!r}]: expected 1-D tensor, got shape={getattr(first, 'shape', None)}")
+        elif int(first.shape[0]) != int(expected["feature_dim"]):
+            issues.append(
+                f"features[{first_key!r}]: dim {int(first.shape[0])}, "
+                f"expected {expected['feature_dim']}"
+            )
+
+    if issues:
+        return [f"{feat_path}: {issue}" for issue in issues]
+    return []
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # features — frozen-encoder mean-pooled patch tokens
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -283,6 +631,7 @@ def load_encoder(exp_dir: Path, epoch: int, device: str, cfg=None) -> DensityViT
         n_heads      = m.heads,
         mlp_ratio    = m.mlp_ratio,
         dropout      = m.dropout,
+        pos_encoding = m.get("pos_encoding", "learnable"),
     )
 
     ckpt_path = exp_dir / f"checkpoint_e{epoch:04d}.pth.tar"
@@ -427,6 +776,22 @@ def run_features(args: argparse.Namespace) -> None:
             f"(input_mode={spec.input_mode}, with_gradmag={spec.with_gradmag}) "
             f"but encoder.n_in_channels={n_in}"
         )
+    cache_signature = build_cache_signature(
+        condition=args.condition,
+        epoch=args.epoch,
+        voxel_version=args.voxel_version,
+        exp_dir=exp_dir,
+        spec=spec,
+        n_in_channels=n_in,
+        feature_dim=encoder.dim,
+        atom_dir=atom_dir,
+        dens_dir=dens_dir,
+        require_density_stats=True,
+    )
+    if cache_signature["density_stats"] is not None:
+        ds = cache_signature["density_stats"]
+        print(f"  density_stats  : {ds.get('stats_path')} "
+              f"(source={ds.get('stats_source', 'n/a')}, present={ds.get('present')})")
 
     # Pick the right pdb_id pool: density-using conditions need has_density,
     # atom-only conditions (atomblob, atomblob_weighted) just need has_atoms.
@@ -472,24 +837,26 @@ def run_features(args: argparse.Namespace) -> None:
     if out_path.is_symlink():
         out_path.unlink()
     torch.save({
+        "metadata_version": CACHE_METADATA_VERSION,
+        "cache_signature": cache_signature,
         "condition": args.condition,
         "epoch":     args.epoch,
         "n_in_channels": n_in,
         "feature_dim": encoder.dim,
-        "exp_dir": str(exp_dir),
+        "exp_dir": cache_signature["exp_dir"],
         "voxel_version": args.voxel_version,
         "input_mode": spec.input_mode,
         "with_gradmag": spec.with_gradmag,
         "ligand_radius": spec.ligand_radius,
         "atom_source": spec.atom_source,
-        "atom_dir": str(atom_dir),
-        "dens_dir": str(dens_dir),
+        "atom_dir": cache_signature["atom_dir"],
+        "dens_dir": cache_signature["dens_dir"],
         "features":  features,
     }, out_path)
     print(f"\n  saved {len(features):,} features → {out_path}  "
           f"({out_path.stat().st_size/1e6:.1f} MB)")
     if err_log:
-        err_path = out_dir / f"{args.condition}_e{args.epoch}_errors.txt"
+        err_path = out_dir / f"{args.condition}_e{args.epoch}{suffix}_errors.txt"
         err_path.write_text("\n".join(f"{p}\t{m}" for p, m in err_log) + "\n")
         print(f"  errors   : {n_err:,}  →  {err_path}")
 
@@ -620,9 +987,11 @@ def train_one(
 
 
 def run_probe(args: argparse.Namespace) -> None:
-    suffix = "" if args.voxel_version == "v1" else f"_{args.voxel_version}"
+    suffix = version_suffix(args.voxel_version)          # feature-cache suffix: density version only
+    csv_suffix = results_suffix(                         # results-CSV suffix: + filtered split + run tag
+        args.voxel_version, cl1_only=args.cl1_only, tag=args.tag)
     out_csv = Path(args.out_csv) if args.out_csv else (
-        RESULTS_DIR / f"probe_results_e{args.epoch}{suffix}.csv"
+        RESULTS_DIR / f"probe_results_e{args.epoch}{csv_suffix}.csv"
     )
 
     print(f"=== PDBbind frozen-encoder probe (pocket repr only) ===")
@@ -633,7 +1002,9 @@ def run_probe(args: argparse.Namespace) -> None:
     print(f"  device        : {args.device}")
     print(f"  intersect     : {not args.no_intersect}")
     print(f"  drop_covalent : {not args.no_covalent_filter}")
-    print(f"  cl1_only      : {args.cl1_only}")
+    print(f"  cl1_only      : {args.cl1_only}{'  (-> _filtered)' if args.cl1_only else ''}")
+    print(f"  tag           : {args.tag}")
+    print(f"  cache_check   : {'warn only' if args.allow_stale_features else 'strict'}")
     print(f"  out_csv       : {out_csv}")
 
     lp_df = load_lp_index(LP_CSV)
@@ -649,6 +1020,22 @@ def run_probe(args: argparse.Namespace) -> None:
                   f"--condition {cond} --voxel_version {args.voxel_version}")
             sys.exit(1)
         bundle = torch.load(feat_path, weights_only=False)
+        try:
+            expected = expected_cache_signature(cond, args)
+            issues = validate_feature_bundle(bundle, expected, feat_path)
+        except Exception as e:
+            issues = [f"{feat_path}: could not build expected metadata ({e!r})"]
+        if issues:
+            print(f"\n[error] stale or incompatible feature cache for {cond}:")
+            for issue in issues[:16]:
+                print(f"        - {issue}")
+            if len(issues) > 16:
+                print(f"        - ... {len(issues) - 16} more mismatch(es)")
+            print(f"        Regenerate: python dataset/01c_pdbbind_probe.py features "
+                  f"--condition {cond} --voxel_version {args.voxel_version} --epoch {args.epoch}")
+            if not args.allow_stale_features:
+                sys.exit(1)
+            print("        continuing because --allow_stale_features was set")
         all_feats[cond] = bundle["features"]
         print(f"  loaded {cond:24s}: {len(all_feats[cond]):,} feats (dim={bundle['feature_dim']})")
 
@@ -701,16 +1088,9 @@ def run_probe(args: argparse.Namespace) -> None:
     print(agg.to_string())
     print(f"\n[write] {out_csv}")
 
-    # Fold this run into the consolidated table so results don't stay scattered
-    # across per-run CSVs — the filename-encoded version/variant become columns.
-    # Idempotent per source_file; rebuild any time with consolidate_probe_results.
-    if append_run is not None:
-        try:
-            cpath = append_run(df, out_csv.name, RESULTS_DIR,
-                               epoch=args.epoch, voxel_version=args.voxel_version)
-            print(f"[consolidate] +{len(df)} rows → {cpath}")
-        except Exception as e:
-            print(f"[consolidate] skipped ({e!r})")
+    # Auto-consolidation disabled: the per-run CSVs (now cleanly version-named) plus
+    # the live dashboard are the source of truth; the consolidated table is no longer
+    # maintained. Rebuild on demand with: python dataset/consolidate_probe_results.py
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1034,9 +1414,10 @@ def run_finetune(args: argparse.Namespace) -> None:
     if not avail_csv.exists():
         avail_csv = PDBBIND_DIR / "voxels" / "availability.csv"
 
-    suffix = version_suffix(args.voxel_version)
+    csv_suffix = results_suffix(
+        args.voxel_version, cl1_only=args.cl1_only, tag=args.tag)
     out_csv = Path(args.out_csv) if args.out_csv else (
-        RESULTS_DIR / f"finetune_results_e{args.epoch}{suffix}.csv")
+        RESULTS_DIR / f"finetune_results_e{args.epoch}{csv_suffix}.csv")
 
     print(f"=== PDBbind frozen-vs-finetune ({args.condition}) ===")
     print(f"  modes          : {args.modes}")
@@ -1145,7 +1526,7 @@ def run_finetune(args: argparse.Namespace) -> None:
 
 # ── CLI ────────────────────────────────────────────────────────────────────────
 
-_CONDITION_CHOICES = ["atomblob", "atomblob_density", "atomblob_weighted",
+_CONDITION_CHOICES = ["atomblob", "atomblob_ligvdw", "atomblob_density", "atomblob_weighted",
                       "atomblob_merged_density", "atomblob_merged_density_gradmag",
                       "atomblob_density_gradmag", "density_gradmag"]
 
@@ -1211,7 +1592,14 @@ def build_parser() -> argparse.ArgumentParser:
     pr.add_argument("--no_covalent_filter", action="store_true",
                     help="Keep covalent complexes (default: drop)")
     pr.add_argument("--cl1_only",      action="store_true",
-                    help="Restrict to LP_PDBBind CL1=True (cleanest subset)")
+                    help="Restrict to LP_PDBBind CL1=True (cleanest subset); adds _filtered to the CSV name")
+    pr.add_argument("--tag",           default=None,
+                    help="Optional run label appended after the version/_filtered token, e.g. "
+                         "--voxel_version v5 --cl1_only --tag invfreq -> probe_results_e99_v5_filtered_invfreq.csv")
+    pr.add_argument("--allow_stale_features", action="store_true",
+                    help="Warn instead of failing when feature-cache metadata does not "
+                         "match the requested condition/epoch/voxel_version/atom source. "
+                         "Use only for intentional legacy or custom-exp probes.")
     pr.add_argument("--out_csv",       default=None,
                     help="Override results CSV path")
     pr.set_defaults(func=run_probe)
@@ -1261,7 +1649,9 @@ def build_parser() -> argparse.ArgumentParser:
     pt.add_argument("--no_covalent_filter", action="store_true",
                     help="Keep covalent complexes (default: drop)")
     pt.add_argument("--cl1_only", action="store_true",
-                    help="Restrict to LP_PDBBind CL1=True (cleanest subset)")
+                    help="Restrict to LP_PDBBind CL1=True (cleanest subset); adds _filtered to the CSV name")
+    pt.add_argument("--tag", default=None,
+                    help="Optional run label appended after the version/_filtered token (see `probe --tag`)")
     pt.add_argument("--max_complexes", type=int, default=0,
                     help="Head each split to N complexes (0 = all). Smoke testing.")
     pt.add_argument("--out_csv",  default=None, help="Override results CSV path")

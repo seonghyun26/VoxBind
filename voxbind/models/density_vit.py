@@ -52,8 +52,64 @@ def _unpatchify(t: torch.Tensor, gp: int, p: int, c: int) -> torch.Tensor:
 
 # ── Transformer building blocks ───────────────────────────────────────────────
 
+def _axis_dims(head_dim: int) -> tuple:
+    """Split an (even) head_dim into 3 even per-axis (x, y, z) chunks for axial RoPE."""
+    base = (head_dim // 3) & ~1                  # largest even <= head_dim/3
+    chunks = [base, base, base]
+    rem = head_dim - 3 * base                    # even (head_dim is even)
+    i = 0
+    while rem >= 2:
+        chunks[i % 3] += 2
+        rem -= 2
+        i += 1
+    assert sum(chunks) == head_dim and all(c % 2 == 0 for c in chunks), chunks
+    return tuple(chunks)
+
+
+class RoPE3D(nn.Module):
+    """Axial 3D rotary position embedding (Primus, arXiv:2503.01835).
+
+    head_dim is partitioned across the (x, y, z) patch axes; standard 1D RoPE is
+    applied within each axis from that axis's integer patch coordinate, so
+    attention sees relative 3D offsets instead of absolute slots. cos/sin are
+    precomputed for the fixed g_p³ patch grid (the encoder always sees all
+    tokens) and applied to q/k inside attention. No learnable parameters.
+    """
+
+    def __init__(self, g_p: int, head_dim: int, base: float = 10000.0):
+        super().__init__()
+        assert head_dim % 2 == 0, f"head_dim={head_dim} must be even for RoPE"
+        self.head_dim = head_dim
+        self.axis_dims = _axis_dims(head_dim)
+        # patch coords (N, 3) in flatten(2) order: token n = i·g_p² + j·g_p + k.
+        coords = torch.stack(torch.meshgrid(
+            torch.arange(g_p), torch.arange(g_p), torch.arange(g_p), indexing="ij",
+        ), dim=-1).reshape(-1, 3).float()                       # (N, 3)
+        ang = []
+        for axis, d_a in enumerate(self.axis_dims):
+            inv = base ** (-torch.arange(0, d_a, 2).float() / d_a)   # (d_a/2,)
+            ang.append(coords[:, axis:axis + 1] * inv[None, :])     # (N, d_a/2)
+        ang = torch.cat(ang, dim=1)                            # (N, head_dim/2)
+        self.register_buffer("cos", ang.cos(), persistent=False)
+        self.register_buffer("sin", ang.sin(), persistent=False)
+
+    def rotate(self, x: torch.Tensor) -> torch.Tensor:
+        """Rotate q or k (B, H, N, head_dim) by the per-token 3D angles (interleaved pairs)."""
+        B, H, N, D = x.shape
+        x_ = x.reshape(B, H, N, D // 2, 2)
+        x0, x1 = x_[..., 0], x_[..., 1]                        # (B, H, N, D/2)
+        cos = self.cos[:N].to(x.dtype)                         # (N, D/2) → broadcast over B,H
+        sin = self.sin[:N].to(x.dtype)
+        r0 = x0 * cos - x1 * sin
+        r1 = x0 * sin + x1 * cos
+        return torch.stack((r0, r1), dim=-1).reshape(B, H, N, D)
+
+
 class MultiHeadSelfAttention(nn.Module):
-    """Standard MHSA via `F.scaled_dot_product_attention` (flash on Ampere+)."""
+    """Standard MHSA via `F.scaled_dot_product_attention` (flash on Ampere+).
+
+    Optional axial 3D RoPE is applied to q/k when a `RoPE3D` is passed to forward.
+    """
 
     def __init__(self, dim: int, n_heads: int, dropout: float = 0.0):
         super().__init__()
@@ -64,11 +120,13 @@ class MultiHeadSelfAttention(nn.Module):
         self.proj = nn.Linear(dim, dim, bias=True)
         self.dropout_p = dropout
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, rope: "RoPE3D" = None) -> torch.Tensor:
         B, N, C = x.shape
         qkv = self.qkv(x).reshape(B, N, 3, self.n_heads, self.head_dim)
         qkv = qkv.permute(2, 0, 3, 1, 4)                # (3, B, H, N, head_dim)
         q, k, v = qkv[0], qkv[1], qkv[2]
+        if rope is not None:
+            q, k = rope.rotate(q), rope.rotate(k)
         out = F.scaled_dot_product_attention(
             q, k, v,
             dropout_p=self.dropout_p if self.training else 0.0,
@@ -94,8 +152,8 @@ class TransformerBlock(nn.Module):
             nn.Dropout(dropout),
         )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = x + self.attn(self.norm1(x))
+    def forward(self, x: torch.Tensor, rope: "RoPE3D" = None) -> torch.Tensor:
+        x = x + self.attn(self.norm1(x), rope=rope)
         x = x + self.mlp(self.norm2(x))
         return x
 
@@ -129,6 +187,7 @@ class DensityViT(nn.Module):
         mlp_ratio: int = 4,
         dropout: float = 0.1,
         pos_embed_std: float = 0.02,
+        pos_encoding: str = "learnable",   # "learnable" | "rope3d" (axial 3D RoPE)
     ):
         super().__init__()
         assert grid_dim % patch_size == 0, (
@@ -148,7 +207,16 @@ class DensityViT(nn.Module):
         self.patch_embed = nn.Conv3d(
             n_in_channels, dim, kernel_size=patch_size, stride=patch_size, padding=0
         )
-        self.pos_embed = nn.Parameter(torch.zeros(1, self.n_tokens, dim))
+        assert pos_encoding in ("learnable", "rope3d"), (
+            f"unknown pos_encoding={pos_encoding!r} (expected 'learnable' or 'rope3d')"
+        )
+        self.pos_encoding = pos_encoding
+        if pos_encoding == "learnable":
+            self.pos_embed = nn.Parameter(torch.zeros(1, self.n_tokens, dim))
+            self.rope = None
+        else:                                    # rope3d → no absolute table; rotate q/k in attn
+            self.pos_embed = None
+            self.rope = RoPE3D(self.g_p, dim // n_heads)
 
         self.blocks = nn.ModuleList([
             TransformerBlock(dim, n_heads, mlp_ratio=mlp_ratio, dropout=dropout)
@@ -162,7 +230,8 @@ class DensityViT(nn.Module):
         self._init_weights(pos_embed_std)
 
     def _init_weights(self, pos_embed_std: float) -> None:
-        nn.init.trunc_normal_(self.pos_embed, std=pos_embed_std)
+        if self.pos_embed is not None:
+            nn.init.trunc_normal_(self.pos_embed, std=pos_embed_std)
         for m in self.modules():
             if isinstance(m, nn.Linear):
                 nn.init.trunc_normal_(m.weight, std=0.02)
@@ -193,9 +262,10 @@ class DensityViT(nn.Module):
         """density: (B, n_in_channels, G, G, G) → (B, c_out, G, G, G)."""
         z = self.patch_embed(density)                    # (B, D, g_p, g_p, g_p)
         z = z.flatten(2).transpose(1, 2)                 # (B, N, D)
-        z = z + self.pos_embed
+        if self.pos_embed is not None:
+            z = z + self.pos_embed
         for blk in self.blocks:
-            z = blk(z)
+            z = blk(z, rope=self.rope)
         z = self.norm(z)
         z = self.decoder_proj(z)                         # (B, N, c_out·p³)
         return self._tokens_to_voxels(z)                 # (B, c_out, G, G, G)
@@ -249,6 +319,7 @@ class DensityViTMAE(nn.Module):
         head_hidden_dim: int = 0,     # MLP-head hidden width; 0 → defaults to c_half (=n_channels//2)
         head_depth: int = 2,          # total Conv3d layers in each MAE recon head (>=1)
         head_style: str = "conv",     # "conv" = full-res Conv3d head; "patch_mlp" = per-patch token MLP
+        pos_encoding: str = "learnable",  # "learnable" | "rope3d" → forwarded to the DensityViT encoder
     ):
         super().__init__()
         assert pretext_style in ("mae", "electra"), (
@@ -303,6 +374,7 @@ class DensityViTMAE(nn.Module):
             n_heads=n_heads,
             mlp_ratio=mlp_ratio,
             dropout=dropout,
+            pos_encoding=pos_encoding,
         )
 
         if pretext_style == "mae":

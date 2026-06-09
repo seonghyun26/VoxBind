@@ -2,8 +2,8 @@
 # run_v5_ablation.sh — autonomous v5 modality-ablation pipeline.
 #   STAGE0  gate on data builds (v5 crops + PDBbind 01a) -> run 01b (CPU)
 #   STAGE1  stop sig=1.0 (record resume epoch)
-#   STAGE2  pretrain a/b/c (4 GPU each, sequential, ~4h each)
-#   STAGE3  probe: frozen features x3 (1 GPU each, parallel) -> probe compare
+#   STAGE2  pretrain a/b/c plus ligand-vdW atom-only control (4 GPU each)
+#   STAGE3  probe: frozen features x4 (1 GPU each, parallel) -> probe compare
 #   STAGE4  resume sig=1.0
 # Safety: if anything fails AFTER sig=1.0 is stopped and before STAGE4, the EXIT
 # trap auto-resumes sig=1.0 so 3 days of denoiser compute aren't left idle.
@@ -21,6 +21,28 @@ log(){ echo "[$(ts)] $*" | tee -a "$LOG"; }
 die(){ log "FATAL: $*"; exit 1; }
 gpu_used(){ nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits | awk '{s+=$1}END{print s+0}'; }
 wait_free(){ local i; for i in $(seq 1 150); do [ "$(gpu_used)" -lt 4000 ] && return 0; sleep 3; done; return 1; }
+voxel_meta_ok(){ $PY/python -c 'import json,sys
+p,lig,dens=sys.argv[1],sys.argv[2]=="1",sys.argv[3]=="1"
+try:
+    m=json.load(open(p))
+    ok=(m.get("metadata_version")==2 and
+        m.get("center_source")=="ligand_sdf_all_non_h_geometric_centroid" and
+        m.get("element_filter")=="ligand" and
+        m.get("ligand_vdw") is lig and
+        m.get("density_enabled") is dens)
+except Exception:
+    ok=False
+print("ok" if ok else "bad")' "$1" "$2" "$3" 2>/dev/null; }
+density_meta_ok(){ $PY/python -c 'import json,sys
+try:
+    m=json.load(open(sys.argv[1]))
+    ok=(m.get("metadata_version")==2 and
+        m.get("center_source")=="ligand_sdf_all_non_h_geometric_centroid" and
+        m.get("element_filter")=="ligand" and
+        m.get("stats_source")=="reference")
+except Exception:
+    ok=False
+print("ok" if ok else "bad")' "$1" 2>/dev/null; }
 
 SIG_STOPPED=0; STAGE4_DONE=0; RESUME_EPOCH=0
 resume_sig(){ wait_free || true
@@ -48,25 +70,29 @@ NV5=$(find "$DATA/pdbbind/voxels_v5/density" -name '*.npy' 2>/dev/null | wc -l)
 V5SRC=$($PY/python -c "import json,os;p='$DATA/pdbbind/voxels_v5/stats.json';print(json.load(open(p)).get('stats_source','pdbbind') if os.path.exists(p) else 'missing')" 2>/dev/null)
 NAT=$(find "$DATA/pdbbind/voxels/atoms" -name '*.npy' 2>/dev/null | wc -l)
 NVDW=$(find "$DATA/pdbbind/voxels_ligvdw/atoms" -name '*.npy' 2>/dev/null | wc -l)
-if [ "$NAT" -lt 5000 ]; then
+META_DEF=$(voxel_meta_ok "$DATA/pdbbind/voxels/metadata.json" 0 1)
+META_VDW=$(voxel_meta_ok "$DATA/pdbbind/voxels_ligvdw/metadata.json" 1 0)
+META_V5=$(density_meta_ok "$DATA/pdbbind/voxels_v5/stats.json")
+if [ "$NAT" -lt 5000 ] || [ "$META_DEF" != "ok" ]; then
   log "STAGE0: 01b voxelize default atoms+density (CPU)…"
-  $PY/python dataset/01b_pdbbind_preprocess.py voxelize --device cpu \
+  $PY/python dataset/01b_pdbbind_preprocess.py voxelize --overwrite --element_filter ligand --device cpu \
     --out_dir "$DATA/pdbbind/voxels" >> "$VOX/log/01b_pdbbind.log" 2>&1 || die "01b voxelize default"
 else
   log "STAGE0: default PDBbind atoms ready (n=$NAT)"
 fi
-if [ "$NV5" -lt 4000 ] || [ "$V5SRC" != "reference" ]; then
+if [ "$NV5" -lt 4000 ] || [ "$V5SRC" != "reference" ] || [ "$META_V5" != "ok" ]; then
   log "STAGE0: 01b poolnorm v2..v5 with CrossDocked v5 reference stats…"
   $PY/python dataset/01b_pdbbind_preprocess.py poolnorm \
+    --element_filter ligand \
     --v5_stats_source reference \
     --v5_reference_stats_json "$DATA/xray_crops_aligned_v5/stats.json" \
     >> "$VOX/log/01b_pdbbind.log" 2>&1 || die "01b poolnorm"
 else
   log "STAGE0: PDBbind v5 density ready (n=$NV5, stats_source=$V5SRC)"
 fi
-if [ "$NVDW" -lt 5000 ]; then
+if [ "$NVDW" -lt 5000 ] || [ "$META_VDW" != "ok" ]; then
   log "STAGE0: 01b voxelize ligand-vdW atoms only (CPU)…"
-  $PY/python dataset/01b_pdbbind_preprocess.py voxelize --ligand_vdw --no_density --device cpu \
+  $PY/python dataset/01b_pdbbind_preprocess.py voxelize --overwrite --element_filter ligand --ligand_vdw --no_density --device cpu \
     --out_dir "$DATA/pdbbind/voxels_ligvdw" >> "$VOX/log/01b_pdbbind.log" 2>&1 || die "01b voxelize ligvdw"
 else
   log "STAGE0: ligand-vdW PDBbind atoms ready (n=$NVDW)"
@@ -89,7 +115,7 @@ CKE=$($PY/python -c "import torch;print(int(torch.load('$VOX/exps/$SIG_EXP/check
 RESUME_EPOCH=$(( ${CKE:-0} + 1 )); SIG_STOPPED=1
 log "STAGE1: sig=1.0 stopped (ckpt epoch=${CKE}; resume target=${RESUME_EPOCH}); GPUs free"
 
-# ---------- STAGE 2: pretrain a/b/c ----------
+# ---------- STAGE 2: pretrain a/b/c + matched ligand-vdW control ----------
 run_pre(){ local cfg=$1 exp=$2
   log "STAGE2: pretrain $exp …"
   CUDA_VISIBLE_DEVICES=0,1,2,3 $PY/torchrun --standalone --nproc_per_node=4 \
@@ -103,17 +129,24 @@ run_pre(){ local cfg=$1 exp=$2
 run_pre config_train_atomblob_vit_mae_40m_invfreq                    260606_atomblob_vit_mae_40m_invfreq_pretrain
 run_pre config_train_atomblob_density_vit_mae_40m_invfreq_v5         260606_atomblob_density_vit_mae_40m_invfreq_v5_pretrain
 run_pre config_train_atomblob_density_gradmag_vit_mae_40m_invfreq_v5 260606_atomblob_density_gradmag_vit_mae_40m_invfreq_v5_pretrain
+run_pre config_train_atomblob_vit_mae_40m_invfreq                    260609_atomblob_vit_mae_40m_invfreq_v5_ligvdw_pretrain
 
 # ---------- STAGE 3: probe ----------
-log "STAGE3: frozen features (3x, 1 GPU each)…"
+log "STAGE3: frozen features (4x, 1 GPU each)…"
 CUDA_VISIBLE_DEVICES=0 $PY/python dataset/01c_pdbbind_probe.py features --condition atomblob                 --voxel_version v5 --epoch 99 >> "$VOX/log/probe_features.log" 2>&1 &
-CUDA_VISIBLE_DEVICES=1 $PY/python dataset/01c_pdbbind_probe.py features --condition atomblob_density         --voxel_version v5 --epoch 99 >> "$VOX/log/probe_features.log" 2>&1 &
-CUDA_VISIBLE_DEVICES=2 $PY/python dataset/01c_pdbbind_probe.py features --condition atomblob_density_gradmag --voxel_version v5 --epoch 99 >> "$VOX/log/probe_features.log" 2>&1 &
+CUDA_VISIBLE_DEVICES=1 $PY/python dataset/01c_pdbbind_probe.py features --condition atomblob_ligvdw          --voxel_version v5 --epoch 99 >> "$VOX/log/probe_features.log" 2>&1 &
+CUDA_VISIBLE_DEVICES=2 $PY/python dataset/01c_pdbbind_probe.py features --condition atomblob_density         --voxel_version v5 --epoch 99 >> "$VOX/log/probe_features.log" 2>&1 &
+CUDA_VISIBLE_DEVICES=3 $PY/python dataset/01c_pdbbind_probe.py features --condition atomblob_density_gradmag --voxel_version v5 --epoch 99 >> "$VOX/log/probe_features.log" 2>&1 &
 wait
 log "STAGE3: features done; probe compare…"
 CUDA_VISIBLE_DEVICES=0 $PY/python dataset/01c_pdbbind_probe.py probe \
-  --conditions atomblob atomblob_density atomblob_density_gradmag \
+  --conditions atomblob atomblob_ligvdw atomblob_density atomblob_density_gradmag \
   --voxel_version v5 --epoch 99 --seeds 3 >> "$VOX/log/probe_compare.log" 2>&1 || die "probe compare"
+CUDA_VISIBLE_DEVICES=0 $PY/python dataset/01c_pdbbind_probe.py probe \
+  --conditions atomblob_ligvdw \
+  --voxel_version v5 --epoch 99 --seeds 3 \
+  --out_csv "$DATA/pdbbind/probe_results_e99_v5_ligvdw_atomsonly.csv" \
+  >> "$VOX/log/probe_compare.log" 2>&1 || die "probe ligvdw atom-only"
 log "STAGE3: probe DONE -> dataset/data/pdbbind/probe_results_e99*.csv"
 
 # ---------- STAGE 4: resume sig=1.0 ----------

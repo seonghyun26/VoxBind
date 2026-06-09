@@ -1,11 +1,14 @@
 #!/usr/bin/env python
-"""Live dashboard for the density-v5 MAE pre-training probe results.
+"""Live dashboard for the PDBbind frozen-encoder probe results.
 
-Reads the probe-result CSVs (dataset/data/pdbbind/probe_results_e99_v5_*.csv) and
-each run's exps/<run>/cfg.yaml on EVERY request, so the chart and table always
-reflect the source files (no hard-coded numbers, no chart-vs-table drift). Both
-Spearman ρ and Pearson r (val + test) are shown together. New runs appear once
-their CSV lands.
+A version-group selector (?view=) switches the page across density versions:
+  v1 · v2 · v3 · v4   per-version probe summaries (probe_results_v{n}.csv)
+  v5                  non-filtered v5 runs (probe_results_e99_v5_*.csv)
+  v5_filtered         curated CL1-filtered density-v5 sweep (default)
+
+Reads the probe-result CSVs and each run's exps/<run>/cfg.yaml on EVERY request,
+so the chart and table always reflect the source files (no hard-coded numbers, no
+chart-vs-table drift). Both Spearman ρ and Pearson r (val + test) are shown.
 
 Run:
     python notebook/260607_densityv5_app.py --port 8731 --host 0.0.0.0
@@ -14,7 +17,7 @@ Then browse  http://<svr7-ip>:8731/   (LAN)  or tunnel and use localhost.
 import argparse, csv, re, statistics, html, datetime
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs
 
 VOX = Path(__file__).resolve().parent.parent / "voxbind"
 PDB = VOX / "dataset" / "data" / "pdbbind"
@@ -35,27 +38,27 @@ COLS = [
 RUNS = [
     dict(key="260605", date="2026-06-05",
          exp="260605_atomblob_density_vit_mae_40m_weighted_v5_gradmag_ligvdw_balanced_pretrain",
-         csv="probe_results_e99_v5_densityonly.csv", cond="atomblob_density_gradmag",
+         csv="probe_results_e99_v5_filtered_260605_balanced.csv", cond="atomblob_density_gradmag",
          note="Sweep-“balanced” full reconstruction of density+gradmag (1.0/1.0). "
               "Density objective dominates the loss → corrupts the transferable atom features."),
     dict(key="density-only", date="2026-06-06",
          exp="260606_density_vit_mae_40m_xray_v5_gradmag_pretrain",
-         csv="probe_results_e99_v5_densityonly.csv", cond="density_gradmag",
+         csv="probe_results_e99_v5_filtered_260606density.csv", cond="density_gradmag",
          note="Pure density/gradient encoder — no atom blobs at all. Tests how much the "
               "density field alone carries for affinity."),
     dict(key="baseline", date="2026-06-08",
          exp="260606_atomblob_density_gradmag_vit_mae_40m_invfreq_v5_pretrain",
-         csv="probe_results_e99_v5_baseline_invfreq.csv", cond="atomblob_density_gradmag",
+         csv="probe_results_e99_v5_filtered_260606invfreq.csv", cond="atomblob_density_gradmag",
          note="Down-weighted density/gradmag recon (0.1/0.1) → atoms dominate; density is "
               "light context. Recovers full coords-only transfer. [the given config]"),
     dict(key="w1", date="2026-06-08",
          exp="260608_atomblob_density_gradmag_vit_mae_40m_invfreq_v5_w1_pretrain",
-         csv="probe_results_e99_v5_w1.csv", cond="atomblob_density_gradmag",
+         csv="probe_results_e99_v5_filtered_260608_w1.csv", cond="atomblob_density_gradmag",
          note="Full-weight density+gradmag recon (1.0/1.0) on the inv_freq recipe — the 1.0 end "
               "of the density-weight sweep; isolates weighting vs 260605."),
     dict(key="matched-ctrl", date="2026-06-09",
          exp="260609_atomblob_vit_mae_40m_invfreq_v5_ligvdw_pretrain",
-         csv="probe_results_e99_v5_ligvdw_atomsonly.csv", cond="atomblob_ligvdw",
+         csv="probe_results_e99_v5_filtered_atomblob_ligvdw.csv", cond="atomblob_ligvdw",
          note="MATCHED CONTROL: 11-ch atoms-only (ligvdw radii, inv_freq) — the baseline recipe "
               "with density/gradmag dropped. Isolates density's net contribution vs baseline 0.473."),
 ]
@@ -195,10 +198,194 @@ ol.ch{margin:6px 0 0;padding-left:20px;font-size:11.5px;line-height:1.5;color:#3
 ol.ch li{margin:.5px 0;font-family:ui-monospace,Menlo,Consolas,monospace}
 ol.ch li.poc{color:#5b6472}ol.ch li.aux{color:#1d4ed8}
 footer{margin-top:28px;color:var(--mut);font-size:12px;border-top:1px solid var(--line);padding-top:14px}
+.top{display:flex;justify-content:flex-end;margin:0 0 4px}
+.viewsel{font-size:13px;color:var(--mut)}
+.viewsel select{font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:7px;padding:5px 9px;margin-left:6px;cursor:pointer}
+.vchart{display:flex;align-items:flex-end;gap:18px;overflow-x:auto;padding:24px 6px 2px;min-height:212px}
+.vgroup{display:flex;flex-direction:column;align-items:center;flex:0 0 auto}
+.vbars{display:flex;align-items:flex-end;gap:4px;height:168px}
+.vbar{width:30px;border-radius:4px 4px 0 0;position:relative;min-height:2px}
+.vbar>b{position:absolute;top:-15px;left:50%;transform:translateX(-50%);font-size:9px;font-weight:700;color:#4b5260;font-variant-numeric:tabular-nums}
+.vbar.sv{background:var(--sv)}.vbar.st{background:var(--st)}.vbar.pv{background:var(--pv)}.vbar.pt{background:var(--pt)}
+.vbar.empty{background:repeating-linear-gradient(45deg,#eef1f5,#eef1f5 4px,#e3e6ea 4px,#e3e6ea 8px)}
+.vgroup.vpending{opacity:.5}
+.vlabel{margin-top:9px;font-size:11px;font-family:ui-monospace,Menlo,Consolas,monospace;color:#2b3242;max-width:128px;text-align:center;word-break:break-word;line-height:1.35}
+.vlabel small{color:var(--mut);font-weight:400}
+.vlabel.best{color:var(--good);font-weight:700}
 """
 
+LEGEND = ('<span><i style="background:var(--sv)"></i>val ρ (Spearman)</span>'
+          '<span><i style="background:var(--st)"></i>test ρ</span>'
+          '<span><i style="background:var(--pv)"></i>val r (Pearson)</span>'
+          '<span><i style="background:var(--pt)"></i>test r</span>')
 
-def render():
+# ── version-group selector ───────────────────────────────────────────────────
+VIEW_LABELS = ["v1", "v2", "v3", "v4", "v5", "v5_filtered"]
+DEFAULT_VIEW = "v5_filtered"
+SUMMARY_CSV = {v: f"probe_results_{v}.csv" for v in ["v1", "v2", "v3", "v4"]}
+VER_BLURB = {
+    "v1": "per-map z-score + per-crop ±3σ clip (bounded ≈±3).",
+    "v2": "pocket-pool z-score (unbounded, cross-crystal comparable).",
+    "v3": "pocket-pool max-abs → [−1,+1] (bounded + comparable); best density norm.",
+    "v4": "dual-head encoder variant (regressed vs v3).",
+    "v5": "non-filtered runs on the full 2704-sample EDS split.",
+    "v5_filtered": "CL1-filtered split (n_test≈839); the curated density-v5 sweep.",
+}
+
+
+def list_nonfiltered_v5():
+    """Non-filtered v5 per-run CSVs: probe_results_e99_v5_<tag>.csv (excludes _filtered)."""
+    out = []
+    for p in sorted(PDB.glob("probe_results_e99_v5_*.csv")):
+        if "_v5_filtered_" in p.name:
+            continue
+        tag = p.name[len("probe_results_e99_v5_"):-len(".csv")]
+        out.append((tag, p.name))
+    return out
+
+
+def load_table(csv_name):
+    """Probe CSV → per (condition, n_train) 3-seed mean±std for the four metrics.
+
+    Returns [{condition, n_train, metrics:{col:(mean,std,n)}, details}], best test ρ first.
+    """
+    p = PDB / csv_name
+    if not p.exists():
+        return []
+    try:
+        rows = list(csv.DictReader(open(p)))
+    except Exception:
+        return []
+    groups = {}
+    for r in rows:
+        groups.setdefault((r.get("condition", "?"), r.get("n_train", "")), []).append(r)
+    out = []
+    for (cond, ntr), rs in groups.items():
+        met = {}
+        for col, _, _ in COLS:
+            vals = []
+            for r in rs:
+                try:
+                    vals.append(float(r.get(col, "")))
+                except (TypeError, ValueError):
+                    pass
+            if vals:
+                met[col] = (sum(vals) / len(vals),
+                            statistics.pstdev(vals) if len(vals) > 1 else 0.0, len(vals))
+        det = next((r.get("details", "") for r in rs if r.get("details")), "")
+        try:
+            ntr_i = int(ntr)
+        except (TypeError, ValueError):
+            ntr_i = None
+        out.append(dict(condition=cond, n_train=ntr_i, metrics=met, details=det))
+
+    def _ts(d):
+        m = d["metrics"].get("test_spearman")
+        return m[0] if m else -9.0
+    out.sort(key=lambda d: (-_ts(d), d["condition"]))
+    return out
+
+
+def _bars(metrics, scale):
+    bars = ""
+    for i, (c, lab, cls) in enumerate(COLS):
+        if i == 2:
+            bars += '<div class="gap"></div>'
+        st = metrics.get(c)
+        if not st:
+            continue
+        wpct = f"{min(100, 100 * st[0] / scale):.1f}%"
+        bars += f'<div class="track"><span class="bar {cls}" style="width:{wpct}">{lab} {st[0]:.3f}</span></div>'
+    return bars
+
+
+def _vbar_group(metrics, scale, label, sub="", best=False, pending=False):
+    """One x-axis group of vertical bars (height ∝ value) + an under-label."""
+    if pending:
+        bars = '<div class="vbar empty" style="height:7px"></div>' * len(COLS)
+    else:
+        bars = ""
+        for c, lab, cls in COLS:
+            st = metrics.get(c)
+            if not st:
+                bars += f'<div class="vbar empty" style="height:3px" title="{lab}: n/a"></div>'
+                continue
+            h = min(100.0, 100.0 * st[0] / scale)
+            bars += (f'<div class="vbar {cls}" style="height:{h:.1f}%" title="{lab} {st[0]:.3f}">'
+                     f'<b>{st[0]:.3f}</b></div>')
+    sublab = f'<br><small>{esc(sub)}</small>' if sub else ''
+    return (f'<div class="vgroup{" vpending" if pending else ""}"><div class="vbars">{bars}</div>'
+            f'<div class="vlabel{" best" if best else ""}">{esc(label)}{sublab}</div></div>')
+
+
+def _rows_for(view):
+    """List of (group_label, table_row) for a generic (non-curated) view."""
+    if view in SUMMARY_CSV:                       # v1-v4: one summary CSV, all conditions
+        return [("", d) for d in load_table(SUMMARY_CSV[view])]
+    if view == "v5":                              # v5: 4 non-filtered runs, shared baselines once
+        BASE = ("atomblob", "atomblob_weighted")
+        base_rows, run_rows, seen = [], [], set()
+        for tag, csv_name in list_nonfiltered_v5():
+            for d in load_table(csv_name):
+                if d["condition"] in BASE:
+                    if d["condition"] not in seen:
+                        seen.add(d["condition"])
+                        base_rows.append(("baseline", d))
+                else:
+                    run_rows.append((tag, d))
+        run_rows.sort(key=lambda t: -((t[1]["metrics"].get("test_spearman") or (-9.0,))[0]))
+        base_rows.sort(key=lambda t: t[1]["condition"])
+        return base_rows + run_rows
+    return []
+
+
+def _generic_body(view):
+    rows = _rows_for(view)
+    if not rows:
+        exp = SUMMARY_CSV.get(view, "probe_results_e99_v5_*.csv")
+        return f'<div class="ctx">No probe CSV found for this view yet (expected <code>{esc(exp)}</code>).</div>'
+    allv = [st[0] for _, d in rows for c, _, _ in COLS for st in [d["metrics"].get(c)] if st]
+    scale = max(allv) * 1.08 if allv else 0.6
+    has_group = any(lbl for lbl, _ in rows)
+    has_details = any(d["details"] for _, d in rows)
+    best_i = max((i for i, (_, d) in enumerate(rows) if "test_spearman" in d["metrics"]),
+                 key=lambda i: rows[i][1]["metrics"]["test_spearman"][0], default=None)
+
+    vgroups = []
+    for i, (lbl, d) in enumerate(rows):
+        sp = f"{d['n_train']}" if d["n_train"] and d["n_train"] != 2704 else ""
+        name = f'{lbl}·{d["condition"]}' if lbl else d["condition"]
+        vgroups.append(_vbar_group(d["metrics"], scale, name, sub=sp, best=(i == best_i)))
+
+    hdr = (('<th style="width:13%">Run</th>' if has_group else '')
+           + '<th style="width:22%">Condition</th>'
+           + ('<th>Notes</th>' if has_details else '')
+           + '<th class="sp" style="width:9%">val ρ</th><th class="sp" style="width:9%">test ρ</th>'
+             '<th class="pe" style="width:9%">val r</th><th class="pe" style="width:9%">test r</th>')
+    trows = ""
+    for i, (lbl, d) in enumerate(rows):
+        cls = ' class="best"' if i == best_i else ''
+        tds = (f'<td><span class="run">{esc(lbl)}</span></td>' if has_group else '')
+        sp = f' <span class="mut">({d["n_train"]})</span>' if d["n_train"] and d["n_train"] != 2704 else ''
+        tds += f'<td><b>{esc(d["condition"])}</b>{sp}</td>'
+        if has_details:
+            tds += f'<td><div class="mut" style="font-size:12px">{esc(d["details"])}</div></td>'
+        for c, _, _ in COLS:
+            st = d["metrics"].get(c)
+            tds += ('<td><span class="pend">—</span></td>' if not st
+                    else f'<td><span class="num">{st[0]:.3f}</span> <span class="sd">±{st[1]:.3f}</span></td>')
+        trows += f'<tr{cls}>{tds}</tr>'
+
+    return (f'<h2>Val &amp; test correlation — Spearman ρ and Pearson r '
+            f'<span class="mut" style="font-size:13px;font-weight:400">(3-seed mean)</span></h2>'
+            f'<div class="chart"><div class="legend">{LEGEND}</div>'
+            f'<div class="vchart">{"".join(vgroups)}</div>'
+            f'<div class="scale">Bars scaled to {scale:.2f}.</div></div>'
+            f'<h2>Conditions <span class="mut" style="font-size:13px;font-weight:400">— 3-seed mean ± std</span></h2>'
+            f'<table><thead><tr>{hdr}</tr></thead><tbody>{trows}</tbody></table>')
+
+
+def _curated_body():
     data = []
     for r in RUNS:
         cfg = load_cfg(r["exp"])
@@ -211,31 +398,14 @@ def render():
     best_key = max(done_tests)[1] if done_tests else None
     worst_done_test = min(t for t, _ in done_tests) if done_tests else None
 
-    def w(x):
-        return f"{min(100, 100 * x / scale):.1f}%"
-
-    # ---- chart: four bars per run (val ρ, test ρ | val r, test r) ----
-    crows = []
+    # ---- chart: four vertical bars per run ----
+    vgroups = []
     for r, m, cfg, st in data:
-        dw, gw = cfg.get("density_w"), cfg.get("gradmag_w")
-        has_dens = "density" in (cfg.get("input_mode") or "")
-        cw = cfg.get("channel_weighting", "?")
-        if has_dens and dw is not None:
-            sub = f"density/gradmag {dw:g}/{gw:g} · {cw}"
-        else:
-            sub = f"{cfg.get('input_mode','?')} · {cw}"
-        star = " — best test" if r["key"] == best_key else ""
         if m and all(c in m for c, _, _ in COLS):
-            bars = ""
-            for i, (c, lab, cls) in enumerate(COLS):
-                if i == 2:
-                    bars += '<div class="gap"></div>'
-                v = m[c][0]
-                bars += f'<div class="track"><span class="bar {cls}" style="width:{w(v)}">{lab} {v:.3f}</span></div>'
-            crows.append(f'<div class="crow"><div class="rl">{esc(r["key"])} <small>{esc(sub)}{star}</small></div>{bars}</div>')
+            vgroups.append(_vbar_group(m, scale, r["key"], best=(r["key"] == best_key)))
         else:
             lab = "running" if st[0] == "running" else st[0]
-            crows.append(f'<div class="pendrow">{esc(r["key"])} <small>{esc(sub)}</small> &mdash; {lab} (no probe yet)</div>')
+            vgroups.append(_vbar_group({}, scale, r["key"], sub=f"({lab})", pending=True))
 
     # ---- table: config + four metric columns ----
     trows = []
@@ -288,50 +458,83 @@ def render():
             mcells += f'<td><span class="num"{style}>{stat[0]:.3f}</span> <span class="sd">±{stat[1]:.3f}</span></td>'
 
         trows.append(
-            f'<tr{cls}><td><span class="run">{esc(r["exp"].replace("_pretrain",""))}</span>'
-            f'<div class="mut" style="margin-top:4px">{esc(r["date"])}</div></td>'
+            f'<tr{cls}><td class="mut" style="white-space:nowrap">{esc(r["date"])}</td>'
+            f'<td><span class="run">{esc(r["exp"].replace("_pretrain",""))}</span></td>'
             f'<td><b>{nin}-ch</b><ol class="ch">{chli}</ol></td>'
             f'<td>{chiphtml}<div class="mut" style="margin-top:6px">{esc(r["note"])}</div></td>'
             f'<td>{stag}</td>{mcells}</tr>')
 
-    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    leg = ('<span><i style="background:var(--sv)"></i>val ρ (Spearman)</span>'
-           '<span><i style="background:var(--st)"></i>test ρ</span>'
-           '<span><i style="background:var(--pv)"></i>val r (Pearson)</span>'
-           '<span><i style="background:var(--pt)"></i>test r</span>')
+    return (f'<h2>Val &amp; test correlation — Spearman ρ and Pearson r '
+            f'<span class="mut" style="font-size:13px;font-weight:400">(3-seed mean)</span></h2>'
+            f'<div class="chart"><div class="legend">{LEGEND}</div>'
+            f'<div class="vchart">{"".join(vgroups)}</div>'
+            f'<div class="scale">Bars scaled to {scale:.2f}. Source: '
+            f'dataset/data/pdbbind/probe_results_e99_v5_filtered_*.csv</div></div>'
+            f'<h2>Runs <span class="mut" style="font-size:13px;font-weight:400">— config (cfg.yaml) + all four metrics</span></h2>'
+            f'<table><thead><tr><th style="width:8%">Date</th><th style="width:17%">Run name (experiment)</th><th style="width:11%">Input</th>'
+            f'<th style="width:20%">Characteristic &amp; key config</th><th style="width:8%">Status</th>'
+            f'<th class="sp" style="width:9%">val ρ</th><th class="sp" style="width:9%">test ρ</th>'
+            f'<th class="pe" style="width:9%">val r</th><th class="pe" style="width:9%">test r</th></tr></thead>'
+            f'<tbody>{"".join(trows)}</tbody></table>')
+
+
+CURATED_FOOTER = ("Common: DensityViT-MAE ~40M · patch 8 · 64³ · 100 ep · eff-batch 96 · AdamW lr 1e-4 · "
+                  "mask atom_biased 0.6 · v5 density. ρ = Spearman (val = model-selection, test = held-out), "
+                  "r = Pearson. Live sources: <code>exps/&lt;run&gt;/cfg.yaml</code>, "
+                  "<code>dataset/data/pdbbind/probe_results_e99_v5_filtered_*.csv</code>, <code>log/&lt;run&gt;.log</code>. "
+                  "Refresh (or wait 60s) to pick up new probe results.")
+GENERIC_FOOTER = ("ρ = Spearman (val = model-selection, test = held-out), r = Pearson · 3-seed mean ± std. "
+                  "Switch views with the selector above; refresh (or wait 60s) for new results.")
+
+
+def _shell(view, h1, sub, intro, body, footer):
+    opts = "".join(f'<option value="{v}"{" selected" if v == view else ""}>{v}</option>'
+                   for v in VIEW_LABELS)
+    selector = (f'<form method="get" class="viewsel">View '
+                f'<select name="view" onchange="this.form.submit()">{opts}</select></form>')
     return f"""<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="refresh" content="60">
-<title>Density v5 Pre-training — live</title><style>{CSS}</style></head><body><div class="wrap">
-<h1>Density&nbsp;v5 Pre-training Runs &mdash; live</h1>
-<p class="sub">VoxBind · MAE-ViT on CrossDocked X-ray density (v5) → PDBbind affinity probe ·
-values read live from CSV · loaded {now} · auto-refresh 60s</p>
-<div class="ctx"><b>What this is.</b> Frozen-encoder PDBbind affinity probe (512-D mean-pooled tokens → 2-layer MLP → pK),
-3-seed mean over 4,827 refined complexes. Chart and table both report <b>Spearman ρ</b> and <b>Pearson r</b>
-(val + test), pulled live from the probe CSVs. New runs appear when their CSV lands.</div>
-<h2>Val &amp; test correlation — Spearman ρ and Pearson r <span class="mut" style="font-size:13px;font-weight:400">(3-seed mean)</span></h2>
-<div class="chart"><div class="legend">{leg}</div>
-{''.join(crows)}
-<div class="scale">Bars scaled to {scale:.2f}. Source: dataset/data/pdbbind/probe_results_e99_v5_*.csv</div></div>
-<h2>Runs <span class="mut" style="font-size:13px;font-weight:400">— config (cfg.yaml) + all four metrics</span></h2>
-<table><thead><tr><th style="width:18%">Run / date</th><th style="width:12%">Input</th>
-<th style="width:24%">Characteristic &amp; key config</th><th style="width:10%">Status</th>
-<th class="sp" style="width:9%">val ρ</th><th class="sp" style="width:9%">test ρ</th>
-<th class="pe" style="width:9%">val r</th><th class="pe" style="width:9%">test r</th></tr></thead>
-<tbody>{''.join(trows)}</tbody></table>
-<footer>Common: DensityViT-MAE ~40M · patch 8 · 64³ · 100 ep · eff-batch 96 · AdamW lr 1e-4 · mask atom_biased 0.6 · v5 density.
-ρ = Spearman (val = model-selection, test = held-out), r = Pearson. Live sources:
-<code>exps/&lt;run&gt;/cfg.yaml</code>, <code>dataset/data/pdbbind/probe_results_e99_v5_*.csv</code>, <code>log/&lt;run&gt;.log</code>.
-Refresh (or wait 60s) to pick up new probe results.</footer>
+<title>PDBbind probe — {esc(view)}</title><style>{CSS}</style></head><body><div class="wrap">
+<div class="top">{selector}</div>
+<h1>{h1}</h1>
+<p class="sub">{sub}</p>
+<div class="ctx">{intro}</div>
+{body}
+<footer>{footer}</footer>
 </div></body></html>"""
+
+
+def render(view):
+    if view not in VIEW_LABELS:
+        view = DEFAULT_VIEW
+    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    if view == "v5_filtered":
+        h1 = "Density&nbsp;v5 Pre-training Runs &mdash; live"
+        sub = ("VoxBind · MAE-ViT on CrossDocked X-ray density (v5) → PDBbind affinity probe · "
+               f"values read live from CSV · loaded {now} · auto-refresh 60s")
+        intro = ("<b>What this is.</b> Frozen-encoder PDBbind affinity probe (512-D mean-pooled tokens → "
+                 "2-layer MLP → pK), 3-seed mean over the CL1-filtered refined complexes "
+                 "(v5 reference-normalized; n_test≈839). Chart and table report <b>Spearman ρ</b> and "
+                 "<b>Pearson r</b> (val + test), pulled live from the probe CSVs.")
+        return _shell(view, h1, sub, intro, _curated_body(), CURATED_FOOTER)
+    h1 = f"PDBbind affinity probe &mdash; <code>{esc(view)}</code>"
+    sub = f"VoxBind · frozen-encoder probe → pK · values read live from CSV · loaded {now} · auto-refresh 60s"
+    src = (f"dataset/data/pdbbind/probe_results_{view}.csv" if view in SUMMARY_CSV
+           else "dataset/data/pdbbind/probe_results_e99_v5_*.csv")
+    intro = (f"<b>{esc(view)} density.</b> {esc(VER_BLURB.get(view, ''))} "
+             f"3-seed mean ± std, read live from <code>{esc(src)}</code>.")
+    return _shell(view, h1, sub, intro, _generic_body(view), GENERIC_FOOTER)
 
 
 class H(BaseHTTPRequestHandler):
     def do_GET(self):
-        if urlparse(self.path).path not in ("/", "/index.html"):
+        u = urlparse(self.path)
+        if u.path not in ("/", "/index.html"):
             self.send_error(404); return
+        view = parse_qs(u.query).get("view", [DEFAULT_VIEW])[0]
         try:
-            body = render().encode("utf-8")
+            body = render(view).encode("utf-8")
         except Exception as e:
             body = f"<pre>render error: {html.escape(repr(e))}</pre>".encode()
         self.send_response(200)

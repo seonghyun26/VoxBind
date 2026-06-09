@@ -1116,6 +1116,7 @@ def main(cfg: DictConfig) -> None:
     head_hidden_dim = int(cfg.model.get("head_hidden_dim", 0))   # 0 → defaults to c_half
     head_depth      = int(cfg.model.get("head_depth", 2))
     head_style      = str(cfg.model.get("head_style", "conv"))   # conv | patch_mlp
+    pos_encoding    = str(cfg.model.get("pos_encoding", "learnable"))  # learnable | rope3d
     # n_in must match the assembled layout (atoms + density + gradmag).
     n_in_cfg = int(cfg.model.get("n_in_channels", 1))
     if n_in_cfg != layout["n_in"]:
@@ -1140,6 +1141,7 @@ def main(cfg: DictConfig) -> None:
         head_hidden_dim=head_hidden_dim,
         head_depth=head_depth,
         head_style=head_style,
+        pos_encoding=pos_encoding,
     ).to(device)
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     if is_main:

@@ -1,0 +1,708 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>3D ViT Implementation Audit - VoxBind</title>
+  <style>
+    :root {
+      --bg: #f7f8fb;
+      --panel: #ffffff;
+      --ink: #172033;
+      --muted: #5c667a;
+      --line: #d9deea;
+      --soft: #eef2f8;
+      --accent: #216869;
+      --accent-2: #456990;
+      --ok: #166534;
+      --warn: #9a5b00;
+      --bad: #b42318;
+      --info: #2454a6;
+      --code: #101828;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font: 15px/1.55 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    main {
+      width: min(1180px, calc(100vw - 40px));
+      margin: 0 auto;
+      padding: 34px 0 56px;
+    }
+
+    header {
+      display: grid;
+      gap: 12px;
+      padding: 28px 30px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+    }
+
+    h1, h2, h3 {
+      margin: 0;
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+
+    h1 {
+      font-size: clamp(26px, 3vw, 38px);
+      font-weight: 750;
+    }
+
+    h2 {
+      font-size: 22px;
+      margin-bottom: 14px;
+    }
+
+    h3 {
+      font-size: 16px;
+      margin-bottom: 8px;
+    }
+
+    p { margin: 0 0 12px; }
+
+    a {
+      color: var(--accent-2);
+      text-decoration: none;
+      border-bottom: 1px solid rgba(69, 105, 144, 0.35);
+    }
+
+    code {
+      color: var(--code);
+      background: #eef1f6;
+      border: 1px solid #dce2ec;
+      border-radius: 5px;
+      padding: 1px 5px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 0.92em;
+    }
+
+    pre {
+      margin: 10px 0 0;
+      padding: 14px;
+      overflow: auto;
+      color: #d9e4ff;
+      background: #101828;
+      border-radius: 8px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    section {
+      margin-top: 18px;
+      padding: 24px 26px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+    }
+
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 24px;
+      padding: 3px 9px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--soft);
+      color: var(--muted);
+      font-weight: 650;
+      white-space: nowrap;
+    }
+
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 18px;
+    }
+
+    .metric {
+      min-height: 100px;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcff;
+    }
+
+    .metric b {
+      display: block;
+      font-size: 24px;
+      line-height: 1;
+      margin-bottom: 8px;
+    }
+
+    .metric span {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .verdict {
+      display: grid;
+      grid-template-columns: 1.2fr 1fr;
+      gap: 14px;
+    }
+
+    .callout {
+      padding: 14px 16px;
+      border-left: 4px solid var(--accent);
+      border-radius: 6px;
+      background: #edf7f6;
+    }
+
+    .callout.warn { border-color: var(--warn); background: #fff7e8; }
+    .callout.bad { border-color: var(--bad); background: #fff1f0; }
+    .callout.info { border-color: var(--info); background: #eef4ff; }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .flow > div {
+      min-height: 86px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcff;
+    }
+
+    .flow b {
+      display: block;
+      margin-bottom: 4px;
+      color: var(--accent);
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+    }
+
+    th, td {
+      padding: 11px 10px;
+      border-top: 1px solid var(--line);
+      vertical-align: top;
+      text-align: left;
+    }
+
+    th {
+      color: var(--muted);
+      background: #f3f6fb;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    td:first-child, th:first-child { width: 105px; }
+    td:nth-child(2), th:nth-child(2) { width: 210px; }
+
+    .sev {
+      display: inline-flex;
+      min-width: 76px;
+      justify-content: center;
+      padding: 3px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 750;
+      text-transform: uppercase;
+    }
+
+    .critical { color: #fff; background: var(--bad); }
+    .major { color: #fff; background: #c2410c; }
+    .moderate { color: #111827; background: #f6c453; }
+    .minor { color: #183b56; background: #d9e7ff; }
+    .good { color: #fff; background: var(--ok); }
+
+    .checklist {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px 18px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .checklist li {
+      padding-left: 22px;
+      position: relative;
+    }
+
+    .checklist li::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 0.58em;
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: var(--accent);
+    }
+
+    .muted { color: var(--muted); }
+    .tight p { margin-bottom: 8px; }
+
+    @media (max-width: 900px) {
+      main { width: min(100vw - 24px, 1180px); padding-top: 16px; }
+      header, section { padding: 18px; }
+      .summary, .verdict, .grid-2, .flow { grid-template-columns: 1fr; }
+      table { table-layout: auto; }
+      td:first-child, th:first-child,
+      td:nth-child(2), th:nth-child(2) { width: auto; }
+      .checklist { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>3D ViT Implementation Audit</h1>
+    <p class="muted">
+      Review of VoxBind's 3D ViT density/atomblob pretraining path, density data handling,
+      downstream integration, and likely misalignments.
+    </p>
+    <div class="meta">
+      <span class="pill">Date: 2026-06-08</span>
+      <span class="pill">Repo: VoxBind</span>
+      <span class="pill">Scope: code review + CPU shape sanity check</span>
+      <span class="pill">No source code changed</span>
+    </div>
+  </header>
+
+  <section>
+    <h2>Executive Verdict</h2>
+    <div class="verdict">
+      <div class="callout">
+        <p>
+          The core 3D ViT tensor path is internally consistent for the intended cubic
+          <code>64^3</code> inputs: patch embedding, token flattening, learned positions,
+          transformer blocks, and unpatchifying back to a full-resolution feature map
+          all line up. A small CPU sanity check confirmed exact patchify/unpatchify
+          round-trip behavior and expected forward output shape.
+        </p>
+        <p>
+          The larger risks are integration and data-contract risks: multi-channel
+          atomblob pretraining checkpoints do not currently match the downstream
+          VoxBind density branch, one finetune script freezes the zero-initialized
+          fusion layer, validation caches can be reused across incompatible density
+          crop versions, and the on-the-fly CCP4 path is not frame-corrected.
+        </p>
+      </div>
+      <div class="callout warn tight">
+        <h3>Bottom line</h3>
+        <p><b>Architecture code:</b> mostly shape-correct, but needs guards and stronger locality/mask design.</p>
+        <p><b>Data processing:</b> good in the aligned-crop + xray-only configs; unsafe in fallback or stale-cache cases.</p>
+        <p><b>Downstream alignment:</b> the biggest issue. Pretraining mode and downstream input mode must be made explicit and enforced.</p>
+      </div>
+    </div>
+    <div class="summary">
+      <div class="metric"><b>2</b><span>critical / major integration issues</span></div>
+      <div class="metric"><b>4</b><span>data-pipeline risks needing safeguards</span></div>
+      <div class="metric"><b>5</b><span>architecture / objective improvements</span></div>
+      <div class="metric"><b>1</b><span>sanity test run locally and passed</span></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Pipeline Reviewed</h2>
+    <p class="muted">
+      The review followed the path from raw structures/density crops into the ViT MAE
+      objective and then into the downstream VoxBind density branch.
+    </p>
+    <div class="flow">
+      <div><b>Dataset</b><code>DatasetCrossDockedXray</code><br>loads atom structures and optional X-ray crop.</div>
+      <div><b>Voxelize</b><code>Voxelizer</code><br>creates ligand/pocket atom blobs on the <code>64^3</code> grid.</div>
+      <div><b>Assemble</b><code>MAEPrefetcher</code><br>builds <code>[atoms, density, gradmag]</code> by <code>input_mode</code>.</div>
+      <div><b>Mask</b><code>block_size=8</code><br>zero-masks or corrupts block-aligned regions.</div>
+      <div><b>ViT</b><code>DensityViTMAE</code><br>patch embeds, transforms, unpatchifies, reconstructs.</div>
+      <div><b>Deploy</b><code>VoxBind</code><br>loads <code>encoder.*</code> into <code>density_encoder</code>.</div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Findings</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Severity</th>
+          <th>Finding</th>
+          <th>Evidence</th>
+          <th>Impact</th>
+          <th>Recommended fix</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><span class="sev major">Major</span></td>
+          <td>Multi-channel ViT pretraining checkpoints do not drop into the current downstream density branch.</td>
+          <td>
+            Pretraining supports <code>n_in_channels=11/12/13</code> via <code>input_mode</code>
+            and validates this at startup in
+            <code>voxbind/train_density_vit_mae.py:1119-1125</code>.
+            Downstream <code>VoxBind</code> creates the density branch with only
+            <code>n_dens_in = 1</code> or <code>2</code> in
+            <code>voxbind/models/voxbind.py:98-119</code>.
+            Loading is strict in <code>voxbind/models/__init__.py:71-82</code>.
+          </td>
+          <td>
+            A 12- or 13-channel atomblob+density encoder cannot be loaded into a downstream
+            branch that receives only X-ray density (+ optional gradmag). If forced by
+            adapting weights, the learned first-layer semantics would not match the input.
+          </td>
+          <td>
+            Pick one deployment contract and enforce it:
+            <br><br>
+            <b>Option A:</b> current downstream contract: pretrain only <code>density</code> or
+            <code>density+gradmag</code> encoders for <code>VoxBind.density_encoder</code>.
+            <br>
+            <b>Option B:</b> add a true multi-channel downstream ViT branch that consumes the
+            same <code>[ligand atomblob, pocket atomblob, density, gradmag]</code> layout, or
+            a separate <code>context_encoder</code> path.
+            <br>
+            <b>Option C:</b> introduce a documented adapter for <code>patch_embed.weight</code>,
+            but treat it as partial transfer rather than drop-in loading.
+          </td>
+        </tr>
+
+        <tr>
+          <td><span class="sev critical">Critical</span></td>
+          <td><code>train_xray.py</code> freezes the zero-initialized fusion layer, making the density branch inert.</td>
+          <td>
+            <code>density_proj</code> is zero-initialized in
+            <code>voxbind/models/voxbind.py:146-150</code>. The finetune script keeps only
+            parameters whose name contains <code>density_encoder</code> trainable in
+            <code>voxbind/train_xray.py:345-355</code>.
+          </td>
+          <td>
+            With <code>density_proj.weight == 0</code> and frozen, the model output is independent
+            of <code>x_dens</code>. Gradients to the density encoder are also zero because the
+            frozen zero projection blocks the backward path.
+          </td>
+          <td>
+            Train <code>density_proj</code> together with <code>density_encoder</code>, at minimum:
+            <pre>if "density_encoder" in name or "density_proj" in name:
+    param.requires_grad_(True)
+else:
+    param.requires_grad_(False)</pre>
+            Also log separate gradient norms for <code>density_encoder</code> and
+            <code>density_proj</code> during the first epoch.
+          </td>
+        </tr>
+
+        <tr>
+          <td><span class="sev major">Major</span></td>
+          <td>Validation caches can silently mix incompatible density crop versions.</td>
+          <td>
+            The ViT-MAE cache key includes grid, radii, dataset name, subset, density source,
+            input mode, and gradmag, but not <code>crops_dir</code>, <code>normalize</code>,
+            <code>subset_val_n</code>, or crop-version metadata in
+            <code>voxbind/train_density_vit_mae.py:576-590</code>.
+            The downstream training cache has the same issue in
+            <code>voxbind/train.py:406-410</code>.
+          </td>
+          <td>
+            A v2/v3/v4/v5 density-normalization run can reuse an older cached validation tensor
+            and report metrics on the wrong density distribution. This is especially risky
+            because recent configs compare crop normalizations.
+          </td>
+          <td>
+            Add to cache keys: resolved <code>crops_dir</code>, <code>ccp4_dir</code>,
+            <code>dset.normalize</code>, <code>dset.use_xray</code>, <code>subset_val_n</code>,
+            and a manifest checksum or <code>stats.json</code> hash when present. Store the key
+            inside the cache file and verify it on load.
+          </td>
+        </tr>
+
+        <tr>
+          <td><span class="sev major">Major</span></td>
+          <td>On-the-fly CCP4 loading is not frame-corrected for CrossDocked structures.</td>
+          <td>
+            The dataset can fall back to CCP4 maps when precomputed crops are missing.
+            <code>_crop_density</code> supports a frame transform, but <code>__getitem__</code>
+            calls it without one in <code>voxbind/dataset/crossdocked_xray.py:565-580</code>.
+            The config comment also notes that fallback crops are unaligned.
+          </td>
+          <td>
+            If a training/evaluation run falls back to raw CCP4 maps, density can be sampled
+            in the deposited crystallographic frame while atoms are in CrossDocked's frame.
+            That creates a true atom-density misalignment.
+          </td>
+          <td>
+            For training, fail fast when <code>use_xray=True</code> and aligned
+            <code>crops_dir</code> is unavailable. For exploratory on-the-fly mode, load and
+            pass the per-structure Kabsch transform produced by preprocessing.
+          </td>
+        </tr>
+
+        <tr>
+          <td><span class="sev moderate">Moderate</span></td>
+          <td>Real-density pretraining does not enforce <code>xray_available</code>.</td>
+          <td>
+            In the MAE prefetcher, <code>density_source == "xray"</code> directly uses
+            <code>batch["xray_density"]</code> in <code>voxbind/train_density_vit_mae.py:312-317</code>.
+            Missing density is represented by zeros in
+            <code>voxbind/dataset/crossdocked_xray.py:582-588</code>.
+          </td>
+          <td>
+            The intended configs use <code>subset_xray_only: true</code>, which makes this safe.
+            If a config omits that filter, zero crops become valid MAE targets and can pollute
+            pretraining.
+          </td>
+          <td>
+            When <code>density_source=xray</code>, assert <code>batch["xray_available"].all()</code>
+            unless an explicit <code>allow_missing_xray</code> flag is set. Log the availability
+            fraction at dataset construction and per epoch.
+          </td>
+        </tr>
+
+        <tr>
+          <td><span class="sev moderate">Moderate</span></td>
+          <td><code>DensityViT.forward</code> lacks explicit input-shape guards.</td>
+          <td>
+            The encoder stores <code>grid_dim</code>, <code>patch_size</code>, and
+            <code>n_in_channels</code>, but forward only applies <code>patch_embed</code> and
+            adds <code>pos_embed</code> in <code>voxbind/models/density_vit.py:192-201</code>.
+          </td>
+          <td>
+            Most wrong shapes will error, but a non-cubic tensor with the same number of tokens
+            could pass the position addition and then be reshaped as an <code>8x8x8</code> token
+            cube. That would silently scramble geometry.
+          </td>
+          <td>
+            Add shape checks before <code>patch_embed</code>:
+            <pre>B, C, D, H, W = density.shape
+assert C == self.n_in_channels
+assert (D, H, W) == (self.grid_dim, self.grid_dim, self.grid_dim)</pre>
+            Also assert <code>z.shape[1] == self.n_tokens</code> before adding
+            <code>pos_embed</code>.
+          </td>
+        </tr>
+
+        <tr>
+          <td><span class="sev moderate">Moderate</span></td>
+          <td>Zero masking is ambiguous for density and atomblob inputs.</td>
+          <td>
+            MAE mode creates <code>x_in = x_noisy * (~mask)</code> in
+            <code>voxbind/train_density_vit_mae.py:389-390</code>. Zero is also a natural value:
+            empty atom voxels are zero, and z-scored density has zero as mean density.
+          </td>
+          <td>
+            The model can confuse "masked" with "valid empty/mean" unless it infers the mask
+            from all-channel absence. This is particularly weak for atom-only empty patches.
+          </td>
+          <td>
+            Use a learned patch-level mask token after patch embedding, or append an explicit
+            mask channel during MAE pretraining. The downstream encoder can still remain clean
+            by making this logic local to <code>DensityViTMAE</code>.
+          </td>
+        </tr>
+
+        <tr>
+          <td><span class="sev moderate">Moderate</span></td>
+          <td>The pure patch decoder can create blocky local features and weak boundary continuity.</td>
+          <td>
+            <code>DensityViT</code> maps each token to <code>c_out * patch_size^3</code> voxels
+            with one linear projection in <code>voxbind/models/density_vit.py:159-201</code>.
+            The downstream fusion receives this full-resolution map directly.
+          </td>
+          <td>
+            Attention mixes patch tokens globally, but voxel-level detail inside each
+            <code>8^3</code> patch is generated independently per token. This can produce patch
+            boundary artifacts or insufficient local inductive bias for density geometry.
+          </td>
+          <td>
+            Add a small post-unpatch local refinement block, for example
+            <code>Conv3d(C/2,C/2,3,pad=1) + SiLU + Conv3d(C/2,C/2,3,pad=1)</code>, or test
+            overlapping patch embedding / a UNETR-style decoder. Keep this optional because it
+            changes checkpoint compatibility.
+          </td>
+        </tr>
+
+        <tr>
+          <td><span class="sev moderate">Moderate</span></td>
+          <td>Learned absolute positional embedding is fixed to one grid/patch layout.</td>
+          <td>
+            The model creates <code>pos_embed</code> of shape <code>(1, n_tokens, dim)</code> in
+            <code>voxbind/models/density_vit.py:144-151</code>.
+          </td>
+          <td>
+            It is fine for the current fixed <code>64^3</code>, <code>patch=8</code> setup, but
+            brittle if grid size, patch size, or crop policy changes. It also does not encode
+            useful 3D relative offsets in attention.
+          </td>
+          <td>
+            Add 3D sin-cos initialization or relative position bias. If keeping learned
+            absolute embeddings, implement interpolation for new <code>g_p^3</code> layouts and
+            validate shape at checkpoint load time.
+          </td>
+        </tr>
+
+        <tr>
+          <td><span class="sev moderate">Moderate</span></td>
+          <td>Density normalization happens before geometric augmentation, not after.</td>
+          <td>
+            The dataset normalizes, then rotates/translates density in
+            <code>voxbind/dataset/crossdocked_xray.py:557-563</code> and
+            <code>573-579</code>. Gradmag is computed after augmentation and z-scored in
+            <code>597-607</code>.
+          </td>
+          <td>
+            Interpolation and zero padding can shift the final density mean/std. This is probably
+            small, but it means "normalized crop" does not strictly mean normalized after the
+            exact tensor the model consumes.
+          </td>
+          <td>
+            Measure post-augmentation mean/std. If drift is meaningful, add optional
+            post-augmentation normalization for density, or bake the exact same augment-normalize
+            order into precomputed crops and all downstream evaluation.
+          </td>
+        </tr>
+
+        <tr>
+          <td><span class="sev minor">Minor</span></td>
+          <td><code>patch_mlp</code> reconstruction head is very narrow in recent configs.</td>
+          <td>
+            Recent 40M configs use <code>head_hidden_dim: 67</code> for an input vector of
+            <code>16 * 8^3 = 8192</code> features and output of roughly <code>12 * 8^3</code>
+            or <code>13 * 8^3</code>.
+          </td>
+          <td>
+            This saves compute, but the narrow bottleneck may constrain reconstruction gradients
+            and bias the encoder toward low-rank patch summaries.
+          </td>
+          <td>
+            Ablate <code>head_hidden_dim</code> values such as 128, 256, and 512; compare with
+            the conv head and a modality-split head. Track downstream transfer, not only MAE loss.
+          </td>
+        </tr>
+
+        <tr>
+          <td><span class="sev minor">Minor</span></td>
+          <td>Training-time sampling in <code>train.py</code> does not pass density to sampling.</td>
+          <td>
+            <code>sample.py</code> handles density correctly, but <code>train.py</code>'s
+            <code>sample()</code> calls <code>sample_molecules(...)</code> without density.
+          </td>
+          <td>
+            Generated samples during training are not representative for density-conditioned
+            models, even though train/val forward passes use density.
+          </td>
+          <td>
+            Mirror the density preparation logic from <code>sample.py</code> inside
+            <code>train.py sample()</code>, or route all sampling through one shared helper.
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>What Looks Correct</h2>
+    <ul class="checklist">
+      <li>The ViT reshape helpers are inverse-consistent for cubic grids. Local CPU check: <code>patch roundtrip True</code>.</li>
+      <li><code>DensityViT</code> produces <code>(B, C_out, G, G, G)</code>, matching the CNN density branch interface.</li>
+      <li>The pretraining script has a single <code>_channel_layout()</code> source of truth and checks <code>model.n_in_channels</code> against the assembled input.</li>
+      <li>For aligned-crop configs, atom coordinates and density receive the same rotation and translation, and gradmag is derived after augmentation.</li>
+      <li>Strict encoder loading catches most accidental architecture mismatches instead of silently accepting missing weights.</li>
+      <li>The weighted MAE recipe addresses real sparsity issues with inverse-frequency atom weights, density downweighting, and atom-positive voxel weighting.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Suggested Fix Order</h2>
+    <div class="grid-2">
+      <div class="callout bad tight">
+        <h3>Fix first</h3>
+        <p>1. Train <code>density_proj</code> with <code>density_encoder</code> in <code>train_xray.py</code>.</p>
+        <p>2. Add downstream config validation so checkpoint input channels, patch size, dim, depth, and heads match the branch being created.</p>
+        <p>3. Put density crop version/path metadata into all validation cache keys.</p>
+        <p>4. Fail fast when using raw CCP4 fallback without frame transforms.</p>
+      </div>
+      <div class="callout info tight">
+        <h3>Then improve</h3>
+        <p>5. Add <code>DensityViT.forward</code> shape assertions.</p>
+        <p>6. Replace zero masking with a learned mask token or explicit mask channel for MAE pretraining.</p>
+        <p>7. Add local post-unpatch refinement and run patch-size/head-width ablations.</p>
+        <p>8. Log per-channel reconstruction loss, effective loss weights, and density-branch gradient norms.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Minimal Patch Sketches</h2>
+    <h3>1. Make <code>train_xray.py</code> density branch actually train</h3>
+    <pre>for name, param in model.named_parameters():
+    if "density_encoder" in name or "density_proj" in name:
+        param.requires_grad_(True)
+    else:
+        param.requires_grad_(False)</pre>
+
+    <h3>2. Guard ViT input shape</h3>
+    <pre>def forward(self, density: torch.Tensor) -> torch.Tensor:
+    assert density.ndim == 5, f"expected (B,C,G,G,G), got {tuple(density.shape)}"
+    _, c, d, h, w = density.shape
+    assert c == self.n_in_channels, (c, self.n_in_channels)
+    assert (d, h, w) == (self.grid_dim, self.grid_dim, self.grid_dim), (d, h, w)
+
+    z = self.patch_embed(density)
+    z = z.flatten(2).transpose(1, 2)
+    assert z.shape[1] == self.n_tokens, (z.shape[1], self.n_tokens)
+    ...</pre>
+
+    <h3>3. Make ViT-MAE validation cache density-version-aware</h3>
+    <pre>key.update({
+    "crops_dir": os.path.realpath(str(cfg.dset.get("crops_dir", ""))),
+    "ccp4_dir": os.path.realpath(str(cfg.dset.get("ccp4_dir", ""))),
+    "normalize": bool(cfg.dset.get("normalize", True)),
+    "use_xray": bool(cfg.dset.get("use_xray", True)),
+    "subset_val_n": cfg.dset.get("subset_val_n", None),
+    "crop_stats_hash": hash_file_if_exists(Path(crops_dir) / "stats.json"),
+})</pre>
+  </section>
+
+  <section>
+    <h2>Final Assessment</h2>
+    <p>
+      The 3D ViT implementation is not obviously broken at the tensor-layout level.
+      The important question is whether the pretraining objective and downstream consumer
+      are training the same contract. Right now, density-only ViT pretraining maps cleanly
+      to the existing VoxBind density branch, but atomblob / atomblob+density / gradmag
+      pretraining variants need a matching downstream branch or they are only valid as
+      representation ablations, not drop-in density encoders.
+    </p>
+    <p>
+      The highest-value fixes are small: train the zero-initialized fusion projection,
+      make cache keys density-version-aware, assert xray availability, guard ViT shapes,
+      and fail fast on unaligned CCP4 fallback. After those, architecture work should
+      focus on mask-token semantics and local 3D continuity around patch boundaries.
+    </p>
+  </section>
+</main>
+</body>
+</html>

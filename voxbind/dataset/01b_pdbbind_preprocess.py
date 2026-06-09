@@ -12,8 +12,9 @@ voxelize — voxelize PDBbind v2020 refined complexes (atoms + v1 density crop)
 For each refined complex with has_struct=True in index.csv:
   1. Parse heavy atoms from {pid}_pocket.pdb (channels 0..3 = C,O,N,S)
      and from {pid}_ligand.sdf  (channels 0..6 = C,O,N,S,F,Cl,P).
-  2. Compute the ligand heavy-atom centre of mass (COM).
-  3. Recentre both atom sets to the ligand COM. Clamp to ±25 Å
+  2. Compute the ligand heavy-atom geometric centre ("COM" in the existing
+     voxel pipeline terminology).
+  3. Recentre both atom sets to the ligand centre. Clamp to ±25 Å
      (matches voxbind.utils.dataset_utils.filter_atoms_by_distance).
   4. Voxelize with voxbind.voxelizer.Voxelizer (pyuul, 64³, 0.25 Å):
        - ligand : 7 channels, uniform 0.5 Å Gaussian radius
@@ -22,14 +23,16 @@ For each refined complex with has_struct=True in index.csv:
      `atomblob` encoder consumes during training.
   5. If a 2Fo-Fc CCP4 map is available (from `density` acquisition):
        - Load + globally z-score via _load_grid (gemmi).
-       - Crop a 64³ × 0.25 Å box at the ligand COM via _crop_density
+       - Crop a 64³ × 0.25 Å box at the ligand centre via _crop_density
          with transform=None (PDBbind structures live in the deposited
          crystal frame, so no Kabsch alignment is needed).
        - Locally ±3σ-clip + re-z-score via normalize_crop.
      → (64, 64, 64) density, ready as the trailing channel for `atomblob_density`.
 
-Centring on the ligand COM matches Beyond Atoms §3.1 ("both [grids] centered on
-the ligand's center of mass") and the existing VoxBind training pipeline.
+Centring on the ligand centre matches Beyond Atoms §3.1 ("both [grids] centered
+on the ligand's center of mass") and the existing VoxBind training pipeline.
+As in CrossDocked, this is implemented as an unweighted heavy-atom coordinate
+mean, not a mass-weighted chemistry centre of mass.
 
     python dataset/01b_pdbbind_preprocess.py voxelize
     python dataset/01b_pdbbind_preprocess.py voxelize --max_complexes 20   # smoke test
@@ -124,10 +127,16 @@ V5_DIR       = PDBBIND_DIR / "voxels_v5"
 
 N_LIG_CH = 7   # C,O,N,S,F,Cl,P
 N_POC_CH = 4   # C,O,N,S
+LIGAND_CHANNEL_ELEMENTS = ["C", "O", "N", "S", "F", "Cl", "P"]
+POCKET_CHANNEL_ELEMENTS = ["C", "O", "N", "S"]
+LIGAND_SUPPORTED_HEAVY = set(LIGAND_CHANNEL_ELEMENTS)
+POCKET_SUPPORTED_HEAVY = set(POCKET_CHANNEL_ELEMENTS)
 GRID_DIM     = 64
 RESOLUTION   = 0.25
 LIGAND_RAD   = 0.5
 CUBES_AROUND = 8
+VOXELIZE_METADATA_VERSION = 2
+CENTER_SOURCE = "ligand_sdf_all_non_h_geometric_centroid"
 
 # v4 clip thresholds (raw 2Fo-Fc units): CrossDocked pool P0.1%/P99.9% (see 00b).
 # Asymmetric — the positive tail is atom-peak signal, the negative tail is noise
@@ -156,9 +165,10 @@ _VDW_RADIUS_LUT = torch.tensor(
     dtype=torch.float32,
 )
 
-# Channel-set of ligand heavy atoms used to compute the ligand COM. Mirrors
-# ELEMENTS_HASH_CROSSDOCKED channels 0-6 (C, O, N, S, F, Cl, P).
-_LIG_HEAVY_ELEMS = {"C", "O", "N", "S", "F", "Cl", "P"}
+# Hydrogen isotope labels to exclude from the ligand centering point. The voxel
+# channels still use only C/O/N/S/F/Cl/P, but centering should not shift when a
+# PDBbind ligand contains unsupported heavy atoms such as Br or I.
+_HYDROGEN_ELEMS = {"H", "D", "T"}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -196,42 +206,146 @@ def _channel_of(element: str, max_ch: int):
     return ch
 
 
-def parse_pocket_pdb(path: Path) -> tuple[torch.Tensor, torch.Tensor]:
+def _normalise_element(element: str) -> str:
+    """Return a canonical element symbol, e.g. 'CL'/'cl' → 'Cl'."""
+    element = element.strip()
+    if not element:
+        return ""
+    return element[0].upper() + element[1:].lower()
+
+
+def _is_heavy_element(element: str) -> bool:
+    """True for non-hydrogen atom symbols, including unsupported channels."""
+    element = _normalise_element(element)
+    return bool(element) and element not in _HYDROGEN_ELEMS
+
+
+def expected_voxelize_metadata(args: argparse.Namespace) -> dict:
+    """Metadata that defines whether an atom/density voxel cache is reusable."""
+    return {
+        "metadata_version": VOXELIZE_METADATA_VERSION,
+        "kind": "pdbbind_voxelize",
+        "center_source": CENTER_SOURCE,
+        "grid_dim": GRID_DIM,
+        "resolution": RESOLUTION,
+        "cubes_around": CUBES_AROUND,
+        "ligand_channels": LIGAND_CHANNEL_ELEMENTS,
+        "pocket_channels": POCKET_CHANNEL_ELEMENTS,
+        "element_filter": args.element_filter,
+        "ligand_vdw": bool(args.ligand_vdw),
+        "ligand_radius": None if args.ligand_vdw else LIGAND_RAD,
+        "pocket_radius": "element_vdw",
+        "density_enabled": not bool(args.no_density),
+        "density_mode": None if args.no_density else "v1_global_zscore_crop_clip_zscore",
+        "index_csv": str(Path(args.index_csv).expanduser().resolve()),
+        "struct_dir": str(Path(args.struct_dir).expanduser().resolve()),
+        "ccp4_dir": None if args.no_density else str(Path(args.ccp4_dir).expanduser().resolve()),
+    }
+
+
+def validate_voxelize_cache(out_dir: Path, expected: dict, *, overwrite: bool,
+                            allow_stale_cache: bool) -> None:
+    """Fail fast when existing .npy caches were produced by a different recipe."""
+    meta_path = out_dir / "metadata.json"
+    has_cache = any((out_dir / name).exists() and any((out_dir / name).glob("*.npy"))
+                    for name in ("atoms", "density"))
+    if not has_cache:
+        return
+    if overwrite:
+        return
+    if not meta_path.exists():
+        msg = (
+            f"{out_dir} contains cached voxels but no metadata.json. "
+            "Re-run with --overwrite to rebuild with the current all-heavy "
+            "ligand centre, or pass --allow_stale_cache to reuse legacy files."
+        )
+        if allow_stale_cache:
+            print(f"  [warn] {msg}")
+            return
+        raise RuntimeError(msg)
+
+    actual = json.loads(meta_path.read_text())
+    mismatches = [
+        f"{k}: got {actual.get(k)!r}, expected {v!r}"
+        for k, v in expected.items()
+        if actual.get(k) != v
+    ]
+    if mismatches and not allow_stale_cache:
+        msg = "\n    ".join(mismatches[:12])
+        raise RuntimeError(
+            f"{out_dir} cache metadata does not match this voxelize command:\n"
+            f"    {msg}\n"
+            "Re-run with --overwrite, or pass --allow_stale_cache if this is intentional."
+        )
+    if mismatches:
+        print(f"  [warn] stale cache metadata in {meta_path}; reusing because --allow_stale_cache was set")
+
+
+def _unsupported_heavy(elements: set[str], supported: set[str]) -> list[str]:
+    return sorted(e for e in elements if _is_heavy_element(e) and e not in supported)
+
+
+def parse_pocket_pdb(path: Path) -> tuple[torch.Tensor, torch.Tensor, list[str]]:
     """Heavy-atom coords + 4-channel atom channels for a pocket PDB file."""
-    coords, channels = [], []
+    coords, channels, heavy_elements = [], [], set()
     with path.open() as f:
         for line in f:
             if not line.startswith(("ATOM  ", "HETATM")):
                 continue
-            el = line[76:78].strip().capitalize()
+            el = _normalise_element(line[76:78])
             if not el:
                 # Fall back: first letter of atom name (cols 13–16)
-                el = ''.join(c for c in line[12:16] if c.isalpha())[:1].upper()
+                el = _normalise_element(''.join(c for c in line[12:16] if c.isalpha())[:1])
+            if _is_heavy_element(el):
+                heavy_elements.add(el)
             ch = _channel_of(el, N_POC_CH)
             if ch is None:
                 continue
             coords.append([float(line[30:38]), float(line[38:46]), float(line[46:54])])
             channels.append(ch)
-    return (torch.tensor(coords, dtype=torch.float32),
-            torch.tensor(channels, dtype=torch.long))
+    return (
+        torch.tensor(coords, dtype=torch.float32),
+        torch.tensor(channels, dtype=torch.long),
+        _unsupported_heavy(heavy_elements, POCKET_SUPPORTED_HEAVY),
+    )
 
 
-def parse_ligand_sdf(path: Path) -> tuple[torch.Tensor, torch.Tensor]:
-    """Heavy-atom coords + 7-channel atom channels for a ligand SDF V2000 file."""
-    coords, channels = [], []
+def parse_ligand_sdf(path: Path) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, list[str]]:
+    """Supported ligand voxels plus all-heavy-atom centroid from SDF V2000.
+
+    Returns
+    -------
+    coords, channels
+        Only atoms represented by the 7-channel CrossDocked ligand vocabulary
+        (C/O/N/S/F/Cl/P), used for voxelization.
+    all_heavy_centroid
+        Geometric centroid of every non-H ligand atom in the SDF. This is used
+        as the PDBbind grid center so unsupported heavy atoms (Br/I/metals) do
+        not move the atom and density crops relative to the physical ligand.
+    """
+    coords, channels, all_heavy_coords, heavy_elements = [], [], [], set()
     with path.open() as f:
         lines = f.readlines()
     n_atoms = int(lines[3][:3])
     for i in range(n_atoms):
         line = lines[4 + i]
-        el = line[31:34].strip()
+        el = _normalise_element(line[31:34])
+        if _is_heavy_element(el):
+            heavy_elements.add(el)
+            all_heavy_coords.append([float(line[0:10]), float(line[10:20]), float(line[20:30])])
         ch = _channel_of(el, N_LIG_CH)
         if ch is None:
             continue
         coords.append([float(line[0:10]), float(line[10:20]), float(line[20:30])])
         channels.append(ch)
-    return (torch.tensor(coords, dtype=torch.float32),
-            torch.tensor(channels, dtype=torch.long))
+    if not all_heavy_coords:
+        raise ValueError(f"{path} contains no non-H ligand atoms")
+    return (
+        torch.tensor(coords, dtype=torch.float32),
+        torch.tensor(channels, dtype=torch.long),
+        torch.tensor(all_heavy_coords, dtype=torch.float32).mean(dim=0),
+        _unsupported_heavy(heavy_elements, LIGAND_SUPPORTED_HEAVY),
+    )
 
 
 def voxelize_complex(
@@ -240,16 +354,17 @@ def voxelize_complex(
     voxelizer: Voxelizer,
     device: str,
     ligand_vdw: bool = False,
+    ligand_center: "torch.Tensor | None" = None,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Return ((11,G,G,G) atom voxels, (3,) ligand COM in deposited frame).
+    """Return ((11,G,G,G) atom voxels, (3,) ligand centroid in deposited frame).
 
     ligand_vdw=True gives ligand atoms element-wise vdW radii (instead of the
     uniform LIGAND_RAD blob), matching an encoder trained with ligand_radius<=0.
     """
-    # Heavy-atom COM in deposited frame (used later for density cropping).
-    lig_com = lig_xyz.mean(dim=0)
+    # Heavy-atom centroid in deposited frame (used later for density cropping).
+    lig_com = ligand_center if ligand_center is not None else lig_xyz.mean(dim=0)
 
-    # Recentre to ligand COM, clamp to ±25 Å (mirrors filter_atoms_by_distance).
+    # Recentre to the ligand centre, clamp to ±25 Å (mirrors filter_atoms_by_distance).
     lig_xyz_c = (lig_xyz - lig_com).clamp(-25, 25)
     poc_xyz_c = (poc_xyz - lig_com).clamp(-25, 25)
 
@@ -294,6 +409,23 @@ def crop_density_for(pid: str, lig_com: np.ndarray, ccp4_dir: Path):
     return normalize_crop(crop) if crop is not None else None
 
 
+def should_filter_complex(element_filter: str,
+                          lig_unsupported: list[str],
+                          poc_unsupported: list[str]) -> str | None:
+    """Return a skip reason when the chosen VoxBind element filter excludes it."""
+    if element_filter in ("ligand", "all") and lig_unsupported:
+        return f"unsupported_ligand={','.join(lig_unsupported)}"
+    if element_filter == "all" and poc_unsupported:
+        return f"unsupported_pocket={','.join(poc_unsupported)}"
+    return None
+
+
+def remove_cached_outputs(*paths: Path) -> None:
+    for path in paths:
+        if path.exists() or path.is_symlink():
+            path.unlink()
+
+
 def run_voxelize(args: argparse.Namespace) -> None:
     index_csv  = Path(args.index_csv)
     struct_dir = Path(args.struct_dir)
@@ -315,7 +447,17 @@ def run_voxelize(args: argparse.Namespace) -> None:
     print(f"  device     : {args.device}")
     print(f"  no_density : {args.no_density}")
     print(f"  ligand_vdw : {args.ligand_vdw}")
+    print(f"  elem_filter: {args.element_filter}")
     print(f"  overwrite  : {args.overwrite}")
+    print(f"  cache_check: {'warn only' if args.allow_stale_cache else 'strict'}")
+
+    expected_meta = expected_voxelize_metadata(args)
+    validate_voxelize_cache(
+        out_dir,
+        expected_meta,
+        overwrite=args.overwrite,
+        allow_stale_cache=args.allow_stale_cache,
+    )
 
     df = pd.read_csv(index_csv)
     df = df[df["has_struct"].astype(bool)].reset_index(drop=True)
@@ -333,8 +475,9 @@ def run_voxelize(args: argparse.Namespace) -> None:
     )
 
     rows: list[dict] = []
-    n_skipped = n_err = 0
+    n_skipped = n_filtered = n_err = 0
     err_log: list[tuple[str, str]] = []
+    filter_log: list[tuple[str, str]] = []
 
     pbar = tqdm(df.iterrows(), total=len(df), desc="voxelize", unit="cplx")
     for _, row in pbar:
@@ -352,14 +495,42 @@ def run_voxelize(args: argparse.Namespace) -> None:
                 "has_atoms":   atom_path.exists(),
                 "has_density": dens_path.exists() if not args.no_density else False,
                 "n_lig": -1, "n_poc": -1,
+                "filtered": False,
+                "filter_reason": "",
+                "unsupported_ligand_elements": "",
+                "unsupported_pocket_elements": "",
             })
             n_skipped += 1
             continue
 
         try:
             cdir = struct_dir / pid
-            lig_xyz, lig_ch = parse_ligand_sdf(cdir / f"{pid}_ligand.sdf")
-            poc_xyz, poc_ch = parse_pocket_pdb(cdir / f"{pid}_pocket.pdb")
+            lig_xyz, lig_ch, lig_center, lig_unsupported = parse_ligand_sdf(cdir / f"{pid}_ligand.sdf")
+            poc_xyz, poc_ch, poc_unsupported = parse_pocket_pdb(cdir / f"{pid}_pocket.pdb")
+            filter_reason = should_filter_complex(
+                args.element_filter,
+                lig_unsupported,
+                poc_unsupported,
+            )
+            if filter_reason:
+                remove_cached_outputs(atom_path, dens_path)
+                n_filtered += 1
+                filter_log.append((pid, filter_reason))
+                rows.append({
+                    "pdb_id": pid,
+                    "has_atoms": False,
+                    "has_density": False,
+                    "n_lig": int(lig_xyz.shape[0]),
+                    "n_poc": int(poc_xyz.shape[0]),
+                    "filtered": True,
+                    "filter_reason": filter_reason,
+                    "unsupported_ligand_elements": ",".join(lig_unsupported),
+                    "unsupported_pocket_elements": ",".join(poc_unsupported),
+                })
+                pbar.set_postfix(ok=len(rows) - n_filtered - n_err,
+                                  filtered=n_filtered, err=n_err, refresh=False)
+                continue
+
             n_lig, n_poc = int(lig_xyz.shape[0]), int(poc_xyz.shape[0])
             if n_lig == 0 or n_poc == 0:
                 raise ValueError(f"empty ligand({n_lig}) or pocket({n_poc})")
@@ -367,6 +538,7 @@ def run_voxelize(args: argparse.Namespace) -> None:
             v_atom, lig_com = voxelize_complex(
                 lig_xyz, lig_ch, poc_xyz, poc_ch, voxelizer, args.device,
                 ligand_vdw=args.ligand_vdw,
+                ligand_center=lig_center,
             )
             if wants_atom:
                 np.save(str(atom_path), v_atom.astype(np.float16))
@@ -381,6 +553,10 @@ def run_voxelize(args: argparse.Namespace) -> None:
                 "has_atoms":   atom_path.exists(),
                 "has_density": dens_path.exists() if not args.no_density else False,
                 "n_lig": n_lig, "n_poc": n_poc,
+                "filtered": False,
+                "filter_reason": "",
+                "unsupported_ligand_elements": ",".join(lig_unsupported),
+                "unsupported_pocket_elements": ",".join(poc_unsupported),
             })
             pbar.set_postfix(ok=len(rows) - n_err, err=n_err, refresh=False)
 
@@ -392,11 +568,16 @@ def run_voxelize(args: argparse.Namespace) -> None:
                 "has_atoms":   atom_path.exists(),
                 "has_density": dens_path.exists() if not args.no_density else False,
                 "n_lig": -1, "n_poc": -1,
+                "filtered": False,
+                "filter_reason": "",
+                "unsupported_ligand_elements": "",
+                "unsupported_pocket_elements": "",
             })
 
     # ── Summary + availability CSV ────────────────────────────────────────────
     avail = pd.DataFrame(rows)
     avail.to_csv(avail_csv, index=False)
+    (out_dir / "metadata.json").write_text(json.dumps(expected_meta, indent=2) + "\n")
 
     n_atom = int(avail["has_atoms"].sum())
     n_dens = int(avail["has_density"].sum())
@@ -407,12 +588,18 @@ def run_voxelize(args: argparse.Namespace) -> None:
     if not args.no_density:
         print(f"  Density crops       : {n_dens:,} / {len(avail):,}")
     print(f"  Already cached      : {n_skipped:,}")
+    print(f"  Filtered complexes  : {n_filtered:,}")
     print(f"  Errors              : {n_err:,}")
+    if filter_log:
+        filter_path = out_dir / "voxelize_filtered.txt"
+        filter_path.write_text("\n".join(f"{p}\t{m}" for p, m in filter_log) + "\n")
+        print(f"  Filter log          : {filter_path}")
     if err_log:
         err_path = out_dir / "voxelize_errors.txt"
         err_path.write_text("\n".join(f"{p}\t{m}" for p, m in err_log) + "\n")
         print(f"  Error log           : {err_path}")
     print(f"  availability CSV    : {avail_csv}")
+    print(f"  metadata JSON       : {out_dir / 'metadata.json'}")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -442,7 +629,7 @@ def load_raw_grid(ccp4_path: Path):
 
 
 def parse_ligand_com(sdf_path: Path) -> "np.ndarray | None":
-    """Heavy-atom centre of mass from a ligand SDF V2000 file."""
+    """All-heavy-atom geometric centroid from a ligand SDF V2000 file."""
     try:
         with sdf_path.open() as f:
             lines = f.readlines()
@@ -450,8 +637,8 @@ def parse_ligand_com(sdf_path: Path) -> "np.ndarray | None":
         coords = []
         for i in range(n_atoms):
             line = lines[4 + i]
-            el = line[31:34].strip()
-            if el not in _LIG_HEAVY_ELEMS:
+            el = _normalise_element(line[31:34])
+            if not _is_heavy_element(el):
                 continue
             coords.append([float(line[0:10]), float(line[10:20]), float(line[20:30])])
         if not coords:
@@ -459,6 +646,32 @@ def parse_ligand_com(sdf_path: Path) -> "np.ndarray | None":
         return np.array(coords, dtype=np.float32).mean(axis=0)
     except Exception:
         return None
+
+
+def unsupported_ligand_sdf(sdf_path: Path) -> list[str]:
+    """Unsupported non-H ligand elements relative to the 7 VoxBind ligand channels."""
+    with sdf_path.open() as f:
+        lines = f.readlines()
+    n_atoms = int(lines[3][:3])
+    elems = {
+        _normalise_element(lines[4 + i][31:34])
+        for i in range(n_atoms)
+    }
+    return _unsupported_heavy(elems, LIGAND_SUPPORTED_HEAVY)
+
+
+def unsupported_pocket_pdb(pdb_path: Path) -> list[str]:
+    """Unsupported non-H pocket elements relative to the 4 VoxBind pocket channels."""
+    elems = set()
+    with pdb_path.open() as f:
+        for line in f:
+            if not line.startswith(("ATOM  ", "HETATM")):
+                continue
+            el = _normalise_element(line[76:78])
+            if not el:
+                el = _normalise_element(''.join(c for c in line[12:16] if c.isalpha())[:1])
+            elems.add(el)
+    return _unsupported_heavy(elems, POCKET_SUPPORTED_HEAVY)
 
 
 def _read_v5_reference_stats(path: Path) -> dict:
@@ -513,6 +726,7 @@ def run_poolnorm(args: argparse.Namespace) -> None:
     print(f"  v4 clip   : [{args.clip_lo:+.3f}, {args.clip_hi:+.3f}]  (raw 2Fo-Fc units)")
     print(f"  v5 norm   : arcsinh(x / {args.v5_arcsinh_scale}) → z-score  (soft-squash, no clip)")
     print(f"  v5 stats  : {args.v5_stats_source}")
+    print(f"  elem_filter: {args.element_filter}")
 
     df = pd.read_csv(index_csv)
     df = df[df["has_struct"].astype(bool)].reset_index(drop=True)
@@ -543,7 +757,20 @@ def run_poolnorm(args: argparse.Namespace) -> None:
             n_skipped += 1; skip_log.append((pid, "load_raw_grid")); continue
         arr, frac_T, nu, nv, nw = g
 
-        lig_com = parse_ligand_com(struct_dir / pid / f"{pid}_ligand.sdf")
+        lig_path = struct_dir / pid / f"{pid}_ligand.sdf"
+        poc_path = struct_dir / pid / f"{pid}_pocket.pdb"
+        try:
+            lig_unsupported = unsupported_ligand_sdf(lig_path) \
+                if args.element_filter in ("ligand", "all") else []
+            poc_unsupported = unsupported_pocket_pdb(poc_path) \
+                if args.element_filter == "all" else []
+        except Exception as e:
+            n_skipped += 1; skip_log.append((pid, f"element_filter:{e!r}")); continue
+        filter_reason = should_filter_complex(args.element_filter, lig_unsupported, poc_unsupported)
+        if filter_reason:
+            n_skipped += 1; skip_log.append((pid, filter_reason)); continue
+
+        lig_com = parse_ligand_com(lig_path)
         if lig_com is None:
             n_skipped += 1; skip_log.append((pid, "parse_ligand_com")); continue
 
@@ -621,6 +848,11 @@ def run_poolnorm(args: argparse.Namespace) -> None:
     print(f"  skipped          : {n_skipped:,}")
 
     stats_v2 = {
+        "metadata_version": VOXELIZE_METADATA_VERSION,
+        "center_source":   CENTER_SOURCE,
+        "grid_dim":        GRID_DIM,
+        "resolution":      RESOLUTION,
+        "element_filter":  args.element_filter,
         "scheme":         "pocket-pool z-score",
         "formula":        "x' = (x - mu) / sigma",
         "mu":             mu_pool,
@@ -631,6 +863,11 @@ def run_poolnorm(args: argparse.Namespace) -> None:
         "raw_max":        max_v,
     }
     stats_v3 = {
+        "metadata_version": VOXELIZE_METADATA_VERSION,
+        "center_source":   CENTER_SOURCE,
+        "grid_dim":        GRID_DIM,
+        "resolution":      RESOLUTION,
+        "element_filter":  args.element_filter,
         "scheme":         "pocket-pool symmetric max-abs",
         "formula":        "x' = x / max_abs",
         "max_abs":        max_abs_pool,
@@ -640,6 +877,11 @@ def run_poolnorm(args: argparse.Namespace) -> None:
         "raw_max":        max_v,
     }
     stats_v4 = {
+        "metadata_version": VOXELIZE_METADATA_VERSION,
+        "center_source":   CENTER_SOURCE,
+        "grid_dim":        GRID_DIM,
+        "resolution":      RESOLUTION,
+        "element_filter":  args.element_filter,
         "scheme":         "pocket-pool clip + z-score",
         "formula":        "x' = (clip(x, [clip_lo, clip_hi]) - mu_clip) / sigma_clip",
         "clip_lo_raw":    args.clip_lo,
@@ -652,6 +894,11 @@ def run_poolnorm(args: argparse.Namespace) -> None:
         "raw_max":        max_v,
     }
     stats_v5 = {
+        "metadata_version": VOXELIZE_METADATA_VERSION,
+        "center_source":   CENTER_SOURCE,
+        "grid_dim":        GRID_DIM,
+        "resolution":      RESOLUTION,
+        "element_filter":  args.element_filter,
         "scheme":         "pocket-pool arcsinh soft-squash + z-score (no clip)",
         "formula":        "x' = (arcsinh(x / s) - mu_a) / sigma_a",
         "arcsinh_scale":  s5,
@@ -724,8 +971,16 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Element-wise vdW ligand radii (mirrors crossdocked_xray "
                          "ligand_radius<=0) instead of the uniform 0.5 A blob. Match "
                          "to a gradmag/ligvdw encoder; write to a separate --out_dir.")
+    pv.add_argument("--element_filter", choices=["none", "ligand", "all"], default="none",
+                    help="Drop complexes with unsupported non-H atom types. none = keep "
+                         "and ignore unsupported channels; ligand = drop Br/I/etc in "
+                         "the ligand only; all = also drop unsupported pocket metals/ions.")
     pv.add_argument("--overwrite",  action="store_true",
                     help="Recompute outputs even if .npy already exists")
+    pv.add_argument("--allow_stale_cache", action="store_true",
+                    help="Warn instead of failing when existing voxel caches have "
+                         "missing/mismatched metadata. Use only for intentional "
+                         "legacy-cache reuse.")
     pv.set_defaults(func=run_voxelize)
 
     pp = sub.add_parser(
@@ -756,6 +1011,9 @@ def build_parser() -> argparse.ArgumentParser:
                     help="stats.json with CrossDocked-style v5 keys "
                          "(arcsinh_scale, mu_a, sigma_a) used when "
                          "--v5_stats_source=reference")
+    pp.add_argument("--element_filter", choices=["none", "ligand", "all"], default="none",
+                    help="Apply the same unsupported-element filter while building "
+                         "density normalisation crops. Use the same value as voxelize.")
     pp.add_argument("--max_complexes", type=int, default=0,
                     help="Limit to first N (0 = all). Smoke testing.")
     pp.set_defaults(func=run_poolnorm)
