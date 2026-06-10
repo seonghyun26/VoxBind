@@ -66,6 +66,40 @@ def _unwrap(model):
     return model.module if hasattr(model, "module") else model
 
 
+def _compile_options(cfg: DictConfig) -> dict:
+    compile_cfg = cfg.get("compile", {}) or {}
+    return {
+        "enabled": bool(compile_cfg.get("enabled", False)),
+        "backend": str(compile_cfg.get("backend", "inductor")),
+        "mode": str(compile_cfg.get("mode", "reduce-overhead")),
+        "fullgraph": bool(compile_cfg.get("fullgraph", False)),
+        "dynamic": bool(compile_cfg.get("dynamic", False)),
+    }
+
+
+def maybe_compile_model(model: torch.nn.Module, cfg: DictConfig, *, is_main: bool) -> torch.nn.Module:
+    opts = _compile_options(cfg)
+    if not opts["enabled"]:
+        return model
+    if not hasattr(torch, "compile"):
+        raise RuntimeError("compile.enabled=true requested, but this PyTorch has no torch.compile")
+
+    kwargs = {
+        "backend": opts["backend"],
+        "fullgraph": opts["fullgraph"],
+        "dynamic": opts["dynamic"],
+    }
+    if opts["mode"] and opts["mode"] != "default":
+        kwargs["mode"] = opts["mode"]
+    if is_main:
+        logger.info(
+            "torch.compile enabled "
+            f"(backend={opts['backend']}, mode={opts['mode']}, "
+            f"fullgraph={opts['fullgraph']}, dynamic={opts['dynamic']})"
+        )
+    return torch.compile(model, **kwargs)
+
+
 def _setup_ddp() -> tuple:
     rank = int(os.environ["RANK"])
     local_rank = int(os.environ["LOCAL_RANK"])
@@ -925,7 +959,8 @@ def val_epoch(cfg, model, val_cache, device, ch_weight=None) -> dict:
 
 # ── Train loop ────────────────────────────────────────────────────────────────
 
-def train_epoch(cfg, prefetcher, model, optimizer, model_ema, device, global_step, ch_weight=None) -> tuple:
+def train_epoch(cfg, prefetcher, model, optimizer, model_ema, device, global_step,
+                ch_weight=None, ema_source_model=None) -> tuple:
     model.train()
     pretext_style = str(cfg.mae.get("pretext_style", "mae"))
     input_mode = str(cfg.get("input_mode", "density"))
@@ -981,7 +1016,7 @@ def train_epoch(cfg, prefetcher, model, optimizer, model_ema, device, global_ste
                 grad_norm_sum += float(gn)
             optimizer.step()
             optimizer.zero_grad(set_to_none=True)
-            model_ema.update(_unwrap(model))
+            model_ema.update(ema_source_model if ema_source_model is not None else _unwrap(model))
             global_step += 1
         L_pretext_sum += L_pretext.item()
         L_str_sum += L_str.item()
@@ -1180,15 +1215,16 @@ def main(cfg: DictConfig) -> None:
             if cfg.resume_epoch is not None:
                 start_epoch = cfg.resume_epoch
 
+    model_train = maybe_compile_model(model, cfg, is_main=is_main)
     if world_size > 1:
-        model = torch.nn.parallel.DistributedDataParallel(
-            model,
+        model_train = torch.nn.parallel.DistributedDataParallel(
+            model_train,
             device_ids=[local_rank],
             output_device=local_rank,
             find_unused_parameters=False,
             gradient_as_bucket_view=True,
         )
-    model_ema = ModelEma(_unwrap(model), decay=cfg.mae.ema_decay)
+    model_ema = ModelEma(model, decay=cfg.mae.ema_decay)
 
     # Val cache
     if is_main:
@@ -1342,8 +1378,8 @@ def main(cfg: DictConfig) -> None:
             gradmag_noise=gradmag_noise,
         )
         train_metrics, global_step = train_epoch(
-            cfg, prefetcher, model, optimizer, model_ema, device, global_step,
-            ch_weight=ch_weight,
+            cfg, prefetcher, model_train, optimizer, model_ema, device, global_step,
+            ch_weight=ch_weight, ema_source_model=model,
         )
 
         val_metrics = None

@@ -30,6 +30,13 @@ accum_steps: 1
 lr: 1e-4
 wd: 5e-2
 
+compile:
+  enabled: false
+  backend: inductor
+  mode: reduce-overhead
+  fullgraph: false
+  dynamic: false
+
 input_mode: atomblob
 with_gradmag: false
 

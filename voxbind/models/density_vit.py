@@ -52,57 +52,55 @@ def _unpatchify(t: torch.Tensor, gp: int, p: int, c: int) -> torch.Tensor:
 
 # ── Transformer building blocks ───────────────────────────────────────────────
 
-def _axis_dims(head_dim: int) -> tuple:
-    """Split an (even) head_dim into 3 even per-axis (x, y, z) chunks for axial RoPE."""
-    base = (head_dim // 3) & ~1                  # largest even <= head_dim/3
-    chunks = [base, base, base]
-    rem = head_dim - 3 * base                    # even (head_dim is even)
-    i = 0
-    while rem >= 2:
-        chunks[i % 3] += 2
-        rem -= 2
-        i += 1
-    assert sum(chunks) == head_dim and all(c % 2 == 0 for c in chunks), chunks
-    return tuple(chunks)
+def _rope_axis_dim(head_dim: int) -> int:
+    """Per-axis rotary width for axial 3D RoPE: the largest multiple of 6 that
+    fits in head_dim, split evenly across x/y/z; trailing dims are left
+    un-rotated. e.g. head_dim 64 → rotate 60 (20 per axis), 4 pass through."""
+    return ((head_dim // 6) * 6) // 3            # even per-axis width
 
 
 class RoPE3D(nn.Module):
     """Axial 3D rotary position embedding (Primus, arXiv:2503.01835).
 
-    head_dim is partitioned across the (x, y, z) patch axes; standard 1D RoPE is
-    applied within each axis from that axis's integer patch coordinate, so
-    attention sees relative 3D offsets instead of absolute slots. cos/sin are
-    precomputed for the fixed g_p³ patch grid (the encoder always sees all
-    tokens) and applied to q/k inside attention. No learnable parameters.
+    The rotary block is split evenly across the (x, y, z) patch axes; standard
+    1D RoPE is applied within each axis from that axis's integer patch
+    coordinate, so attention sees relative 3D offsets instead of absolute slots.
+    If head_dim is not a multiple of 6 the largest multiple-of-6 prefix is
+    rotated (e.g. 60 of 64) and the trailing dims pass through, keeping the three
+    axes equal and even. cos/sin are precomputed for the fixed g_p³ patch grid
+    (the encoder always sees all tokens) and applied to q/k inside attention.
+    No learnable parameters.
     """
 
     def __init__(self, g_p: int, head_dim: int, base: float = 10000.0):
         super().__init__()
         assert head_dim % 2 == 0, f"head_dim={head_dim} must be even for RoPE"
         self.head_dim = head_dim
-        self.axis_dims = _axis_dims(head_dim)
+        self.d_axis = _rope_axis_dim(head_dim)        # even per-axis rotary width
+        self.rope_dim = 3 * self.d_axis               # total rotated dims (<= head_dim)
         # patch coords (N, 3) in flatten(2) order: token n = i·g_p² + j·g_p + k.
         coords = torch.stack(torch.meshgrid(
             torch.arange(g_p), torch.arange(g_p), torch.arange(g_p), indexing="ij",
         ), dim=-1).reshape(-1, 3).float()                       # (N, 3)
-        ang = []
-        for axis, d_a in enumerate(self.axis_dims):
-            inv = base ** (-torch.arange(0, d_a, 2).float() / d_a)   # (d_a/2,)
-            ang.append(coords[:, axis:axis + 1] * inv[None, :])     # (N, d_a/2)
-        ang = torch.cat(ang, dim=1)                            # (N, head_dim/2)
+        inv = base ** (-torch.arange(0, self.d_axis, 2).float() / self.d_axis)   # (d_axis/2,)
+        ang = torch.cat([coords[:, a:a + 1] * inv[None, :] for a in range(3)], dim=1)  # (N, rope_dim/2)
         self.register_buffer("cos", ang.cos(), persistent=False)
         self.register_buffer("sin", ang.sin(), persistent=False)
 
     def rotate(self, x: torch.Tensor) -> torch.Tensor:
-        """Rotate q or k (B, H, N, head_dim) by the per-token 3D angles (interleaved pairs)."""
+        """Rotate the first rope_dim dims of q/k (B,H,N,head_dim) by the per-token 3D
+        angles (interleaved pairs); the trailing head_dim-rope_dim dims pass through."""
         B, H, N, D = x.shape
-        x_ = x.reshape(B, H, N, D // 2, 2)
-        x0, x1 = x_[..., 0], x_[..., 1]                        # (B, H, N, D/2)
-        cos = self.cos[:N].to(x.dtype)                         # (N, D/2) → broadcast over B,H
+        rd = self.rope_dim
+        x_rot, x_pass = x[..., :rd], x[..., rd:]
+        xr = x_rot.reshape(B, H, N, rd // 2, 2)
+        x0, x1 = xr[..., 0], xr[..., 1]                        # (B, H, N, rd/2)
+        cos = self.cos[:N].to(x.dtype)                         # (N, rd/2) → broadcast over B,H
         sin = self.sin[:N].to(x.dtype)
         r0 = x0 * cos - x1 * sin
         r1 = x0 * sin + x1 * cos
-        return torch.stack((r0, r1), dim=-1).reshape(B, H, N, D)
+        x_rot = torch.stack((r0, r1), dim=-1).reshape(B, H, N, rd)
+        return torch.cat((x_rot, x_pass), dim=-1)
 
 
 class MultiHeadSelfAttention(nn.Module):

@@ -196,6 +196,24 @@ def version_suffix(version: str) -> str:
     return "" if version == "v1" else f"_{version}"
 
 
+def clean_tag(tag: Optional[str]) -> str:
+    """Sanitize a free-form run label for use in artifact filenames."""
+    if not tag:
+        return ""
+    return "_".join(str(tag).split()).strip("_")
+
+
+def feature_suffix(version: str, *, tag: Optional[str] = None) -> str:
+    """Filename suffix for feature caches: density version plus optional run tag."""
+    parts: list[str] = []
+    if version != "v1":
+        parts.append(version)
+    clean = clean_tag(tag)
+    if clean:
+        parts.append(clean)
+    return ("_" + "_".join(parts)) if parts else ""
+
+
 def results_suffix(version: str, *, cl1_only: bool = False,
                    tag: Optional[str] = None) -> str:
     """Filename suffix for a results CSV: density version + filtered split + run tag.
@@ -215,10 +233,9 @@ def results_suffix(version: str, *, cl1_only: bool = False,
         parts.append(version)
     if cl1_only:
         parts.append("filtered")
-    if tag:
-        clean = "_".join(str(tag).split()).strip("_")
-        if clean:
-            parts.append(clean)
+    clean = clean_tag(tag)
+    if clean:
+        parts.append(clean)
     return ("_" + "_".join(parts)) if parts else ""
 
 
@@ -502,7 +519,14 @@ def build_cache_signature(
 
 
 def expected_cache_signature(condition: str, args: argparse.Namespace) -> dict:
-    exp_dir = resolve_exp(condition, args.voxel_version)
+    exp_override = getattr(args, "exp_dir", None)
+    if exp_override:
+        conditions = getattr(args, "conditions", [condition])
+        if len(conditions) != 1:
+            raise ValueError("--exp_dir is only supported for one probe condition at a time")
+        exp_dir = Path(exp_override)
+    else:
+        exp_dir = resolve_exp(condition, args.voxel_version)
     cfg = OmegaConf.load(exp_dir / "cfg.yaml")
     spec = infer_feature_spec(condition, cfg, "auto")
     vox_dir = voxel_dir_for(args.voxel_version)
@@ -654,9 +678,10 @@ def forward_tokens(encoder: DensityViT, x: torch.Tensor) -> torch.Tensor:
     """
     z = encoder.patch_embed(x)            # (B, D, g_p, g_p, g_p)
     z = z.flatten(2).transpose(1, 2)      # (B, N, D)
-    z = z + encoder.pos_embed
+    if encoder.pos_embed is not None:
+        z = z + encoder.pos_embed
     for blk in encoder.blocks:
-        z = blk(z)
+        z = blk(z, rope=getattr(encoder, "rope", None))
     return encoder.norm(z)
 
 
@@ -726,7 +751,7 @@ def load_voxels_for(
 def run_features(args: argparse.Namespace) -> None:
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    suffix = version_suffix(args.voxel_version)
+    suffix = feature_suffix(args.voxel_version, tag=getattr(args, "tag", None))
     out_path = out_dir / f"{args.condition}_e{args.epoch}{suffix}.pt"
 
     exp_dir = Path(args.exp_dir) if getattr(args, "exp_dir", None) else \
@@ -747,6 +772,7 @@ def run_features(args: argparse.Namespace) -> None:
     print(f"  condition      : {args.condition}")
     print(f"  epoch          : {args.epoch}")
     print(f"  voxel_version  : {args.voxel_version}")
+    print(f"  feature_tag    : {getattr(args, 'tag', None)}")
     print(f"  voxel_dir      : {vox_dir}")
     print(f"  exp_dir        : {exp_dir}")
     print(f"  input_mode     : {spec.input_mode}")
@@ -767,6 +793,9 @@ def run_features(args: argparse.Namespace) -> None:
         print(f"\n  [warn] {args.condition} encoder was pretrained on v1 density.")
         print(f"  [warn] --voxel_version {args.voxel_version} feeds the encoder OOD inputs.")
         print(f"  [warn] Probe results reflect distribution shift, not encoder quality.")
+    if getattr(args, "exp_dir", None) and not clean_tag(getattr(args, "tag", None)):
+        print("\n  [warn] --exp_dir without --tag writes to the shared condition cache path.")
+        print("  [warn] Add --tag to keep multiple same-condition checkpoints side-by-side.")
 
     encoder = load_encoder(exp_dir, args.epoch, args.device, cfg=cfg)
     n_in = encoder.n_in_channels
@@ -901,6 +930,42 @@ def build_dataset(
     return split_data
 
 
+# ── Token pooling: collapse (B, N, D) tokens → (B, D) for the affinity head ────
+# `mean` is the original fixed pooling (and the only one the cached `probe`/frozen
+# path can use, since those features are already mean-pooled on disk). `attn` is a
+# learned-query attention pool: a single query attends over all N patch tokens, so
+# the head can *select* binding-relevant tokens instead of averaging them away —
+# only meaningful where the full token sequence is live (the `finetune` path).
+
+class MeanPool(nn.Module):
+    """Fixed mean over the token axis: (B, N, D) → (B, D)."""
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x.mean(dim=1)
+
+
+class AttnPool(nn.Module):
+    """Learned-query attention pooling: one query attends over N tokens → (B, D)."""
+    def __init__(self, dim: int, n_heads: int = 8, dropout: float = 0.0):
+        super().__init__()
+        self.query = nn.Parameter(torch.zeros(1, 1, dim))
+        self.attn = nn.MultiheadAttention(dim, n_heads, dropout=dropout, batch_first=True)
+        self.norm = nn.LayerNorm(dim)
+        nn.init.trunc_normal_(self.query, std=0.02)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        q = self.query.expand(x.shape[0], -1, -1)        # (B, 1, D)
+        out, _ = self.attn(q, x, x, need_weights=False)  # (B, 1, D)
+        return self.norm(out.squeeze(1))                 # (B, D)
+
+
+def make_pool(kind: str, dim: int, *, n_heads: int = 8, dropout: float = 0.0) -> nn.Module:
+    if kind == "mean":
+        return MeanPool()
+    if kind == "attn":
+        return AttnPool(dim, n_heads=n_heads, dropout=dropout)
+    raise ValueError(f"unknown pool: {kind!r} (expected 'mean' or 'attn')")
+
+
 class MLP2(nn.Module):
     """Probe head: input_dim → hidden → 1."""
     def __init__(self, input_dim: int, hidden: int = 128, dropout: float = 0.1):
@@ -987,7 +1052,7 @@ def train_one(
 
 
 def run_probe(args: argparse.Namespace) -> None:
-    suffix = version_suffix(args.voxel_version)          # feature-cache suffix: density version only
+    suffix = feature_suffix(args.voxel_version, tag=args.feature_tag)
     csv_suffix = results_suffix(                         # results-CSV suffix: + filtered split + run tag
         args.voxel_version, cl1_only=args.cl1_only, tag=args.tag)
     out_csv = Path(args.out_csv) if args.out_csv else (
@@ -1004,8 +1069,10 @@ def run_probe(args: argparse.Namespace) -> None:
     print(f"  drop_covalent : {not args.no_covalent_filter}")
     print(f"  cl1_only      : {args.cl1_only}{'  (-> _filtered)' if args.cl1_only else ''}")
     print(f"  tag           : {args.tag}")
+    print(f"  feature_tag   : {args.feature_tag}")
+    print(f"  exp_dir       : {args.exp_dir}")
     print(f"  cache_check   : {'warn only' if args.allow_stale_features else 'strict'}")
-    print(f"  out_csv       : {out_csv}")
+    print(f"  out_csv       : {'disabled' if args.no_write_csv else out_csv}")
 
     lp_df = load_lp_index(LP_CSV)
     print(f"  LP rows       : {len(lp_df):,}")
@@ -1017,7 +1084,8 @@ def run_probe(args: argparse.Namespace) -> None:
         if not feat_path.exists():
             print(f"\n[error] missing features: {feat_path}")
             print(f"        Run: python dataset/01c_pdbbind_probe.py features "
-                  f"--condition {cond} --voxel_version {args.voxel_version}")
+                  f"--condition {cond} --voxel_version {args.voxel_version}"
+                  f"{' --tag ' + args.feature_tag if args.feature_tag else ''}")
             sys.exit(1)
         bundle = torch.load(feat_path, weights_only=False)
         try:
@@ -1032,7 +1100,9 @@ def run_probe(args: argparse.Namespace) -> None:
             if len(issues) > 16:
                 print(f"        - ... {len(issues) - 16} more mismatch(es)")
             print(f"        Regenerate: python dataset/01c_pdbbind_probe.py features "
-                  f"--condition {cond} --voxel_version {args.voxel_version} --epoch {args.epoch}")
+                  f"--condition {cond} --voxel_version {args.voxel_version} --epoch {args.epoch}"
+                  f"{' --tag ' + args.feature_tag if args.feature_tag else ''}"
+                  f"{' --exp_dir ' + args.exp_dir if args.exp_dir else ''}")
             if not args.allow_stale_features:
                 sys.exit(1)
             print("        continuing because --allow_stale_features was set")
@@ -1079,14 +1149,17 @@ def run_probe(args: argparse.Namespace) -> None:
                   f"test_rmse={m['test_rmse']:.4f}")
 
     df = pd.DataFrame(rows)
-    df.to_csv(out_csv, index=False)
 
     print("\n── Summary (mean ± std across seeds) ───────────────────────────────")
     agg = df.groupby("condition")[
         ["test_spearman", "test_pearson", "test_rmse", "best_val_spearman", "val_pearson"]
     ].agg(["mean", "std"]).round(4)
     print(agg.to_string())
-    print(f"\n[write] {out_csv}")
+    if args.no_write_csv:
+        print("\n[write] disabled (--no_write_csv)")
+    else:
+        df.to_csv(out_csv, index=False)
+        print(f"\n[write] {out_csv}")
 
     # Auto-consolidation disabled: the per-run CSVs (now cleanly version-named) plus
     # the live dashboard are the source of truth; the consolidated table is no longer
@@ -1118,16 +1191,24 @@ def run_probe(args: argparse.Namespace) -> None:
 
 
 class FineTuneModel(nn.Module):
-    """Encoder (DensityViT) → mean-pool token rep → MLP2 affinity head."""
+    """Encoder (DensityViT) → token pool → MLP2 affinity head.
 
-    def __init__(self, encoder: DensityViT, hidden: int, dropout: float):
+    `pool="mean"` reproduces the cached-probe pooling; `pool="attn"` swaps in a
+    learned-query attention pool over the live token sequence (its params train
+    alongside the head). Pool params live outside the `encoder.` namespace so the
+    optimiser routes them at `head_lr`.
+    """
+
+    def __init__(self, encoder: DensityViT, hidden: int, dropout: float,
+                 pool: str = "mean", pool_heads: int = 8):
         super().__init__()
         self.encoder = encoder
+        self.pool = make_pool(pool, encoder.dim, n_heads=pool_heads, dropout=dropout)
         self.head = MLP2(encoder.dim, hidden=hidden, dropout=dropout)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         z = forward_tokens(self.encoder, x)   # (B, N, D) — grad flows into encoder
-        z = z.mean(dim=1)                     # (B, D) — same pooling as `features`
+        z = self.pool(z)                      # (B, D)
         return self.head(z)                   # (B,)
 
 
@@ -1272,6 +1353,35 @@ def encode_split_features(encoder, splits, condition, n_in, atom_dir, dens_dir,
     return data
 
 
+def encode_split_tokens(encoder, splits, condition, n_in, atom_dir, dens_dir,
+                        device, batch_size, input_mode, with_gradmag, num_workers):
+    """Frozen-encoder patch tokens, cached ONCE → {split: {tokens, y}}.
+
+    Unlike `encode_split_features` (which mean-pools to a vector), this keeps the
+    full (N, Np, D) token sequence so a *learnable* pool can train on it across
+    many epochs and seeds without ever re-reading voxels or re-running the
+    encoder. Stored fp16 on CPU (~1-2 GB for the refined set). Uses the worker
+    DataLoader (shuffle=False, so tokens stay row-aligned with y)."""
+    encoder = encoder.to(device).eval()
+    out = {}
+    for split, sdf in splits.items():
+        ds = VoxelDataset(sdf["pdb_id"], sdf["pK"].to_numpy(), condition, n_in,
+                          atom_dir, dens_dir, input_mode=input_mode,
+                          with_gradmag=with_gradmag)
+        loader = DataLoader(ds, batch_size=batch_size, shuffle=False,
+                            num_workers=num_workers, pin_memory=True,
+                            persistent_workers=num_workers > 0)
+        toks, ys = [], []
+        with torch.no_grad():
+            for xb, yb in tqdm(loader, desc=f"encode {split}", unit="batch", leave=False):
+                xb = xb.to(device, non_blocking=True)
+                toks.append(forward_tokens(encoder, xb).half().cpu())   # (B, Np, D)
+                ys.append(yb)
+        out[split] = {"tokens": torch.cat(toks),
+                      "y": torch.cat(ys).numpy().astype(np.float32)}
+    return out
+
+
 def set_encoder_trainable(encoder: DensityViT, scope: str, last_k: int) -> list:
     """Flag which encoder params get gradient; return the trainable list.
 
@@ -1279,6 +1389,8 @@ def set_encoder_trainable(encoder: DensityViT, scope: str, last_k: int) -> list:
                     unused downstream, so it stays frozen/excluded).
     scope="lastk" — only the last `last_k` transformer blocks + final norm; the
                     patch embed, positional embedding and earlier blocks freeze.
+    scope="none"  — whole encoder frozen; only the downstream pool + head train
+                    (isolates a head/pooling change from any encoder update).
     """
     for p in encoder.parameters():
         p.requires_grad_(False)
@@ -1292,6 +1404,8 @@ def set_encoder_trainable(encoder: DensityViT, scope: str, last_k: int) -> list:
         for blk in encoder.blocks[len(encoder.blocks) - last_k:]:
             for p in blk.parameters():
                 p.requires_grad_(True)
+    elif scope == "none":
+        pass  # whole encoder stays frozen; only the pool + head train
     else:
         raise ValueError(f"unknown ft scope: {scope!r}")
     return [p for n, p in encoder.named_parameters()
@@ -1313,19 +1427,24 @@ def infer_loader(model, loader, device, amp, amp_dtype) -> np.ndarray:
 def train_finetune(splits, factory, *, seed, device, condition, n_in,
                    atom_dir, dens_dir, max_epochs, patience, batch_size,
                    accum_steps, head_lr, encoder_lr, weight_decay, grad_clip,
-                   hidden, dropout, num_workers, amp, ft_scope, last_k,
+                   hidden, dropout, pool, pool_heads, num_workers, amp, ft_scope, last_k,
                    input_mode, with_gradmag) -> dict:
     """Fine-tune encoder + head end-to-end; return metrics (best val ρ → test)."""
     torch.manual_seed(seed); np.random.seed(seed)
 
     encoder = factory()
     enc_params = set_encoder_trainable(encoder, ft_scope, last_k)
-    model = FineTuneModel(encoder, hidden=hidden, dropout=dropout).to(device)
+    model = FineTuneModel(encoder, hidden=hidden, dropout=dropout,
+                          pool=pool, pool_heads=pool_heads).to(device)
 
-    opt = torch.optim.AdamW([
-        {"params": model.head.parameters(), "lr": head_lr, "weight_decay": weight_decay},
-        {"params": enc_params,              "lr": encoder_lr, "weight_decay": weight_decay},
-    ])
+    # head + pool params (everything outside the encoder namespace) at head_lr;
+    # encoder params at encoder_lr — and only when ft_scope leaves some unfrozen.
+    head_params = [p for n, p in model.named_parameters()
+                   if not n.startswith("encoder.") and p.requires_grad]
+    groups = [{"params": head_params, "lr": head_lr, "weight_decay": weight_decay}]
+    if enc_params:
+        groups.append({"params": enc_params, "lr": encoder_lr, "weight_decay": weight_decay})
+    opt = torch.optim.AdamW(groups)
     loss_fn = nn.MSELoss()
 
     amp_dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
@@ -1350,6 +1469,8 @@ def train_finetune(splits, factory, *, seed, device, condition, n_in,
     best_val, best_state, best_epoch, since = -np.inf, None, -1, 0
     for epoch in range(max_epochs):
         model.train()
+        if ft_scope == "none":
+            model.encoder.eval()   # frozen encoder → deterministic features (no dropout)
         opt.zero_grad(set_to_none=True)
         for step, (xb, yb) in enumerate(train_loader):
             xb = xb.to(device, non_blocking=True)
@@ -1384,6 +1505,83 @@ def train_finetune(splits, factory, *, seed, device, condition, n_in,
         "n_train": len(splits["train"]),
         "n_val":   len(splits["val"]),
         "n_test":  len(splits["test"]),
+        "best_val_spearman": float(best_val),
+        "val_pearson":       float(pearsonr (pred_va, yva).statistic),
+        "test_spearman":     float(spearmanr(pred_te, yte).statistic),
+        "test_pearson":      float(pearsonr (pred_te, yte).statistic),
+        "test_rmse":         float(np.sqrt(((pred_te - yte) ** 2).mean())),
+        "epoch_stopped":     int(best_epoch),
+    }
+
+
+class PoolHead(nn.Module):
+    """Token pool + MLP2 affinity head, trained on cached frozen-encoder tokens."""
+    def __init__(self, dim: int, hidden: int, dropout: float, pool: str, pool_heads: int):
+        super().__init__()
+        self.pool = make_pool(pool, dim, n_heads=pool_heads, dropout=dropout)
+        self.head = MLP2(dim, hidden=hidden, dropout=dropout)
+    def forward(self, tokens: torch.Tensor) -> torch.Tensor:   # (B, Np, D) → (B,)
+        return self.head(self.pool(tokens))
+
+
+def _pool_infer(model: nn.Module, T: torch.Tensor, device: str, batch_size: int) -> np.ndarray:
+    """Batched no-grad predictions over cached tokens (T fp16 on CPU)."""
+    model.eval()
+    preds = []
+    with torch.no_grad():
+        for s in range(0, T.shape[0], batch_size):
+            xb = T[s : s + batch_size].to(device, non_blocking=True).float()
+            preds.append(model(xb).cpu())
+    return torch.cat(preds).numpy()
+
+
+def train_pool(data: dict, *, seed: int, device: str, pool: str, pool_heads: int,
+               max_epochs: int, patience: int, batch_size: int, lr: float,
+               weight_decay: float, hidden: int, dropout: float) -> dict:
+    """Train a pool+head on cached frozen tokens (no encoder, no disk) → metrics.
+
+    The token cache is shared across seeds; each seed gets a fresh head — exactly
+    the `frozen`-baseline protocol, but over tokens so the pool can be learned."""
+    torch.manual_seed(seed); np.random.seed(seed)
+    Ttr = data["train"]["tokens"]; ytr = torch.from_numpy(data["train"]["y"])
+    Tva, yva = data["val"]["tokens"],  data["val"]["y"]
+    Tte, yte = data["test"]["tokens"], data["test"]["y"]
+    dim = Ttr.shape[-1]
+    model = PoolHead(dim, hidden, dropout, pool, pool_heads).to(device)
+    opt = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
+    loss_fn = nn.MSELoss()
+
+    n_train = Ttr.shape[0]
+    best_val, best_state, best_epoch, since = -np.inf, None, -1, 0
+    for epoch in range(max_epochs):
+        model.train()
+        perm = torch.randperm(n_train)
+        for s in range(0, n_train, batch_size):
+            idx = perm[s : s + batch_size]
+            xb = Ttr[idx].to(device, non_blocking=True).float()
+            yb = ytr[idx].to(device, non_blocking=True)
+            opt.zero_grad()
+            loss = loss_fn(model(xb), yb)
+            loss.backward()
+            opt.step()
+        pred_va = _pool_infer(model, Tva, device, batch_size)
+        val_spearman = spearmanr(pred_va, yva).statistic
+        if val_spearman > best_val:
+            best_val = val_spearman
+            best_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
+            best_epoch = epoch; since = 0
+        else:
+            since += 1
+            if since >= patience:
+                break
+
+    model.load_state_dict(best_state)
+    pred_va = _pool_infer(model, Tva, device, batch_size)
+    pred_te = _pool_infer(model, Tte, device, batch_size)
+    return {
+        "n_train": int(n_train),
+        "n_val":   int(Tva.shape[0]),
+        "n_test":  int(Tte.shape[0]),
         "best_val_spearman": float(best_val),
         "val_pearson":       float(pearsonr (pred_va, yva).statistic),
         "test_spearman":     float(spearmanr(pred_te, yte).statistic),
@@ -1434,6 +1632,8 @@ def run_finetune(args: argparse.Namespace) -> None:
     print(f"  device         : {device}  (amp={amp})")
     print(f"  ft_scope       : {args.ft_scope}"
           + (f" (last_k={args.last_k})" if args.ft_scope == "lastk" else ""))
+    print(f"  pool           : {args.pool}"
+          + (f" (heads={args.pool_heads})" if args.pool == "attn" else ""))
     print(f"  enc_lr/head_lr : {args.encoder_lr} / {args.head_lr}")
     print(f"  bsz x accum    : {args.batch_size} x {args.accum_steps}")
     print(f"  ft max_ep/pat  : {args.max_epochs} / {args.patience}")
@@ -1477,14 +1677,48 @@ def run_finetune(args: argparse.Namespace) -> None:
                           weight_decay=args.weight_decay, hidden=args.hidden,
                           dropout=args.dropout)
             rows.append({"condition": args.condition, "mode": "frozen",
-                         "ft_scope": "-", "seed": seed,
+                         "ft_scope": "-", "pool": "mean", "seed": seed,
                          "encoder_lr": 0.0, "head_lr": args.head_lr, **m})
             print(f"  [frozen]   seed={seed} ep_stop={m['epoch_stopped']:3d} "
                   f"val_ρ={m['best_val_spearman']:.4f} "
                   f"test_ρ={m['test_spearman']:.4f} test_r={m['test_pearson']:.4f} "
                   f"rmse={m['test_rmse']:.4f}")
 
-    if "finetune" in args.modes:
+    if "finetune" in args.modes and args.ft_scope == "none":
+        # Frozen encoder → encode tokens ONCE (shared across all seeds), then train
+        # the pool+head on the cache. Skips re-reading voxels / re-running the
+        # encoder every epoch & seed (the dominant cost), so a pooling A/B that
+        # would take hours via the re-encode path finishes in minutes. Uses the
+        # frozen-arm schedule so pool=mean here ≈ the cached `frozen` baseline.
+        print("\n── finetune (frozen encoder, cached tokens → pool+head) ────────")
+        enc = factory()
+        tok = encode_split_tokens(enc, splits, args.condition, n_in,
+                                  atom_dir, dens_dir, device, args.feat_batch_size,
+                                  spec.input_mode, spec.with_gradmag, args.num_workers)
+        del enc
+        if str(device).startswith("cuda"):
+            torch.cuda.empty_cache()
+        ntok = tok["train"]["tokens"].shape[1]
+        print(f"  cached {ntok}-token reps  "
+              f"(train={tok['train']['tokens'].shape[0]} "
+              f"val={tok['val']['tokens'].shape[0]} "
+              f"test={tok['test']['tokens'].shape[0]})")
+        for seed in range(args.seeds):
+            m = train_pool(tok, seed=seed, device=device,
+                           pool=args.pool, pool_heads=args.pool_heads,
+                           max_epochs=args.frozen_max_epochs, patience=args.frozen_patience,
+                           batch_size=args.frozen_batch_size, lr=args.head_lr,
+                           weight_decay=args.weight_decay,
+                           hidden=args.hidden, dropout=args.dropout)
+            rows.append({"condition": args.condition, "mode": "finetune",
+                         "ft_scope": args.ft_scope, "pool": args.pool, "seed": seed,
+                         "encoder_lr": 0.0, "head_lr": args.head_lr, **m})
+            print(f"  [pool:{args.pool}] seed={seed} ep_stop={m['epoch_stopped']:3d} "
+                  f"val_ρ={m['best_val_spearman']:.4f} "
+                  f"test_ρ={m['test_spearman']:.4f} test_r={m['test_pearson']:.4f} "
+                  f"rmse={m['test_rmse']:.4f}")
+
+    elif "finetune" in args.modes:
         print("\n── finetune (encoder + head end-to-end) ────────────────────────")
         for seed in range(args.seeds):
             m = train_finetune(splits, factory, seed=seed, device=device,
@@ -1495,12 +1729,13 @@ def run_finetune(args: argparse.Namespace) -> None:
                                head_lr=args.head_lr, encoder_lr=args.encoder_lr,
                                weight_decay=args.weight_decay, grad_clip=args.grad_clip,
                                hidden=args.hidden, dropout=args.dropout,
+                               pool=args.pool, pool_heads=args.pool_heads,
                                num_workers=args.num_workers, amp=amp,
                                ft_scope=args.ft_scope, last_k=args.last_k,
                                input_mode=spec.input_mode,
                                with_gradmag=spec.with_gradmag)
             rows.append({"condition": args.condition, "mode": "finetune",
-                         "ft_scope": args.ft_scope, "seed": seed,
+                         "ft_scope": args.ft_scope, "pool": args.pool, "seed": seed,
                          "encoder_lr": args.encoder_lr, "head_lr": args.head_lr, **m})
             print(f"  [finetune] seed={seed} ep_stop={m['epoch_stopped']:3d} "
                   f"val_ρ={m['best_val_spearman']:.4f} "
@@ -1565,6 +1800,10 @@ def build_parser() -> argparse.ArgumentParser:
                          "condition+voxel_version via EXPS/EXPS_OVERRIDE). Lets "
                          "multiple same-condition runs be probed against their own "
                          "checkpoints in an auto-research loop.")
+    pf.add_argument("--tag", default=None,
+                    help="Optional feature-cache label appended after the version token, "
+                         "e.g. --tag 260608_w1 -> atomblob_density_gradmag_e99_v5_260608_w1.pt. "
+                         "Use with --exp_dir when comparing same-condition checkpoints.")
     pf.set_defaults(func=run_features)
 
     pr = sub.add_parser(
@@ -1596,12 +1835,21 @@ def build_parser() -> argparse.ArgumentParser:
     pr.add_argument("--tag",           default=None,
                     help="Optional run label appended after the version/_filtered token, e.g. "
                          "--voxel_version v5 --cl1_only --tag invfreq -> probe_results_e99_v5_filtered_invfreq.csv")
+    pr.add_argument("--feature_tag",   default=None,
+                    help="Optional feature-cache label to load, matching features --tag. "
+                         "Result --tag is intentionally separate so old untagged feature "
+                         "caches remain loadable.")
+    pr.add_argument("--exp_dir",       default=None,
+                    help="Override expected encoder exp dir for strict feature validation. "
+                         "Use with one --conditions value when probing a custom same-condition checkpoint.")
     pr.add_argument("--allow_stale_features", action="store_true",
                     help="Warn instead of failing when feature-cache metadata does not "
                          "match the requested condition/epoch/voxel_version/atom source. "
                          "Use only for intentional legacy or custom-exp probes.")
     pr.add_argument("--out_csv",       default=None,
                     help="Override results CSV path")
+    pr.add_argument("--no_write_csv",  action="store_true",
+                    help="Print seed/summary metrics but do not write a results CSV.")
     pr.set_defaults(func=run_probe)
 
     pt = sub.add_parser(
@@ -1627,9 +1875,16 @@ def build_parser() -> argparse.ArgumentParser:
     # shared head architecture (identical across arms)
     pt.add_argument("--hidden",  type=int,   default=128)
     pt.add_argument("--dropout", type=float, default=0.1)
+    pt.add_argument("--pool", choices=["mean", "attn"], default="mean",
+                    help="Token→vector pooling for the head. mean = fixed average "
+                         "(matches the cached probe); attn = learned-query attention "
+                         "pool over the live token sequence (trains with the head).")
+    pt.add_argument("--pool_heads", type=int, default=8,
+                    help="Heads in the attention pool (only used when --pool attn)")
     # fine-tune scope + optimisation
-    pt.add_argument("--ft_scope", choices=["full", "lastk"], default="full",
-                    help="full = whole encoder (low LR); lastk = only last --last_k blocks + norm")
+    pt.add_argument("--ft_scope", choices=["full", "lastk", "none"], default="full",
+                    help="full = whole encoder (low LR); lastk = only last --last_k "
+                         "blocks + norm; none = freeze encoder, train pool+head only")
     pt.add_argument("--last_k",   type=int,   default=4, help="blocks to unfreeze when ft_scope=lastk")
     pt.add_argument("--head_lr",     type=float, default=1e-3, help="MLP head LR (both arms)")
     pt.add_argument("--encoder_lr",  type=float, default=1e-5, help="encoder LR (finetune arm)")

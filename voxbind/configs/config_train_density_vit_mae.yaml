@@ -24,6 +24,15 @@ accum_steps: 1
 lr: 1e-4
 wd: 5e-2                 # higher wd than cnn-MAE — ViTs typically need stronger regularization
 
+# Optional PyTorch 2.x graph compilation. Keep disabled by default because DDP,
+# dynamic masks, and one-off smoke runs can erase or reverse the gain.
+compile:
+  enabled: false
+  backend: inductor
+  mode: reduce-overhead       # reduce-overhead | max-autotune | default
+  fullgraph: false
+  dynamic: false
+
 # ── MAE/ELECTRA-specific knobs ───────────────────────────────────────────────
 # Mirrors the cnn-MAE pretext exactly so a apples-to-apples ViT vs CNN ablation
 # is possible by swapping `model:` only. The same train script also handles

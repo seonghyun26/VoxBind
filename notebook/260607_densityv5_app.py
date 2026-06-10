@@ -32,6 +32,9 @@ COLS = [
     ("val_pearson",       "val r",  "pv"),
     ("test_pearson",      "test r", "pt"),
 ]
+# RMSE (pK units, lower = better) is reported in the tables only — not as a chart
+# bar, since its ~1.4-1.8 scale is off the [0,1] correlation axis.
+AGG_COLS = [c for c, _, _ in COLS] + ["test_rmse"]
 
 # Run manifest: which CSV + condition holds each encoder's probe result, plus a
 # one-line characteristic. Config (weights/channels/status) is read live from cfg.yaml.
@@ -40,7 +43,8 @@ RUNS = [
          exp="260605_atomblob_density_vit_mae_40m_weighted_v5_gradmag_ligvdw_balanced_pretrain",
          csv="probe_results_e99_v5_filtered_260605_balanced.csv", cond="atomblob_density_gradmag",
          note="Sweep-“balanced” full reconstruction of density+gradmag (1.0/1.0). "
-              "Density objective dominates the loss → corrupts the transferable atom features."),
+              "On the filtered rerun it trails invfreq/w1 by ~0.02 test rho, so treat it "
+              "as weaker but not collapsed."),
     dict(key="density-only", date="2026-06-06",
          exp="260606_density_vit_mae_40m_xray_v5_gradmag_pretrain",
          csv="probe_results_e99_v5_filtered_260606density.csv", cond="density_gradmag",
@@ -59,8 +63,15 @@ RUNS = [
     dict(key="matched-ctrl", date="2026-06-09",
          exp="260609_atomblob_vit_mae_40m_invfreq_v5_ligvdw_pretrain",
          csv="probe_results_e99_v5_filtered_atomblob_ligvdw.csv", cond="atomblob_ligvdw",
-         note="MATCHED CONTROL: 11-ch atoms-only (ligvdw radii, inv_freq) — the baseline recipe "
-              "with density/gradmag dropped. Isolates density's net contribution vs baseline 0.473."),
+         note="Matched atoms-only control: 11-ch ligvdw atoms (inv_freq), baseline recipe with "
+              "density/gradmag dropped. test ρ 0.544 vs baseline+density 0.595 → density adds ~+0.05; "
+              "element-wise ligvdw radii rule out blob-size leakage."),
+    dict(key="rope3d", date="2026-06-10",
+         exp="260609_atomblob_density_gradmag_vit_mae_40m_invfreq_v5_rope3d_pretrain",
+         csv="probe_results_e99_v5_filtered_rope3d.csv", cond="atomblob_density_gradmag",
+         note="3D RoPE positional encoding (axial, rotate 60/64) on the baseline 13-ch recipe — "
+              "RoPE vs learnable absolute PE. test ρ 0.606 vs baseline 0.595 (+0.011 on this matched "
+              "839 split; +0.016 on the CL1 split), and RoPE drops a parameter. Current best."),
 ]
 
 
@@ -75,7 +86,7 @@ def load_metrics(csv_name, cond):
     if not rows:
         return None
     out = {}
-    for col, _, _ in COLS:
+    for col in AGG_COLS:
         vals = []
         for r in rows:
             try:
@@ -106,6 +117,7 @@ def load_cfg(exp):
     return dict(
         input_mode=g("input_mode", default="density"),
         with_gradmag=str(g("with_gradmag", default="false")).lower() == "true",
+        pos_encoding=g("pos_encoding", default="learnable"),
         n_in=g("n_in_channels", int),
         density_w=g("density_channel_weight", float),
         gradmag_w=g("gradmag_channel_weight", float),
@@ -201,9 +213,11 @@ footer{margin-top:28px;color:var(--mut);font-size:12px;border-top:1px solid var(
 .top{display:flex;justify-content:flex-end;margin:0 0 4px}
 .viewsel{font-size:13px;color:var(--mut)}
 .viewsel select{font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:7px;padding:5px 9px;margin-left:6px;cursor:pointer}
-.vchart{display:flex;align-items:flex-end;gap:18px;overflow-x:auto;padding:24px 6px 2px;min-height:212px}
+.vchart{display:flex;align-items:flex-start;gap:18px;overflow-x:auto;padding:24px 6px 2px;min-height:312px}
 .vgroup{display:flex;flex-direction:column;align-items:center;flex:0 0 auto}
-.vbars{display:flex;align-items:flex-end;gap:4px;height:168px}
+.vbars{display:flex;align-items:flex-end;gap:4px;height:260px}
+.yax{margin-right:0}
+.ylab{height:260px;display:flex;flex-direction:column;justify-content:space-between;align-items:flex-end;font-size:10px;color:var(--mut);font-variant-numeric:tabular-nums;border-right:1px dashed var(--line);padding-right:7px;min-width:30px}
 .vbar{width:30px;border-radius:4px 4px 0 0;position:relative;min-height:2px}
 .vbar>b{position:absolute;top:-15px;left:50%;transform:translateX(-50%);font-size:9px;font-weight:700;color:#4b5260;font-variant-numeric:tabular-nums}
 .vbar.sv{background:var(--sv)}.vbar.st{background:var(--st)}.vbar.pv{background:var(--pv)}.vbar.pt{background:var(--pt)}
@@ -262,7 +276,7 @@ def load_table(csv_name):
     out = []
     for (cond, ntr), rs in groups.items():
         met = {}
-        for col, _, _ in COLS:
+        for col in AGG_COLS:
             vals = []
             for r in rs:
                 try:
@@ -299,8 +313,27 @@ def _bars(metrics, scale):
     return bars
 
 
-def _vbar_group(metrics, scale, label, sub="", best=False, pending=False):
-    """One x-axis group of vertical bars (height ∝ value) + an under-label."""
+def _yaxis(vals):
+    """Zoomed [ymin, ymax] for the bar chart — a non-zero baseline so differences pop."""
+    vals = [v for v in vals if v is not None]
+    if not vals:
+        return 0.0, 1.0
+    vmin, vmax = min(vals), max(vals)
+    span = (vmax - vmin) or 0.05
+    ymin = max(0.0, vmin - 0.25 * span)
+    ymax = min(1.0, vmax + 0.12 * span)
+    return ymin, (ymax if ymax - ymin > 0.02 else ymin + 0.02)
+
+
+def _yaxis_col(ymin, ymax):
+    """Left y-axis showing the zoomed top (ymax) and bottom (ymin), aligned to the bars."""
+    return (f'<div class="vgroup yax"><div class="ylab"><span>{ymax:.2f}</span>'
+            f'<span>{ymin:.2f}</span></div><div class="vlabel">&nbsp;</div></div>')
+
+
+def _vbar_group(metrics, ymin, ymax, label, sub="", best=False, pending=False):
+    """One x-axis group of vertical bars (height ∝ value within [ymin,ymax]) + label."""
+    rng = (ymax - ymin) or 1.0
     if pending:
         bars = '<div class="vbar empty" style="height:7px"></div>' * len(COLS)
     else:
@@ -310,7 +343,7 @@ def _vbar_group(metrics, scale, label, sub="", best=False, pending=False):
             if not st:
                 bars += f'<div class="vbar empty" style="height:3px" title="{lab}: n/a"></div>'
                 continue
-            h = min(100.0, 100.0 * st[0] / scale)
+            h = max(2.0, min(100.0, 100.0 * (st[0] - ymin) / rng))
             bars += (f'<div class="vbar {cls}" style="height:{h:.1f}%" title="{lab} {st[0]:.3f}">'
                      f'<b>{st[0]:.3f}</b></div>')
     sublab = f'<br><small>{esc(sub)}</small>' if sub else ''
@@ -345,7 +378,7 @@ def _generic_body(view):
         exp = SUMMARY_CSV.get(view, "probe_results_e99_v5_*.csv")
         return f'<div class="ctx">No probe CSV found for this view yet (expected <code>{esc(exp)}</code>).</div>'
     allv = [st[0] for _, d in rows for c, _, _ in COLS for st in [d["metrics"].get(c)] if st]
-    scale = max(allv) * 1.08 if allv else 0.6
+    ymin, ymax = _yaxis(allv)
     has_group = any(lbl for lbl, _ in rows)
     has_details = any(d["details"] for _, d in rows)
     best_i = max((i for i, (_, d) in enumerate(rows) if "test_spearman" in d["metrics"]),
@@ -355,13 +388,14 @@ def _generic_body(view):
     for i, (lbl, d) in enumerate(rows):
         sp = f"{d['n_train']}" if d["n_train"] and d["n_train"] != 2704 else ""
         name = f'{lbl}·{d["condition"]}' if lbl else d["condition"]
-        vgroups.append(_vbar_group(d["metrics"], scale, name, sub=sp, best=(i == best_i)))
+        vgroups.append(_vbar_group(d["metrics"], ymin, ymax, name, sub=sp, best=(i == best_i)))
 
     hdr = (('<th style="width:13%">Run</th>' if has_group else '')
            + '<th style="width:22%">Condition</th>'
            + ('<th>Notes</th>' if has_details else '')
            + '<th class="sp" style="width:9%">val ρ</th><th class="sp" style="width:9%">test ρ</th>'
-             '<th class="pe" style="width:9%">val r</th><th class="pe" style="width:9%">test r</th>')
+             '<th class="pe" style="width:9%">val r</th><th class="pe" style="width:9%">test r</th>'
+             '<th style="width:10%">test RMSE ↓</th>')
     trows = ""
     for i, (lbl, d) in enumerate(rows):
         cls = ' class="best"' if i == best_i else ''
@@ -374,13 +408,16 @@ def _generic_body(view):
             st = d["metrics"].get(c)
             tds += ('<td><span class="pend">—</span></td>' if not st
                     else f'<td><span class="num">{st[0]:.3f}</span> <span class="sd">±{st[1]:.3f}</span></td>')
+        rm = d["metrics"].get("test_rmse")
+        tds += ('<td><span class="pend">—</span></td>' if not rm
+                else f'<td><span class="num">{rm[0]:.3f}</span> <span class="sd">±{rm[1]:.3f}</span></td>')
         trows += f'<tr{cls}>{tds}</tr>'
 
     return (f'<h2>Val &amp; test correlation — Spearman ρ and Pearson r '
             f'<span class="mut" style="font-size:13px;font-weight:400">(3-seed mean)</span></h2>'
             f'<div class="chart"><div class="legend">{LEGEND}</div>'
-            f'<div class="vchart">{"".join(vgroups)}</div>'
-            f'<div class="scale">Bars scaled to {scale:.2f}.</div></div>'
+            f'<div class="vchart">{_yaxis_col(ymin, ymax)}{"".join(vgroups)}</div>'
+            f'<div class="scale">y-axis {ymin:.2f}–{ymax:.2f} (zoomed — bars start above 0 to emphasize differences). 3-seed mean.</div></div>'
             f'<h2>Conditions <span class="mut" style="font-size:13px;font-weight:400">— 3-seed mean ± std</span></h2>'
             f'<table><thead><tr>{hdr}</tr></thead><tbody>{trows}</tbody></table>')
 
@@ -393,7 +430,7 @@ def _curated_body():
                      run_status(r["exp"], cfg.get("epochs", 100))))
 
     allv = [m[c][0] for _, m, _, _ in data if m for c, _, _ in COLS if m and c in m]
-    scale = max(allv) * 1.08 if allv else 0.6
+    ymin, ymax = _yaxis(allv)
     done_tests = [(m["test_spearman"][0], r["key"]) for r, m, _, _ in data if m and "test_spearman" in m]
     best_key = max(done_tests)[1] if done_tests else None
     worst_done_test = min(t for t, _ in done_tests) if done_tests else None
@@ -402,10 +439,10 @@ def _curated_body():
     vgroups = []
     for r, m, cfg, st in data:
         if m and all(c in m for c, _, _ in COLS):
-            vgroups.append(_vbar_group(m, scale, r["key"], best=(r["key"] == best_key)))
+            vgroups.append(_vbar_group(m, ymin, ymax, r["key"], best=(r["key"] == best_key)))
         else:
             lab = "running" if st[0] == "running" else st[0]
-            vgroups.append(_vbar_group({}, scale, r["key"], sub=f"({lab})", pending=True))
+            vgroups.append(_vbar_group({}, ymin, ymax, r["key"], sub=f"({lab})", pending=True))
 
     # ---- table: config + four metric columns ----
     trows = []
@@ -430,6 +467,8 @@ def _curated_body():
             chips.append("atoms-only")
         if cfg.get("atom_pos") is not None:
             chips.append(f"atom_pos {cfg['atom_pos']:g}")
+        if cfg.get("pos_encoding") and cfg.get("pos_encoding") != "learnable":
+            chips.append(f"pos: <b>{cfg['pos_encoding']}</b>")
         chiphtml = "".join(f'<span class="chip">{c}</span>' for c in chips)
 
         if st[0] == "done":
@@ -456,6 +495,9 @@ def _curated_body():
                 elif worst_done_test is not None and stat[0] <= worst_done_test + 1e-9:
                     style = ' style="color:var(--bad)"'
             mcells += f'<td><span class="num"{style}>{stat[0]:.3f}</span> <span class="sd">±{stat[1]:.3f}</span></td>'
+        rm = m.get("test_rmse") if m else None
+        mcells += ('<td><span class="pend">—</span></td>' if not rm
+                   else f'<td><span class="num">{rm[0]:.3f}</span> <span class="sd">±{rm[1]:.3f}</span></td>')
 
         trows.append(
             f'<tr{cls}><td class="mut" style="white-space:nowrap">{esc(r["date"])}</td>'
@@ -467,14 +509,15 @@ def _curated_body():
     return (f'<h2>Val &amp; test correlation — Spearman ρ and Pearson r '
             f'<span class="mut" style="font-size:13px;font-weight:400">(3-seed mean)</span></h2>'
             f'<div class="chart"><div class="legend">{LEGEND}</div>'
-            f'<div class="vchart">{"".join(vgroups)}</div>'
-            f'<div class="scale">Bars scaled to {scale:.2f}. Source: '
+            f'<div class="vchart">{_yaxis_col(ymin, ymax)}{"".join(vgroups)}</div>'
+            f'<div class="scale">y-axis {ymin:.2f}–{ymax:.2f} (zoomed — bars start above 0). Source: '
             f'dataset/data/pdbbind/probe_results_e99_v5_filtered_*.csv</div></div>'
-            f'<h2>Runs <span class="mut" style="font-size:13px;font-weight:400">— config (cfg.yaml) + all four metrics</span></h2>'
+            f'<h2>Runs <span class="mut" style="font-size:13px;font-weight:400">— config (cfg.yaml) + metrics (RMSE in pK, lower=better)</span></h2>'
             f'<table><thead><tr><th style="width:8%">Date</th><th style="width:17%">Run name (experiment)</th><th style="width:11%">Input</th>'
             f'<th style="width:20%">Characteristic &amp; key config</th><th style="width:8%">Status</th>'
             f'<th class="sp" style="width:9%">val ρ</th><th class="sp" style="width:9%">test ρ</th>'
-            f'<th class="pe" style="width:9%">val r</th><th class="pe" style="width:9%">test r</th></tr></thead>'
+            f'<th class="pe" style="width:9%">val r</th><th class="pe" style="width:9%">test r</th>'
+            f'<th style="width:10%">test RMSE ↓</th></tr></thead>'
             f'<tbody>{"".join(trows)}</tbody></table>')
 
 
@@ -513,10 +556,14 @@ def render(view):
         h1 = "Density&nbsp;v5 Pre-training Runs &mdash; live"
         sub = ("VoxBind · MAE-ViT on CrossDocked X-ray density (v5) → PDBbind affinity probe · "
                f"values read live from CSV · loaded {now} · auto-refresh 60s")
-        intro = ("<b>What this is.</b> Frozen-encoder PDBbind affinity probe (512-D mean-pooled tokens → "
-                 "2-layer MLP → pK), 3-seed mean over the CL1-filtered refined complexes "
-                 "(v5 reference-normalized; n_test≈839). Chart and table report <b>Spearman ρ</b> and "
-                 "<b>Pearson r</b> (val + test), pulled live from the probe CSVs.")
+        intro = ("<b>Task.</b> Pre-train a 40M ViT-MAE on CrossDocked X-ray density (self-supervised "
+                 "masked reconstruction), then test whether the <b>frozen</b> encoder's features predict "
+                 "PDBbind binding affinity (pK) with a 3-seed 2-layer-MLP probe. Each row is one encoder "
+                 "variant — we compare input modalities (atoms / +density / +‖∇ρ‖ gradmag), reconstruction-"
+                 "loss weightings, and positional encodings to find what transfers best to affinity.<br>"
+                 "<b>Readout.</b> 512-D mean-pooled tokens → MLP → pK; <b>Spearman ρ</b> and <b>Pearson r</b> "
+                 "(val = model-selection, test = held-out), 3-seed mean, read live from the probe CSVs. "
+                 "All rows share one <b>matched eval split (n_test=839)</b> so the encoders are directly comparable.")
         return _shell(view, h1, sub, intro, _curated_body(), CURATED_FOOTER)
     h1 = f"PDBbind affinity probe &mdash; <code>{esc(view)}</code>"
     sub = f"VoxBind · frozen-encoder probe → pK · values read live from CSV · loaded {now} · auto-refresh 60s"
