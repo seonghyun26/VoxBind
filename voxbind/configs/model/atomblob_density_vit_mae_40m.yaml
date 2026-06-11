@@ -19,6 +19,7 @@ heads: 8
 mlp_ratio: 4
 dropout: 0.1
 pos_encoding: learnable # learnable (additive abs table) | rope3d (axial 3D RoPE, Primus arXiv:2503.01835)
+rope_fast: false        # rope3d only: fused q/k rotate, fewer temporaries (numerically identical)
 n_struct_channels: 0    # disabled: atoms ARE part of the input
 
 # ── MAE head knobs (no-op defaults — override per run) ─────────────────────────

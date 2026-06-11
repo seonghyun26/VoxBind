@@ -77,6 +77,18 @@ def _compile_options(cfg: DictConfig) -> dict:
     }
 
 
+def _amp_setup(cfg: DictConfig):
+    """Return (enabled, ctx_factory). ctx_factory() yields a bf16 autocast context
+    (a no-op when disabled). bf16 needs no GradScaler; fp16 is intentionally unsupported."""
+    amp_cfg = cfg.get("amp", {}) or {}
+    enabled = bool(amp_cfg.get("enabled", False))
+    dtype = str(amp_cfg.get("dtype", "bf16"))
+    if enabled and dtype not in ("bf16", "bfloat16"):
+        raise NotImplementedError(
+            f"amp.dtype={dtype!r} unsupported — bf16 only (fp16 would need a GradScaler)")
+    return enabled, (lambda: torch.autocast("cuda", dtype=torch.bfloat16, enabled=enabled))
+
+
 def maybe_compile_model(model: torch.nn.Module, cfg: DictConfig, *, is_main: bool) -> torch.nn.Module:
     opts = _compile_options(cfg)
     if not opts["enabled"]:
@@ -783,6 +795,8 @@ def val_epoch(cfg, model, val_cache, device, ch_weight=None) -> dict:
     by batch index so val loss is comparable across epochs.
     """
     model.eval()
+    amp_enabled, amp_ctx_fn = _amp_setup(cfg)
+    channels_last = bool(cfg.get("channels_last", False))
     sigma_lo = cfg.mae.sigma_blur_a_lo / cfg.vox.resolution
     sigma_hi = cfg.mae.sigma_blur_a_hi / cfg.vox.resolution
     block = cfg.mae.block_size
@@ -913,7 +927,13 @@ def val_epoch(cfg, model, val_cache, device, ch_weight=None) -> dict:
                     raise RuntimeError(f"unsupported val corruption op: {op}")
 
             target_str = torch.cat([v_lig, v_poc], dim=1)
-            out_pretext, a_hat = model(x_in)
+            if channels_last:
+                x_in = x_in.to(memory_format=torch.channels_last_3d)
+            with amp_ctx_fn():
+                out_pretext, a_hat = model(x_in)
+            out_pretext = out_pretext.float()
+            if a_hat is not None:
+                a_hat = a_hat.float()
             losses = compute_losses(
                 out_pretext, a_hat, x_clean, target_str, mask,
                 struct_pos_weight=float(cfg.mae.get("struct_pos_weight", 1.0)),
@@ -984,13 +1004,21 @@ def train_epoch(cfg, prefetcher, model, optimizer, model_ema, device, global_ste
     n_iter = len(prefetcher)
 
     import contextlib
+    amp_enabled, amp_ctx_fn = _amp_setup(cfg)
+    channels_last = bool(cfg.get("channels_last", False))
     for i, (x_in, x_clean, mask, target_str) in enumerate(prefetcher):
         is_step = ((i + 1) % accum_steps == 0) or ((i + 1) == n_iter)
         sync_ctx = contextlib.nullcontext()
         if not is_step and hasattr(model, "no_sync"):
             sync_ctx = model.no_sync()
+        if channels_last:
+            x_in = x_in.to(memory_format=torch.channels_last_3d)
         with sync_ctx:
-            out_pretext, a_hat = model(x_in)
+            with amp_ctx_fn():
+                out_pretext, a_hat = model(x_in)
+            out_pretext = out_pretext.float()        # loss math in fp32 (bf16 under autocast)
+            if a_hat is not None:
+                a_hat = a_hat.float()
             losses = compute_losses(
                 out_pretext, a_hat, x_clean, target_str, mask,
                 struct_pos_weight=float(cfg.mae.get("struct_pos_weight", 1.0)),
@@ -1177,7 +1205,14 @@ def main(cfg: DictConfig) -> None:
         head_depth=head_depth,
         head_style=head_style,
         pos_encoding=pos_encoding,
+        rope_fast=bool(cfg.model.get("rope_fast", False)),
     ).to(device)
+    # channels_last_3d: better cuDNN Conv3d kernels for the patch-embed/heads.
+    # Applied before optimizer/compile/DDP/EMA so all downstream copies inherit it.
+    if bool(cfg.get("channels_last", False)):
+        model = model.to(memory_format=torch.channels_last_3d)
+        if is_main:
+            logger.info("channels_last_3d memory format enabled")
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     if is_main:
         logger.info(f"DensityViTMAE has {(n_params/1e6):.02f}M parameters "
@@ -1187,7 +1222,19 @@ def main(cfg: DictConfig) -> None:
                     f"dual_head={dual_head}, head_style={head_style}, "
                     f"head_hidden_dim={head_hidden_dim or '(c_half)'}, head_depth={head_depth})")
 
-    optimizer = AdamW(model.parameters(), lr=cfg.lr, weight_decay=cfg.wd)
+    # optimizer.fused=true → CUDA-fused multi-tensor AdamW (one kernel for the whole
+    # 45M-param update) instead of the vendored per-parameter Python loop.
+    if bool(cfg.get("optimizer", {}).get("fused", False)):
+        # Faithful drop-in for the vendored AdamW: keep its non-standard betas=(0.99,0.999),
+        # but use eps=1e-8 instead of its eps=0 — torch's FUSED kernel returns nan at eps=0,
+        # and since v_hat >> 1e-8 the change is numerically negligible (Δw ~ 4e-4 over 4 steps,
+        # below the conv/attn backward nondeterminism floor).
+        optimizer = torch.optim.AdamW(model.parameters(), lr=cfg.lr, weight_decay=cfg.wd,
+                                      betas=(0.99, 0.999), eps=1e-8, fused=True)
+        if is_main:
+            logger.info("fused AdamW enabled (betas=(0.99,0.999), eps=1e-8 ~ vendored AdamW)")
+    else:
+        optimizer = AdamW(model.parameters(), lr=cfg.lr, weight_decay=cfg.wd)
     optimizer.zero_grad()
 
     voxelizer = Voxelizer(
@@ -1224,7 +1271,8 @@ def main(cfg: DictConfig) -> None:
             find_unused_parameters=False,
             gradient_as_bucket_view=True,
         )
-    model_ema = ModelEma(model, decay=cfg.mae.ema_decay)
+    model_ema = ModelEma(model, decay=cfg.mae.ema_decay,
+                         foreach=bool(cfg.get("ema", {}).get("foreach", False)))
 
     # Val cache
     if is_main:

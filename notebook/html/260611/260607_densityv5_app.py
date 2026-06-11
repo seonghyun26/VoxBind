@@ -19,7 +19,7 @@ from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
-VOX = Path(__file__).resolve().parent.parent / "voxbind"
+VOX = Path(__file__).resolve().parents[3] / "voxbind"  # …/notebook/html/260611/ → repo root
 PDB = VOX / "dataset" / "data" / "pdbbind"
 
 LIG = ["lig_C", "lig_O", "lig_N", "lig_S", "lig_F", "lig_Cl", "lig_P"]
@@ -72,6 +72,18 @@ RUNS = [
          note="3D RoPE positional encoding (axial, rotate 60/64) on the baseline 13-ch recipe — "
               "RoPE vs learnable absolute PE. test ρ 0.606 vs baseline 0.595 (+0.011 on this matched "
               "839 split; +0.016 on the CL1 split), and RoPE drops a parameter. Current best."),
+    dict(key="rope3d-atoms", date="2026-06-10",
+         exp="260610_atomblob_vit_mae_40m_invfreq_v5_ligvdw_rope3d_pretrain",
+         csv="probe_results_e99_v5_filtered_atomblob_ligvdw_rope3d.csv", cond="atomblob_ligvdw",
+         note="Atoms-only RoPE ablation: 11-ch ligvdw atoms, inv_freq — identical to matched-ctrl "
+              "but pos_encoding=rope3d. Isolates RoPE on the atoms-only encoder (vs matched-ctrl "
+              "learnable 0.544). Probe auto-runs when e99 lands."),
+    dict(key="HBGSA", date="2026-06-10", exp=None, external="supervised",
+         csv="probe_results_e99_v5_filtered_hbgsa_no_cl1.csv", cond="hbgsa_supervised",
+         note="EXTERNAL fully-supervised baseline (HBGSA, arXiv 2604.23115): H-bond graph + seq + "
+              "pocket + SMILES, trained end-to-end on pK — NOT a frozen probe. Tested on 835/839 "
+              "matched ids (4 dropped: no SDF/SMILES). Supervised reference floor; CL1-trained "
+              "variant scores ρ 0.522 on its 785 CL1 subset."),
 ]
 
 
@@ -425,13 +437,19 @@ def _generic_body(view):
 def _curated_body():
     data = []
     for r in RUNS:
-        cfg = load_cfg(r["exp"])
-        data.append((r, load_metrics(r["csv"], r["cond"]), cfg,
-                     run_status(r["exp"], cfg.get("epochs", 100))))
+        if r.get("external"):                # external baseline: no voxbind exp/cfg/checkpoint
+            cfg, st = {}, ("external", None)
+        else:
+            cfg = load_cfg(r["exp"])
+            st = run_status(r["exp"], cfg.get("epochs", 100))
+        data.append((r, load_metrics(r["csv"], r["cond"]), cfg, st))
 
     allv = [m[c][0] for _, m, _, _ in data if m for c, _, _ in COLS if m and c in m]
     ymin, ymax = _yaxis(allv)
-    done_tests = [(m["test_spearman"][0], r["key"]) for r, m, _, _ in data if m and "test_spearman" in m]
+    # best/worst highlight ranks the frozen-encoder probes only; external supervised
+    # baselines are a different paradigm (shown for reference, not ranked).
+    done_tests = [(m["test_spearman"][0], r["key"]) for r, m, _, _ in data
+                  if m and "test_spearman" in m and not r.get("external")]
     best_key = max(done_tests)[1] if done_tests else None
     worst_done_test = min(t for t, _ in done_tests) if done_tests else None
 
@@ -448,37 +466,49 @@ def _curated_body():
     trows = []
     for r, m, cfg, st in data:
         cls = ' class="best"' if r["key"] == best_key else ""
-        chli = ""
-        for ch in channels(cfg):
-            k = "poc" if ch.startswith("poc") else ("aux" if ch in ("density", "gradmag") else "")
-            nm = "‖∇ρ‖ gradmag" if ch == "gradmag" else ch
-            chli += f'<li class="{k}">{esc(nm)}</li>'
-        nin = cfg.get("n_in") or len(channels(cfg)) or "?"
-        chips = []
-        if cfg.get("channel_weighting"):
-            cw = cfg["channel_weighting"] + (f" · clip {cfg['clip']:g}×" if cfg.get("clip") else "")
-            chips.append("channel_wt: " + cw)
-        has_dens = "density" in (cfg.get("input_mode") or "")
-        if has_dens and cfg.get("density_w") is not None:
-            chips.append(f"density wt <b>{cfg['density_w']:g}</b>")
-        if cfg.get("with_gradmag") and cfg.get("gradmag_w") is not None:
-            chips.append(f"gradmag wt <b>{cfg['gradmag_w']:g}</b>")
-        if not has_dens and not cfg.get("with_gradmag"):
-            chips.append("atoms-only")
-        if cfg.get("atom_pos") is not None:
-            chips.append(f"atom_pos {cfg['atom_pos']:g}")
-        if cfg.get("pos_encoding") and cfg.get("pos_encoding") != "learnable":
-            chips.append(f"pos: <b>{cfg['pos_encoding']}</b>")
-        chiphtml = "".join(f'<span class="chip">{c}</span>' for c in chips)
-
-        if st[0] == "done":
-            stag = '<span class="tag t-done">✓ done · e99</span>'
-        elif st[0] == "running":
-            stag = f'<span class="tag t-run">● running{(" · e"+str(st[1])+"/"+str(cfg.get("epochs",100))) if st[1] else ""}</span>'
-        elif st[0] == "error":
-            stag = '<span class="tag t-err">error</span>'
+        ext = r.get("external")
+        if ext:
+            # external supervised baseline — no cfg/checkpoint; fixed descriptive cells.
+            runname  = esc(r["key"])
+            inputtd  = ('<b>—</b><div class="mut" style="font-size:11px">'
+                        'H-bond·seq·pocket·SMILES</div>')
+            chiphtml = (f'<span class="chip">external · {esc(ext)}</span>'
+                        '<span class="chip">test n=835</span>')
+            stag     = ('<span class="tag" style="background:#ede9fe;color:#6d28d9;'
+                        'border:1px solid #ddd6fe">external</span>')
         else:
-            stag = '<span class="tag">not started</span>'
+            chli = ""
+            for ch in channels(cfg):
+                k = "poc" if ch.startswith("poc") else ("aux" if ch in ("density", "gradmag") else "")
+                nm = "‖∇ρ‖ gradmag" if ch == "gradmag" else ch
+                chli += f'<li class="{k}">{esc(nm)}</li>'
+            nin = cfg.get("n_in") or len(channels(cfg)) or "?"
+            inputtd = f'<b>{nin}-ch</b><ol class="ch">{chli}</ol>'
+            runname = esc(r["exp"].replace("_pretrain", ""))
+            chips = []
+            if cfg.get("channel_weighting"):
+                cw = cfg["channel_weighting"] + (f" · clip {cfg['clip']:g}×" if cfg.get("clip") else "")
+                chips.append("channel_wt: " + cw)
+            has_dens = "density" in (cfg.get("input_mode") or "")
+            if has_dens and cfg.get("density_w") is not None:
+                chips.append(f"density wt <b>{cfg['density_w']:g}</b>")
+            if cfg.get("with_gradmag") and cfg.get("gradmag_w") is not None:
+                chips.append(f"gradmag wt <b>{cfg['gradmag_w']:g}</b>")
+            if not has_dens and not cfg.get("with_gradmag"):
+                chips.append("atoms-only")
+            if cfg.get("atom_pos") is not None:
+                chips.append(f"atom_pos {cfg['atom_pos']:g}")
+            if cfg.get("pos_encoding") and cfg.get("pos_encoding") != "learnable":
+                chips.append(f"pos: <b>{cfg['pos_encoding']}</b>")
+            chiphtml = "".join(f'<span class="chip">{c}</span>' for c in chips)
+            if st[0] == "done":
+                stag = '<span class="tag t-done">✓ done · e99</span>'
+            elif st[0] == "running":
+                stag = f'<span class="tag t-run">● running{(" · e"+str(st[1])+"/"+str(cfg.get("epochs",100))) if st[1] else ""}</span>'
+            elif st[0] == "error":
+                stag = '<span class="tag t-err">error</span>'
+            else:
+                stag = '<span class="tag">not started</span>'
         if r["key"] == best_key:
             stag = '<span class="tag t-best">★ best</span> ' + stag
 
@@ -492,7 +522,7 @@ def _curated_body():
             if c == "test_spearman":
                 if r["key"] == best_key:
                     style = ' style="color:var(--good)"'
-                elif worst_done_test is not None and stat[0] <= worst_done_test + 1e-9:
+                elif (not ext) and worst_done_test is not None and stat[0] <= worst_done_test + 1e-9:
                     style = ' style="color:var(--bad)"'
             mcells += f'<td><span class="num"{style}>{stat[0]:.3f}</span> <span class="sd">±{stat[1]:.3f}</span></td>'
         rm = m.get("test_rmse") if m else None
@@ -501,8 +531,8 @@ def _curated_body():
 
         trows.append(
             f'<tr{cls}><td class="mut" style="white-space:nowrap">{esc(r["date"])}</td>'
-            f'<td><span class="run">{esc(r["exp"].replace("_pretrain",""))}</span></td>'
-            f'<td><b>{nin}-ch</b><ol class="ch">{chli}</ol></td>'
+            f'<td><span class="run">{runname}</span></td>'
+            f'<td>{inputtd}</td>'
             f'<td>{chiphtml}<div class="mut" style="margin-top:6px">{esc(r["note"])}</div></td>'
             f'<td>{stag}</td>{mcells}</tr>')
 

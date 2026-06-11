@@ -72,10 +72,11 @@ class RoPE3D(nn.Module):
     No learnable parameters.
     """
 
-    def __init__(self, g_p: int, head_dim: int, base: float = 10000.0):
+    def __init__(self, g_p: int, head_dim: int, base: float = 10000.0, fast: bool = False):
         super().__init__()
         assert head_dim % 2 == 0, f"head_dim={head_dim} must be even for RoPE"
         self.head_dim = head_dim
+        self.fast = fast                              # fused q/k rotate path (numerically identical)
         self.d_axis = _rope_axis_dim(head_dim)        # even per-axis rotary width
         self.rope_dim = 3 * self.d_axis               # total rotated dims (<= head_dim)
         # patch coords (N, 3) in flatten(2) order: token n = i·g_p² + j·g_p + k.
@@ -102,6 +103,35 @@ class RoPE3D(nn.Module):
         x_rot = torch.stack((r0, r1), dim=-1).reshape(B, H, N, rd)
         return torch.cat((x_rot, x_pass), dim=-1)
 
+    def _rotate_fast(self, x: torch.Tensor) -> torch.Tensor:
+        """Leading-dim-agnostic rotate (same math as `rotate`, fewer ops).
+
+        Uses strided even/odd slicing instead of a reshape→unbind→stack→reshape,
+        and broadcasts cos/sin over ANY number of leading dims — so q and k can be
+        stacked and rotated in a single call (see `rotate_qk`). Bitwise-equivalent
+        to `rotate`: x0/x1 are the same even/odd lanes and the interleave is identical.
+        """
+        rd = self.rope_dim
+        x_rot, x_pass = x[..., :rd], x[..., rd:]
+        x0 = x_rot[..., 0::2]                                  # (..., rd/2) even lanes
+        x1 = x_rot[..., 1::2]                                  # (..., rd/2) odd lanes
+        cos = self.cos.to(x.dtype)                            # (N, rd/2) → broadcasts over leading dims
+        sin = self.sin.to(x.dtype)
+        r0 = x0 * cos - x1 * sin
+        r1 = x0 * sin + x1 * cos
+        out = torch.stack((r0, r1), dim=-1).flatten(-2)       # interleave back → (..., rd)
+        if x_pass.shape[-1] == 0:
+            return out
+        return torch.cat((out, x_pass), dim=-1)
+
+    def rotate_qk(self, q: torch.Tensor, k: torch.Tensor):
+        """Rotate q and k together. fast=True fuses them into one kernel pass by
+        stacking on a new leading dim; otherwise falls back to two `rotate` calls."""
+        if self.fast:
+            qk = self._rotate_fast(torch.stack((q, k), dim=0))   # (2, B, H, N, D)
+            return qk[0], qk[1]
+        return self.rotate(q), self.rotate(k)
+
 
 class MultiHeadSelfAttention(nn.Module):
     """Standard MHSA via `F.scaled_dot_product_attention` (flash on Ampere+).
@@ -124,7 +154,7 @@ class MultiHeadSelfAttention(nn.Module):
         qkv = qkv.permute(2, 0, 3, 1, 4)                # (3, B, H, N, head_dim)
         q, k, v = qkv[0], qkv[1], qkv[2]
         if rope is not None:
-            q, k = rope.rotate(q), rope.rotate(k)
+            q, k = rope.rotate_qk(q, k)
         out = F.scaled_dot_product_attention(
             q, k, v,
             dropout_p=self.dropout_p if self.training else 0.0,
@@ -186,6 +216,7 @@ class DensityViT(nn.Module):
         dropout: float = 0.1,
         pos_embed_std: float = 0.02,
         pos_encoding: str = "learnable",   # "learnable" | "rope3d" (axial 3D RoPE)
+        rope_fast: bool = False,           # fused q/k rotate path (rope3d only; numerically identical)
     ):
         super().__init__()
         assert grid_dim % patch_size == 0, (
@@ -214,7 +245,7 @@ class DensityViT(nn.Module):
             self.rope = None
         else:                                    # rope3d → no absolute table; rotate q/k in attn
             self.pos_embed = None
-            self.rope = RoPE3D(self.g_p, dim // n_heads)
+            self.rope = RoPE3D(self.g_p, dim // n_heads, fast=rope_fast)
 
         self.blocks = nn.ModuleList([
             TransformerBlock(dim, n_heads, mlp_ratio=mlp_ratio, dropout=dropout)
@@ -318,6 +349,7 @@ class DensityViTMAE(nn.Module):
         head_depth: int = 2,          # total Conv3d layers in each MAE recon head (>=1)
         head_style: str = "conv",     # "conv" = full-res Conv3d head; "patch_mlp" = per-patch token MLP
         pos_encoding: str = "learnable",  # "learnable" | "rope3d" → forwarded to the DensityViT encoder
+        rope_fast: bool = False,       # fused q/k rotate (rope3d only) → forwarded to the DensityViT encoder
     ):
         super().__init__()
         assert pretext_style in ("mae", "electra"), (
@@ -373,6 +405,7 @@ class DensityViTMAE(nn.Module):
             mlp_ratio=mlp_ratio,
             dropout=dropout,
             pos_encoding=pos_encoding,
+            rope_fast=rope_fast,
         )
 
         if pretext_style == "mae":

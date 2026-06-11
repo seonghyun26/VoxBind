@@ -29,6 +29,25 @@ accum_steps: 1
 lr: 1e-4
 wd: 5e-2
 
+# ── Throughput knobs (all default-off → identical to the original fp32 run) ─────
+# Verified on RTX 3090 via voxbind/test/benchmark_vit_opts.py (260611). Stacking
+# amp+channels_last+fused+foreach_ema ≈ 2x faster / ~30% less peak mem, same results.
+amp:
+  enabled: false      # bf16 autocast (no GradScaler); biggest single win + unlocks flash SDPA
+  dtype: bf16         # bf16 only; fp16 intentionally unsupported (would need a scaler)
+channels_last: false  # channels_last_3d memory format for the Conv3d patch-embed/heads
+optimizer:
+  fused: false        # CUDA-fused AdamW (betas=(0.99,0.999), eps=1e-8 ~ vendored AdamW)
+ema:
+  foreach: false      # multi-tensor EMA update (2 kernels vs a 45M-param Python loop)
+compile:
+  enabled: false      # torch.compile; validate under DDP (start mode=default, not reduce-overhead)
+  backend: inductor
+  mode: default
+  fullgraph: false
+  dynamic: false
+# model.rope_fast (rope3d only) lives in the model: block below.
+
 input_mode: atomblob_density
 with_gradmag: true                 # + gradmag → 13 channels
 

@@ -131,11 +131,6 @@ HBOND_CACHE_DIR = Path(__file__).resolve().parents[2] / "hbgsa_baseline" / "cach
 # Per-complex pocket B-factor targets (built by dataset/extract_bfactors.py); used as
 # alternative regression targets via `probe --target bfactor` / `--target bfactor_rel`.
 BFACTOR_CACHE = PDBBIND_DIR / "bfactors.json"
-# MISATO-derived targets (built by dataset/extract_misato_targets.py): partial charges
-# from QM.hdf5; adaptability/rmsf/pose_stability/interaction_energy from MD.hdf5.
-MISATO_DIR     = PDBBIND_DIR.parent / "misato"
-MISATO_QM_JSON = MISATO_DIR / "misato_qm.json"
-MISATO_MD_JSON = MISATO_DIR / "misato_md.json"
 
 EXPS = {
     "atomblob":               Path("exps") / "260606_atomblob_vit_mae_40m_invfreq_pretrain",   # 260606 v5-ablation (atom-only, version-agnostic)
@@ -955,44 +950,14 @@ def load_bfactor_targets(field: str, cache_path: Path = BFACTOR_CACHE) -> dict[s
     return out
 
 
-def load_misato_target(field: str, json_path: Path) -> dict[str, float]:
-    """Map pdb_id -> a MISATO-derived target from the extract_misato_targets.py JSON.
-
-    Only finiteness is required (interaction_energy is negative, partial_charge positive),
-    so a complex without the field is simply absent from the regression pool.
-    """
-    if not json_path.exists():
-        src = "qm" if "qm" in json_path.name else "md"
-        raise FileNotFoundError(
-            f"MISATO cache not found: {json_path}\n"
-            f"  build it with: <h5py-env python> dataset/extract_misato_targets.py --source {src}"
-        )
-    raw = json.loads(json_path.read_text())
-    out: dict[str, float] = {}
-    for pid, rec in raw.items():
-        v = rec.get(field)
-        if v is None:
-            continue
-        v = float(v)
-        if np.isfinite(v):
-            out[pid.lower()] = v
-    return out
-
-
 # Regression targets selectable via `probe --target`. pK is the LP_PDBBind default
 # (target_map=None → build_dataset reads the pK column); every other target is a
 # pdb_id -> value map regressed on the identical splits.
 TARGET_LABELS = {
-    "pK":                 "pK (binding affinity, LP_PDBBind)",
-    "hbonds":             "protein-ligand H-bond count (HBGSA cache)",
-    "bfactor":            "mean pocket B-factor (raw, resolution-confounded)",
-    "bfactor_rel":        "relative pocket B-factor (pocket/protein, resolution-robust)",
-    "partial_charges":    "ligand partial-charge magnitude (MISATO QM, mean|q|)",
-    "electron_affinity":  "ligand electron affinity (MISATO QM)",
-    "adaptability":       "pocket adaptability (MISATO MD)",
-    "rmsf":               "pocket RMSF (MISATO MD)",
-    "pose_stability":     "ligand pose RMSD over MD (MISATO MD)",
-    "interaction_energy": "protein-ligand interaction energy (MISATO MD)",
+    "pK":          "pK (binding affinity, LP_PDBBind)",
+    "hbonds":      "protein-ligand H-bond count (HBGSA cache)",
+    "bfactor":     "mean pocket B-factor (raw, resolution-confounded)",
+    "bfactor_rel": "relative pocket B-factor (pocket/protein, resolution-robust)",
 }
 
 
@@ -1006,32 +971,7 @@ def load_target_map(target: str) -> Optional[dict[str, float]]:
         return load_bfactor_targets("mean_pocket_b")
     if target == "bfactor_rel":
         return load_bfactor_targets("rel_pocket_b")
-    if target == "partial_charges":
-        return load_misato_target("partial_charge", MISATO_QM_JSON)
-    if target == "electron_affinity":
-        return load_misato_target("electron_affinity", MISATO_QM_JSON)
-    if target == "adaptability":
-        return load_misato_target("adaptability", MISATO_MD_JSON)
-    if target == "rmsf":
-        return load_misato_target("rmsf", MISATO_MD_JSON)
-    if target == "pose_stability":
-        return load_misato_target("pose_rmsd", MISATO_MD_JSON)
-    if target == "interaction_energy":
-        return load_misato_target("interaction_energy", MISATO_MD_JSON)
     raise ValueError(f"unknown target={target!r}")
-
-
-def target_source(target: str):
-    """Display source for a given --target's labels (run_probe logging)."""
-    if target == "hbonds":
-        return HBOND_CACHE_DIR
-    if target in ("bfactor", "bfactor_rel"):
-        return BFACTOR_CACHE
-    if target in ("partial_charges", "electron_affinity"):
-        return MISATO_QM_JSON
-    if target in ("adaptability", "rmsf", "pose_stability", "interaction_energy"):
-        return MISATO_MD_JSON
-    return "LP_PDBBind"
 
 
 def build_dataset(
@@ -1268,7 +1208,8 @@ def run_probe(args: argparse.Namespace) -> None:
     lp_df = load_lp_index(LP_CSV)
     print(f"  LP rows       : {len(lp_df):,}")
     if target_map is not None:
-        print(f"  target labels : {len(target_map):,}  (from {target_source(args.target)})")
+        src = HBOND_CACHE_DIR if args.target == "hbonds" else BFACTOR_CACHE
+        print(f"  target labels : {len(target_map):,}  (from {src})")
 
     # ── Load all feature bundles upfront so we can intersect pdb_ids ─────────
     all_feats: dict[str, dict[str, torch.Tensor]] = {}
@@ -2012,9 +1953,7 @@ def build_parser() -> argparse.ArgumentParser:
     pr.add_argument("--voxel_version", choices=["v1", "v2", "v3", "v4", "v5"], default="v1",
                     help="Selects which density-normalisation variant's features "
                          "to probe. Adds matching suffix to feature paths + output CSV.")
-    pr.add_argument("--target", choices=["pK", "hbonds", "bfactor", "bfactor_rel",
-                                         "partial_charges", "electron_affinity", "adaptability", "rmsf",
-                                         "pose_stability", "interaction_energy"], default="pK",
+    pr.add_argument("--target", choices=["pK", "hbonds", "bfactor", "bfactor_rel"], default="pK",
                     help="Regression target on the identical LP_PDBBind splits: pK (binding "
                          "affinity, default); hbonds (protein-ligand H-bond count, HBGSA cache); "
                          "bfactor (raw mean pocket B-factor); bfactor_rel (pocket/protein mean B, "
