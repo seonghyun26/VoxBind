@@ -1,0 +1,199 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VoxBind ViT — implementation space/time autoresearch (2026-06-11)</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin:0; background:#0d1117; color:#cdd6e4;
+         font:15px/1.6 -apple-system,Segoe UI,Roboto,sans-serif; }
+  .wrap { max-width:880px; margin:0 auto; padding:40px 22px 80px; }
+  h1 { font-size:26px; margin:0 0 4px; color:#e9eef6; }
+  h2 { font-size:20px; margin:38px 0 10px; color:#e9eef6;
+        border-bottom:1px solid #232c3a; padding-bottom:6px; }
+  h3 { font-size:14px; margin:6px 0 8px; color:#9fb0c8; font-weight:600; }
+  p { margin:8px 0; }
+  code { background:#171e29; padding:1px 5px; border-radius:4px;
+          font:13px ui-monospace,monospace; color:#e6b673; }
+  pre { background:#0a0e14; border:1px solid #1d2633; border-radius:6px; padding:12px;
+         overflow:auto; font:12px ui-monospace,monospace; color:#b9c4d4; }
+  .tbl { border-collapse:collapse; width:100%; margin:12px 0; font-size:13.5px; }
+  .tbl th, .tbl td { border:1px solid #232c3a; padding:6px 10px; text-align:right; }
+  .tbl th:first-child, .tbl td:first-child { text-align:left; }
+  .tbl thead th { background:#151c27; color:#9fb0c8; font-weight:600; }
+  .tbl.mini { font-size:12px; margin-top:8px; }
+  td.oom { color:#e06c4f; font-weight:600; }
+  .badge { display:inline-block; color:#fff; font-size:11px; font-weight:700;
+            padding:2px 8px; border-radius:10px; vertical-align:middle; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  .card { background:#11161f; border:1px solid #1d2633; border-radius:8px; padding:14px; }
+  .note { background:#10151d; border-left:3px solid #2f7fe0; padding:8px 12px;
+           border-radius:4px; font-size:13.5px; color:#aebbcd; }
+  .muted { color:#7e8ba0; font-size:13px; }
+  .meta { color:#7e8ba0; font-size:13px; margin-bottom:18px; }
+  details { margin:8px 0; } summary { cursor:pointer; color:#9fb0c8; }
+  @media (max-width:680px) { .grid2 { grid-template-columns:1fr; } }
+</style></head><body><div class="wrap">
+  <h1>VoxBind ViT — implementation-level space/time autoresearch</h1>
+  <div class="meta">2026-06-11 · NVIDIA GeForce RTX 3090 (GPU 4–7) · DensityViTMAE dim=512 depth=12 heads=8 n_in=13 patch=8 grid=64 head=patch_mlp · B=32
+   · data-free, fwd/bwd/opt isolated from the dataloader</div>
+  
+    <h2>Executive summary</h2>
+    <p>Four implementation-level levers, each measured in isolation against a shared-init
+    reference and gated for correctness. All four preserve results; none touches the
+    systems knobs (amp / channels_last / fused AdamW / compile) already tuned in the
+    <code>benchmark_vit_opts</code> work.</p>
+    <table class="tbl">
+      <thead><tr><th>Lever</th><th>Axis</th><th>Verdict</th><th>Effect</th><th>Correctness</th></tr></thead>
+      <tbody><tr><td><b>Linear patch-embed</b></td><td>time</td><td><span class="badge" style="background:#1f9d6b">ADOPT</span></td><td>3.26× fp32 / 2.9× amp; survives compile</td><td>equivalent (gemm ≡ conv)</td></tr><tr><td><b>Activation checkpointing</b></td><td>space</td><td><span class="badge" style="background:#9a6bd4">ADOPT (opt-in)</span></td><td>−60% peak for +24% time</td><td>bit-exact</td></tr><tr><td><b>Round-trip elimination</b></td><td>time+space</td><td><span class="badge" style="background:#2f7fe0">ADOPT (free)</span></td><td>+1.1% step, +0.20 GB</td><td>bit-exact</td></tr><tr><td><b>Attention <code>unbind</code> layout</b></td><td>time</td><td><span class="badge" style="background:#c2870a">eager-only</span></td><td>11% amp eager; ~0 under compile (§6)</td><td>bit-exact (Δ=0)</td></tr></tbody>
+    </table>
+
+    <h2>1 · Where the time &amp; memory go (profile)</h2>
+    <p>Single forward, B=32, instrumented per module with CUDA events.
+    The transformer blocks dominate (≈68%), but the <b>patch-embed Conv3d is ≈23% of the
+    forward on its own</b> — a red flag for a single non-overlapping convolution. Two
+    intermediates each weigh <b>537 MB</b> in fp32.</p>
+    <div class="grid2">
+      <div class="card"><h3>Forward stage time</h3><svg width="600" height="274" role="img" style="font:12px ui-monospace,monospace"><text x="0" y="21.68" fill="#cdd6e4">patch_embed</text><rect x="150" y="4" width="246" height="20" rx="3" fill="#e06c4f"/><text x="402" y="20.12" fill="#9fb0c8">25.55 ms</text><text x="0" y="51.68" fill="#cdd6e4">attn(sum)</text><rect x="150" y="34" width="380" height="20" rx="3" fill="#4f8cff"/><text x="536" y="50.120000000000005" fill="#9fb0c8">39.37 ms</text><text x="0" y="81.68" fill="#cdd6e4">mlp(sum)</text><rect x="150" y="64" width="316" height="20" rx="3" fill="#6fb0ff"/><text x="472" y="80.12" fill="#9fb0c8">32.75 ms</text><text x="0" y="111.68" fill="#cdd6e4">decoder_proj</text><rect x="150" y="94" width="38" height="20" rx="3" fill="#9a6bd4"/><text x="194" y="110.12" fill="#9fb0c8">4.02 ms</text><text x="0" y="141.68" fill="#cdd6e4">tokens-&gt;vox</text><rect x="150" y="124" width="12" height="20" rx="3" fill="#c2870a"/><text x="168" y="140.12" fill="#9fb0c8">1.31 ms</text><text x="0" y="171.68" fill="#cdd6e4">patchify</text><rect x="150" y="154" width="12" height="20" rx="3" fill="#c2870a"/><text x="168" y="170.12" fill="#9fb0c8">1.30 ms</text><text x="0" y="201.68" fill="#cdd6e4">recon_mlp</text><rect x="150" y="184" width="21" height="20" rx="3" fill="#1f9d6b"/><text x="177" y="200.12" fill="#9fb0c8">2.26 ms</text><text x="0" y="231.68" fill="#cdd6e4">unpatchify</text><rect x="150" y="214" width="10" height="20" rx="3" fill="#888"/><text x="166" y="230.12" fill="#9fb0c8">1.07 ms</text><text x="0" y="261.68" fill="#cdd6e4">norm</text><rect x="150" y="244" width="2" height="20" rx="3" fill="#888"/><text x="158" y="260.12" fill="#9fb0c8">0.23 ms</text></svg></div>
+      <div class="card"><h3>Key activation tensors (fp32)</h3><svg width="560" height="94" role="img" style="font:12px ui-monospace,monospace"><text x="0" y="21.68" fill="#cdd6e4">tokens (B,N,D)</text><rect x="130" y="4" width="22" height="20" rx="3" fill="#4f8cff"/><text x="158" y="20.12" fill="#9fb0c8">34 MB</text><text x="0" y="51.68" fill="#cdd6e4">decoder_proj out</text><rect x="130" y="34" width="360" height="20" rx="3" fill="#9a6bd4"/><text x="496" y="50.120000000000005" fill="#9fb0c8">537 MB</text><text x="0" y="81.68" fill="#cdd6e4">voxel map</text><rect x="130" y="64" width="360" height="20" rx="3" fill="#9a6bd4"/><text x="496" y="80.12" fill="#9fb0c8">537 MB</text></svg>
+        <table class="tbl mini"><thead><tr><th>module</th><th>params</th></tr></thead>
+        <tbody><tr><td>patch_embed</td><td>3.41 M</td></tr><tr><td>blocks(all)</td><td>37.83 M</td></tr><tr><td>per-block</td><td>3.15 M</td></tr><tr><td>decoder_proj</td><td>4.20 M</td></tr><tr><td>recon_mlp(head)</td><td>1.00 M</td></tr><tr><td>total</td><td>46.70 M</td></tr></tbody></table>
+      </div>
+    </div>
+    <p class="note">↳ The <b>tokens→voxel + patchify round-trip tax</b> is 2.61 ms/fwd and a
+    537 MB activation that the <code>patch_mlp</code> head immediately undoes (see §3).</p>
+
+    <h2>2 · Patch-embed: Conv3d → Linear(unfold) &nbsp;<span class="badge" style="background:#1f9d6b">biggest time win</span></h2>
+    <p>A non-overlapping <code>Conv3d(13→512, k=s=8)</code> is mathematically a single gemm on
+    flattened 8³ patches. cuDNN's Conv3d path is ~3× slower than that gemm here. Initializing a
+    <code>Linear(13·8³ → 512)</code> from the conv weight (<code>W.reshape(512, 13·512)</code>)
+    reproduces the conv output (fp32 Δ=7.6e-5, a reduction-order difference; amp Δ=1.6e-2 is the
+    bf16 band).</p>
+    <div class="card"><h3>fwd+bwd of the patch-embed alone</h3><svg width="560" height="94" role="img" style="font:12px ui-monospace,monospace"><text x="0" y="21.68" fill="#cdd6e4">Conv3d</text><rect x="150" y="4" width="340" height="20" rx="3" fill="#e06c4f"/><text x="496" y="20.12" fill="#9fb0c8">39.9 ms</text><text x="0" y="51.68" fill="#cdd6e4">Conv3d (chan-last)</text><rect x="150" y="34" width="323" height="20" rx="3" fill="#e0905f"/><text x="479" y="50.120000000000005" fill="#9fb0c8">37.9 ms</text><text x="0" y="81.68" fill="#cdd6e4">Linear(unfold)</text><rect x="150" y="64" width="104" height="20" rx="3" fill="#1f9d6b"/><text x="260" y="80.12" fill="#9fb0c8">12.3 ms</text></svg></div>
+    <table class="tbl"><thead><tr><th>prec</th><th>Conv3d ms</th><th>Conv chan-last</th>
+      <th>Linear ms</th><th>speedup</th><th>Δ vs conv</th></tr></thead>
+      <tbody><tr><td>fp32</td><td>39.91</td><td>37.92</td><td><b>12.26</b></td><td><b>3.26×</b></td><td>7.6e-05</td></tr><tr><td>amp</td><td>25.25</td><td>24.70</td><td><b>8.62</b></td><td><b>2.93×</b></td><td>1.6e-02</td></tr></tbody></table>
+    <p class="note">Trade-off: the Linear path materializes the unfolded patches
+    <code>(B, 512, 13·8³)</code> ≈ 436 MB fp32 / 218 MB bf16 (transient, freed after the matmul).
+    Net peak impact on the ~11 GB step is small; validate end-to-end before adopting.</p>
+
+    <h2>3 · Round-trip elimination &nbsp;<span class="badge" style="background:#2f7fe0">free, bit-exact</span></h2>
+    <p>In <code>patch_mlp</code> mode the encoder runs <code>decoder_proj → _tokens_to_voxels</code>
+    to build the (B,16,64³) voxel map, then the head immediately calls <code>_patchify</code> to turn
+    it back into tokens. <code>_patchify ∘ _tokens_to_voxels</code> is provably the identity
+    (verified max|Δ|=0), so both 8D-permute+<code>contiguous()</code> copies (forward and backward) are
+    dead work. Feeding <code>decoder_proj</code> tokens straight to <code>recon_mlp</code> removes them.</p>
+    <table class="tbl"><thead><tr><th>prec</th><th>base step ms</th><th>var step ms</th><th>Δtime</th>
+      <th>base GB</th><th>var GB</th><th>Δmem</th></tr></thead>
+      <tbody><tr><td>fp32</td><td>358.1</td><td>354.1</td><td>+1.1%</td><td>10.97</td><td>10.77</td><td>+0.20</td></tr><tr><td>amp</td><td>164.9</td><td>161.1</td><td>+2.3%</td><td>7.98</td><td>7.98</td><td>-0.00</td></tr></tbody></table>
+    <p class="note">Correctness: forward Δ=0e+00, gradient Δ=1e-10
+    → <b>bit-exact</b>. Small but truly free (only relevant to the patch_mlp head; structure head
+    still needs the voxel map).</p>
+
+    <h2>4 · Activation checkpointing &nbsp;<span class="badge" style="background:#9a6bd4">space lever</span></h2>
+    <p>Recompute each transformer block in the backward pass instead of stashing its internal
+    activations (<code>torch.utils.checkpoint</code>, <code>use_reentrant=False</code>). Standard
+    compute-for-memory trade; bit-exact with dropout off / RNG preserved.</p>
+    <table class="tbl"><thead><tr><th>prec</th><th>base step ms</th><th>ckpt step ms</th><th>Δtime</th>
+      <th>base GB</th><th>ckpt GB</th><th>Δpeak</th></tr></thead>
+      <tbody><tr><td>fp32</td><td>357.0</td><td>444.0</td><td>+24%</td><td>10.97</td><td>4.42</td><td>−60%</td></tr><tr><td>amp</td><td>165.9</td><td>204.0</td><td>+23%</td><td>7.98</td><td>4.17</td><td>−48%</td></tr></tbody></table>
+    <h3>Batch-size scaling (fp32 peak GB; OOM = did not fit on 24 GB)</h3>
+    <table class="tbl"><thead><tr><th></th><th>B=16</th><th>B=32</th><th>B=48</th><th>B=64</th><th>B=96</th><th>B=128</th></tr></thead>
+      <tbody><tr><td>baseline</td><td class=''>6.65</td><td class=''>11.84</td><td class=''>17.04</td><td class=''>22.23</td><td class='oom'>OOM</td><td class='oom'>OOM</td></tr><tr><td>ckpt</td><td class=''>3.37</td><td class=''>5.29</td><td class=''>7.21</td><td class=''>9.12</td><td class=''>12.96</td><td class=''>16.79</td></tr></tbody></table>
+    <p class="note">Correctness: forward Δ=0e+00, gradient Δ=1e-10
+    → bit-exact. Use when memory-bound (larger batch / wider model); skip when compute-bound.</p>
+
+    <h2>5 · Attention q/k/v layout &nbsp;<span class="badge" style="background:#2f7fe0">free, bit-exact</span></h2>
+    <p>The current attention builds q,k,v with <code>reshape(B,N,3,H,hd).permute(2,0,3,1,4)</code>.
+    Replacing it with <code>.unbind(2)</code> + <code>transpose(1,2)</code> produces identical q,k,v
+    (Δ=0) but a friendlier layout into <code>scaled_dot_product_attention</code>.</p>
+    <table class="tbl"><thead><tr><th>prec</th><th>permute ms</th><th>unbind ms</th><th>chunk ms</th>
+      <th>unbind speedup</th><th>Δ vs permute</th></tr></thead>
+      <tbody><tr><td>fp32</td><td>12.33</td><td><b>11.67</b></td><td>11.75</td><td><b>5%</b></td><td>0e+00</td></tr><tr><td>amp</td><td>4.21</td><td><b>3.77</b></td><td>4.12</td><td><b>11%</b></td><td>0e+00</td></tr></tbody></table>
+    <p class="note">Peak memory identical across layouts — a pure time micro-opt (one line).</p>
+
+    <h2>6 · Does <code>torch.compile</code> change the verdict?</h2>
+    <p>Every number above is <b>eager</b> — production runs with <code>compile.enabled: false</code>, so
+    eager is today's real baseline. Re-running the two time micro-benches under <code>torch.compile</code>
+    (inductor) splits them cleanly:</p>
+    <h3>patch-embed — win survives (inductor keeps the slow Conv3d)</h3><table class='tbl'><thead><tr><th>prec</th><th>conv eager</th><th>conv comp</th><th>linear eager</th><th>linear comp</th><th>comp speedup</th></tr></thead><tbody><tr><td>fp32</td><td>39.9</td><td>40.2</td><td>12.3</td><td><b>11.9</b></td><td><b>3.38×</b></td></tr><tr><td>amp</td><td>25.3</td><td>25.4</td><td>8.6</td><td><b>6.6</b></td><td><b>3.88×</b></td></tr></tbody></table><h3>attention — win evaporates (compile normalizes the layout)</h3><table class='tbl'><thead><tr><th>prec</th><th>permute eager</th><th>unbind eager</th><th>permute comp</th><th>unbind comp</th></tr></thead><tbody><tr><td>fp32</td><td>12.33</td><td>11.67</td><td>11.85</td><td>11.90</td></tr><tr><td>amp</td><td>4.21</td><td>3.77</td><td>3.41</td><td>3.47</td></tr></tbody></table>
+    <p class="note">Takeaway: the <b>Linear patch-embed win is real code work compile won't do for you</b> —
+    inductor leaves the cuDNN Conv3d untouched, so the gap holds (3.4–3.9×). The <b>attention layout
+    micro-opt is moot once you compile</b>: all layouts converge and compiled <code>permute</code> already
+    matches eager <code>unbind</code>. Adopt patch-embed either way; adopt <code>unbind</code> only if you
+    stay eager.</p>
+
+    <h2>7 · Recommendations</h2>
+    <ol>
+      <li><b>Linear patch-embed</b> — biggest single time win (~3× on a 23%-of-forward stage).
+      Swap <code>Conv3d(k=s=p)</code> for <code>_patchify</code>+<code>Linear</code>; the conv weight
+      reshapes 1:1 to the linear weight (<code>(512,13,8,8,8) → (512, 13·8³)</code>), so a one-line
+      loader shim migrates existing checkpoints. Validate the full-model step time &amp; peak (the
+      unfold adds a transient ~436 MB fp32 activation).</li>
+      <li><b>Attention <code>unbind</code> layout</b> — one-line, bit-exact, free 5–10% <i>in eager</i>;
+      worthless once you <code>torch.compile</code> (§6), so only bother if the run stays eager.</li>
+      <li><b>Round-trip elimination</b> — bit-exact, free; add an <code>encode_tokens()</code> path so the
+      <code>patch_mlp</code> head skips the voxel round-trip.</li>
+      <li><b>Activation checkpointing</b> — opt-in flag for memory-bound runs: −50–60% peak for ~+23%
+      time, ~doubles the batch that fits.</li>
+    </ol>
+    <p>Time levers 1–3 are independent of the already-landed systems knobs and stack with amp /
+    channels_last / fused AdamW. Estimated combined forward reduction (isolated, to be confirmed
+    end-to-end): patch-embed dominates at ~−15–18%, +~2% each from attn &amp; round-trip.</p>
+    <p class="muted">Reproduce: <code>CUDA_VISIBLE_DEVICES=4 python voxbind/test/benchmark_vit_impl.py
+    --component profile,roundtrip</code> (and <code>checkpoint</code> / <code>attn</code> /
+    <code>patch_embed</code> on GPU 5/6/7).</p>
+<h2>Raw transcripts</h2><details><summary>profile</summary><pre># gpu=NVIDIA GeForce RTX 3090  B=32 dim=512 depth=12 heads=8 n_in=13 patch=8 grid=64
+==== component: profile (module-level fwd time + activation memory) ====
+  forward stage time (ms, mean over 40; B=32):
+    patch_embed     25.547 ms  ( 22.4% of fwd)
+    blocks          78.548 ms  ( 68.9% of fwd)
+    attn(sum)       39.370 ms  ( 34.5% of fwd)
+    mlp(sum)        32.748 ms  ( 28.7% of fwd)
+    norm             0.229 ms  (  0.2% of fwd)
+    decoder_proj     4.020 ms  (  3.5% of fwd)
+    tokens-&gt;vox      1.311 ms  (  1.1% of fwd)
+    patchify         1.303 ms  (  1.1% of fwd)
+    recon_mlp        2.261 ms  (  2.0% of fwd)
+    unpatchify       1.072 ms  (  0.9% of fwd)
+    FWD TOTAL      114.062 ms
+  key activation tensors (fp32):
+    tokens (B,N,D)                         33.6 MB
+    decoder_proj out (B,N,c_half*p^3)     536.9 MB
+    voxel map (B,c_half,G^3)              536.9 MB
+  params:
+    patch_embed        3.41 M
+    blocks(all)       37.83 M
+    per-block          3.15 M
+    decoder_proj       4.20 M
+    recon_mlp(head)    1.00 M
+    total             46.70 M
+  &gt;&gt; roundtrip tax (tokens-&gt;vox + patchify) = 2.614 ms/fwd (2.3% of fwd) + 537 MB activation</pre></details><details><summary>roundtrip</summary><pre># gpu=NVIDIA GeForce RTX 3090  B=32 dim=512 depth=12 heads=8 n_in=13 patch=8 grid=64
+==== component: roundtrip (skip identity _patchify(_tokens_to_voxels(.))) ====
+  [fp32] step 358.09 -&gt; 354.14 ms (+1.1%)  peak 10.97 -&gt; 10.77 GB (+0.20)
+  [amp] step 164.87 -&gt; 161.10 ms (+2.3%)  peak 7.98 -&gt; 7.98 GB (-0.00)
+  correctness: out_max|Δ|=0.0e+00 grad_max|Δ|=1.3e-10 -&gt; SAME-RESULTS (bit-exact)</pre></details><details><summary>checkpoint</summary><pre># gpu=NVIDIA GeForce RTX 3090  B=32 dim=512 depth=12 heads=8 n_in=13 patch=8 grid=64
+==== component: checkpoint (activation checkpointing on the 12 blocks) ====
+  [fp32] step 357.00 -&gt; 443.95 ms (+24.4% time)  peak 10.97 -&gt; 4.42 GB (-60%)
+  [amp] step 165.94 -&gt; 204.00 ms (+22.9% time)  peak 7.98 -&gt; 4.17 GB (-48%)
+  correctness: out_max|Δ|=0.0e+00 grad_max|Δ|=1.1e-10 -&gt; SAME-RESULTS (bit-exact)
+  batch-size scaling (fp32; peak GB, OOM = did not fit):
+    B=  16  baseline=6.65  ckpt=3.37
+    B=  32  baseline=11.84  ckpt=5.29
+    B=  48  baseline=17.04  ckpt=7.21
+    B=  64  baseline=22.23  ckpt=9.12
+    B=  96  baseline=OOM  ckpt=12.96
+    B= 128  baseline=OOM  ckpt=16.79</pre></details><details><summary>attn</summary><pre># gpu=NVIDIA GeForce RTX 3090  B=32 dim=512 depth=12 heads=8 n_in=13 patch=8 grid=64
+==== component: attn (q/k/v tensor layout: permute vs unbind vs chunk) ====
+  [fp32] permute  fwd+bwd  12.329 ms  peak 1.27 GB  out_max|Δ| vs permute=0.0e+00
+  [fp32] unbind   fwd+bwd  11.667 ms  peak 1.27 GB  out_max|Δ| vs permute=0.0e+00
+  [fp32] chunk    fwd+bwd  11.751 ms  peak 1.27 GB  out_max|Δ| vs permute=0.0e+00
+  [amp] permute  fwd+bwd   4.208 ms  peak 1.14 GB  out_max|Δ| vs permute=0.0e+00
+  [amp] unbind   fwd+bwd   3.765 ms  peak 1.14 GB  out_max|Δ| vs permute=0.0e+00
+  [amp] chunk    fwd+bwd   4.121 ms  peak 1.14 GB  out_max|Δ| vs permute=0.0e+00</pre></details><details><summary>patch_embed</summary><pre># gpu=NVIDIA GeForce RTX 3090  B=32 dim=512 depth=12 heads=8 n_in=13 patch=8 grid=64
+==== component: patch_embed (Conv3d k=s=p vs equivalent Linear(unfold)) ====
+  [fp32] conv     fwd+bwd  39.905 ms  out_max|Δ| vs conv=0.0e+00
+  [fp32] conv_cl  fwd+bwd  37.923 ms  out_max|Δ| vs conv=0.0e+00
+  [fp32] linear   fwd+bwd  12.258 ms  out_max|Δ| vs conv=7.6e-05
+  [amp] conv     fwd+bwd  25.253 ms  out_max|Δ| vs conv=0.0e+00
+  [amp] conv_cl  fwd+bwd  24.702 ms  out_max|Δ| vs conv=0.0e+00
+  [amp] linear   fwd+bwd   8.615 ms  out_max|Δ| vs conv=1.6e-02</pre></details>
+</div></body></html>

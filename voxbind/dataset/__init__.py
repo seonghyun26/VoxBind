@@ -36,6 +36,9 @@ def _make_dataset(cfg, split: str, aug: bool):
             # Master gradmag toggle lives at the top level (next to input_mode)
             # so the same flag drives both pre-training and downstream runs.
             return_gradmag=bool(cfg.get("with_gradmag", False)),
+            # Optional precomputed (noise) gradmag source for the density-ablation
+            # control; "" → derive ‖∇ρ‖ on the fly as usual.
+            gradmag_crops_dir=cfg.dset.get("gradmag_crops_dir", ""),
         )
     else:
         raise NotImplementedError(f"Dataset '{name}' not implemented")

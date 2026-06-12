@@ -74,10 +74,15 @@ RUNS = [
               "839 split; +0.016 on the CL1 split), and RoPE drops a parameter. Current best."),
     dict(key="rope3d-atoms", date="2026-06-10",
          exp="260610_atomblob_vit_mae_40m_invfreq_v5_ligvdw_rope3d_pretrain",
-         csv="probe_results_e99_v5_filtered_atomblob_ligvdw_rope3d.csv", cond="atomblob_ligvdw",
+         csv="probe_results_e99_v5_filtered_atomblob_ligvdw_rope3d839.csv", cond="atomblob_ligvdw",
          note="Atoms-only RoPE ablation: 11-ch ligvdw atoms, inv_freq — identical to matched-ctrl "
-              "but pos_encoding=rope3d. Isolates RoPE on the atoms-only encoder (vs matched-ctrl "
-              "learnable 0.544). Probe auto-runs when e99 lands."),
+              "but pos_encoding=rope3d. On the MATCHED 839 split: 0.585 vs matched-ctrl learnable "
+              "0.544 (+0.041) — RoPE helps atoms-only more than the multimodal (+0.011)."),
+    dict(key="density-pure", date="2026-06-11",
+         exp="260611_density_xray_vit_mae_40m_v5_pretrain",
+         csv="probe_results_e99_v5_filtered_densityonly.csv", cond="density_gradmag",
+         note="PURE density (1-ch, NO gradmag), learnable PE — vs the density+gradmag density-only "
+              "(0.505) to isolate the gradmag channel's contribution. Probe auto-runs when e99 lands."),
     dict(key="HBGSA", date="2026-06-10", exp=None, external="supervised",
          csv="probe_results_e99_v5_filtered_hbgsa_no_cl1.csv", cond="hbgsa_supervised",
          note="EXTERNAL fully-supervised baseline (HBGSA, arXiv 2604.23115): H-bond graph + seq + "

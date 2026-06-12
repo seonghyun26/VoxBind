@@ -763,18 +763,7 @@
   <!-- ============================ TABLE 4 ============================ -->
   <section class="block">
     <p class="table-title">Table 4 &nbsp;·&nbsp; Input ablation on the ligand partial-charge regression task</p>
-    <p class="table-sub">
-      Same frozen-probe setup as Tables&nbsp;1&ndash;3 (MLP head on the frozen pretrained encoder;
-      mean&nbsp;&plusmn;&nbsp;std over 3 seeds). Target = <b>ligand partial-charge magnitude</b> from
-      <b>MISATO</b>'s quantum-chemistry data: the mean&nbsp;|q| over the ligand's GFN2&#8209;xTB atomic
-      partial charges (a per-ligand scalar; <code>&Sigma;q</code> recovers the formal charge as a sanity
-      check). Identical LP-PDBBind <code>new_split</code> as Table&nbsp;1, restricted to MISATO-QM-labelled
-      density-covered complexes
-      (n<sub>train</sub>&nbsp;=&nbsp;2172 / n<sub>val</sub>&nbsp;=&nbsp;480 / n<sub>test</sub>&nbsp;=&nbsp;839).
-      The <b>partial-charge column is the regression target here, not an input</b> &mdash; so it is &ndash; for every row.
-      RMSE is in |q| units (e). Rows are the three learnable-PE (ViT) encoders; RoPE-3D is omitted for now.
-    </p>
-
+    <p class="table-sub">Same frozen-probe setup (MLP head on the frozen encoder; mean&nbsp;&plusmn;&nbsp;std over 3 seeds, three learnable-PE ViT encoders). <b>MISATO official 8:1:1 MD split</b> (train/val/test_MD.txt; n<sub>train</sub>&nbsp;=&nbsp;2657 / n<sub>val</sub>&nbsp;=&nbsp;361 / n<sub>test</sub>&nbsp;=&nbsp;399) &mdash; this differs from the LP-PDBBind split of Tables&nbsp;1&ndash;3, so these tables are <b>not directly comparable</b> to the affinity / H-bond / B-factor ones. Target = ligand partial-charge magnitude (mean&nbsp;|q| over GFN2-xTB atomic charges). RMSE in |q| units (e).</p>
     <div class="table-wrap">
       <table class="results">
         <thead>
@@ -797,16 +786,10 @@
             <th rowspan="2">Spearman&nbsp;&rho;</th>
             <th rowspan="2">RMSE</th>
           </tr>
-          <tr class="sub">
-            <th>coords</th>
-            <th>atom&nbsp;type</th>
-            <th>coords</th>
-            <th>atom&nbsp;type</th>
-          </tr>
+          <tr class="sub"><th>coords</th><th>atom&nbsp;type</th><th>coords</th><th>atom&nbsp;type</th></tr>
         </thead>
         <tbody>
 
-          <!-- Row 1: density + gradmag only (no atom channels) -->
           <tr>
             <td class="col-method">Density + gradmag only</td>
             <td><span class="pe learn">ViT</span></td>
@@ -817,14 +800,13 @@
             <td><span class="chk">&#10003;</span></td>
             <td><span class="chk">&#10003;</span></td>
             <td><span class="no">&ndash;</span></td>
-            <td class="metric div-major"><span class="val">0.677</span> <span class="sd">±0.009</span></td>
-            <td class="metric"><span class="val">0.633</span> <span class="sd">±0.004</span></td>
-            <td class="metric div-minor"><span class="val">0.635</span> <span class="sd">±0.014</span></td>
-            <td class="metric"><span class="val">0.587</span> <span class="sd">±0.003</span></td>
-            <td class="metric"><span class="val">0.039</span> <span class="sd">±0.003</span></td>
+            <td class="metric div-major"><span class="val">0.714</span> <span class="sd">±0.002</span></td>
+            <td class="metric"><span class="val">0.703</span> <span class="sd">±0.003</span></td>
+            <td class="metric div-minor"><span class="val">0.686</span> <span class="sd">±0.003</span></td>
+            <td class="metric"><span class="val">0.708</span> <span class="sd">±0.006</span></td>
+            <td class="metric"><span class="val">0.048</span> <span class="sd">±0.005</span></td>
           </tr>
 
-          <!-- Row 2: coordinates only -->
           <tr>
             <td class="col-method">Coordinates only</td>
             <td><span class="pe learn">ViT</span></td>
@@ -835,14 +817,13 @@
             <td><span class="no">&ndash;</span></td>
             <td><span class="no">&ndash;</span></td>
             <td><span class="no">&ndash;</span></td>
-            <td class="metric div-major"><span class="val">0.778</span> <span class="sd">±0.002</span></td>
-            <td class="metric"><span class="val">0.763</span> <span class="sd">±0.005</span></td>
-            <td class="metric div-minor"><span class="val">0.761</span> <span class="sd">±0.007</span></td>
-            <td class="metric"><span class="val">0.670</span> <span class="sd">±0.010</span></td>
-            <td class="metric"><span class="val">0.036</span> <span class="sd">±0.007</span></td>
+            <td class="metric div-major"><span class="val">0.767</span> <span class="sd">±0.006</span></td>
+            <td class="metric"><span class="val">0.783</span> <span class="sd">±0.006</span></td>
+            <td class="metric div-minor"><span class="val">0.733</span> <span class="sd">±0.015</span></td>
+            <td class="metric"><span class="val">0.771</span> <span class="sd">±0.017</span></td>
+            <td class="metric"><span class="val">0.045</span> <span class="sd">±0.005</span></td>
           </tr>
 
-          <!-- Row 3: coordinates + density + gradmag (best) -->
           <tr>
             <td class="col-method">Coordinates + density + gradmag</td>
             <td><span class="pe learn">ViT</span></td>
@@ -853,41 +834,26 @@
             <td><span class="chk">&#10003;</span></td>
             <td><span class="chk">&#10003;</span></td>
             <td><span class="no">&ndash;</span></td>
-            <td class="metric div-major"><span class="val">0.870</span> <span class="sd">±0.004</span></td>
-            <td class="metric"><span class="val">0.888</span> <span class="sd">±0.001</span></td>
-            <td class="metric div-minor best"><span class="val">0.818</span> <span class="sd">±0.004</span></td>
-            <td class="metric best"><span class="val">0.824</span> <span class="sd">±0.002</span></td>
-            <td class="metric best"><span class="val">0.027</span> <span class="sd">±0.000</span></td>
+            <td class="metric div-major"><span class="val">0.848</span> <span class="sd">±0.001</span></td>
+            <td class="metric"><span class="val">0.878</span> <span class="sd">±0.001</span></td>
+            <td class="metric div-minor best"><span class="val">0.830</span> <span class="sd">±0.003</span></td>
+            <td class="metric best"><span class="val">0.893</span> <span class="sd">±0.002</span></td>
+            <td class="metric best"><span class="val">0.034</span> <span class="sd">±0.002</span></td>
           </tr>
 
         </tbody>
       </table>
     </div>
-
     <div class="legend">
       <span><span class="chk">&#10003;</span> input used</span>
       <span><span class="no" style="padding:0 4px">&ndash;</span> input not used</span>
       <span><span style="background:var(--best-bg);padding:2px 8px;border-radius:4px;font-weight:700;color:#1d5a3a">bold</span> best test value (encoders)</span>
     </div>
-
-    <div class="notes">
-      <ul>
-        <li><b>The combined model wins decisively, and coordinates &gt; density-only &mdash; the opposite
-          ordering from flexibility (Table&nbsp;3).</b> Test&nbsp;&rho;&nbsp;<b>0.824</b> (coords+density+gradmag)
-          &gt; 0.670 (coords-only) &gt; 0.587 (density-only). Partial charge is a <i>ligand-electronic</i>
-          property: the atom-type channels carry element identity (which largely sets the charge), so
-          coordinates alone already do well; density adds the electronic-distribution detail.</li>
-        <li><b>Strong synergy, not redundancy.</b> Combined beats coords-only by <b>+0.15&nbsp;&rho;</b> and
-          density-only by <b>+0.24&nbsp;&rho;</b> &mdash; unlike H-bonds (Table&nbsp;2, density-only ties the
-          full model) and B-factor (Table&nbsp;3, density-only &ge; combined), here density and coordinates
-          are genuinely complementary. Density-only is weakest because charge magnitude is underdetermined
-          without atom identity.</li>
-        <li><b>Caveats.</b> A per-complex <i>scalar</i> (mean&nbsp;|q| over all ligand atoms, incl. H, from
-          GFN2&#8209;xTB); the per-atom charge field would be the stronger test. n<sub>test</sub>&nbsp;=&nbsp;839
-          (density-covered&nbsp;&cap;&nbsp;MISATO-QM). Electron affinity is in Table&nbsp;5; MISATO ships further
-          QM scalars (hardness, ionization potential, electronegativity&hellip;) that drop into the same probe if useful.</li>
-      </ul>
-    </div>
+    <div class="notes"><ul>
+        <li><b>Combined model wins decisively (test&nbsp;&rho;&nbsp;0.893), coordinates&nbsp;&gt;&nbsp;density-only
+          (0.771&nbsp;vs&nbsp;0.708) &mdash; strong synergy, and it holds on both splits</b> (LP: 0.824&nbsp;/&nbsp;0.670&nbsp;/&nbsp;0.587).
+          Partial charge needs atom identity <i>and</i> electronic detail; this is the most robust MISATO result.</li>
+    </ul></div>
   </section>
 
   <!-- ============================ TABLE 5 — electron affinity ============================ -->
@@ -899,7 +865,7 @@
       <b>MISATO</b>'s quantum-chemistry data &mdash; a per-ligand global electronic descriptor
       (GFN2&#8209;xTB). Identical LP-PDBBind <code>new_split</code> as Table&nbsp;1, restricted to
       MISATO-QM-labelled density-covered complexes
-      (n<sub>train</sub>&nbsp;=&nbsp;2172 / n<sub>val</sub>&nbsp;=&nbsp;480 / n<sub>test</sub>&nbsp;=&nbsp;839).
+      (n<sub>train</sub>&nbsp;=&nbsp;2657 / n<sub>val</sub>&nbsp;=&nbsp;361 / n<sub>test</sub>&nbsp;=&nbsp;399 (MISATO 8:1:1 MD split)).
       The <b>electron-affinity column is the regression target here, not an input</b> &mdash; so it is &ndash; for every row.
       RMSE is in MISATO electron-affinity units. Rows are the three learnable-PE (ViT) encoders; RoPE-3D is omitted for now.
     </p>
@@ -935,7 +901,6 @@
         </thead>
         <tbody>
 
-          <!-- Row 1: density + gradmag only -->
           <tr>
             <td class="col-method">Density + gradmag only</td>
             <td><span class="pe learn">ViT</span></td>
@@ -946,14 +911,13 @@
             <td><span class="chk">&#10003;</span></td>
             <td><span class="chk">&#10003;</span></td>
             <td><span class="no">&ndash;</span></td>
-            <td class="metric div-major"><span class="val">0.339</span> <span class="sd">±0.002</span></td>
-            <td class="metric"><span class="val">0.360</span> <span class="sd">±0.004</span></td>
-            <td class="metric div-minor"><span class="val">0.431</span> <span class="sd">±0.006</span></td>
-            <td class="metric"><span class="val">0.379</span> <span class="sd">±0.010</span></td>
-            <td class="metric"><span class="val">1.073</span> <span class="sd">±0.029</span></td>
+            <td class="metric div-major"><span class="val">0.460</span> <span class="sd">±0.007</span></td>
+            <td class="metric"><span class="val">0.468</span> <span class="sd">±0.004</span></td>
+            <td class="metric div-minor"><span class="val">0.367</span> <span class="sd">±0.011</span></td>
+            <td class="metric"><span class="val">0.429</span> <span class="sd">±0.009</span></td>
+            <td class="metric"><span class="val">2.00</span> <span class="sd">±0.013</span></td>
           </tr>
 
-          <!-- Row 2: coordinates only -->
           <tr>
             <td class="col-method">Coordinates only</td>
             <td><span class="pe learn">ViT</span></td>
@@ -964,14 +928,13 @@
             <td><span class="no">&ndash;</span></td>
             <td><span class="no">&ndash;</span></td>
             <td><span class="no">&ndash;</span></td>
-            <td class="metric div-major"><span class="val">0.308</span> <span class="sd">±0.001</span></td>
-            <td class="metric"><span class="val">0.310</span> <span class="sd">±0.003</span></td>
-            <td class="metric div-minor"><span class="val">0.453</span> <span class="sd">±0.003</span></td>
-            <td class="metric"><span class="val">0.447</span> <span class="sd">±0.002</span></td>
-            <td class="metric"><span class="val">1.059</span> <span class="sd">±0.056</span></td>
+            <td class="metric div-major"><span class="val">0.421</span> <span class="sd">±0.004</span></td>
+            <td class="metric"><span class="val">0.429</span> <span class="sd">±0.003</span></td>
+            <td class="metric div-minor"><span class="val">0.376</span> <span class="sd">±0.004</span></td>
+            <td class="metric"><span class="val">0.421</span> <span class="sd">±0.011</span></td>
+            <td class="metric"><span class="val">2.03</span> <span class="sd">±0.066</span></td>
           </tr>
 
-          <!-- Row 3: coordinates + density + gradmag (best) -->
           <tr>
             <td class="col-method">Coordinates + density + gradmag</td>
             <td><span class="pe learn">ViT</span></td>
@@ -982,11 +945,11 @@
             <td><span class="chk">&#10003;</span></td>
             <td><span class="chk">&#10003;</span></td>
             <td><span class="no">&ndash;</span></td>
-            <td class="metric div-major"><span class="val">0.383</span> <span class="sd">±0.025</span></td>
-            <td class="metric"><span class="val">0.365</span> <span class="sd">±0.002</span></td>
-            <td class="metric div-minor best"><span class="val">0.519</span> <span class="sd">±0.026</span></td>
-            <td class="metric best"><span class="val">0.485</span> <span class="sd">±0.007</span></td>
-            <td class="metric best"><span class="val">1.006</span> <span class="sd">±0.027</span></td>
+            <td class="metric div-major"><span class="val">0.502</span> <span class="sd">±0.003</span></td>
+            <td class="metric"><span class="val">0.540</span> <span class="sd">±0.003</span></td>
+            <td class="metric div-minor best"><span class="val">0.465</span> <span class="sd">±0.004</span></td>
+            <td class="metric best"><span class="val">0.561</span> <span class="sd">±0.005</span></td>
+            <td class="metric best"><span class="val">1.95</span> <span class="sd">±0.029</span></td>
           </tr>
 
         </tbody>
@@ -1016,6 +979,301 @@
           n<sub>test</sub>&nbsp;=&nbsp;839 (density-covered&nbsp;&cap;&nbsp;MISATO-QM).</li>
       </ul>
     </div>
+  </section>
+
+  <!-- ============================ TABLE 6 ============================ -->
+  <section class="block">
+    <p class="table-title">Table 6 &nbsp;·&nbsp; Input ablation on the ligand pose-stability (MISATO&nbsp;MD) regression task</p>
+    <p class="table-sub">Same frozen-probe setup (MLP head on the frozen encoder; mean&nbsp;&plusmn;&nbsp;std over 3 seeds, three learnable-PE ViT encoders). <b>MISATO official 8:1:1 MD split</b> (train/val/test_MD.txt; n<sub>train</sub>&nbsp;=&nbsp;2657 / n<sub>val</sub>&nbsp;=&nbsp;361 / n<sub>test</sub>&nbsp;=&nbsp;399) &mdash; this differs from the LP-PDBBind split of Tables&nbsp;1&ndash;3, so these tables are <b>not directly comparable</b> to the affinity / H-bond / B-factor ones. Target = mean of <code>frames_rmsd_ligand</code> over the 100-frame MD trajectory (&Aring;; higher = less stable pose). RMSE in &Aring;.</p>
+    <div class="table-wrap">
+      <table class="results">
+        <thead>
+          <tr class="grp">
+            <th class="col-method" rowspan="3">Experiment</th>
+            <th class="col-pe" rowspan="3">PE</th>
+            <th colspan="7">Input information</th>
+            <th class="div-major" colspan="2">Validation</th>
+            <th class="div-minor" colspan="3">Test</th>
+          </tr>
+          <tr class="grp2">
+            <th colspan="2">Pocket</th>
+            <th colspan="2">Ligand</th>
+            <th rowspan="2">Density</th>
+            <th rowspan="2">Gradmag</th>
+            <th rowspan="2">pose&nbsp;RMSD<br><span style="font-weight:400;font-size:10px;color:var(--ink-soft)">(target)</span></th>
+            <th class="div-major" rowspan="2">Pearson&nbsp;<i>r</i></th>
+            <th rowspan="2">Spearman&nbsp;&rho;</th>
+            <th class="div-minor" rowspan="2">Pearson&nbsp;<i>r</i></th>
+            <th rowspan="2">Spearman&nbsp;&rho;</th>
+            <th rowspan="2">RMSE</th>
+          </tr>
+          <tr class="sub"><th>coords</th><th>atom&nbsp;type</th><th>coords</th><th>atom&nbsp;type</th></tr>
+        </thead>
+        <tbody>
+
+          <tr>
+            <td class="col-method">Density + gradmag only</td>
+            <td><span class="pe learn">ViT</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td class="metric div-major"><span class="val">0.178</span> <span class="sd">±0.002</span></td>
+            <td class="metric"><span class="val">0.346</span> <span class="sd">±0.004</span></td>
+            <td class="metric div-minor"><span class="val">0.070</span> <span class="sd">±0.002</span></td>
+            <td class="metric best"><span class="val">0.338</span> <span class="sd">±0.007</span></td>
+            <td class="metric"><span class="val">4.96</span> <span class="sd">±0.020</span></td>
+          </tr>
+
+          <tr>
+            <td class="col-method">Coordinates only</td>
+            <td><span class="pe learn">ViT</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td class="metric div-major"><span class="val">0.189</span> <span class="sd">±0.003</span></td>
+            <td class="metric"><span class="val">0.308</span> <span class="sd">±0.003</span></td>
+            <td class="metric div-minor"><span class="val">0.137</span> <span class="sd">±0.001</span></td>
+            <td class="metric"><span class="val">0.298</span> <span class="sd">±0.002</span></td>
+            <td class="metric"><span class="val">4.96</span> <span class="sd">±0.031</span></td>
+          </tr>
+
+          <tr>
+            <td class="col-method">Coordinates + density + gradmag</td>
+            <td><span class="pe learn">ViT</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td class="metric div-major"><span class="val">0.198</span> <span class="sd">±0.005</span></td>
+            <td class="metric"><span class="val">0.355</span> <span class="sd">±0.002</span></td>
+            <td class="metric div-minor best"><span class="val">0.150</span> <span class="sd">±0.002</span></td>
+            <td class="metric"><span class="val">0.273</span> <span class="sd">±0.004</span></td>
+            <td class="metric best"><span class="val">4.88</span> <span class="sd">±0.003</span></td>
+          </tr>
+
+        </tbody>
+      </table>
+    </div>
+    <div class="legend">
+      <span><span class="chk">&#10003;</span> input used</span>
+      <span><span class="no" style="padding:0 4px">&ndash;</span> input not used</span>
+      <span><span style="background:var(--best-bg);padding:2px 8px;border-radius:4px;font-weight:700;color:#1d5a3a">bold</span> best test value (encoders)</span>
+    </div>
+    <div class="notes"><ul>
+        <li><b>Weak (test&nbsp;&rho;&nbsp;&le;&nbsp;0.34, Pearson&nbsp;&le;&nbsp;0.15).</b> Density-only edges ahead on
+          &rho; (0.338) while the combined model edges ahead on Pearson (0.150) &mdash; a weak, noisy signal either way.
+          How stably a ligand sits over an MD run is a dynamical property a static pocket snapshot barely accesses
+          (consistent with the LP split).</li>
+    </ul></div>
+  </section>
+
+  <!-- ============================ TABLE 7 ============================ -->
+  <section class="block">
+    <p class="table-title">Table 7 &nbsp;·&nbsp; Input ablation on the protein&ndash;ligand interaction-energy (MISATO&nbsp;MD) regression task</p>
+    <p class="table-sub">Same frozen-probe setup (MLP head on the frozen encoder; mean&nbsp;&plusmn;&nbsp;std over 3 seeds, three learnable-PE ViT encoders). <b>MISATO official 8:1:1 MD split</b> (train/val/test_MD.txt; n<sub>train</sub>&nbsp;=&nbsp;2657 / n<sub>val</sub>&nbsp;=&nbsp;361 / n<sub>test</sub>&nbsp;=&nbsp;399) &mdash; this differs from the LP-PDBBind split of Tables&nbsp;1&ndash;3, so these tables are <b>not directly comparable</b> to the affinity / H-bond / B-factor ones. Target = mean of <code>frames_interaction_energy</code> (MM protein&ndash;ligand nonbonded energy, kcal/mol). RMSE in kcal/mol.</p>
+    <div class="table-wrap">
+      <table class="results">
+        <thead>
+          <tr class="grp">
+            <th class="col-method" rowspan="3">Experiment</th>
+            <th class="col-pe" rowspan="3">PE</th>
+            <th colspan="7">Input information</th>
+            <th class="div-major" colspan="2">Validation</th>
+            <th class="div-minor" colspan="3">Test</th>
+          </tr>
+          <tr class="grp2">
+            <th colspan="2">Pocket</th>
+            <th colspan="2">Ligand</th>
+            <th rowspan="2">Density</th>
+            <th rowspan="2">Gradmag</th>
+            <th rowspan="2">int.&nbsp;energy<br><span style="font-weight:400;font-size:10px;color:var(--ink-soft)">(target)</span></th>
+            <th class="div-major" rowspan="2">Pearson&nbsp;<i>r</i></th>
+            <th rowspan="2">Spearman&nbsp;&rho;</th>
+            <th class="div-minor" rowspan="2">Pearson&nbsp;<i>r</i></th>
+            <th rowspan="2">Spearman&nbsp;&rho;</th>
+            <th rowspan="2">RMSE</th>
+          </tr>
+          <tr class="sub"><th>coords</th><th>atom&nbsp;type</th><th>coords</th><th>atom&nbsp;type</th></tr>
+        </thead>
+        <tbody>
+
+          <tr>
+            <td class="col-method">Density + gradmag only</td>
+            <td><span class="pe learn">ViT</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td class="metric div-major"><span class="val">0.329</span> <span class="sd">±0.058</span></td>
+            <td class="metric"><span class="val">0.331</span> <span class="sd">±0.009</span></td>
+            <td class="metric div-minor"><span class="val">0.264</span> <span class="sd">±0.008</span></td>
+            <td class="metric"><span class="val">0.260</span> <span class="sd">±0.002</span></td>
+            <td class="metric"><span class="val">59.71</span> <span class="sd">±0.183</span></td>
+          </tr>
+
+          <tr>
+            <td class="col-method">Coordinates only</td>
+            <td><span class="pe learn">ViT</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td class="metric div-major"><span class="val">0.224</span> <span class="sd">±0.003</span></td>
+            <td class="metric"><span class="val">0.366</span> <span class="sd">±0.001</span></td>
+            <td class="metric div-minor"><span class="val">0.182</span> <span class="sd">±0.002</span></td>
+            <td class="metric"><span class="val">0.382</span> <span class="sd">±0.001</span></td>
+            <td class="metric"><span class="val">61.52</span> <span class="sd">±0.119</span></td>
+          </tr>
+
+          <tr>
+            <td class="col-method">Coordinates + density + gradmag</td>
+            <td><span class="pe learn">ViT</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td class="metric div-major"><span class="val">0.683</span> <span class="sd">±0.002</span></td>
+            <td class="metric"><span class="val">0.535</span> <span class="sd">±0.001</span></td>
+            <td class="metric div-minor best"><span class="val">0.612</span> <span class="sd">±0.003</span></td>
+            <td class="metric best"><span class="val">0.480</span> <span class="sd">±0.001</span></td>
+            <td class="metric best"><span class="val">49.08</span> <span class="sd">±0.209</span></td>
+          </tr>
+
+        </tbody>
+      </table>
+    </div>
+    <div class="legend">
+      <span><span class="chk">&#10003;</span> input used</span>
+      <span><span class="no" style="padding:0 4px">&ndash;</span> input not used</span>
+      <span><span style="background:var(--best-bg);padding:2px 8px;border-radius:4px;font-weight:700;color:#1d5a3a">bold</span> best test value (encoders)</span>
+    </div>
+    <div class="notes"><ul>
+        <li><b>The combined model wins clearly (test&nbsp;&rho;&nbsp;0.480, Pearson&nbsp;0.612)</b> &mdash; markedly
+          stronger than on the LP split (combined&nbsp;&rho;&nbsp;0.21), and coordinates&nbsp;&gt;&nbsp;density-only on &rho;
+          (0.382&nbsp;vs&nbsp;0.260). The full coords+density+gradmag representation captures the MM interaction energy best.</li>
+    </ul></div>
+  </section>
+
+  <!-- ============================ TABLE 8 ============================ -->
+  <section class="block">
+    <p class="table-title">Table 8 &nbsp;·&nbsp; Input ablation on the pocket flexibility (MISATO&nbsp;MD&nbsp;RMSF) regression task</p>
+    <p class="table-sub">Same frozen-probe setup (MLP head on the frozen encoder; mean&nbsp;&plusmn;&nbsp;std over 3 seeds, three learnable-PE ViT encoders). <b>MISATO official 8:1:1 MD split</b> (train/val/test_MD.txt; n<sub>train</sub>&nbsp;=&nbsp;2657 / n<sub>val</sub>&nbsp;=&nbsp;361 / n<sub>test</sub>&nbsp;=&nbsp;399) &mdash; this differs from the LP-PDBBind split of Tables&nbsp;1&ndash;3, so these tables are <b>not directly comparable</b> to the affinity / H-bond / B-factor ones. Target = pocket-mean per-atom RMSF (&Aring;) over protein atoms within 6&nbsp;&Aring; of the ligand. RMSE in &Aring;.</p>
+    <div class="table-wrap">
+      <table class="results">
+        <thead>
+          <tr class="grp">
+            <th class="col-method" rowspan="3">Experiment</th>
+            <th class="col-pe" rowspan="3">PE</th>
+            <th colspan="7">Input information</th>
+            <th class="div-major" colspan="2">Validation</th>
+            <th class="div-minor" colspan="3">Test</th>
+          </tr>
+          <tr class="grp2">
+            <th colspan="2">Pocket</th>
+            <th colspan="2">Ligand</th>
+            <th rowspan="2">Density</th>
+            <th rowspan="2">Gradmag</th>
+            <th rowspan="2">RMSF<br><span style="font-weight:400;font-size:10px;color:var(--ink-soft)">(target)</span></th>
+            <th class="div-major" rowspan="2">Pearson&nbsp;<i>r</i></th>
+            <th rowspan="2">Spearman&nbsp;&rho;</th>
+            <th class="div-minor" rowspan="2">Pearson&nbsp;<i>r</i></th>
+            <th rowspan="2">Spearman&nbsp;&rho;</th>
+            <th rowspan="2">RMSE</th>
+          </tr>
+          <tr class="sub"><th>coords</th><th>atom&nbsp;type</th><th>coords</th><th>atom&nbsp;type</th></tr>
+        </thead>
+        <tbody>
+
+          <tr>
+            <td class="col-method">Density + gradmag only</td>
+            <td><span class="pe learn">ViT</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td class="metric div-major"><span class="val">0.205</span> <span class="sd">±0.009</span></td>
+            <td class="metric"><span class="val">0.382</span> <span class="sd">±0.004</span></td>
+            <td class="metric div-minor"><span class="val">0.293</span> <span class="sd">±0.001</span></td>
+            <td class="metric best"><span class="val">0.467</span> <span class="sd">±0.004</span></td>
+            <td class="metric"><span class="val">3.10</span> <span class="sd">±0.005</span></td>
+          </tr>
+
+          <tr>
+            <td class="col-method">Coordinates only</td>
+            <td><span class="pe learn">ViT</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td class="metric div-major"><span class="val">0.216</span> <span class="sd">±0.001</span></td>
+            <td class="metric"><span class="val">0.389</span> <span class="sd">±0.001</span></td>
+            <td class="metric div-minor best"><span class="val">0.305</span> <span class="sd">±0.019</span></td>
+            <td class="metric"><span class="val">0.443</span> <span class="sd">±0.005</span></td>
+            <td class="metric best"><span class="val">3.10</span> <span class="sd">±0.012</span></td>
+          </tr>
+
+          <tr>
+            <td class="col-method">Coordinates + density + gradmag</td>
+            <td><span class="pe learn">ViT</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td class="metric div-major"><span class="val">0.214</span> <span class="sd">±0.000</span></td>
+            <td class="metric"><span class="val">0.370</span> <span class="sd">±0.001</span></td>
+            <td class="metric div-minor"><span class="val">0.296</span> <span class="sd">±0.004</span></td>
+            <td class="metric"><span class="val">0.438</span> <span class="sd">±0.004</span></td>
+            <td class="metric"><span class="val">3.11</span> <span class="sd">±0.009</span></td>
+          </tr>
+
+        </tbody>
+      </table>
+    </div>
+    <div class="legend">
+      <span><span class="chk">&#10003;</span> input used</span>
+      <span><span class="no" style="padding:0 4px">&ndash;</span> input not used</span>
+      <span><span style="background:var(--best-bg);padding:2px 8px;border-radius:4px;font-weight:700;color:#1d5a3a">bold</span> best test value (encoders)</span>
+    </div>
+    <div class="notes"><ul>
+        <li><b>Split-sensitive &mdash; does NOT replicate the LP-split result.</b> On the MISATO 8:1:1 split,
+          density-only is (weakly) the <i>best</i> (&rho;&nbsp;0.467 vs 0.443 vs 0.438); on the LP split it was the
+          <i>worst</i> (0.248 vs 0.323 vs 0.358). The ordering <b>flips with the test set</b>, so the earlier
+          &ldquo;density encodes crystal disorder, mirror image of B-factor&rdquo; reading does <b>not</b> hold up and
+          should not be relied on.</li>
+        <li>Within each split seed variance is tiny (&sigma;&nbsp;&asymp;&nbsp;0.004), so this is a genuine
+          <i>test-set-composition</i> effect, not seed noise; with only n<sub>test</sub>&nbsp;=&nbsp;399 the three
+          encoders sit close together. Net: input channel does not reliably distinguish MD-RMSF predictability.</li>
+        <li>RMSF stands in for MISATO &ldquo;adaptability&rdquo; (its RMSF-equivalent, not stored in the base MD file).</li>
+    </ul></div>
   </section>
 
   <!-- ============================ FIGURE 1 — gradmag ============================ -->

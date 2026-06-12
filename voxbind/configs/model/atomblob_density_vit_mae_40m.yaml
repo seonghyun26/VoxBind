@@ -26,3 +26,8 @@ n_struct_channels: 0    # disabled: atoms ARE part of the input
 dual_head: false        # true → split atom vs density branches in the recon head
 head_hidden_dim: 0      # 0 → defaults to c_half (= n_channels // 2 = 16)
 head_depth: 2           # # of Conv3d layers in each head (>=1); 2 = current
+
+# ── ChannelViT patch embed (no-op default = fused) ─────────────────────────────
+patch_embed_mode: fused # fused (1 Conv mixes all channels) | channel_group (per-group tokens + attention)
+channel_groups: null    # channel_group only: per-group channel counts (must sum to n_in); e.g. [7,4,1,1]
+                        # for 13ch = 7 lig-atom + 4 poc-atom + 1 density + 1 gradmag

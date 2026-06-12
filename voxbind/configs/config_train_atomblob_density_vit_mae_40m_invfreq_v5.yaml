@@ -28,6 +28,25 @@ accum_steps: 1
 lr: 1e-4
 wd: 5e-2
 
+# ── Throughput knobs — amp + compile ON by default (260611; verified same results). ────
+# bf16 autocast + torch.compile ≈ 2.8x faster than fp32-eager with no accuracy change
+# (cosine >=0.999 / loss within 1%), verified on RTX 3090 via benchmark_vit_opts.py.
+# channels_last / fused / foreach_ema stay off — flip them on for the full ~2.8x stack.
+amp:
+  enabled: true       # bf16 autocast (no GradScaler); biggest single win + unlocks flash SDPA
+  dtype: bf16         # bf16 only; fp16 intentionally unsupported (would need a scaler)
+channels_last: false  # channels_last_3d memory format for the Conv3d patch-embed/heads
+optimizer:
+  fused: false        # CUDA-fused AdamW (betas=(0.99,0.999), eps=1e-8 ~ vendored AdamW)
+ema:
+  foreach: false      # multi-tensor EMA update (2 kernels vs a 45M-param Python loop)
+compile:
+  enabled: true       # torch.compile; validate under DDP (start mode=default, not reduce-overhead)
+  backend: inductor
+  mode: default
+  fullgraph: false
+  dynamic: false
+
 input_mode: atomblob_density
 with_gradmag: false                # density only → 12 channels
 

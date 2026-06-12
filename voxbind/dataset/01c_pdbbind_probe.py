@@ -136,6 +136,7 @@ BFACTOR_CACHE = PDBBIND_DIR / "bfactors.json"
 MISATO_DIR     = PDBBIND_DIR.parent / "misato"
 MISATO_QM_JSON = MISATO_DIR / "misato_qm.json"
 MISATO_MD_JSON = MISATO_DIR / "misato_md.json"
+MISATO_SPLIT_DIR = MISATO_DIR / "misato_splits"   # official MISATO 8:1:1 MD split (train/val/test_MD.txt)
 
 EXPS = {
     "atomblob":               Path("exps") / "260606_atomblob_vit_mae_40m_invfreq_pretrain",   # 260606 v5-ablation (atom-only, version-agnostic)
@@ -668,6 +669,8 @@ def load_encoder(exp_dir: Path, epoch: int, device: str, cfg=None) -> DensityViT
         mlp_ratio    = m.mlp_ratio,
         dropout      = m.dropout,
         pos_encoding = m.get("pos_encoding", "learnable"),
+        patch_embed_mode = m.get("patch_embed_mode", "fused"),
+        channel_groups   = (tuple(m.channel_groups) if m.get("channel_groups", None) else None),
     )
 
     ckpt_path = exp_dir / f"checkpoint_e{epoch:04d}.pth.tar"
@@ -711,6 +714,7 @@ def load_voxels_for(
     dens_dir: Path,
     input_mode: str = None,
     with_gradmag: bool = False,
+    gradmag_dir: Path = None,
 ) -> torch.Tensor:
     """Build the (n_in_channels, G, G, G) tensor for one complex."""
     input_mode = input_mode or _fallback_input_mode(condition)
@@ -748,9 +752,14 @@ def load_voxels_for(
         raise ValueError(f"unknown input_mode={input_mode!r} for condition={condition!r}")
 
     if with_gradmag:
-        # ‖∇ρ‖ is derived from the already-normalised density crop exactly as
-        # train_density_vit_mae.py does for xray source, then appended last.
-        g = per_sample_zscore(gradient_magnitude3d(dens_t.unsqueeze(0))).squeeze(0)
+        if gradmag_dir is not None:
+            # Density-ablation control: load precomputed matched-noise gradmag
+            # instead of deriving ‖∇ρ‖ (which would be ‖∇noise‖, wrong distribution).
+            g = torch.from_numpy(np.load(gradmag_dir / f"{pid}.npy").astype(np.float32)).unsqueeze(0)
+        else:
+            # ‖∇ρ‖ is derived from the already-normalised density crop exactly as
+            # train_density_vit_mae.py does for xray source, then appended last.
+            g = per_sample_zscore(gradient_magnitude3d(dens_t.unsqueeze(0))).squeeze(0)
         x = torch.cat([x, g], dim=0)
 
     assert x.shape[0] == n_in_channels, (
@@ -774,6 +783,13 @@ def run_features(args: argparse.Namespace) -> None:
     vox_dir  = voxel_dir_for(args.voxel_version)
     atom_dir = atom_dir_for(vox_dir, spec.atom_source)
     dens_dir = vox_dir / "density"
+    # Density-ablation control: when --noise_voxels_dir is set, density and gradmag
+    # are read from the precomputed matched-noise voxels instead of the real ones.
+    gradmag_dir = None
+    if getattr(args, "noise_voxels_dir", None):
+        _nd = Path(args.noise_voxels_dir)
+        dens_dir = _nd / "density"
+        gradmag_dir = _nd / "gradmag"
     # availability.csv only exists in v1; v2/v3 reuse v1's since the pid set
     # is the same (they share the same successful-crop universe).
     avail_csv = vox_dir / "availability.csv"
@@ -861,7 +877,8 @@ def run_features(args: argparse.Namespace) -> None:
                 tensors.append(load_voxels_for(pid, args.condition, n_in,
                                                 atom_dir, dens_dir,
                                                 input_mode=spec.input_mode,
-                                                with_gradmag=spec.with_gradmag))
+                                                with_gradmag=spec.with_gradmag,
+                                                gradmag_dir=gradmag_dir))
                 used_pids.append(pid)
             except Exception as e:
                 err_log.append((pid, repr(e)[:160]))
@@ -979,6 +996,23 @@ def load_misato_target(field: str, json_path: Path) -> dict[str, float]:
     return out
 
 
+def load_misato_split(split_dir: Path = MISATO_SPLIT_DIR) -> dict[str, str]:
+    """pid(lower) -> 'train'/'val'/'test' from MISATO's official 8:1:1 MD split files."""
+    out: dict[str, str] = {}
+    for split in ("train", "val", "test"):
+        f = split_dir / f"{split}_MD.txt"
+        if not f.exists():
+            raise FileNotFoundError(
+                f"MISATO split file not found: {f}\n"
+                f"  fetch data/MD/splits/*_MD.txt from the misato-dataset repo into {split_dir}"
+            )
+        for line in f.read_text().splitlines():
+            pid = line.strip().lower()
+            if pid:
+                out[pid] = split
+    return out
+
+
 # Regression targets selectable via `probe --target`. pK is the LP_PDBBind default
 # (target_map=None → build_dataset reads the pK column); every other target is a
 # pdb_id -> value map regressed on the identical splits.
@@ -1040,6 +1074,7 @@ def build_dataset(
     drop_covalent: bool,
     cl1_only: bool,
     target_map: Optional[dict[str, float]] = None,
+    split_map: Optional[dict[str, str]] = None,
 ) -> dict:
     """Build train/val/test splits keyed by LP_PDBBind 'new_split'.
 
@@ -1048,6 +1083,19 @@ def build_dataset(
     alternative target (e.g. protein-ligand H-bond count) on the identical splits/
     filters — complexes absent from the map are dropped (they have no label).
     """
+    if split_map is not None:
+        if target_map is None:
+            raise ValueError("split_map (--split misato) requires a non-pK --target")
+        dim = len(next(iter(features.values()))) if features else 512
+        split_data = {}
+        for split in ("train", "val", "test"):
+            pids = [p for p in features if split_map.get(p) == split and p in target_map]
+            X = (np.stack([features[p].numpy() for p in pids]).astype(np.float32)
+                 if pids else np.empty((0, dim), np.float32))
+            y = np.asarray([target_map[p] for p in pids], dtype=np.float32)
+            split_data[split] = {"X": X, "y": y, "pid": pids}
+        return split_data
+
     df = lp_df.copy()
     if drop_covalent:
         df = df[~df["covalent"].astype(bool)]
@@ -1236,7 +1284,10 @@ def train_one(
 def run_probe(args: argparse.Namespace) -> None:
     suffix = feature_suffix(args.voxel_version, tag=args.feature_tag)
     target_map = load_target_map(args.target)            # None for pK (LP_PDBBind default)
+    split_map = load_misato_split() if getattr(args, "split", "lp") == "misato" else None
     tag_parts = ([] if args.target == "pK" else [args.target])
+    if split_map is not None:
+        tag_parts.append("misatosplit")
     if args.head == "softmax":                           # head/loss variant token, orthogonal to target
         tag_parts.append("softmax")
     if args.tag:
@@ -1259,6 +1310,7 @@ def run_probe(args: argparse.Namespace) -> None:
     print(f"  intersect     : {not args.no_intersect}")
     print(f"  drop_covalent : {not args.no_covalent_filter}")
     print(f"  cl1_only      : {args.cl1_only}{'  (-> _filtered)' if args.cl1_only else ''}")
+    print(f"  split         : {getattr(args, 'split', 'lp')}{'  (MISATO 8:1:1)' if getattr(args, 'split', 'lp') == 'misato' else '  (LP_PDBBind)'}")
     print(f"  tag           : {args.tag}")
     print(f"  feature_tag   : {args.feature_tag}")
     print(f"  exp_dir       : {args.exp_dir}")
@@ -1320,6 +1372,7 @@ def run_probe(args: argparse.Namespace) -> None:
             drop_covalent   = not args.no_covalent_filter,
             cl1_only        = args.cl1_only,
             target_map      = target_map,
+            split_map       = split_map,
         )
         print(f"  split sizes   : train={len(data['train']['pid']):,}  "
               f"val={len(data['val']['pid']):,}  test={len(data['test']['pid']):,}")
@@ -1462,6 +1515,9 @@ def make_encoder_factory(exp_dir: Path, epoch: int):
             n_heads      = m.heads,
             mlp_ratio    = m.mlp_ratio,
             dropout      = m.dropout,
+            pos_encoding = m.get("pos_encoding", "learnable"),
+            patch_embed_mode = m.get("patch_embed_mode", "fused"),
+            channel_groups   = (tuple(m.channel_groups) if m.get("channel_groups", None) else None),
         )
         enc.load_state_dict(stripped, strict=True)
         return enc
@@ -1975,7 +2031,7 @@ def build_parser() -> argparse.ArgumentParser:
     pf.add_argument("--condition", choices=_CONDITION_CHOICES, required=True)
     pf.add_argument("--epoch",      type=int, default=99,
                     help="Checkpoint epoch to use (matched across conditions)")
-    pf.add_argument("--voxel_version", choices=["v1", "v2", "v3", "v4", "v5"], default="v1",
+    pf.add_argument("--voxel_version", choices=["v1", "v2", "v3", "v4", "v5"], default="v5",
                     help="Density-normalisation version: v1 = per-map z-score + "
                          "per-crop ±3σ clip; v2 = pocket-pool z-score; "
                          "v3 = pocket-pool symmetric max-abs; v4 = pocket-pool "
@@ -1999,6 +2055,10 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Optional feature-cache label appended after the version token, "
                          "e.g. --tag 260608_w1 -> atomblob_density_gradmag_e99_v5_260608_w1.pt. "
                          "Use with --exp_dir when comparing same-condition checkpoints.")
+    pf.add_argument("--noise_voxels_dir", default=None,
+                    help="Density-ablation control: read density+gradmag from this dir's "
+                         "density/ and gradmag/ subdirs (matched noise) instead of the real "
+                         "voxels. Atoms still come from the real atom_dir.")
     pf.set_defaults(func=run_features)
 
     pr = sub.add_parser(
@@ -2009,9 +2069,10 @@ def build_parser() -> argparse.ArgumentParser:
     pr.add_argument("--conditions", nargs="+",
                     default=_CONDITION_CHOICES, choices=_CONDITION_CHOICES)
     pr.add_argument("--epoch",         type=int,   default=99)
-    pr.add_argument("--voxel_version", choices=["v1", "v2", "v3", "v4", "v5"], default="v1",
+    pr.add_argument("--voxel_version", choices=["v1", "v2", "v3", "v4", "v5"], default="v5",
                     help="Selects which density-normalisation variant's features "
-                         "to probe. Adds matching suffix to feature paths + output CSV.")
+                         "to probe. Adds matching suffix to feature paths + output CSV. "
+                         "Default v5 = the canonical split (2172/480/839); matches `finetune`.")
     pr.add_argument("--target", choices=["pK", "hbonds", "bfactor", "bfactor_rel",
                                          "partial_charges", "electron_affinity", "adaptability", "rmsf",
                                          "pose_stability", "interaction_energy"], default="pK",
@@ -2021,6 +2082,9 @@ def build_parser() -> argparse.ArgumentParser:
                          "resolution-robust). A non-pK target adds a _<target> token to the CSV name "
                          "and needs its cache built (dataset/extract_bfactors.py for B-factors); "
                          "complexes lacking a label are dropped.")
+    pr.add_argument("--split", choices=["lp", "misato"], default="lp",
+                    help="Split source: lp (LP_PDBBind new_split, default) or misato (official MISATO "
+                         "8:1:1 MD split). misato adds a _misatosplit CSV token; non-pK target only.")
     pr.add_argument("--head",          choices=["scalar", "softmax"], default="scalar",
                     help="Probe head/objective: scalar (1-D output, MSE; default) or softmax "
                          "(K-class output over integer counts 0..max, soft-label cross-entropy with "

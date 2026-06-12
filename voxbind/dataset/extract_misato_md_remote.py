@@ -51,6 +51,10 @@ def _read_one(pid_upper):
             return pid_upper.lower(), None, None          # complex not in MD subset
         except Exception:
             try:
+                _H5.close()                               # close before reopen — avoid socket leak
+            except Exception:
+                pass
+            try:
                 _H5 = _open()                             # reconnect on dropped stream
             except Exception:
                 pass

@@ -308,6 +308,7 @@ class DatasetCrossDockedXray(Dataset):
         subset_xray_only: bool = False,
         subset_val_n: Optional[int] = None,
         return_gradmag: bool = False,
+        gradmag_crops_dir: str = "",
     ):
         assert split in ("train", "val", "test")
 
@@ -354,6 +355,15 @@ class DatasetCrossDockedXray(Dataset):
             self._crops_dir = None
             self._crops_available = None
             self._use_crops = False
+
+        # Optional: load a PRECOMPUTED gradmag channel from disk instead of
+        # deriving ‖∇ρ‖ on the fly. Used by the density-ablation noise control,
+        # where gradmag is replaced by distribution-matched noise (see
+        # dataset/00e_make_noise_crops.py). Mirrors the density crops layout.
+        _gm_path = Path(gradmag_crops_dir) if gradmag_crops_dir else None
+        self._gradmag_crops_dir = (
+            _gm_path / phys_split if (_gm_path and (_gm_path / phys_split).exists()) else None
+        )
 
         # Per-worker LRU cache for loaded CCP4 grids (on-the-fly mode)
         self._grid_cache: OrderedDict = OrderedDict()
@@ -417,7 +427,11 @@ class DatasetCrossDockedXray(Dataset):
                         f"{phys_split}_available.npy in crops_dir={crops_dir}"
                     )
                 avail = self._crops_available
-                if len(avail) != n_total:
+                # In small/debug mode self.data is truncated to 500 while the precomputed
+                # availability mask spans the full split, so the lengths legitimately differ
+                # (the mask is still positionally aligned over the first n_total entries).
+                # Only treat a length mismatch as a real preprocessing misalignment otherwise.
+                if len(avail) != n_total and not self.small:
                     raise RuntimeError(
                         f"crops_available length ({len(avail)}) != filtered dataset "
                         f"size ({n_total}); preprocessing is misaligned."
@@ -599,7 +613,12 @@ class DatasetCrossDockedXray(Dataset):
         # channel the model consumes. Per-sample z-scored to match the density
         # scale; zeros when density is unavailable (mirrors xray_density).
         if self.return_gradmag:
-            if bool(xray_available):
+            if self._gradmag_crops_dir is not None and bool(xray_available):
+                # Precomputed noise-gradmag (density-ablation control): load the
+                # fixed-per-complex matched noise instead of deriving ‖∇ρ‖.
+                gpath = self._gradmag_crops_dir / f"{index:06d}.npy"
+                out["xray_gradmag"] = torch.from_numpy(np.load(str(gpath)).astype(np.float32))
+            elif bool(xray_available):
                 g = gradient_magnitude3d(
                     xray_density.view(1, 1, _GRID_DIM, _GRID_DIM, _GRID_DIM)
                 )

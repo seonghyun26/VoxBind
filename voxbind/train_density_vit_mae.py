@@ -1206,6 +1206,9 @@ def main(cfg: DictConfig) -> None:
         head_style=head_style,
         pos_encoding=pos_encoding,
         rope_fast=bool(cfg.model.get("rope_fast", False)),
+        patch_embed_mode=str(cfg.model.get("patch_embed_mode", "fused")),
+        channel_groups=(tuple(int(c) for c in cfg.model.channel_groups)
+                        if cfg.model.get("channel_groups", None) else None),
     ).to(device)
     # channels_last_3d: better cuDNN Conv3d kernels for the patch-embed/heads.
     # Applied before optimizer/compile/DDP/EMA so all downstream copies inherit it.

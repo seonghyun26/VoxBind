@@ -147,6 +147,10 @@ class MultiHeadSelfAttention(nn.Module):
         self.qkv = nn.Linear(dim, dim * 3, bias=True)
         self.proj = nn.Linear(dim, dim, bias=True)
         self.dropout_p = dropout
+        # analysis-only: when capture_attn is set, take an explicit-softmax path and
+        # stash the (B,H,N,N) weights in attn_weights (training stays on flash SDPA).
+        self.capture_attn = False
+        self.attn_weights = None
 
     def forward(self, x: torch.Tensor, rope: "RoPE3D" = None) -> torch.Tensor:
         B, N, C = x.shape
@@ -155,10 +159,16 @@ class MultiHeadSelfAttention(nn.Module):
         q, k, v = qkv[0], qkv[1], qkv[2]
         if rope is not None:
             q, k = rope.rotate_qk(q, k)
-        out = F.scaled_dot_product_attention(
-            q, k, v,
-            dropout_p=self.dropout_p if self.training else 0.0,
-        )                                                # (B, H, N, head_dim)
+        if self.capture_attn:                            # explicit softmax (analysis only)
+            attn = (q @ k.transpose(-2, -1)) * (self.head_dim ** -0.5)
+            attn = attn.softmax(dim=-1)
+            self.attn_weights = attn.detach()
+            out = attn @ v                               # (B, H, N, head_dim)
+        else:
+            out = F.scaled_dot_product_attention(
+                q, k, v,
+                dropout_p=self.dropout_p if self.training else 0.0,
+            )                                            # (B, H, N, head_dim)
         out = out.transpose(1, 2).reshape(B, N, C)
         return self.proj(out)
 
@@ -217,6 +227,8 @@ class DensityViT(nn.Module):
         pos_embed_std: float = 0.02,
         pos_encoding: str = "learnable",   # "learnable" | "rope3d" (axial 3D RoPE)
         rope_fast: bool = False,           # fused q/k rotate path (rope3d only; numerically identical)
+        patch_embed_mode: str = "fused",   # "fused" (1 Conv mixes all channels) | "channel_group" (ChannelViT)
+        channel_groups: Optional[Tuple[int, ...]] = None,  # channel_group: per-group channel counts (sum=n_in)
     ):
         super().__init__()
         assert grid_dim % patch_size == 0, (
@@ -233,9 +245,39 @@ class DensityViT(nn.Module):
         self.n_tokens = self.g_p ** 3
         self.patch_volume = patch_size ** 3
 
-        self.patch_embed = nn.Conv3d(
-            n_in_channels, dim, kernel_size=patch_size, stride=patch_size, padding=0
+        assert patch_embed_mode in ("fused", "channel_group"), (
+            f"unknown patch_embed_mode={patch_embed_mode!r} (expected 'fused' or 'channel_group')"
         )
+        self.patch_embed_mode = patch_embed_mode
+        if patch_embed_mode == "fused":
+            # one Conv3d fuses ALL input channels into each patch token (original ViT).
+            self.patch_embed = nn.Conv3d(
+                n_in_channels, dim, kernel_size=patch_size, stride=patch_size, padding=0
+            )
+            self.group_proj = None
+            self.group_embed = None
+            self.channel_groups = None
+            self.n_groups = 1
+        else:
+            # ChannelViT-style: tokenize per channel-GROUP (one token-set per group) so
+            # self-attention spans (group × patch) tokens and can attend across groups.
+            # Each group keeps its own projection (groups differ in channel count + meaning);
+            # a learnable group embedding tags every patch token of that group.
+            assert channel_groups is not None and sum(channel_groups) == n_in_channels, (
+                f"channel_groups={channel_groups} must sum to n_in_channels={n_in_channels}"
+            )
+            assert pos_encoding == "learnable", (
+                "patch_embed_mode='channel_group' supports pos_encoding='learnable' only "
+                "(RoPE over group-tiled tokens not wired yet)"
+            )
+            self.channel_groups = tuple(int(c) for c in channel_groups)
+            self.n_groups = len(self.channel_groups)
+            self.patch_embed = None
+            self.group_proj = nn.ModuleList([
+                nn.Conv3d(cg, dim, kernel_size=patch_size, stride=patch_size, padding=0)
+                for cg in self.channel_groups
+            ])
+            self.group_embed = nn.Parameter(torch.zeros(1, self.n_groups, 1, dim))
         assert pos_encoding in ("learnable", "rope3d"), (
             f"unknown pos_encoding={pos_encoding!r} (expected 'learnable' or 'rope3d')"
         )
@@ -261,6 +303,8 @@ class DensityViT(nn.Module):
     def _init_weights(self, pos_embed_std: float) -> None:
         if self.pos_embed is not None:
             nn.init.trunc_normal_(self.pos_embed, std=pos_embed_std)
+        if self.group_embed is not None:
+            nn.init.trunc_normal_(self.group_embed, std=pos_embed_std)
         for m in self.modules():
             if isinstance(m, nn.Linear):
                 nn.init.trunc_normal_(m.weight, std=0.02)
@@ -287,17 +331,71 @@ class DensityViT(nn.Module):
         x = x.reshape(B, c_out, g_p * p, g_p * p, g_p * p)
         return x
 
+    def _tokenize(self, density: torch.Tensor) -> torch.Tensor:
+        """(B, C, G,G,G) → (B, T, D) patch tokens. fused: T=N patches. channel_group:
+        T=n_groups·N — one token-set per group, +learnable group embedding, +shared patch PE."""
+        if self.patch_embed_mode == "fused":
+            z = self.patch_embed(density).flatten(2).transpose(1, 2)        # (B, N, D)
+            if self.pos_embed is not None:
+                z = z + self.pos_embed
+            return z
+        chunks = torch.split(density, self.channel_groups, dim=1)           # per-group (B, c_g, G³)
+        z = torch.stack([proj(c).flatten(2).transpose(1, 2)
+                         for proj, c in zip(self.group_proj, chunks)], dim=1)  # (B, nG, N, D)
+        z = z + self.group_embed                                            # per-group embedding
+        if self.pos_embed is not None:
+            z = z + self.pos_embed.unsqueeze(1)                             # patch PE, shared over groups
+        return z.flatten(1, 2)                                              # (B, nG·N, D)
+
+    def _pool_groups(self, z: torch.Tensor) -> torch.Tensor:
+        """channel_group: mean-pool per-group tokens back to one feature/patch
+        (B, nG·N, D) → (B, N, D) so the spatial output interface is unchanged. fused: no-op."""
+        if self.patch_embed_mode == "fused":
+            return z
+        B = z.shape[0]
+        return z.reshape(B, self.n_groups, self.n_tokens, self.dim).mean(dim=1)
+
     def forward(self, density: torch.Tensor) -> torch.Tensor:
         """density: (B, n_in_channels, G, G, G) → (B, c_out, G, G, G)."""
-        z = self.patch_embed(density)                    # (B, D, g_p, g_p, g_p)
-        z = z.flatten(2).transpose(1, 2)                 # (B, N, D)
-        if self.pos_embed is not None:
-            z = z + self.pos_embed
+        z = self._tokenize(density)                      # (B, T, D)
         for blk in self.blocks:
             z = blk(z, rope=self.rope)
         z = self.norm(z)
+        z = self._pool_groups(z)                         # (B, N, D)
         z = self.decoder_proj(z)                         # (B, N, c_out·p³)
         return self._tokens_to_voxels(z)                 # (B, c_out, G, G, G)
+
+    @torch.no_grad()
+    def group_attention(self, density: torch.Tensor):
+        """channel_group only — the ChannelViT payoff. Returns per-layer:
+            gg   (depth, nG, nG)               group→group mean attention (rows=query group)
+            recv (depth, nG, g_p, g_p, g_p)    attention each (group, patch) RECEIVES
+        Averaged over batch, heads, and the partner patch/group axes. Uses the explicit
+        -softmax path, so run with a small batch (full (B,H,T,T) weights are held per layer)."""
+        assert self.patch_embed_mode == "channel_group", "group_attention needs channel_group mode"
+        mhsa = [m for m in self.modules() if isinstance(m, MultiHeadSelfAttention)]
+        was_training = self.training
+        self.eval()
+        for m in mhsa:
+            m.capture_attn = True
+        try:
+            self.forward(density)
+            nG, N, gp = self.n_groups, self.n_tokens, self.g_p
+            gg, recv = [], []
+            for m in mhsa:
+                A = m.attn_weights.reshape(*m.attn_weights.shape[:2], nG, N, nG, N)  # (B,H,qG,qN,kG,kN)
+                # group→group: sum attention over key-patches in a group, mean over queries
+                # → rows sum to 1 ("fraction of attention query-group sends to each key-group").
+                gg.append(A.sum(dim=5).mean(dim=(0, 1, 3)))         # (nG, nG)
+                # received: mean attention each (key-group, key-patch) gets over all queries.
+                recv.append(A.mean(dim=(0, 1, 2, 3)).reshape(nG, gp, gp, gp))
+            return torch.stack(gg), torch.stack(recv)
+        finally:
+            for m in mhsa:
+                m.capture_attn = False
+                m.attn_weights = None
+            if was_training:
+                self.train()
 
 
 # ── DensityViTMAE (encoder + density head + structure head) ───────────────────
@@ -350,6 +448,8 @@ class DensityViTMAE(nn.Module):
         head_style: str = "conv",     # "conv" = full-res Conv3d head; "patch_mlp" = per-patch token MLP
         pos_encoding: str = "learnable",  # "learnable" | "rope3d" → forwarded to the DensityViT encoder
         rope_fast: bool = False,       # fused q/k rotate (rope3d only) → forwarded to the DensityViT encoder
+        patch_embed_mode: str = "fused",  # "fused" | "channel_group" (ChannelViT) → forwarded to encoder
+        channel_groups: Optional[Tuple[int, ...]] = None,  # channel_group: per-group channel counts
     ):
         super().__init__()
         assert pretext_style in ("mae", "electra"), (
@@ -406,6 +506,8 @@ class DensityViTMAE(nn.Module):
             dropout=dropout,
             pos_encoding=pos_encoding,
             rope_fast=rope_fast,
+            patch_embed_mode=patch_embed_mode,
+            channel_groups=channel_groups,
         )
 
         if pretext_style == "mae":

@@ -59,6 +59,9 @@ def create_model(cfg, device="cuda") -> VoxBind:
         density_vit_heads=int(vit_cfg.get("heads", 6)),
         density_vit_mlp_ratio=int(vit_cfg.get("mlp_ratio", 4)),
         density_vit_dropout=float(vit_cfg.get("dropout", 0.1)),
+        density_vit_patch_embed_mode=str(vit_cfg.get("patch_embed_mode", "fused")),
+        density_vit_channel_groups=(tuple(vit_cfg.channel_groups)
+                                    if vit_cfg.get("channel_groups", None) else None),
     )
 
     # Optionally load + freeze the pretrained density encoder
