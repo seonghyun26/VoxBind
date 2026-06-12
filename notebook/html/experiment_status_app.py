@@ -113,29 +113,45 @@ def active_precomputes():
 
 
 # ── completed / pending results (curated manifest, read live) ──────────────────
+# Grouped by experiment (not per-run): what each did + its conclusion. The status_csv
+# is only used to mark done vs pending (file exists → done); no metrics are shown.
 COMPLETED = [
-    dict(label="Coords + density + gradmag",            inp="atoms + dens + ‖∇ρ‖", pe="rope",
-         csv="probe_results_e99_v5_filtered_rope3d.csv",            cond="atomblob_density_gradmag", note="RoPE +0.011 over learnable"),
-    dict(label="Coords + density + gradmag (w1)",       inp="atoms + dens + ‖∇ρ‖", pe="learn",
-         csv="probe_results_e99_v5_filtered_260608_w1.csv",         cond="atomblob_density_gradmag", note="recon wt 1.0"),
-    dict(label="Coords + density + gradmag",            inp="atoms + dens + ‖∇ρ‖", pe="learn",
-         csv="probe_results_e99_v5_filtered_260606invfreq.csv",     cond="atomblob_density_gradmag", note="reference for the noise control"),
-    dict(label="Coords + density + gradmag (balanced)", inp="atoms + dens + ‖∇ρ‖", pe="learn",
-         csv="probe_results_e99_v5_filtered_260605_balanced.csv",   cond="atomblob_density_gradmag", note="recon-wt sweep variant"),
-    dict(label="Coords only (atoms, ligvdw)",           inp="atoms",                pe="rope",
-         csv="probe_results_e99_v5_filtered_atomblob_ligvdw_rope3d839.csv", cond="atomblob_ligvdw", note="RoPE +0.041 (atoms-only)"),
-    dict(label="Coords only (atoms, ligvdw)",           inp="atoms",                pe="learn",
-         csv="probe_results_e99_v5_filtered_atomblob_ligvdw.csv",   cond="atomblob_ligvdw", note="matched control (density dropped)"),
-    dict(label="Density + gradmag only",                inp="dens + ‖∇ρ‖",          pe="learn",
-         csv="probe_results_e99_v5_filtered_260606density.csv",     cond="density_gradmag", note="no atoms"),
-    dict(label="Density only (pure 1-ch)",              inp="dens",                 pe="learn",
-         csv="probe_results_e99_v5_filtered_densityonly.csv",       cond="density_gradmag", note="= density+gradmag → gradmag redundant"),
-    dict(label="Coords + NOISE-density + NOISE-gradmag", inp="atoms + noise",       pe="learn",
-         csv="probe_results_e99_v5_filtered_noisecontrol.csv",      cond="atomblob_density_gradmag", note="density-ablation control"),
-    dict(label="Gradmag only",                          inp="‖∇ρ‖",                 pe="learn",
-         csv="probe_results_e99_v5_filtered_gradmagonly.csv",       cond="density_gradmag", note="‖∇ρ‖ as the single channel"),
-    dict(label="HBGSA (supervised, external)",          inp="—",                    pe="ext",
-         csv="probe_results_e99_v5_filtered_hbgsa_no_cl1.csv",      cond="hbgsa_supervised", note="< every frozen probe"),
+    dict(label="Coords + density + gradmag",
+         status_csv="probe_results_e99_v5_filtered_rope3d.csv", cond="atomblob_density_gradmag",
+         did="The full multimodal encoder — protein/ligand atom coords + X-ray density + gradient field ‖∇ρ‖ — "
+             "MAE-pretrained, frozen, then probed for binding affinity. Swept positional encoding "
+             "(learnable vs 3D-RoPE) and the density/gradmag reconstruction weights (invfreq · w1 · balanced).",
+         concl="<b>Best affinity encoder of all.</b> 3D-RoPE positional encoding beats learnable; the loss-weight "
+               "variants all tie — <i>having</i> density+gradmag is what matters, not how you weight them."),
+    dict(label="Coords only (atoms)",
+         status_csv="probe_results_e99_v5_filtered_atomblob_ligvdw.csv", cond="atomblob_ligvdw",
+         did="The same encoder with density+gradmag <b>dropped</b> — atoms only (element-wise vdW radii). The "
+             "matched control for “does density actually help?”. Also ran a RoPE variant.",
+         concl="Adding density on top lifts affinity by <b>~+0.05 ρ</b> → density carries <b>real signal</b>, not "
+               "just extra channels. RoPE also helps the atoms-only encoder."),
+    dict(label="Density-field only (no atoms)",
+         status_csv="probe_results_e99_v5_filtered_densityonly.csv", cond="density_gradmag",
+         did="Encoders with <b>no atom channels</b> — only the X-ray density (and a pure 1-channel ‖∇ρ‖-vs-density "
+             "check). Tests how much the electron-density field alone carries.",
+         concl="Density alone is weaker than atoms for affinity but well above chance. Pure density ≈ "
+               "density+gradmag → the <b>gradmag channel is redundant</b> on top of density."),
+    dict(label="HBGSA — external supervised baseline",
+         status_csv="probe_results_e99_v5_filtered_hbgsa_no_cl1.csv", cond="hbgsa_supervised",
+         did="Reimplemented an external <b>fully-supervised</b> affinity model (H-bond graph + sequence + pocket + "
+             "SMILES), trained end-to-end on the same split.",
+         concl="Loses to our <b>frozen self-supervised</b> probe → the SSL representation beats "
+               "supervised-from-scratch on this task."),
+    dict(label="Noise control", status_csv="probe_results_e99_v5_filtered_noisecontrol.csv",
+         cond="atomblob_density_gradmag",
+         did="Negative control: density+gradmag replaced by <b>matched random noise</b> (same value distribution, "
+             "no spatial signal); everything else identical to the reference encoder.",
+         concl="Tests whether density's +0.05 gain is real signal or just added model capacity — if it falls back "
+               "to ~coords-only, the density signal is real."),
+    dict(label="Gradmag only", status_csv="probe_results_e99_v5_filtered_gradmagonly.csv", cond="density_gradmag",
+         did="Encoder whose <b>only</b> input is the gradient magnitude ‖∇ρ‖ — an edge/surface map of the density, "
+             "with no density values and no atoms.",
+         concl="Tests whether the gradient field <b>alone</b> carries affinity signal (chained after the noise "
+               "control)."),
 ]
 
 
@@ -206,6 +222,16 @@ def render():
     watchers = active_watchers()
     preps = active_precomputes()
 
+    # one-line "what it tests" for the in-flight (running / queued) experiments
+    def _desc(name):
+        if "noisecontrol" in name:
+            return ("Density-ablation control — density+gradmag replaced by matched noise; tests whether "
+                    "density's +0.05 ρ gain is real signal or just model capacity.")
+        if "gradmag" in name:
+            return ("Gradmag-only — encoder sees only ‖∇ρ‖ (no density values, no atoms); tests whether the "
+                    "gradient field alone carries affinity signal.")
+        return ""
+
     # RUNNING
     if runs or preps:
         rows = ""
@@ -215,12 +241,15 @@ def render():
             prog = (f'<span class="num">e{ep} / 100</span><div class="bar"><i style="width:{pct:.0f}%"></i></div>'
                     if ep is not None else '<span class="small">starting…</span>')
             rows += (f'<tr><td><span class="pill run">training</span><br><span class="exp">{esc(r["exp"])}</span></td>'
+                     f'<td class="small" style="white-space:normal">{_desc(r["exp"])}</td>'
                      f'<td>GPU {esc(r["gpus"])}</td><td>{prog}</td></tr>')
         for p in preps:
             rows += (f'<tr><td><span class="pill run">precompute</span><br><span class="exp">{esc(p)}</span></td>'
+                     f'<td class="small" style="white-space:normal">prep for: {_desc(p)}</td>'
                      f'<td class="mut">CPU</td><td class="small">materializing…</td></tr>')
-        running_html = (f'<div class="wrap"><table><thead><tr><th>Experiment</th><th>Resource</th>'
-                        f'<th>Progress</th></tr></thead><tbody>{rows}</tbody></table></div>')
+        running_html = (f'<div class="wrap"><table><thead><tr><th style="width:22%">Experiment</th>'
+                        f'<th>What it tests</th><th>Resource</th><th>Progress</th></tr></thead>'
+                        f'<tbody>{rows}</tbody></table></div>')
     else:
         running_html = '<div class="wrap"><div class="empty">Nothing training right now.</div></div>'
 
@@ -230,49 +259,31 @@ def render():
         for w in watchers:
             state = ('<span class="small" style="color:var(--done)">gate ready → firing</span>'
                      if w["gate_ready"] else f'<span class="small">waiting for <code>{esc(w["gate"])}</code></span>')
-            rows += (f'<tr><td><span class="pill queue">chained</span><br>{esc(w["label"])}</td><td>{state}</td></tr>')
-        queued_html = (f'<div class="wrap"><table><thead><tr><th>Step</th><th>Fires when</th></tr></thead>'
-                       f'<tbody>{rows}</tbody></table></div>')
+            d = _desc(w["label"])
+            d_html = f'<div class="small" style="white-space:normal;margin-top:3px">{d}</div>' if d else ""
+            rows += (f'<tr><td style="white-space:normal"><span class="pill queue">chained</span> '
+                     f'{esc(w["label"])}{d_html}</td><td>{state}</td></tr>')
+        queued_html = (f'<div class="wrap"><table><thead><tr><th style="width:62%">Step</th>'
+                       f'<th>Fires when</th></tr></thead><tbody>{rows}</tbody></table></div>')
     else:
         queued_html = '<div class="wrap"><div class="empty">No chained steps armed.</div></div>'
 
-    # COMPLETED (+ pending rows that auto-fill)
-    data = []
-    for r in COMPLETED:
-        m = read_metrics(r["csv"], r["cond"])
-        data.append((r, m))
-    # sort: done first by test ρ desc, pending last
-    def _key(t):
-        m = t[1]
-        return (0, -m["test_spearman"][0]) if (m and "test_spearman" in m) else (1, 0)
-    data.sort(key=_key)
-    best = max((m["test_spearman"][0] for _, m in data if m and "test_spearman" in m), default=None)
+    # CONCLUDED experiments only — what each did + its conclusion. Pending experiments
+    # live in Running / Queued above (with their "what it tests") until their CSV lands.
     rows = ""
-    for r, m in data:
-        pe = {"rope": '<span class="pe rope">3D RoPE</span>', "learn": '<span class="pe learn">ViT</span>',
-              "ext": '<span class="pe ext">—</span>'}.get(r["pe"], "")
-        if m and "test_spearman" in m:
-            ts = m["test_spearman"]; tr = m.get("test_pearson"); vs = m.get("best_val_spearman"); rm = m.get("test_rmse")
-            is_best = best is not None and abs(ts[0] - best) < 1e-9
-            tcell = (f'<span class="num {"best" if is_best else ""}">{ts[0]:.3f}</span> '
-                     f'<span class="small">±{ts[1]:.3f}</span>')
-            vcell = f'<span class="mut">{vs[0]:.3f}</span>' if vs else "—"
-            rcell = f'{tr[0]:.3f}' if tr else "—"
-            mcell = f'{rm[0]:.3f}' if rm else "—"
-            status = '<span class="pill done">done</span>'
-        else:
-            tcell = vcell = rcell = mcell = '<span class="pill queue" style="font-weight:600">pending</span>'
-            status = '<span class="pill queue">pending</span>'
-        rows += (f'<tr><td>{esc(r["label"])}<br><span class="small">{esc(r["inp"])}</span></td>'
-                 f'<td>{pe}</td><td>{status}</td>'
-                 f'<td>{vcell}</td><td>{tcell}</td><td>{rcell}</td><td>{mcell}</td>'
-                 f'<td class="small">{esc(r["note"])}</td></tr>')
-    completed_html = (f'<div class="wrap"><table><thead><tr><th>Encoder / input</th><th>PE</th><th>Status</th>'
-                      f'<th>val ρ</th><th>test ρ</th><th>test r</th><th>RMSE</th><th>Note</th></tr></thead>'
+    n_done = 0
+    for r in COMPLETED:
+        if read_metrics(r["status_csv"], r["cond"]) is None:
+            continue
+        n_done += 1
+        rows += (f'<tr><td style="white-space:normal"><b>{esc(r["label"])}</b></td>'
+                 f'<td class="small" style="white-space:normal">{r["did"]}</td>'
+                 f'<td style="white-space:normal">{r["concl"]}</td></tr>')
+    completed_html = (f'<div class="wrap"><table><thead><tr>'
+                      f'<th style="width:19%">Experiment</th><th style="width:43%">What it did</th>'
+                      f'<th style="width:38%">Conclusion</th></tr></thead>'
                       f'<tbody>{rows}</tbody></table></div>')
-
-    n_done = sum(1 for _, m in data if m and "test_spearman" in m)
-    n_pend = len(data) - n_done
+    n_pend = len(COMPLETED) - n_done
 
     return f"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -289,15 +300,12 @@ affinity, LP-PDBBind <code>new_split</code> n 2172/480/839</div></header>
 <section class="sec"><h2 class="sec-head"><span class="dot queue"></span> Queued / chained
 <span class="count">— {len(watchers)} armed</span></h2>{queued_html}</section>
 
-<section class="sec"><h2 class="sec-head"><span class="dot done"></span> Completed
-<span class="count">— {n_done} done, {n_pend} pending (auto-fill)</span></h2>{completed_html}
-<div class="legend"><span><span class="pe rope" style="padding:1px 7px">3D RoPE</span> rotary PE</span>
-<span><span class="pe learn" style="padding:1px 7px">ViT</span> learnable PE</span>
-<span><span class="best">bold</span> best test ρ</span>
-<span>ρ Spearman, r Pearson · 3-seed mean</span></div>
-<div class="note"><b>Story:</b> density adds ~+0.05 ρ over coords (0.595 vs 0.544); RoPE-3D is the best PE (0.606);
-gradmag is redundant on top of density (both 0.505); the frozen SSL probe beats external supervised HBGSA (0.486).
-The <b>noise control</b> (running) tests whether density's gain is signal or capacity.</div></section>
+<section class="sec"><h2 class="sec-head"><span class="dot done"></span> Concluded experiments
+<span class="count">— {n_done} concluded{(' · '+str(n_pend)+' still in flight (above)') if n_pend else ''}</span></h2>{completed_html}
+<div class="note"><b>Big picture:</b> the X-ray density carries <b>real</b> affinity signal on top of atom coordinates
+(the noise control, running now, is the decisive test of that); 3D-RoPE is the best positional encoding; the
+gradient channel is redundant given density; and the frozen self-supervised representation beats an external
+supervised baseline. <span class="mut">(Numbers live on the per-encoder table at :8731.)</span></div></section>
 
 </div></body></html>"""
 

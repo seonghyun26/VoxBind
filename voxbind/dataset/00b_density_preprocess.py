@@ -496,6 +496,10 @@ def parse_args():
                    help="Rewrite v1 crops even if the .npy already exists")
     p.add_argument("--keep_raw", action="store_true",
                    help="Keep the raw-crop scratch dir (faster re-normalisation later)")
+    p.add_argument("--save_gradmag", action="store_true",
+                   help="Also save a versioned gradient-magnitude ‖∇ρ‖ channel next to each density "
+                        "version: {dir}_gradmag/{split}/{idx}.npy = per-sample-z-scored ‖∇(density)‖, "
+                        "plus a stats.json carrying the density version. v2–v5 only.")
     p.add_argument("--limit", type=int, default=0,
                    help="Process only the first N PDB IDs per split (debug)")
     return p.parse_args()
@@ -630,6 +634,24 @@ def main():
 
     # ── Pass B: read raw scratch once, write each requested version ─────────────
     raw_versions = [v for v in versions if v in ("v2", "v3", "v4", "v5")]
+    # Optional: a versioned ‖∇ρ‖ channel written alongside each density version,
+    # computed exactly as the training pipeline does it (per_sample_zscore of the
+    # gradient magnitude of the FINAL normalized density), so it is a drop-in
+    # gradmag source. ‖∇·‖ is rotation-invariant → still aligned under aug.
+    gmag_dirs = {}
+    if args.save_gradmag and raw_versions:
+        from voxbind.models.density_mae import gradient_magnitude3d, per_sample_zscore
+        import torch
+        gmag_dirs = {v: out_root / (DIR_NAME[v] + "_gradmag") for v in raw_versions}
+        for v in raw_versions:
+            for split in args.splits:
+                (gmag_dirs[v] / split).mkdir(parents=True, exist_ok=True)
+
+        def _gradmag(norm_np):
+            g = gradient_magnitude3d(torch.from_numpy(norm_np.astype(np.float32))
+                                     .view(1, 1, GRID_DIM, GRID_DIM, GRID_DIM))
+            return per_sample_zscore(g).view(GRID_DIM, GRID_DIM, GRID_DIM).numpy().astype(np.float16)
+
     print()
     for split in args.splits:
         idxs = np.where(per_split_ok[split])[0]
@@ -639,8 +661,23 @@ def main():
                 continue
             raw = np.load(raw_path).astype(np.float32)
             for v in raw_versions:
-                np.save(str(ver_dirs[v] / split / f"{i:06d}.npy"),
-                        NORM[v](raw).astype(np.float16))
+                norm = NORM[v](raw).astype(np.float16)
+                np.save(str(ver_dirs[v] / split / f"{i:06d}.npy"), norm)
+                if gmag_dirs:
+                    np.save(str(gmag_dirs[v] / split / f"{i:06d}.npy"), _gradmag(norm))
+
+    # versioned gradmag stats.json + availability (mirror the density version)
+    if gmag_dirs:
+        for v in raw_versions:
+            for split in args.splits:
+                src = ver_dirs[v] / f"{split}_available.npy"
+                if src.exists():
+                    (gmag_dirs[v] / f"{split}_available.npy").write_bytes(src.read_bytes())
+            (gmag_dirs[v] / "stats.json").write_text(json.dumps({
+                "scheme": f"gradient magnitude ‖∇ρ‖ of CrossDocked {v} density",
+                "formula": f"x' = per_sample_zscore(‖∇(density_{v})‖)",
+                "density_version": v, "gradmag": True, **common}, indent=2))
+            print(f"  {v} gradmag → {gmag_dirs[v]}")
 
     if not args.keep_raw:
         shutil.rmtree(scratch_dir, ignore_errors=True)

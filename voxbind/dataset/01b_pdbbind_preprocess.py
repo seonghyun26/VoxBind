@@ -709,6 +709,23 @@ def run_poolnorm(args: argparse.Namespace) -> None:
     v4_dens = v4_dir / "density"; v4_dens.mkdir(parents=True, exist_ok=True)
     v5_dens = v5_dir / "density"; v5_dens.mkdir(parents=True, exist_ok=True)
 
+    # Optional versioned ‖∇ρ‖ channel saved next to each density version (drop-in
+    # gradmag source for the probe's --noise_voxels_dir). per_sample_zscore(‖∇·‖)
+    # of the FINAL normalized density — exactly as the training/probe pipeline derives it.
+    gmag_roots, gmag_dens, _gmag = {}, {}, None
+    if args.save_gradmag:
+        from voxbind.models.density_mae import gradient_magnitude3d, per_sample_zscore
+        gmag_roots = {v: d.with_name(d.name + "_gradmag")
+                      for v, d in (("v2", v2_dir), ("v3", v3_dir), ("v4", v4_dir), ("v5", v5_dir))}
+        gmag_dens = {v: r / "density" for v, r in gmag_roots.items()}
+        for d in gmag_dens.values():
+            d.mkdir(parents=True, exist_ok=True)
+
+        def _gmag(c16):
+            g = gradient_magnitude3d(torch.from_numpy(c16.astype(np.float32))
+                                     .view(1, 1, GRID_DIM, GRID_DIM, GRID_DIM))
+            return per_sample_zscore(g).view(GRID_DIM, GRID_DIM, GRID_DIM).numpy().astype(np.float16)
+
     # Symlink atoms (v2/v3/v4/v5 reuse v1's atom voxels)
     for parent in (v2_dir, v3_dir, v4_dir, v5_dir):
         link = parent / "atoms"
@@ -917,6 +934,14 @@ def run_poolnorm(args: argparse.Namespace) -> None:
     (v3_dir / "stats.json").write_text(json.dumps(stats_v3, indent=2))
     (v4_dir / "stats.json").write_text(json.dumps(stats_v4, indent=2))
     (v5_dir / "stats.json").write_text(json.dumps(stats_v5, indent=2))
+    for v, root in gmag_roots.items():
+        (root / "stats.json").write_text(json.dumps({
+            "metadata_version": VOXELIZE_METADATA_VERSION,
+            "scheme":          f"gradient magnitude ‖∇ρ‖ of PDBbind {v} density",
+            "formula":         f"x' = per_sample_zscore(‖∇(density_{v})‖)",
+            "density_version": v, "gradmag": True,
+            "grid_dim": GRID_DIM, "resolution": RESOLUTION, "n_crops": len(crops),
+        }, indent=2))
 
     # ── Pass 2: apply v2, v3, v4 normalisations, save to disk ─────────────────
     print(f"\n── pass 2: apply normalisations + save ────────────────────────")
@@ -930,6 +955,11 @@ def run_poolnorm(args: argparse.Namespace) -> None:
         np.save(str(v3_dens / f"{pid}.npy"), c_v3)
         np.save(str(v4_dens / f"{pid}.npy"), c_v4)
         np.save(str(v5_dens / f"{pid}.npy"), c_v5)
+        if gmag_dens:
+            np.save(str(gmag_dens["v2"] / f"{pid}.npy"), _gmag(c_v2))
+            np.save(str(gmag_dens["v3"] / f"{pid}.npy"), _gmag(c_v3))
+            np.save(str(gmag_dens["v4"] / f"{pid}.npy"), _gmag(c_v4))
+            np.save(str(gmag_dens["v5"] / f"{pid}.npy"), _gmag(c_v5))
 
     if skip_log:
         skip_path = PDBBIND_DIR / "voxels_poolnorm_skip_log.txt"
@@ -1016,6 +1046,10 @@ def build_parser() -> argparse.ArgumentParser:
                          "density normalisation crops. Use the same value as voxelize.")
     pp.add_argument("--max_complexes", type=int, default=0,
                     help="Limit to first N (0 = all). Smoke testing.")
+    pp.add_argument("--save_gradmag", action="store_true",
+                    help="Also save a versioned ‖∇ρ‖ channel next to each density version: "
+                         "{v_dir}_gradmag/density/{pid}.npy = per-sample-z-scored ‖∇(density)‖, "
+                         "+ stats.json. Drop-in for the probe's --noise_voxels_dir.")
     pp.set_defaults(func=run_poolnorm)
 
     return p
