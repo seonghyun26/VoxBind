@@ -1,0 +1,32 @@
+model_name: atomblob_density_gradmag_cha_mae_40m
+# ChA-MAEViT (arXiv:2503.19331) — token-drop multi-channel MAE, 3D voxel adaptation.
+# Encoder = grouped DensityViT (channel_group, [7,4,1,1]) + l memory tokens; a
+# lightweight channel-aware transformer DECODER reconstructs masked per-group
+# voxel patches with a pixel + Fourier loss. Same encoder width/depth as the
+# fused 40m ViT-MAE so a later frozen probe is apples-to-apples vs Table 1.
+n_channels: 32
+patch_size: 8
+n_in_channels: 13              # 7 lig + 4 poc atom-type + 1 density + 1 gradmag
+dim: 512
+depth: 12
+heads: 8
+mlp_ratio: 4
+dropout: 0.1
+channel_groups: [7, 4, 1, 1]   # lig atoms / poc atoms / density / gradmag (sum = n_in_channels)
+patch_embed_mode: channel_group  # DensityChaMAE is always grouped; declared so downstream loaders (probe / VoxBind) rebuild the encoder correctly from cfg.yaml
+
+# ── ChA memory tokens + channel-aware decoder ──────────────────────────────────
+n_memory_tokens: 4             # l cross-channel scratchpad tokens (paper: 4 CHAMMI / 8 So2Sat)
+dec_dim: 256                   # lightweight decoder width
+dec_depth: 2                   # 1–2 transformer blocks (paper)
+dec_heads: 8
+dec_mlp_ratio: 4
+
+# ── Dynamic Channel-Patch (DCP) masking ────────────────────────────────────────
+dcp_strategy: alternate        # alternate | patch | channel  (paper: alternate best)
+patch_mask_ratio: 0.75         # r_p — fraction of patches masked in patch mode
+channel_mask_min: 1            # whole-group masking drops k in [min, max] groups
+channel_mask_max: null         # null → nG-1 (keep ≥1 group visible)
+
+# ── loss ───────────────────────────────────────────────────────────────────────
+lambda_fourier: 0.01           # Fourier-magnitude L1 weight (paper λ_f)

@@ -229,6 +229,7 @@ class DensityViT(nn.Module):
         rope_fast: bool = False,           # fused q/k rotate path (rope3d only; numerically identical)
         patch_embed_mode: str = "fused",   # "fused" (1 Conv mixes all channels) | "channel_group" (ChannelViT)
         channel_groups: Optional[Tuple[int, ...]] = None,  # channel_group: per-group channel counts (sum=n_in)
+        n_memory_tokens: int = 0,          # ChA-MAE: l learnable cross-channel memory tokens prepended pre-trunk
     ):
         super().__init__()
         assert grid_dim % patch_size == 0, (
@@ -289,6 +290,22 @@ class DensityViT(nn.Module):
             self.pos_embed = None
             self.rope = RoPE3D(self.g_p, dim // n_heads, fast=rope_fast)
 
+        # ChA-MAE memory tokens (arXiv:2503.19331): l learnable tokens prepended
+        # ahead of the patch tokens before the trunk, acting as a cross-channel /
+        # cross-patch scratchpad. They live inside DensityViT so they also fire on
+        # the dense downstream path (train/inference consistency); conditional so
+        # n_memory_tokens=0 (default) leaves the state_dict byte-identical to
+        # pre-ChA checkpoints (strict-load clean in models/__init__.py).
+        self.n_memory_tokens = int(n_memory_tokens)
+        if self.n_memory_tokens > 0:
+            assert pos_encoding == "learnable", (
+                "n_memory_tokens>0 requires pos_encoding='learnable' (RoPE over "
+                "prepended memory tokens is not supported)"
+            )
+            self.memory_tokens = nn.Parameter(torch.zeros(1, self.n_memory_tokens, dim))
+        else:
+            self.memory_tokens = None
+
         self.blocks = nn.ModuleList([
             TransformerBlock(dim, n_heads, mlp_ratio=mlp_ratio, dropout=dropout)
             for _ in range(depth)
@@ -305,6 +322,8 @@ class DensityViT(nn.Module):
             nn.init.trunc_normal_(self.pos_embed, std=pos_embed_std)
         if self.group_embed is not None:
             nn.init.trunc_normal_(self.group_embed, std=pos_embed_std)
+        if self.memory_tokens is not None:
+            nn.init.trunc_normal_(self.memory_tokens, std=pos_embed_std)
         for m in self.modules():
             if isinstance(m, nn.Linear):
                 nn.init.trunc_normal_(m.weight, std=0.02)
@@ -331,6 +350,19 @@ class DensityViT(nn.Module):
         x = x.reshape(B, c_out, g_p * p, g_p * p, g_p * p)
         return x
 
+    def embed_groups(self, density: torch.Tensor) -> torch.Tensor:
+        """channel_group only: (B, C, G³) → (B, nG, N, D) per-group patch tokens with
+        per-group embedding + shared spatial PE, BEFORE flattening the (group, patch)
+        axes. The ChA-MAE token-drop path selects visible tokens from this; `_tokenize`
+        just flattens it for the dense path."""
+        chunks = torch.split(density, self.channel_groups, dim=1)           # per-group (B, c_g, G³)
+        z = torch.stack([proj(c).flatten(2).transpose(1, 2)
+                         for proj, c in zip(self.group_proj, chunks)], dim=1)  # (B, nG, N, D)
+        z = z + self.group_embed                                            # per-group embedding
+        if self.pos_embed is not None:
+            z = z + self.pos_embed.unsqueeze(1)                             # patch PE, shared over groups
+        return z                                                            # (B, nG, N, D)
+
     def _tokenize(self, density: torch.Tensor) -> torch.Tensor:
         """(B, C, G,G,G) → (B, T, D) patch tokens. fused: T=N patches. channel_group:
         T=n_groups·N — one token-set per group, +learnable group embedding, +shared patch PE."""
@@ -339,13 +371,7 @@ class DensityViT(nn.Module):
             if self.pos_embed is not None:
                 z = z + self.pos_embed
             return z
-        chunks = torch.split(density, self.channel_groups, dim=1)           # per-group (B, c_g, G³)
-        z = torch.stack([proj(c).flatten(2).transpose(1, 2)
-                         for proj, c in zip(self.group_proj, chunks)], dim=1)  # (B, nG, N, D)
-        z = z + self.group_embed                                            # per-group embedding
-        if self.pos_embed is not None:
-            z = z + self.pos_embed.unsqueeze(1)                             # patch PE, shared over groups
-        return z.flatten(1, 2)                                              # (B, nG·N, D)
+        return self.embed_groups(density).flatten(1, 2)                     # (B, nG·N, D)
 
     def _pool_groups(self, z: torch.Tensor) -> torch.Tensor:
         """channel_group: mean-pool per-group tokens back to one feature/patch
@@ -355,15 +381,43 @@ class DensityViT(nn.Module):
         B = z.shape[0]
         return z.reshape(B, self.n_groups, self.n_tokens, self.dim).mean(dim=1)
 
+    def _prepend_memory(self, z: torch.Tensor) -> torch.Tensor:
+        """Prepend the l learnable memory tokens ahead of the token axis (no-op when
+        memory tokens are disabled)."""
+        if self.memory_tokens is None:
+            return z
+        return torch.cat([self.memory_tokens.expand(z.shape[0], -1, -1), z], dim=1)
+
+    def run_trunk(self, tokens: torch.Tensor, prepend_memory: bool = True) -> torch.Tensor:
+        """[optional memory-prepend →] transformer blocks → final LayerNorm, applied to
+        an arbitrary token set (B, T, D) → (B, [l+]T, D). The ChA-MAE token-drop path
+        feeds only the visible (group, patch) tokens here; the dense `forward` feeds the
+        full set. RoPE (fused mode only) is applied inside the blocks as usual."""
+        if prepend_memory:
+            tokens = self._prepend_memory(tokens)
+        for blk in self.blocks:
+            tokens = blk(tokens, rope=self.rope)
+        return self.norm(tokens)
+
     def forward(self, density: torch.Tensor) -> torch.Tensor:
         """density: (B, n_in_channels, G, G, G) → (B, c_out, G, G, G)."""
         z = self._tokenize(density)                      # (B, T, D)
-        for blk in self.blocks:
-            z = blk(z, rope=self.rope)
-        z = self.norm(z)
+        z = self.run_trunk(z, prepend_memory=True)       # (B, l+T, D) post-norm
+        if self.memory_tokens is not None:
+            z = z[:, self.n_memory_tokens:]              # drop memory tokens before to-voxel
         z = self._pool_groups(z)                         # (B, N, D)
         z = self.decoder_proj(z)                         # (B, N, c_out·p³)
         return self._tokens_to_voxels(z)                 # (B, c_out, G, G, G)
+
+    def forward_features(self, density: torch.Tensor) -> torch.Tensor:
+        """Post-norm patch tokens (B, T_patch, D), memory tokens excluded and groups NOT
+        pooled — the representation the frozen affinity probe mean-pools (it stops before
+        `decoder_proj`). fused: T_patch=N; channel_group: T_patch=nG·N."""
+        z = self._tokenize(density)
+        z = self.run_trunk(z, prepend_memory=True)
+        if self.memory_tokens is not None:
+            z = z[:, self.n_memory_tokens:]
+        return z
 
     @torch.no_grad()
     def group_attention(self, density: torch.Tensor):

@@ -33,6 +33,7 @@ class VoxBind(torch.nn.Module):
         density_vit_dropout: float = 0.1,
         density_vit_patch_embed_mode: str = "fused",
         density_vit_channel_groups=None,
+        density_vit_n_memory_tokens: int = 0,
         verbose: bool = False
     ):
         """
@@ -120,6 +121,7 @@ class VoxBind(torch.nn.Module):
                     dropout=density_vit_dropout,
                     patch_embed_mode=density_vit_patch_embed_mode,
                     channel_groups=density_vit_channel_groups,
+                    n_memory_tokens=density_vit_n_memory_tokens,
                 )
             elif density_encoder_type == "cnn":
                 # Lift density (+gradmag) to C/2, then N ResidualBlocks with GroupNorm.

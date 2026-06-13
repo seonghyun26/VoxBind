@@ -669,8 +669,10 @@ def load_encoder(exp_dir: Path, epoch: int, device: str, cfg=None) -> DensityViT
         mlp_ratio    = m.mlp_ratio,
         dropout      = m.dropout,
         pos_encoding = m.get("pos_encoding", "learnable"),
-        patch_embed_mode = m.get("patch_embed_mode", "fused"),
+        patch_embed_mode = m.get("patch_embed_mode",
+                                 "channel_group" if m.get("channel_groups", None) else "fused"),
         channel_groups   = (tuple(m.channel_groups) if m.get("channel_groups", None) else None),
+        n_memory_tokens  = int(m.get("n_memory_tokens", 0)),   # ChA-MAE encoders carry l memory tokens
     )
 
     ckpt_path = exp_dir / f"checkpoint_e{epoch:04d}.pth.tar"
@@ -684,20 +686,17 @@ def load_encoder(exp_dir: Path, epoch: int, device: str, cfg=None) -> DensityViT
 
 
 def forward_tokens(encoder: DensityViT, x: torch.Tensor) -> torch.Tensor:
-    """(B, n_in, G, G, G) → (B, N=512, D=512). Forward up to encoder.norm.
+    """(B, n_in, G, G, G) → (B, T_patch, D) post-norm patch tokens (memory tokens
+    excluded) — the forward up to `encoder.norm` that the probe mean-pools. Stops
+    before `decoder_proj` (the MAE recon head is irrelevant to the pooled rep).
 
-    Grad-capable core (no @no_grad): used both for frozen feature extraction
-    (wrapped below) and for end-to-end fine-tuning, where gradients must flow
-    back into the encoder. Stops before `decoder_proj` — the MAE recon head is
-    irrelevant to the downstream pooled representation.
+    Delegates to `encoder.forward_features`, which handles BOTH the fused patch
+    embed and channel_group / ChA encoders (where `encoder.patch_embed` is None and
+    memory tokens are prepended through the trunk). Grad-capable (no @no_grad) so the
+    end-to-end fine-tune path can backprop into the encoder. For a fused encoder this
+    is identical to the previous inline patch_embed→blocks→norm path.
     """
-    z = encoder.patch_embed(x)            # (B, D, g_p, g_p, g_p)
-    z = z.flatten(2).transpose(1, 2)      # (B, N, D)
-    if encoder.pos_embed is not None:
-        z = z + encoder.pos_embed
-    for blk in encoder.blocks:
-        z = blk(z, rope=getattr(encoder, "rope", None))
-    return encoder.norm(z)
+    return encoder.forward_features(x)
 
 
 @torch.no_grad()
@@ -1516,8 +1515,10 @@ def make_encoder_factory(exp_dir: Path, epoch: int):
             mlp_ratio    = m.mlp_ratio,
             dropout      = m.dropout,
             pos_encoding = m.get("pos_encoding", "learnable"),
-            patch_embed_mode = m.get("patch_embed_mode", "fused"),
+            patch_embed_mode = m.get("patch_embed_mode",
+                                     "channel_group" if m.get("channel_groups", None) else "fused"),
             channel_groups   = (tuple(m.channel_groups) if m.get("channel_groups", None) else None),
+            n_memory_tokens  = int(m.get("n_memory_tokens", 0)),   # ChA-MAE encoders carry l memory tokens
         )
         enc.load_state_dict(stripped, strict=True)
         return enc

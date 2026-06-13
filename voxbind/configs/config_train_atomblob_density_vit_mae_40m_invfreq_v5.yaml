@@ -88,7 +88,7 @@ mae:
   ema_decay: 0.999
   grad_clip: 1.0
   val_every: 1
-  ckpt_every: 20
+  ckpt_every: 50
 
 hydra:
   run:

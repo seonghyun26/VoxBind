@@ -31,6 +31,11 @@ def _proc_iter():
             cmd = open(f"/proc/{pid}/cmdline", "rb").read().replace(b"\0", b" ").decode("utf8", "ignore")
         except Exception:
             continue
+        # Skip Claude-Code/IDE transient shell wrappers (zsh -c that `source`s a shell-snapshot
+        # then `eval`s a command): their cmdline echoes whatever job string they launched, which
+        # otherwise reads as a false-positive running job long after the real (detached) child exits.
+        if "shell-snapshots" in cmd:
+            continue
         yield pid, cmd
 
 
@@ -59,10 +64,13 @@ def _epoch_of(exp):
     return None
 
 
+_TRAIN_SCRIPTS = ("train_density_vit_mae.py", "train_density_cha_mae.py")
+
+
 def running_trainings():
     seen = {}
     for pid, cmd in _proc_iter():
-        if "train_density_vit_mae.py" not in cmd or "exp_name=" not in cmd:
+        if not any(s in cmd for s in _TRAIN_SCRIPTS) or "exp_name=" not in cmd:
             continue
         m = re.search(r"exp_name=(\S+)", cmd)
         if not m:
@@ -78,7 +86,12 @@ def running_trainings():
 def active_watchers():
     out, seen = [], set()
     for pid, cmd in _proc_iter():
-        if "99_watch_n_launch.sh" not in cmd or "--wait" not in cmd:
+        # skip interactive-shell wrappers / our own grep cmdlines that merely *mention* the
+        # watcher string (e.g. leftover `zsh -c ... eval '...99_watch...'` snapshot shells) —
+        # a real armed watcher is invoked as `bash .../99_watch_n_launch.sh`.
+        if "shell-snapshots" in cmd or "zsh -c" in cmd or "grep" in cmd:
+            continue
+        if not re.search(r"(?:^|/|\s)(?:ba)?sh\s+\S*99_watch_n_launch\.sh", cmd) or "--wait" not in cmd:
             continue
         w = re.search(r"--wait\s+(\S+)", cmd)
         gate = os.path.basename(w.group(1)) if w else "?"
@@ -98,17 +111,63 @@ def active_watchers():
     return out
 
 
+# Chained auto-probes that live in their OWN process (run_*_chain.sh train-then-probe scripts,
+# or *_probe_watch.sh checkpoint-gated probe watchers). active_watchers() only sees the generic
+# 99_watch_n_launch.sh; these bespoke scripts would otherwise be invisible. Surface each as a
+# queued step that fires when its target training reaches e99.
+CHAIN_SCRIPTS = [
+    dict(script="run_gradmagonly_chain.sh",
+         exp="260612_gradmagonly_density_xray_vit_mae_40m_v5_pretrain",
+         out_csv="probe_results_e99_v5_filtered_gradmagonly.csv",
+         label="auto-probe — gradmag-only (frozen features → MLP, 839 split)"),
+    dict(script="260613_cha_mae_probe_watch.sh",
+         exp="260613_cha_mae_gradmag_v5_pretrain",
+         out_csv="probe_results_e99_v5_cha_mae.csv",
+         label="auto-probe — ChA-MAEViT (frozen features → MLP affinity probe, 839 split)"),
+]
+
+
+def chained_probes():
+    # which chain/watch scripts are actually running (the bash process, not a wrapper/grep)?
+    live = set()
+    for pid, cmd in _proc_iter():
+        c = cmd.strip()
+        for cs in CHAIN_SCRIPTS:
+            if re.match(rf"bash \S*{re.escape(cs['script'])}\s*$", c):
+                live.add(cs["script"])
+    training = {r["exp"]: r["epoch"] for r in running_trainings()}
+    out = []
+    for cs in CHAIN_SCRIPTS:
+        if cs["script"] not in live:
+            continue
+        ep = training.get(cs["exp"])
+        if cs["exp"] in training:                 # still in training phase
+            fires = f"when training reaches e99 (now e{ep if ep is not None else '?'}/100)"
+            ready = False
+        else:                                      # training done → probe is running now
+            fires = "training done → probing now"
+            ready = True
+        out.append(dict(label=cs["label"], fires=fires, gate_ready=ready, out_csv=cs["out_csv"]))
+    return out
+
+
 def active_precomputes():
     out, seen = [], set()
     for pid, cmd in _proc_iter():
-        m = re.search(r"(00[a-z]_[a-z_]+\.py)\s+(\w+)", cmd)
-        if not m or "python" not in cmd:
+        if "python" not in cmd:
             continue
-        key = m.group(0)
-        if key in seen:
+        m = re.search(r"(00[a-z]_[a-z_]+\.py)\s+(\w+)", cmd)        # 00x_*.py <subcmd>
+        if m:
+            label = f"{m.group(1)} {m.group(2)}"
+        else:
+            m2 = re.search(r"(voxelize_[a-z_]+\.py)", cmd)          # voxelize_*.py precompute
+            if not m2:
+                continue
+            label = m2.group(1)
+        if label in seen:
             continue
-        seen.add(key)
-        out.append(f"{m.group(1)} {m.group(2)}")
+        seen.add(label)
+        out.append(label)
     return out
 
 
@@ -127,8 +186,9 @@ COMPLETED = [
          status_csv="probe_results_e99_v5_filtered_atomblob_ligvdw.csv", cond="atomblob_ligvdw",
          did="The same encoder with density+gradmag <b>dropped</b> — atoms only (element-wise vdW radii). The "
              "matched control for “does density actually help?”. Also ran a RoPE variant.",
-         concl="Adding density on top lifts affinity by <b>~+0.05 ρ</b> → density carries <b>real signal</b>, not "
-               "just extra channels. RoPE also helps the atoms-only encoder."),
+         concl="Adding density on top lifts affinity ~+0.05 ρ (0.595 vs 0.544) — but the <b>noise control shows "
+               "this is capacity, not density signal</b> (noise reproduces the +0.05). RoPE helps the atoms-only "
+               "encoder."),
     dict(label="Density-field only (no atoms)",
          status_csv="probe_results_e99_v5_filtered_densityonly.csv", cond="density_gradmag",
          did="Encoders with <b>no atom channels</b> — only the X-ray density (and a pure 1-channel ‖∇ρ‖-vs-density "
@@ -145,13 +205,24 @@ COMPLETED = [
          cond="atomblob_density_gradmag",
          did="Negative control: density+gradmag replaced by <b>matched random noise</b> (same value distribution, "
              "no spatial signal); everything else identical to the reference encoder.",
-         concl="Tests whether density's +0.05 gain is real signal or just added model capacity — if it falls back "
-               "to ~coords-only, the density signal is real."),
+         concl="<b>Overturns &ldquo;density helps&rdquo;.</b> Noise density+gradmag (test ρ <b>0.609</b>) "
+               "<b>matches/exceeds</b> real density+gradmag (0.595), both ≫ coords-only (0.544). The +0.05 "
+               "&ldquo;density gain&rdquo; is <b>added-channel capacity, not signal</b> — reproduced by pure noise."),
     dict(label="Gradmag only", status_csv="probe_results_e99_v5_filtered_gradmagonly.csv", cond="density_gradmag",
          did="Encoder whose <b>only</b> input is the gradient magnitude ‖∇ρ‖ — an edge/surface map of the density, "
              "with no density values and no atoms.",
-         concl="Tests whether the gradient field <b>alone</b> carries affinity signal (chained after the noise "
-               "control)."),
+         concl="Gradmag-only test ρ <b>0.551</b> — <b>beats density-only (0.505)</b>, ~ties coords-only (0.544): "
+               "the ‖∇ρ‖ field is the <b>strongest single channel</b> and carries real standalone signal — but "
+               "redundant with coords (per the noise control)."),
+    dict(label="ChA-MAEViT (channel-grouped MAE)", status_csv="probe_results_e99_v5_cha_mae.csv",
+         cond="atomblob_density_gradmag",
+         did="<b>Channel-grouped</b> masked-autoencoder pretraining (ChA-MAEViT — per-channel-group tokens + "
+             "attention + memory tokens) on the full 13-ch coords+density+gradmag stack, frozen, then probed "
+             "for affinity on the canonical 839 split. Tests whether channel-aware fusion beats the standard "
+             "fused ViT.",
+         concl="<i>Result pending</i> — auto-probes at e99 (chained watcher, GPU 4) → "
+               "<code>probe_results_e99_v5_cha_mae.csv</code>; compares against the fused ViT (rope3d 0.606 / "
+               "learnable 0.595). Conclusion text fills when the CSV lands."),
 ]
 
 
@@ -220,16 +291,28 @@ def render():
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     runs = running_trainings()
     watchers = active_watchers()
+    chained = chained_probes()
     preps = active_precomputes()
 
     # one-line "what it tests" for the in-flight (running / queued) experiments
+    # NB: order matters — cha_mae exp names also contain "gradmag", so match it first.
     def _desc(name):
+        if "cha_mae" in name or "channelvit" in name or "channel_vit" in name:
+            return ("ChA-MAEViT — channel-grouped masked-autoencoder pretraining (per-channel-group tokens + "
+                    "attention) on coords+density+gradmag; tests whether channel-aware fusion beats the fused ViT.")
         if "noisecontrol" in name:
             return ("Density-ablation control — density+gradmag replaced by matched noise; tests whether "
                     "density's +0.05 ρ gain is real signal or just model capacity.")
+        if "zerocontrol" in name:
+            return ("Density-ablation control — density+gradmag channels <b>zeroed</b> (vs the noise control). "
+                    "Isolates raw parameter-capacity (if zero ≈ noise ≈ 0.609) from noise-as-regularizer "
+                    "(if zero falls to coords-only 0.544).")
         if "gradmag" in name:
             return ("Gradmag-only — encoder sees only ‖∇ρ‖ (no density values, no atoms); tests whether the "
                     "gradient field alone carries affinity signal.")
+        if "voxelize_misato" in name:
+            return ("MISATO QM-property voxelization — precomputing density/gradmag voxels for the MISATO "
+                    "partial-charge / interaction-energy regression targets.")
         return ""
 
     # RUNNING
@@ -253,8 +336,8 @@ def render():
     else:
         running_html = '<div class="wrap"><div class="empty">Nothing training right now.</div></div>'
 
-    # QUEUED
-    if watchers:
+    # QUEUED — gate-watchers (99_watch_n_launch.sh) + in-script chained probes (run_*_chain.sh)
+    if watchers or chained:
         rows = ""
         for w in watchers:
             state = ('<span class="small" style="color:var(--done)">gate ready → firing</span>'
@@ -263,6 +346,13 @@ def render():
             d_html = f'<div class="small" style="white-space:normal;margin-top:3px">{d}</div>' if d else ""
             rows += (f'<tr><td style="white-space:normal"><span class="pill queue">chained</span> '
                      f'{esc(w["label"])}{d_html}</td><td>{state}</td></tr>')
+        for c in chained:
+            state = (f'<span class="small" style="color:var(--done)">{esc(c["fires"])}</span>'
+                     if c["gate_ready"] else f'<span class="small">{esc(c["fires"])}</span>')
+            rows += (f'<tr><td style="white-space:normal"><span class="pill queue">chained</span> '
+                     f'{esc(c["label"])}'
+                     f'<div class="small" style="white-space:normal;margin-top:3px">→ writes '
+                     f'<code>{esc(c["out_csv"])}</code></div></td><td>{state}</td></tr>')
         queued_html = (f'<div class="wrap"><table><thead><tr><th style="width:62%">Step</th>'
                        f'<th>Fires when</th></tr></thead><tbody>{rows}</tbody></table></div>')
     else:
@@ -298,7 +388,7 @@ affinity, LP-PDBBind <code>new_split</code> n 2172/480/839</div></header>
 <span class="count">— {len(runs)} training{'' if len(runs)==1 else 's'}{', '+str(len(preps))+' precompute' if preps else ''}</span></h2>{running_html}</section>
 
 <section class="sec"><h2 class="sec-head"><span class="dot queue"></span> Queued / chained
-<span class="count">— {len(watchers)} armed</span></h2>{queued_html}</section>
+<span class="count">— {len(watchers)+len(chained)} armed</span></h2>{queued_html}</section>
 
 <section class="sec"><h2 class="sec-head"><span class="dot done"></span> Concluded experiments
 <span class="count">— {n_done} concluded{(' · '+str(n_pend)+' still in flight (above)') if n_pend else ''}</span></h2>{completed_html}

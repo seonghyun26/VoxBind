@@ -52,7 +52,7 @@ mae:
   grad_clip: 1.0
   # Validation cadence
   val_every: 1
-  ckpt_every: 20
+  ckpt_every: 50
 
 # ── ELECTRA pretext knobs ───────────────────────────────────────────────────
 electra:

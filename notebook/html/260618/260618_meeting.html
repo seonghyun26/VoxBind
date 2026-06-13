@@ -308,7 +308,7 @@
         <tbody>
 
           <tr class="grp-start">
-            <td class="col-target" rowspan="5">Affinity<span class="tgt-meta">pK<sub>d/i</sub> &middot; n&nbsp;2172/480/839 &middot; RMSE in pK</span></td>
+            <td class="col-target" rowspan="6">Affinity<span class="tgt-meta">pK<sub>d/i</sub> &middot; n&nbsp;2172/480/839 &middot; RMSE in pK</span></td>
             <td class="col-method">Density + gradmag only</td>
             <td><span class="pe learn">ViT</span></td>
             <td><span class="no">&ndash;</span></td>
@@ -377,7 +377,7 @@
           </tr>
 
           <tr>
-            <td class="col-method">HBGSA<sup>&dagger;</sup> <span class="tag supervised">supervised</span></td>
+            <td class="col-method">HBGSA (0.77M)<sup>&dagger;</sup> <span class="tag supervised">supervised</span></td>
             <td><span class="no">&ndash;</span></td>
             <td><span class="no">&ndash;</span></td>
             <td><span class="chk">&#10003;</span></td>
@@ -391,6 +391,24 @@
             <td class="metric div-minor"><span class="val">0.502</span> <span class="sd">±0.035</span></td>
             <td class="metric"><span class="val">0.492</span> <span class="sd">±0.031</span></td>
             <td class="metric"><span class="val">1.597</span> <span class="sd">±0.033</span></td>
+          </tr>
+
+          <!-- HBGSA scaled to ~40M params (still from-scratch supervised) — bigger is worse -->
+          <tr>
+            <td class="col-method">HBGSA (40M)<sup>&dagger;</sup> <span class="tag supervised">supervised</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td class="metric div-major"><span class="val">0.464</span> <span class="sd">±0.011</span></td>
+            <td class="metric"><span class="val">0.472</span> <span class="sd">±0.019</span></td>
+            <td class="metric div-minor"><span class="val">0.380</span> <span class="sd">±0.026</span></td>
+            <td class="metric"><span class="val">0.372</span> <span class="sd">±0.028</span></td>
+            <td class="metric"><span class="val">1.977</span> <span class="sd">±0.245</span></td>
           </tr>
 
           <tr class="grp-start">
@@ -545,10 +563,13 @@
       <ul>
         <li><b>Density's value grows with the target's electronic character.</b> Across the three targets the
           density+gradmag channels move from a modest add-on to the decisive signal:
-          affinity <b>+0.05&nbsp;&rho;</b> over coords (0.595 vs 0.544) &rarr;
+          affinity <b>+0.05&nbsp;&rho;</b> over coords (0.595 vs 0.544)
+          <span style="color:#b04a2f"><b>[caveat: a noise control reproduces this +0.05 &mdash; for affinity the
+          density gain is added-channel capacity, not signal; see Table&nbsp;1b]</b></span> &rarr;
           H-bond count where density+gradmag <b>alone</b> ties the full model (all&nbsp;&asymp;&nbsp;0.57, every
           encoder &gt;&gt; the N/O/S-count baseline 0.363) &rarr;
-          pocket B-factor <b>+0.20&nbsp;&rho;</b>, the largest input-ablation gap here (0.643 vs 0.438 coords).</li>
+          pocket B-factor <b>+0.20&nbsp;&rho;</b>, the largest input-ablation gap here (0.643 vs 0.438 coords).
+          (The H-bond and B-factor gains have <i>no</i> noise control yet, so they are not affected by this caveat.)</li>
         <li><b>Coordinates dominate only for affinity.</b> For flexibility and H-bonds the atom-coordinate blobs
           add little on top of density (density-only&nbsp;&ge;&nbsp;combined on both); RoPE-3D, affinity's best PE
           (0.606), buys nothing on H-bonds (0.564, tied).</li>
@@ -557,6 +578,11 @@
           own split (under the Target column); the three &ldquo;density+gradmag only&rdquo; rows differ slightly in
           whether atom-type channels are on, reflecting the original per-target runs. Baselines: HBGSA = external
           supervised 4-channel model (affinity); Ligand&nbsp;N/O/S&nbsp;count = 1-feature linear fit (H-bond).</li>
+        <li><b>Scaling the supervised baseline backfires.</b> A 54&times; larger HBGSA (0.77M&nbsp;&rarr;&nbsp;41.7M
+          params; same 4 inputs, same from-scratch supervised training) <i>loses</i> 0.12 test&nbsp;&rho;
+          (0.492&nbsp;&rarr;&nbsp;0.372) &mdash; it over-fits the ~2.1K training complexes. So VoxBind's advantage
+          is its <b>pretrained, frozen</b> 40M encoder (only a ~66K MLP head sees labels), not raw capacity:
+          matched at 40M params, the from-scratch supervised model is far worse.</li>
       </ul>
     </div>
   </section>
@@ -568,10 +594,10 @@
       Single-channel affinity probes on the current LP-PDBBind split
       (n&nbsp;=&nbsp;2172/480/839; ViT / learnable-PE encoder; mean&nbsp;&plusmn;&nbsp;std over 3 seeds).
       The three <span class="tag supervised">ref</span> rows are the on-split encoder baselines
-      (identical to Table&nbsp;1's affinity rows). The <b>density-only</b> row is now in (pure 1-channel
-      density, no gradmag); <b>gradmag-only</b> is <b>pending</b>. A <b>noise control</b> (coordinates + a random-noise
-      density channel) probes whether density's gain is real signal or added capacity &mdash; also pending.
-      Best test value per column is highlighted.
+      (identical to Table&nbsp;1's affinity rows). <b>Density-only</b> and <b>gradmag-only</b> isolate each single
+      field; the <b>noise control</b> (real coords + matched random-noise density+gradmag) tests whether density's
+      gain is real signal or added capacity &mdash; <b>it is capacity</b> (noise 0.609&nbsp;&ge;&nbsp;real 0.595, see
+      notes). Best test value among the real-input encoders is highlighted.
     </p>
 
     <div class="table-wrap">
@@ -671,26 +697,41 @@
             <td><span class="no">&ndash;</span></td>
             <td><span class="no">&ndash;</span></td>
             <td><span class="chk">&#10003;</span></td>
-            <td class="metric div-major"><span class="tbd">TBD</span></td>
-            <td class="metric"><span class="tbd">TBD</span></td>
-            <td class="metric div-minor"><span class="tbd">TBD</span></td>
-            <td class="metric"><span class="tbd">TBD</span></td>
-            <td class="metric"><span class="tbd">TBD</span></td>
+            <td class="metric div-major"><span class="val">0.628</span> <span class="sd">±0.003</span></td>
+            <td class="metric"><span class="val">0.620</span> <span class="sd">±0.003</span></td>
+            <td class="metric div-minor"><span class="val">0.568</span> <span class="sd">±0.002</span></td>
+            <td class="metric"><span class="val">0.551</span> <span class="sd">±0.002</span></td>
+            <td class="metric"><span class="val">1.493</span> <span class="sd">±0.012</span></td>
           </tr>
 
           <tr>
-            <td class="col-method">Coordinates + noise density <span class="tag inprog">control</span></td>
+            <td class="col-method">Coordinates + noise density+gradmag <span class="tag inprog">control</span></td>
             <td><span class="chk">&#10003;</span></td>
             <td><span class="chk">&#10003;</span></td>
             <td><span class="chk">&#10003;</span></td>
             <td><span class="chk">&#10003;</span></td>
             <td><span class="chk" style="background:var(--tbd)" title="density slot filled with matched random noise">~</span></td>
-            <td><span class="no">&ndash;</span></td>
-            <td class="metric div-major"><span class="tbd">TBD</span></td>
-            <td class="metric"><span class="tbd">TBD</span></td>
-            <td class="metric div-minor"><span class="tbd">TBD</span></td>
-            <td class="metric"><span class="tbd">TBD</span></td>
-            <td class="metric"><span class="tbd">TBD</span></td>
+            <td><span class="chk" style="background:var(--tbd)" title="gradmag slot filled with matched random noise">~</span></td>
+            <td class="metric div-major"><span class="val">0.581</span> <span class="sd">±0.006</span></td>
+            <td class="metric"><span class="val">0.570</span> <span class="sd">±0.008</span></td>
+            <td class="metric div-minor"><span class="val">0.624</span> <span class="sd">±0.003</span></td>
+            <td class="metric"><span class="val">0.609</span> <span class="sd">±0.002</span></td>
+            <td class="metric"><span class="val">1.443</span> <span class="sd">±0.048</span></td>
+          </tr>
+
+          <tr>
+            <td class="col-method">Coordinates + zero density+gradmag <span class="tag inprog">control</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk" style="background:var(--line-strong)" title="density slot zero-filled (train + probe)">0</span></td>
+            <td><span class="chk" style="background:var(--line-strong)" title="gradmag slot zero-filled (train + probe)">0</span></td>
+            <td class="metric div-major"><span class="tbd">running</span></td>
+            <td class="metric"><span class="tbd">running</span></td>
+            <td class="metric div-minor"><span class="tbd">running</span></td>
+            <td class="metric"><span class="tbd">running</span></td>
+            <td class="metric"><span class="tbd">running</span></td>
           </tr>
 
         </tbody>
@@ -706,15 +747,25 @@
 
     <div class="notes">
       <ul>
-        <li><b>Gradmag is redundant for affinity.</b> Pure <b>density-only</b> (test&nbsp;&rho;&nbsp;<b>0.505</b>)
-          exactly matches <b>density+gradmag</b> only (0.505) &mdash; the ‖∇&rho;‖ channel adds nothing on top of
-          density for binding affinity. 1-channel density encoder
-          (<code>260611_density_xray_vit_mae_40m_v5</code>), learnable PE, same 2172/480/839 split.
-          <b>Gradmag-only</b> is still pending (needs a dedicated 1-channel ‖∇&rho;‖ input mode).</li>
-        <li><b>Noise control (pending):</b> &ldquo;Coordinates + noise density&rdquo; keeps the atom coordinates but
-          fills the density slot with <b>matched random noise</b> (<code>--noise_voxels_dir</code>). If it lands at
-          coords-only (test&nbsp;&rho;&nbsp;0.544) the density gain is genuine signal; if it climbs toward
-          coords+density+gradmag (0.595), the density slot is helping by added capacity alone.</li>
+        <li><b>Noise control overturns the &ldquo;density helps&rdquo; story.</b> Replacing the density+gradmag slots
+          with <b>matched random noise</b> (real coords kept, noise at both pretrain <i>and</i> probe via
+          <code>--noise_voxels_dir</code>) gives test&nbsp;&rho;&nbsp;<b>0.609&nbsp;&plusmn;&nbsp;0.002</b> &mdash;
+          it <b>matches/exceeds</b> the real density+gradmag encoder (0.595, same learnable PE) and sits
+          <b>+0.065 above coords-only</b> (0.544). So the celebrated &ldquo;<b>+0.05&nbsp;&rho; from density</b>&rdquo;
+          is reproduced by <i>noise</i>: on top of atom coordinates the gain is <b>added-channel capacity, not
+          density information</b>. Noise is i.i.d. random, fixed per complex, with zero affinity content, so it
+          cannot be leaking signal &mdash; the lift comes from the wider input / MAE-pretraining task, not the values.</li>
+        <li><b>The fields do carry real signal &mdash; but it is redundant with coordinates.</b> With <i>no</i> atom
+          channels, <b>gradmag-only</b> (test&nbsp;&rho;&nbsp;<b>0.551</b>) and <b>density-only</b> (0.505) both land
+          far above chance &mdash; a noise-only single channel would be ~0, so the electron-density and its gradient
+          field genuinely encode affinity. Notably <b>gradmag-only&nbsp;&gt;&nbsp;density-only</b> (0.551 vs 0.505) and
+          nearly ties coords-only (0.544): the edge/surface field ‖∇&rho;‖ is the <b>strongest single channel</b>.
+          Yet the noise control shows this signal is <b>already captured by the atom coordinates</b> &mdash; it adds
+          nothing unique once coords are present.</li>
+        <li><b>Gradmag is still redundant on top of density.</b> Pure <b>density-only</b> (0.505) exactly matches
+          <b>density+gradmag</b> only (0.505): stacking ‖∇&rho;‖ <i>onto</i> density buys nothing. (Encoders:
+          learnable PE, same 2172/480/839 split. Noise control = <code>260612_&hellip;_noisecontrol</code>;
+          gradmag-only = <code>260612_gradmagonly_density_xray_vit_mae_40m_v5</code>.)</li>
       </ul>
     </div>
   </section>
