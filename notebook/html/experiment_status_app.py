@@ -208,21 +208,40 @@ COMPLETED = [
          concl="<b>Overturns &ldquo;density helps&rdquo;.</b> Noise density+gradmag (test ρ <b>0.609</b>) "
                "<b>matches/exceeds</b> real density+gradmag (0.595), both ≫ coords-only (0.544). The +0.05 "
                "&ldquo;density gain&rdquo; is <b>added-channel capacity, not signal</b> — reproduced by pure noise."),
+    dict(label="Zero control", status_csv="probe_results_e99_v5_filtered_zerocontrol.csv",
+         cond="atomblob_density_gradmag",
+         did="Negative control #2: density+gradmag channels <b>zero-filled</b> (no information AND no variance) at "
+             "both pretrain and probe; real coords kept. Separates raw parameter-capacity from noise-as-regularizer.",
+         concl="<b>Clinches the capacity verdict.</b> Zero channels (test ρ <b>0.599</b>) ≈ noise (0.609) ≈ real "
+               "(0.595), all ≫ coords-only (0.544). Even <i>zero-information, zero-variance</i> channels give the "
+               "+0.05 → <b>pure patch-embed capacity</b>, ruling out even noise-as-regularizer."),
     dict(label="Gradmag only", status_csv="probe_results_e99_v5_filtered_gradmagonly.csv", cond="density_gradmag",
          did="Encoder whose <b>only</b> input is the gradient magnitude ‖∇ρ‖ — an edge/surface map of the density, "
              "with no density values and no atoms.",
          concl="Gradmag-only test ρ <b>0.551</b> — <b>beats density-only (0.505)</b>, ~ties coords-only (0.544): "
                "the ‖∇ρ‖ field is the <b>strongest single channel</b> and carries real standalone signal — but "
                "redundant with coords (per the noise control)."),
+    dict(label="Uniform-loss coords-only", status_csv="probe_results_e99_v5_uniform_coords.csv",
+         cond="atomblob_ligvdw",
+         did="Coords-only encoder re-pretrained with a <b>fully-uniform</b> MAE loss (no inv_freq, all channel/pos "
+             "weights = 1) — a second pretraining draw of the 0.544 baseline.",
+         concl="<i>Result pending</i> — pairs with the uniform density+gradmag run to test whether the +0.05 "
+               "&ldquo;capacity&rdquo; gap survives without invfreq, and to gauge pretraining-run variance."),
+    dict(label="Uniform-loss coords+density+gradmag", status_csv="probe_results_e99_v5_uniform_dg.csv",
+         cond="atomblob_density_gradmag",
+         did="Full 13-ch encoder re-pretrained with a <b>fully-uniform</b> MAE loss (no inv_freq, all weights = 1), "
+             "real density+gradmag — second draw of the 0.595 baseline under matched-to-coords weighting.",
+         concl="<i>Result pending</i> — if uniform-coords ≈ uniform-d+g, the +0.05 was an invfreq/variance "
+               "artifact; if d+g still leads, the gap is robust to the weighting."),
     dict(label="ChA-MAEViT (channel-grouped MAE)", status_csv="probe_results_e99_v5_cha_mae.csv",
          cond="atomblob_density_gradmag",
          did="<b>Channel-grouped</b> masked-autoencoder pretraining (ChA-MAEViT — per-channel-group tokens + "
              "attention + memory tokens) on the full 13-ch coords+density+gradmag stack, frozen, then probed "
              "for affinity on the canonical 839 split. Tests whether channel-aware fusion beats the standard "
              "fused ViT.",
-         concl="<i>Result pending</i> — auto-probes at e99 (chained watcher, GPU 4) → "
-               "<code>probe_results_e99_v5_cha_mae.csv</code>; compares against the fused ViT (rope3d 0.606 / "
-               "learnable 0.595). Conclusion text fills when the CSV lands."),
+         concl="ChA-MAEViT test ρ <b>0.613</b> — marginally the <b>best affinity number</b>, but only ~ties the "
+               "fused rope3d ViT (0.606; +0.018 vs matched learnable 0.595, ~2.7σ). Channel-aware fusion gives at "
+               "most a <b>small</b> affinity gain. (Survived the e3 OOM after the expandable_segments fix → full 100ep.)"),
 ]
 
 
@@ -297,6 +316,11 @@ def render():
     # one-line "what it tests" for the in-flight (running / queued) experiments
     # NB: order matters — cha_mae exp names also contain "gradmag", so match it first.
     def _desc(name):
+        if "uniform" in name:
+            which = "coords+density+gradmag (13ch)" if "density_gradmag" in name else "coords-only (11ch)"
+            return (f"No-invfreq variance/confound check — {which} re-pretrained with a <b>fully-uniform</b> MAE "
+                    "loss (no inv_freq, no channel/pos weights; all=1). Tests whether the +0.05 &ldquo;capacity&rdquo; "
+                    "gap is an invfreq artifact or just pretraining-run variance.")
         if "cha_mae" in name or "channelvit" in name or "channel_vit" in name:
             return ("ChA-MAEViT — channel-grouped masked-autoencoder pretraining (per-channel-group tokens + "
                     "attention) on coords+density+gradmag; tests whether channel-aware fusion beats the fused ViT.")

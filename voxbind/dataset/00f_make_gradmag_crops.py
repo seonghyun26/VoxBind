@@ -10,9 +10,11 @@ Correctness w.r.t. augmentation: ‖∇·‖ is rotation-invariant, so rotating 
 gradmag (the density-only aug path) equals ‖∇(rotated ρ)‖ — voxel-aligned, same as the
 on-the-fly gradmag the full model derives post-augmentation.
 
-Outputs (float16, mirror the real layout so each is a drop-in density source):
-  xray_crops_aligned_v5_gradmag/train/{idx:06d}.npy   (1ch 64^3 = ‖∇ρ‖)
-  pdbbind/voxels_v5_gradmag/density/{pid}.npy          (probe: gradmag-as-density)
+Outputs (float16, mirror the real layout so each is a drop-in density source).
+Co-located INSIDE the v5 dataset version (same source crops), matching the
+nesting 00e uses for the noise control:
+  xray_crops_aligned_v5/gradmag/train/{idx:06d}.npy    (1ch 64^3 = ‖∇ρ‖)
+  pdbbind/voxels_v5/gradmag/density/{pid}.npy          (probe: gradmag-as-density)
 
 Usage:  python dataset/00f_make_gradmag_crops.py [train|probe|all]
 """
@@ -25,9 +27,9 @@ from voxbind.models.density_mae import gradient_magnitude3d, per_sample_zscore
 HERE  = Path(__file__).resolve().parent
 DATA  = HERE / "data"
 CROPS = DATA / "xray_crops_aligned_v5"
-GMAG  = DATA / "xray_crops_aligned_v5_gradmag"
+GMAG  = CROPS / "gradmag"                       # nested inside the v5 version
 PVOX  = DATA / "pdbbind" / "voxels_v5"
-PGMAG = DATA / "pdbbind" / "voxels_v5_gradmag"
+PGMAG = PVOX / "gradmag"                         # nested inside voxels_v5
 GRID  = 64
 
 

@@ -8,8 +8,8 @@ VOX=/home/shpark/prj-denovo/VoxBind/voxbind
 PY=/home/shpark/.conda/envs/voxbind/bin/python
 cd "$VOX" || exit 1
 EXP=260612_gradmagonly_density_xray_vit_mae_40m_v5_pretrain
-GMAG=$VOX/dataset/data/xray_crops_aligned_v5_gradmag
-PGMAG=$VOX/dataset/data/pdbbind/voxels_v5_gradmag
+GMAG=$VOX/dataset/data/xray_crops_aligned_v5/gradmag
+PGMAG=$VOX/dataset/data/pdbbind/voxels_v5/gradmag
 LOG=$VOX/log/$EXP.log
 ts(){ date "+%F %T"; }
 
