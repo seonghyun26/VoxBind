@@ -308,7 +308,7 @@
         <tbody>
 
           <tr class="grp-start">
-            <td class="col-target" rowspan="6">Affinity<span class="tgt-meta">pK<sub>d/i</sub> &middot; RMSE in pK<br>n&nbsp;=&nbsp;2172/480/839</span></td>
+            <td class="col-target" rowspan="7">Affinity<span class="tgt-meta">pK<sub>d/i</sub> &middot; RMSE in pK<br>n&nbsp;=&nbsp;2172/480/839</span></td>
             <td class="col-method">D + G</td>
             <td><span class="pe learn">ViT</span></td>
             <td><span class="no">&ndash;</span></td>
@@ -409,6 +409,24 @@
             <td class="metric div-minor"><span class="val">0.380</span> <span class="sd">±0.026</span></td>
             <td class="metric"><span class="val">0.372</span> <span class="sd">±0.028</span></td>
             <td class="metric"><span class="val">1.977</span> <span class="sd">±0.245</span></td>
+          </tr>
+
+          <!-- TargetDiff — external target-aware baseline (affinity); values pending -->
+          <tr>
+            <td class="col-method">TargetDiff <span class="tag supervised">baseline</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td class="metric div-major"><span class="tbd">TBD</span></td>
+            <td class="metric"><span class="tbd">TBD</span></td>
+            <td class="metric div-minor"><span class="tbd">TBD</span></td>
+            <td class="metric"><span class="tbd">TBD</span></td>
+            <td class="metric"><span class="tbd">TBD</span></td>
           </tr>
 
           <tr class="grp-start">
@@ -1346,6 +1364,87 @@
           to ~0.58&ndash;0.60 and stays tied; the input-ablation conclusions (density-only competitive, all
           &gt;&gt; baseline&nbsp;0.363) are unchanged. It also slightly narrows the val&rarr;test over-fit gap
           (RoPE-3D 0.081&rarr;0.066). Trained with <code>probe --target hbonds --head softmax</code>.</li>
+      </ul>
+    </div>
+    </section>
+
+  <!-- Appendix B: atom-type frequency-weighting ablation -->
+    <section class="block">
+      <p class="section-intro">Atom types are wildly imbalanced in the voxel grid &mdash; carbon fills orders of
+        magnitude more atom-on voxels than rare types (S, P, halogens), so an unweighted reconstruction loss is
+        dominated by the common atoms. The pretraining loss can rebalance this with a per-channel weight
+        <code>w&nbsp;=&nbsp;(1/freq)<sup>p</sup></code>: <b>uniform</b> (p&nbsp;=&nbsp;0, no rebalancing),
+        <b>inv-sqrt-freq</b> (p&nbsp;=&nbsp;0.5, gentle), <b>inv-freq</b> (p&nbsp;=&nbsp;1, rare atoms much heavier).
+        This ablation asks whether that choice changes the frozen affinity probe.</p>
+      <p class="table-title">B &nbsp;&middot;&nbsp; Atom-type frequency weighting (affinity)</p>
+    <p class="table-sub">
+      Pretraining-only knob (<code>mae.channel_weighting</code>); everything else is held fixed &mdash; the same
+      <b>coordinates&nbsp;+&nbsp;density&nbsp;+&nbsp;gradmag</b> (C&nbsp;+&nbsp;D&nbsp;+&nbsp;G) encoder, recipe, and
+      100-epoch schedule as Table&nbsp;1. All rows are frozen-probed on the <b>affinity</b> target, canonical
+      LP-PDBBind split (n&nbsp;=&nbsp;2172/480/839); learnable PE; mean&nbsp;&plusmn;&nbsp;std over 3 seeds.
+      The <b>inv-freq</b> row is Table&nbsp;1's combined encoder. Best completed test value highlighted.
+    </p>
+    <div class="table-wrap">
+      <table class="results">
+        <thead>
+          <tr class="grp">
+            <th class="col-method" rowspan="2">Weighting</th>
+            <th class="div-major" colspan="2">Validation</th>
+            <th class="div-minor" colspan="3">Test</th>
+          </tr>
+          <tr class="sub">
+            <th class="div-major">Pearson&nbsp;<i>r</i></th>
+            <th>Spearman&nbsp;&rho;</th>
+            <th class="div-minor">Pearson&nbsp;<i>r</i></th>
+            <th>Spearman&nbsp;&rho;</th>
+            <th>RMSE</th>
+          </tr>
+        </thead>
+        <tbody>
+
+          <tr>
+            <td class="col-method">uniform <span class="sd" style="font-weight:400">w&nbsp;=&nbsp;1</span></td>
+            <td class="metric div-major"><span class="val">0.603</span> <span class="sd">±0.001</span></td>
+            <td class="metric"><span class="val">0.583</span> <span class="sd">±0.000</span></td>
+            <td class="metric div-minor"><span class="val">0.590</span> <span class="sd">±0.003</span></td>
+            <td class="metric"><span class="val">0.595</span> <span class="sd">±0.002</span></td>
+            <td class="metric"><span class="val">1.436</span> <span class="sd">±0.001</span></td>
+          </tr>
+
+          <tr>
+            <td class="col-method">inv-sqrt-freq <span class="sd" style="font-weight:400">w&nbsp;&prop;&nbsp;1/&radic;f</span> <span class="tag inprog">pending</span></td>
+            <td class="metric div-major"><span class="tbd">TBD</span></td>
+            <td class="metric"><span class="tbd">TBD</span></td>
+            <td class="metric div-minor"><span class="tbd">TBD</span></td>
+            <td class="metric"><span class="tbd">TBD</span></td>
+            <td class="metric"><span class="tbd">TBD</span></td>
+          </tr>
+
+          <tr>
+            <td class="col-method">inv-freq <span class="sd" style="font-weight:400">w&nbsp;&prop;&nbsp;1/f</span></td>
+            <td class="metric div-major"><span class="val">0.592</span> <span class="sd">±0.002</span></td>
+            <td class="metric"><span class="val">0.580</span> <span class="sd">±0.000</span></td>
+            <td class="metric div-minor best"><span class="val">0.609</span> <span class="sd">±0.008</span></td>
+            <td class="metric"><span class="val">0.595</span> <span class="sd">±0.006</span></td>
+            <td class="metric best"><span class="val">1.430</span> <span class="sd">±0.009</span></td>
+          </tr>
+
+        </tbody>
+      </table>
+    </div>
+
+    <div class="notes">
+      <ul>
+        <li><b>Atom-channel loss weighting barely moves the combined-model affinity probe.</b> Going from
+          <b>uniform</b> to <b>inv-freq</b> leaves test&nbsp;Spearman&nbsp;&rho; unchanged (<b>0.595</b> for both) and
+          buys only a small test&nbsp;Pearson bump (0.590&nbsp;&rarr;&nbsp;0.609,&nbsp;+0.019) with a marginally
+          lower RMSE (1.436&nbsp;&rarr;&nbsp;1.430). Once density&nbsp;+&nbsp;gradmag are present, how the rare atom
+          types are reweighted in pretraining is largely washed out at the probe &mdash; consistent with the
+          capacity-not-content reading of the density channels (Table&nbsp;1b).</li>
+        <li><b>inv-sqrt-freq (the gentle p&nbsp;=&nbsp;0.5 midpoint) is still pending</b> &mdash; it needs its own
+          ~9.5&nbsp;h pretrain (<code>mae.channel_weighting=inv_sqrt_freq</code>, otherwise the identical v5 recipe)
+          before this row can be filled; all GPUs are currently occupied by the uniform/noise campaign. Encoders:
+          uniform&nbsp;=&nbsp;<code>260614_&hellip;_uniform_v5</code>; inv-freq&nbsp;=&nbsp;<code>260606_&hellip;_invfreq_v5</code>.</li>
       </ul>
     </div>
     </section>

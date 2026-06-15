@@ -12,8 +12,9 @@ Design
 - When data augmentation is active, the same rotation matrix used for atom
   coordinates is also applied to the density volume via
   scipy.ndimage.affine_transform (linear interpolation, zero-padding).
-- Translation augmentation is NOT applied to the density (shift ≤ ±1 Å is
-  negligible relative to the 16 Å box; the model is expected to be robust).
+- The same translation is ALSO applied to the density (sub-voxel
+  scipy.ndimage.shift by translation/res voxels, see _translate_density) so
+  the atoms and density stay co-aligned under augmentation.
 - When use_xray=False, or when no map is available for a given PDB ID, the
   returned "xray_density" field is None so the model can fall back gracefully.
 
@@ -309,9 +310,15 @@ class DatasetCrossDockedXray(Dataset):
         subset_val_n: Optional[int] = None,
         return_gradmag: bool = False,
         gradmag_crops_dir: str = "",
+        data_file: str = "data_train.pt",
     ):
         assert split in ("train", "val", "test")
 
+        # Train/val source file (default data_train.pt). Override (e.g. data_train_v7.pt)
+        # to pretrain on a combined CrossDocked∪PDBbind corpus; crops in crops_dir must
+        # be laid out for the SAME shuffle(1234)→drop-last-100→filter order. Test always
+        # uses data_test.pt.
+        self.data_file = data_file
         self.data_dir = data_dir
         self.ccp4_dir = Path(ccp4_dir)
         self.split = split
@@ -395,7 +402,7 @@ class DatasetCrossDockedXray(Dataset):
         import os
         if phys_split in ("train", "val"):
             import random as _random
-            data = torch.load(os.path.join(data_dir, "data_train.pt"), weights_only=False)
+            data = torch.load(os.path.join(data_dir, self.data_file), weights_only=False)
             _random.Random(1234).shuffle(data)
             val_sz = 100
             self.data = data[: len(data) - val_sz] if phys_split == "train" else data[len(data) - val_sz :]

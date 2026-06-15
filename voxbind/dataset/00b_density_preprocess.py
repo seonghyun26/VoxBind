@@ -11,8 +11,13 @@ they differ only in the normalisation applied to the voxel values — that is th
     v3  xray_crops_aligned_v3   pocket-pool symmetric      x' =  x        / max_abs   → [−1, +1]
     v4  xray_crops_aligned_v4   pocket-pool clip+z-score   x' = (clip(x) − μ_c) / σ_c
     v5  xray_crops_aligned_v5   pocket-pool arcsinh+z      x' = (arcsinh(x/s) − μ_a) / σ_a
+    v6  xray_crops_aligned_v6   v5 arcsinh+z, but availability restricted to LIGAND-MATCHED
+                                poses (--native_filter). The receptor's 2Fo-Fc map only
+                                matches the modeled ligand when that ligand is the receptor's
+                                own crystal ligand; v6 keeps only those (default tt_min: native
+                                ligand in its crystal pose). Must be generated alone.
 
-v2/v3/v4/v5 are stored pre-normalised → load them with dset.normalize=false.
+v2/v3/v4/v5/v6 are stored pre-normalised → load them with dset.normalize=false.
 v2/v3 (and v4's clip / v5's arcsinh stats) are derived from a SINGLE pocket pool, so when
 several are requested in one run they share one cropping pass and one stat pass.
 
@@ -31,7 +36,9 @@ Pipeline (per split)
 
 A crop is DROPPED (available=False → model falls back to zero density) when the
 PDB has no map / no deposited PDB, too few residue-matched atoms, post-fit RMSD
-above --max_rmsd, or weak density at the corrected receptor atoms.
+above --max_rmsd, or weak density at the corrected receptor atoms. v6 additionally
+drops every pose whose modeled ligand is not the receptor's own crystal ligand
+(see --native_filter), so its density genuinely corresponds to the ligand.
 
 Usage
 -----
@@ -40,6 +47,7 @@ Usage
     python dataset/00b_density_preprocess.py --version v1 v2 v3 v4        # everything
     python dataset/00b_density_preprocess.py --version v3 --splits test   # validate on test
     python dataset/00b_density_preprocess.py --version v4 --keep_raw      # retain raw scratch
+    python dataset/00b_density_preprocess.py --version v6 --save_gradmag  # ligand-matched (tt_min)
 
 Outputs (per requested version dir)
 -----------------------------------
@@ -55,6 +63,7 @@ import argparse
 import csv
 import os
 import random
+import re
 import shutil
 import sys
 import time
@@ -89,7 +98,12 @@ DIR_NAME = {
     "v3": "xray_crops_aligned_v3",
     "v4": "xray_crops_aligned_v4",
     "v5": "xray_crops_aligned_v5",
+    "v6": "xray_crops_aligned_v6",
 }
+
+# Versions stored pre-normalised from a pooled raw-crop pass (load with
+# dset.normalize=false). v1 is per-map z-scored at load time and excluded here.
+RAW_VERSIONS = ("v2", "v3", "v4", "v5", "v6")
 
 # v4 clip thresholds (raw 2Fo-Fc units), from the 200-sample voxel-pool quantile
 # estimate in notebook/260527 — P0.1% / P99.9%. Asymmetric: the positive tail is
@@ -123,6 +137,50 @@ def get_pdb_id(pocket_id):
 def get_centroid(ligand_):
     mask = ligand_["atoms_channel"] < 7
     return ligand_["coords"][mask].float().mean(dim=0).numpy().astype(np.float64)
+
+
+# ── Ligand-provenance / density-match filter (v6) ───────────────────────────────
+# CrossDocked2020 sample names encode where the modeled ligand came from:
+#   {receptor}_{chain}_rec_{ligand-PDB}_{resname}_lig_[itN_]*tt_{min|docked}_{rank}
+#   e.g. 4xe6_X_rec_3fqc_55v_lig_tt_docked_4  → ligand 55v (from 3fqc) cross-docked into 4xe6
+#        5acc_A_rec_5acc_ke9_lig_tt_min_0     → 5acc's own ligand, energy-minimised (native)
+# The 2Fo-Fc map belongs to the RECEPTOR crystal, so its ligand-region density only
+# corresponds to the modeled ligand when that ligand IS the receptor's crystal ligand.
+
+_PROV_RE = re.compile(
+    r"([0-9a-zA-Z]{4})_\w+?_rec_([0-9a-zA-Z]{4})_\w+?_lig_(?:it\d+_)*tt_(min|docked)")
+
+
+def parse_provenance(pocket_id):
+    """(receptor_pdb, ligand_src_pdb, pose_type) or None if the name doesn't parse."""
+    m = _PROV_RE.match(pocket_id.split("/")[-1])
+    if not m:
+        return None
+    return m.group(1).lower(), m.group(2).lower(), m.group(3)
+
+
+def is_native_mask(samples, mode):
+    """Boolean mask over `samples` — True where the receptor's crystal density matches
+    the modeled ligand.
+
+      mode="tt_min"   : ligand source PDB == receptor PDB AND pose is the energy-minimised
+                        crystal pose → identity AND position match the density (strictest).
+      mode="same_pdb" : ligand source PDB == receptor PDB (identity match; a redocked pose
+                        may drift from the crystal position).
+
+    Unparsable names (→ None) are treated as non-native.
+    """
+    out = np.zeros(len(samples), dtype=bool)
+    for i, (pocket_, _ligand_) in enumerate(samples):
+        prov = parse_provenance(pocket_["id"])
+        if prov is None:
+            continue
+        rec, src, pose = prov
+        if mode == "same_pdb":
+            out[i] = src == rec
+        else:  # tt_min
+            out[i] = (src == rec) and (pose == "min")
+    return out
 
 
 # ── CCP4 raw load (NO per-map z-score; for v2/v3/v4 pool normalisation) ─────────
@@ -460,8 +518,15 @@ def parse_args():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     p.add_argument("--version", nargs="+", default=["v3"],
-                   choices=["v1", "v2", "v3", "v4", "v5"],
-                   help="Which crop version(s) to produce (the normalisation if-branch)")
+                   choices=["v1", "v2", "v3", "v4", "v5", "v6"],
+                   help="Which crop version(s) to produce (the normalisation if-branch). "
+                        "v6 = v5 arcsinh normalisation restricted to ligand-matched poses; "
+                        "must be generated alone (see --native_filter).")
+    p.add_argument("--native_filter", choices=["none", "tt_min", "same_pdb"], default="none",
+                   help="Restrict availability to ligand-matched poses (density truly corresponds "
+                        "to the modeled ligand). Auto-set to tt_min for --version v6; not allowed "
+                        "for v1-v5. tt_min=native crystal pose (strict); same_pdb=native identity, "
+                        "pose may be redocked.")
     p.add_argument("--data_dir", default=str(VOXDATA))
     p.add_argument("--ccp4_dir", default=str(VOXDATA / "ccp4"))
     p.add_argument("--pdb_dir", default=str(VOXDATA / "pdb"))
@@ -508,9 +573,22 @@ def parse_args():
 def main():
     args = parse_args()
     versions = list(dict.fromkeys(args.version))  # dedup, preserve order
-    need_raw = any(v in versions for v in ("v2", "v3", "v4", "v5"))
+
+    # v6 (ligand-matched subset) changes the `ok` mask + pool stats globally, so it
+    # must be produced on its own to avoid corrupting v1-v5 outputs.
+    native_filter = args.native_filter
+    if "v6" in versions:
+        if versions != ["v6"]:
+            sys.exit("[error] --version v6 (ligand-matched subset) must be generated alone: "
+                     "run `--version v6` by itself.")
+        if native_filter == "none":
+            native_filter = "tt_min"   # v6 default
+    elif native_filter != "none":
+        sys.exit("[error] --native_filter only applies to --version v6.")
+
+    need_raw = any(v in versions for v in RAW_VERSIONS)
     need_v4 = "v4" in versions
-    need_v5 = "v5" in versions
+    need_v5 = ("v5" in versions) or ("v6" in versions)   # both use arcsinh normalisation
 
     out_root = Path(args.out_root)
     aligned_dir = out_root / DIR_NAME["v1"]
@@ -519,6 +597,8 @@ def main():
 
     print("=== density crop preprocessing ===")
     print(f"  versions     : {versions}")
+    if native_filter != "none":
+        print(f"  native_filter: {native_filter}  (availability restricted to ligand-matched poses)")
     print(f"  splits       : {args.splits}  (max_len {args.max_len})")
     print(f"  data_dir     : {args.data_dir}")
     print(f"  ccp4 / pdb   : {args.ccp4_dir}  |  {args.pdb_dir}")
@@ -554,6 +634,11 @@ def main():
     for split in args.splits:
         samples = load_split(args.data_dir, split, args.max_len)
         R, t, ok = ensure_transforms(split, samples, args, cfg, aligned_dir)
+        if native_filter != "none":
+            nat = is_native_mask(samples, native_filter)
+            ok = ok & nat
+            print(f"[{split}] native_filter={native_filter}: {int(nat.sum()):,} ligand-matched | "
+                  f"{int(ok.sum()):,} after ∩ density-available ({100 * ok.mean():.1f}% of {len(samples):,})")
         for v in versions:
             np.save(ver_dirs[v] / f"{split}_available.npy", ok)
         stats, _ = run_crop(split, samples, R, t, ok, cfg)
@@ -602,7 +687,7 @@ def main():
     def v3n(x): return x / max_abs
     def v4n(x): return (np.clip(x, args.clip_lo, args.clip_hi) - mu_clip) / sigma_clip
     def v5n(x): return (np.arcsinh(x / args.v5_arcsinh_scale) - mu_a) / sigma_a
-    NORM = {"v2": v2n, "v3": v3n, "v4": v4n, "v5": v5n}
+    NORM = {"v2": v2n, "v3": v3n, "v4": v4n, "v5": v5n, "v6": v5n}  # v6 reuses v5 arcsinh
 
     # ── stats.json per version ──────────────────────────────────────────────────
     common = dict(splits=args.splits, n_voxels=N, raw_min=MIN, raw_max=MAX,
@@ -631,9 +716,21 @@ def main():
             "mu_a": mu_a, "sigma_a": sigma_a,
             "note": "arcsinh stats computed directly from raw aligned crops",
             **common}, indent=2))
+    if "v6" in versions:
+        (ver_dirs["v6"] / "stats.json").write_text(json.dumps({
+            "scheme": "pocket-pool arcsinh + z-score, ligand-matched subset (CrossDocked v6)",
+            "formula": "x' = (arcsinh(x / s) - mu_a) / sigma_a",
+            "arcsinh_scale": args.v5_arcsinh_scale,
+            "mu_a": mu_a, "sigma_a": sigma_a,
+            "native_filter": native_filter,
+            "note": "Same arcsinh normalisation as v5, but availability (and pool stats) are "
+                    "restricted to ligand-matched poses where the receptor's crystal density "
+                    "corresponds to the modeled ligand (modeled ligand == receptor crystal ligand). "
+                    f"native_filter={native_filter}.",
+            **common}, indent=2))
 
     # ── Pass B: read raw scratch once, write each requested version ─────────────
-    raw_versions = [v for v in versions if v in ("v2", "v3", "v4", "v5")]
+    raw_versions = [v for v in versions if v in RAW_VERSIONS]
     # Optional: a versioned ‖∇ρ‖ channel written alongside each density version,
     # computed exactly as the training pipeline does it (per_sample_zscore of the
     # gradient magnitude of the FINAL normalized density), so it is a drop-in

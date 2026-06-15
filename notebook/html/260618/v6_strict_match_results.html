@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>v6 strict-match — Binding affinity</title>
+<style>
+  :root {
+    --ink:        #1c2433;
+    --ink-soft:   #5b6678;
+    --line:       #e3e7ee;
+    --line-strong:#aeb6c4;
+    --bg:         #f5f6f8;
+    --card:       #ffffff;
+    --accent:     #2f6f4f;   /* green for checks / best */
+    --best-bg:    #eaf5ee;
+    --tbd:        #b07a17;
+    --tbd-bg:     #fcf3e0;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 16px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  .page {
+    max-width: 1600px;
+    margin: 0 auto;
+    padding: 48px 24px 96px;
+  }
+  header.doc {
+    border-bottom: 2px solid var(--ink);
+    padding-bottom: 18px;
+    margin-bottom: 40px;
+  }
+  header.doc .date {
+    font-size: 13px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    margin-bottom: 6px;
+  }
+  header.doc h1 {
+    font-size: 28px;
+    font-weight: 650;
+    margin: 0;
+    letter-spacing: -0.01em;
+  }
+  section.block { margin-bottom: 56px; }
+  .table-title {
+    font-size: 19px;
+    font-weight: 620;
+    margin: 0 0 4px;
+  }
+  .table-sub {
+    font-size: 13.5px;
+    color: var(--ink-soft);
+    margin: 0 0 18px;
+    max-width: 1080px;
+  }
+
+  .table-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--card);
+    box-shadow: 0 1px 2px rgba(20,30,50,.04), 0 8px 24px rgba(20,30,50,.05);
+  }
+  table.results {
+    border-collapse: collapse;
+    width: 100%;
+    font-variant-numeric: tabular-nums;
+  }
+  table.results th, table.results td {
+    padding: 11px 9px;
+    text-align: center;
+    white-space: nowrap;
+  }
+  /* header */
+  table.results thead th {
+    font-weight: 600;
+    color: var(--ink);
+    background: #fafbfc;
+    border-bottom: 1px solid var(--line);
+  }
+  table.results thead tr.grp th {
+    font-size: 10.5px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    font-weight: 600;
+    padding-top: 13px;
+    padding-bottom: 6px;
+  }
+  table.results thead tr.grp2 th {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--ink);
+    padding-top: 6px;
+    padding-bottom: 6px;
+  }
+  table.results thead tr.grp2 th i { font-style: italic; font-weight: 500; }
+  table.results thead tr.sub th {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--ink-soft);
+    letter-spacing: .02em;
+    padding-top: 0;
+    padding-bottom: 11px;
+  }
+  /* method column */
+  .col-method { text-align: left !important; min-width: 170px; }
+  thead .col-method { vertical-align: middle; }
+  td.col-method { font-weight: 560; }
+  td.col-method .tag {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .04em;
+    padding: 2px 8px;
+    border-radius: 999px;
+    margin-left: 7px;
+    vertical-align: middle;
+  }
+  .tag.supervised { background: #eef1f6; color: #5b6678; }
+  .tag.inprog { background: var(--tbd-bg); color: var(--tbd); }
+
+  /* positional-encoding pills */
+  .col-pe { min-width: 74px; }
+  .pe { display: inline-block; font-size: 11px; font-weight: 600; letter-spacing: .02em;
+        padding: 2px 9px; border-radius: 999px; white-space: nowrap; }
+  .pe.rope  { background: var(--best-bg); color: #1d5a3a; }
+  .pe.learn { background: #eef1f6; color: #5b6678; }
+
+  /* the vertical division between INPUT block and METRICS block */
+  .div-major { border-left: 2.5px solid var(--line-strong); }
+  /* lighter division between validation and test */
+  .div-minor { border-left: 1px dashed var(--line-strong); }
+
+  table.results tbody tr { border-top: 1px solid var(--line); }
+  table.results tbody tr:hover { background: #fbfcfd; }
+
+  /* check icons */
+  .chk {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 15px; height: 15px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #fff;
+    font-size: 9px;
+    line-height: 1;
+  }
+  .no { color: var(--line-strong); font-size: 14px; }
+
+  /* metric cells */
+  .metric { font-size: 14.5px; }
+  .metric .val { font-weight: 560; }
+  .metric .sd { color: #9aa3b2; font-size: 10.5px; font-weight: 400; }
+  td.best { background: var(--best-bg); }
+  td.best .val { font-weight: 720; color: #1d5a3a; }
+  .tbd {
+    color: var(--tbd);
+    font-weight: 600;
+    font-size: 13px;
+  }
+
+  .notes {
+    margin-top: 18px;
+    font-size: 13px;
+    color: var(--ink-soft);
+    line-height: 1.6;
+    max-width: 1080px;
+  }
+  .notes b { color: var(--ink); font-weight: 600; }
+  .notes ul { margin: 6px 0 0; padding-left: 20px; }
+  .notes li { margin-bottom: 4px; }
+  .legend {
+    display: flex; flex-wrap: wrap; gap: 18px;
+    margin-top: 14px; font-size: 12.5px; color: var(--ink-soft);
+    align-items: center;
+  }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .placeholder {
+    border: 1.5px dashed var(--line-strong);
+    border-radius: 12px;
+    padding: 28px;
+    text-align: center;
+    color: var(--ink-soft);
+    font-size: 14px;
+    background: repeating-linear-gradient(45deg,#fff,#fff 12px,#fafbfc 12px,#fafbfc 24px);
+  }
+
+  /* figure cards (gradmag pipeline, dataset filtering) */
+  .figure-wrap {
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--card);
+    box-shadow: 0 1px 2px rgba(20,30,50,.04), 0 8px 24px rgba(20,30,50,.05);
+    padding: 20px 20px 14px;
+    overflow-x: auto;
+  }
+  .figure-img { display: block; width: 100%; min-width: 760px; height: auto; }
+  .figure-img.wide { min-width: 1040px; }
+  .figure-cap {
+    margin-top: 10px;
+    font-size: 12.5px;
+    color: var(--ink-soft);
+    text-align: center;
+  }
+  .notes code, .figure-cap code, .table-sub code {
+    background: #f0f2f5; padding: 1px 5px; border-radius: 4px; font-size: 12.5px;
+  }
+
+  /* ---- top-level document sections ---- */
+  .doc-section { margin-bottom: 64px; }
+  .section-head {
+    font-size: 22px;
+    font-weight: 660;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+    margin: 0 0 30px;
+    padding-bottom: 12px;
+    border-bottom: 2px solid var(--line-strong);
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .section-head .sec-num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px; height: 30px;
+    border-radius: 8px;
+    background: var(--accent);
+    color: #fff;
+    font-size: 15px;
+    font-weight: 700;
+    flex: 0 0 auto;
+  }
+  .col-target { text-align:left !important; vertical-align:top; font-weight:650; min-width:124px;
+                background:#fafbfc; border-right:2.5px solid var(--line-strong); }
+  td.col-target .tgt-meta { display:block; margin-top:5px; font-size:11px; font-weight:400;
+                            color:var(--ink-soft); line-height:1.45; }
+  table.results tbody tr.grp-start td { border-top:2px solid var(--line-strong); }
+  .section-intro { font-size:13.5px; color:var(--ink-soft); margin:-6px 0 22px; max-width:1080px; line-height:1.6; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="doc">
+    <div class="date">2026 · 06 · 18 — v6 strict-match</div>
+    <h1>v6 strict-match &mdash; Binding-affinity probe</h1>
+  </header>
+
+  <section class="block">
+    <p class="table-title">Binding affinity &nbsp;&middot;&nbsp; input ablation (v6 strict-match)</p>
+    <p class="table-sub">
+      Frozen-probe affinity regression on the <b>v6 strict-match</b> voxels (MLP head on the frozen
+      pretrained encoder; mean&nbsp;&plusmn;&nbsp;std over 3 seeds; learnable-PE ViT). Two encoders &mdash;
+      <b>C</b> (coordinates only) vs <b>C&nbsp;+&nbsp;D&nbsp;+&nbsp;G</b> (coordinates&nbsp;+&nbsp;density&nbsp;+&nbsp;gradmag).
+      <b>Values pending.</b>
+    </p>
+
+    <div class="table-wrap">
+      <table class="results">
+        <thead>
+          <tr class="grp">
+            <th class="col-method" rowspan="3">Experiment</th>
+            <th colspan="6">Input information</th>
+            <th class="div-major" colspan="2">Validation</th>
+            <th class="div-minor" colspan="3">Test</th>
+          </tr>
+          <tr class="grp2">
+            <th colspan="2">Pocket</th>
+            <th colspan="2">Ligand</th>
+            <th rowspan="2">Density</th>
+            <th rowspan="2">Gradmag</th>
+            <th class="div-major" rowspan="2">Pearson&nbsp;<i>r</i></th>
+            <th rowspan="2">Spearman&nbsp;&rho;</th>
+            <th class="div-minor" rowspan="2">Pearson&nbsp;<i>r</i></th>
+            <th rowspan="2">Spearman&nbsp;&rho;</th>
+            <th rowspan="2">RMSE</th>
+          </tr>
+          <tr class="sub">
+            <th>coords</th>
+            <th>atom&nbsp;type</th>
+            <th>coords</th>
+            <th>atom&nbsp;type</th>
+          </tr>
+        </thead>
+        <tbody>
+
+          <tr>
+            <td class="col-method">C</td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td class="metric div-major"><span class="tbd">TBD</span></td>
+            <td class="metric"><span class="tbd">TBD</span></td>
+            <td class="metric div-minor"><span class="tbd">TBD</span></td>
+            <td class="metric"><span class="tbd">TBD</span></td>
+            <td class="metric"><span class="tbd">TBD</span></td>
+          </tr>
+
+          <tr>
+            <td class="col-method">C + D + G</td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td class="metric div-major"><span class="tbd">TBD</span></td>
+            <td class="metric"><span class="tbd">TBD</span></td>
+            <td class="metric div-minor"><span class="tbd">TBD</span></td>
+            <td class="metric"><span class="tbd">TBD</span></td>
+            <td class="metric"><span class="tbd">TBD</span></td>
+          </tr>
+
+        </tbody>
+      </table>
+    </div>
+
+    <div class="legend">
+      <span><b>C</b>&nbsp;coords &middot; <b>D</b>&nbsp;density &middot; <b>G</b>&nbsp;gradmag (C + D + G = all three)</span>
+      <span><span class="chk">&#10003;</span> input used</span>
+      <span><span class="no" style="padding:0 4px">&ndash;</span> input not used</span>
+    </div>
+  </section>
+
+</div>
+</body>
+</html>

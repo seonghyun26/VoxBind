@@ -124,6 +124,14 @@ CHAIN_SCRIPTS = [
          exp="260613_cha_mae_gradmag_v5_pretrain",
          out_csv="probe_results_e99_v5_cha_mae.csv",
          label="auto-probe — ChA-MAEViT (frozen features → MLP affinity probe, 839 split)"),
+    dict(script="run_v6_chain.sh",
+         exp="260615_atomblob_density_gradmag_vit_mae_40m_invfreq_v6_pretrain",
+         out_csv="probe_results_e99_v5_v6_ligandmatched.csv",
+         label="auto-probe — v6 ligand-matched density (C+D+G pretrain → affinity probe, 839 split)"),
+    dict(script="run_v7_chain.sh",
+         exp="260615_atomblob_density_gradmag_vit_mae_40m_invfreq_v7_pretrain",
+         out_csv="probe_results_e99_v5_v7_combined.csv",
+         label="auto-probe — v7 combined CrossDocked∪PDBbind-train (C+D+G pretrain → affinity probe, 839 split)"),
 ]
 
 
@@ -221,18 +229,45 @@ COMPLETED = [
          concl="Gradmag-only test ρ <b>0.551</b> — <b>beats density-only (0.505)</b>, ~ties coords-only (0.544): "
                "the ‖∇ρ‖ field is the <b>strongest single channel</b> and carries real standalone signal — but "
                "redundant with coords (per the noise control)."),
+    dict(label="v6 ligand-matched density", status_csv="probe_results_e99_v5_v6_ligandmatched.csv",
+         cond="atomblob_density_gradmag",
+         did="C+D+G encoder pretrained on <b>v6</b> — the tt_min subset (5,270) where density matches BOTH pocket and "
+             "ligand (vs v5, ~86% cross-docked → ligand-region density mismatched). Tests whether <i>genuinely matched</i> "
+             "density carries affinity signal the capacity controls can't explain.",
+         concl="Pending — C+D+G pretrain + probe on GPU 0-3."),
+    dict(label="v7 combined matched corpus", status_csv="probe_results_e99_v5_v7_combined.csv",
+         cond="atomblob_density_gradmag",
+         did="C+D+G encoder pretrained on <b>v7</b> = v6 ∪ PDBbind-2020-train matched complexes (7,873) — a larger "
+             "ligand-matched density corpus (density ↔ pocket+ligand for every sample). Tests whether more matched "
+             "density beats v6 and the contaminated v5.",
+         concl="Pending — queued after v6 frees GPU 0-3."),
     dict(label="Uniform-loss coords-only", status_csv="probe_results_e99_v5_uniform_coords.csv",
          cond="atomblob_ligvdw",
          did="Coords-only encoder re-pretrained with a <b>fully-uniform</b> MAE loss (no inv_freq, all channel/pos "
              "weights = 1) — a second pretraining draw of the 0.544 baseline.",
-         concl="<i>Result pending</i> — pairs with the uniform density+gradmag run to test whether the +0.05 "
-               "&ldquo;capacity&rdquo; gap survives without invfreq, and to gauge pretraining-run variance."),
+         concl="<b>The +0.05 gap was an invfreq artifact.</b> Coords-only <b>jumps 0.544 → 0.601</b> (+0.057) just "
+               "by dropping invfreq — the inv_freq/pos weighting was specifically <b>handicapping the coords "
+               "baseline</b>. Real coords-only performance is ~0.60, same cluster as everything else."),
     dict(label="Uniform-loss coords+density+gradmag", status_csv="probe_results_e99_v5_uniform_dg.csv",
          cond="atomblob_density_gradmag",
          did="Full 13-ch encoder re-pretrained with a <b>fully-uniform</b> MAE loss (no inv_freq, all weights = 1), "
              "real density+gradmag — second draw of the 0.595 baseline under matched-to-coords weighting.",
-         concl="<i>Result pending</i> — if uniform-coords ≈ uniform-d+g, the +0.05 was an invfreq/variance "
-               "artifact; if d+g still leads, the gap is robust to the weighting."),
+         concl="test ρ <b>0.595</b> — <b>unchanged</b> from invfreq (0.595), and now <b>≤ uniform coords-only "
+               "(0.601)</b>. Under matched loss <b>density+gradmag adds nothing</b> over coordinates. Settles the "
+               "arc: the &ldquo;density helps&rdquo; story was a low coords baseline, not a real signal."),
+    dict(label="Uniform real d+g (seed 43, variance draw)", status_csv="probe_results_e99_v5_uniform_dg2.csv",
+         cond="atomblob_density_gradmag",
+         did="Real coords+density+gradmag, fully-uniform loss, learnable PE, <b>fresh seed 43</b> — real partner of "
+             "the uniform-noise run, and a 2nd independent draw of uniform-d+g (seed42 = 0.595).",
+         concl="<i>Result pending</i> — quantifies pretraining-run variance (does the 0.595 hold under a new seed?) "
+               "and gives the real side of the real-vs-noise pair under matched uniform loss."),
+    dict(label="Uniform-loss noise control", status_csv="probe_results_e99_v5_uniform_noise.csv",
+         cond="atomblob_density_gradmag",
+         did="Coords + <b>matched-noise</b> density+gradmag re-pretrained with the fully-uniform MAE loss — the "
+             "uniform-weights analog of the invfreq noise control (0.609). Noise at both pretrain and probe.",
+         concl="<i>Result pending</i> — if it lands ~0.60 like the rest, it confirms the whole {real, noise, zero, "
+               "coords-only} set collapses to one cluster under matched loss; only the invfreq coords baseline (0.544) "
+               "was ever an outlier."),
     dict(label="ChA-MAEViT (channel-grouped MAE)", status_csv="probe_results_e99_v5_cha_mae.csv",
          cond="atomblob_density_gradmag",
          did="<b>Channel-grouped</b> masked-autoencoder pretraining (ChA-MAEViT — per-channel-group tokens + "
@@ -317,6 +352,14 @@ def render():
     # NB: order matters — cha_mae exp names also contain "gradmag", so match it first.
     def _desc(name):
         if "uniform" in name:
+            if "noise" in name:
+                return ("Uniform-loss noise control — coords + <b>NOISE</b> density+gradmag under the fully-uniform "
+                        "loss (the invfreq noise control was 0.609). Checks whether it too collapses into the "
+                        "~0.60 cluster once invfreq is removed.")
+            if "seed43" in name or "variance" in name:
+                return ("Real coords+density+gradmag, uniform loss, <b>fresh seed 43</b> — the real partner of the "
+                        "uniform-noise run (GPU 4-7), and a 2nd independent pretraining draw of uniform-d+g "
+                        "(seed42 was 0.595). Tests real-vs-noise under matched loss + pretraining-run variance.")
             which = "coords+density+gradmag (13ch)" if "density_gradmag" in name else "coords-only (11ch)"
             return (f"No-invfreq variance/confound check — {which} re-pretrained with a <b>fully-uniform</b> MAE "
                     "loss (no inv_freq, no channel/pos weights; all=1). Tests whether the +0.05 &ldquo;capacity&rdquo; "

@@ -39,6 +39,9 @@ def _make_dataset(cfg, split: str, aug: bool):
             # Optional precomputed (noise) gradmag source for the density-ablation
             # control; "" → derive ‖∇ρ‖ on the fly as usual.
             gradmag_crops_dir=cfg.dset.get("gradmag_crops_dir", ""),
+            # Train/val source file; override (e.g. data_train_v7.pt) for the
+            # combined CrossDocked∪PDBbind pretraining corpus.
+            data_file=cfg.dset.get("data_file", "data_train.pt"),
         )
     else:
         raise NotImplementedError(f"Dataset '{name}' not implemented")

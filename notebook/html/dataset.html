@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VoxBind — Dataset Statistics</title>
+<style>
+  :root {
+    --ink:        #1c2433;
+    --ink-soft:   #5b6678;
+    --line:       #e3e7ee;
+    --line-strong:#aeb6c4;
+    --bg:         #f5f6f8;
+    --card:       #ffffff;
+    --accent:     #2f6f4f;
+    --best-bg:    #eaf5ee;
+    --warn:       #b07a17;
+    --warn-bg:    #fcf3e0;
+    --bad:        #b0413a;
+    --bad-bg:     #fbecea;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 16px; line-height: 1.55; -webkit-font-smoothing: antialiased;
+  }
+  .page { max-width: 1180px; margin: 0 auto; padding: 48px 24px 96px; }
+  header.doc { border-bottom: 2px solid var(--ink); padding-bottom: 18px; margin-bottom: 40px; }
+  header.doc .date { font-size: 13px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-soft); margin-bottom: 6px; }
+  header.doc h1 { font-size: 28px; font-weight: 650; margin: 0; letter-spacing: -0.01em; }
+  header.doc .lede { margin: 14px 0 0; color: var(--ink-soft); font-size: 14.5px; max-width: 900px; }
+
+  section.block { margin-bottom: 56px; }
+  h2.sec { font-size: 21px; font-weight: 640; margin: 0 0 4px; letter-spacing: -0.01em; }
+  h2.sec .role { font-size: 12.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
+                 color: var(--ink-soft); margin-left: 10px; vertical-align: 2px; }
+  .sec-sub { font-size: 13.5px; color: var(--ink-soft); margin: 0 0 18px; max-width: 1000px; }
+
+  .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--card);
+                box-shadow: 0 1px 2px rgba(20,30,50,.04), 0 8px 24px rgba(20,30,50,.05); margin-bottom: 14px; }
+  table.t { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+  table.t th, table.t td { padding: 11px 14px; text-align: right; white-space: nowrap; }
+  table.t thead th { font-weight: 600; color: var(--ink); background: #fafbfc; border-bottom: 1px solid var(--line);
+                     font-size: 12.5px; }
+  table.t th.l, table.t td.l { text-align: left; }
+  table.t tbody tr { border-top: 1px solid var(--line); }
+  table.t tbody tr:hover { background: #fbfcfd; }
+  table.t td.l.key { font-weight: 560; }
+  table.t tr.total td { font-weight: 680; background: #f7faf8; }
+  .num { font-weight: 560; }
+  .muted { color: var(--ink-soft); font-size: 12.5px; }
+  .pill { display: inline-block; font-size: 11px; font-weight: 600; letter-spacing: .03em;
+          padding: 2px 9px; border-radius: 999px; }
+  .pill.ok   { background: var(--best-bg); color: #1d5a3a; }
+  .pill.warn { background: var(--warn-bg); color: var(--warn); }
+  .pill.bad  { background: var(--bad-bg);  color: var(--bad); }
+  .pill.grey { background: #eef1f6; color: var(--ink-soft); }
+
+  .callout { border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 10px;
+             background: var(--card); padding: 18px 20px; margin: 18px 0 0; font-size: 14px; line-height: 1.6; }
+  .callout.warn { border-left-color: var(--warn); }
+  .callout h3 { margin: 0 0 8px; font-size: 14.5px; font-weight: 650; }
+  .callout code { background: #f1f3f7; border-radius: 5px; padding: 1px 6px; font-size: 12.5px;
+                  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+  .callout b { color: var(--ink); }
+  .callout ul { margin: 8px 0 0; padding-left: 20px; } .callout li { margin-bottom: 5px; }
+
+  .fname { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 12px; color: var(--ink-soft); }
+  .notes { margin-top: 16px; font-size: 13px; color: var(--ink-soft); line-height: 1.6; max-width: 1000px; }
+  .notes b { color: var(--ink); font-weight: 600; }
+  .notes ul { margin: 6px 0 0; padding-left: 20px; } .notes li { margin-bottom: 4px; }
+  footer { border-top: 1px solid var(--line); margin-top: 40px; padding-top: 16px; font-size: 12px; color: var(--ink-soft); }
+</style>
+</head>
+<body>
+<div class="page">
+
+<header class="doc">
+  <div class="date">VoxBind · Data Card</div>
+  <h1>Dataset Statistics</h1>
+  <p class="lede">Point-in-time counts for the three datasets used in VoxBind: <b>CrossDocked2020</b>
+  (generation / self-supervised pretraining), <b>PDBbind / LP-PDBBind</b> (downstream affinity probes), and
+  <b>MISATO</b> (downstream QM/MD property probes). "Density coverage" = fraction of samples that carry a
+  trustworthy frame-aligned experimental 2F<sub>o</sub>−F<sub>c</sub> electron-density crop.</p>
+</header>
+
+<!-- ============================ CROSSDOCKED ============================ -->
+<section class="block">
+  <h2 class="sec">CrossDocked2020 <span class="role">Pretraining / generation</span></h2>
+  <p class="sec-sub">Pocket–ligand pairs from <span class="fname">data_train.pt</span> / <span class="fname">data_test.pt</span>.
+  Val is carved from the train pool (seed-1234 shuffle, last 100), then a ligand-size filter (max_len ≤ 30 Å) is applied.</p>
+
+  <div class="table-wrap">
+    <table class="t">
+      <thead>
+        <tr><th class="l">Split</th><th>Pairs (raw)</th><th>After max_len≤30</th><th>Density crops</th><th>Coverage</th></tr>
+      </thead>
+      <tbody>
+        <tr><td class="l key">Train</td><td class="num">99,981</td><td class="num">99,881</td><td class="num">78,528</td><td><span class="pill ok">78.6%</span></td></tr>
+        <tr><td class="l key">Val</td><td class="num">100</td><td class="muted">carved from train tail</td><td class="muted">—</td><td class="muted">—</td></tr>
+        <tr><td class="l key">Test</td><td class="num">100</td><td class="num">100</td><td class="num">79</td><td><span class="pill ok">79.0%</span></td></tr>
+        <tr class="total"><td class="l">Total</td><td class="num">~100,081</td><td class="num">~99,981</td><td class="num">78,607</td><td><span class="pill ok">78.6%</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="muted">Density coverage is identical across crop versions v1 / v3 / v5 (same alignment pass, different normalization).
+  Crops live in <span class="fname">xray_crops_aligned*/</span>; per-sample validity in <span class="fname">{split}_available.npy</span>.</p>
+
+  <!-- Native vs cross-docked -->
+  <p class="sec-sub" style="margin-top:28px;">Composition of the filtered train set — native ligand vs. <b>cross-docked</b> ligand
+  (the defining feature of CrossDocked2020):</p>
+  <div class="table-wrap">
+    <table class="t">
+      <thead>
+        <tr><th class="l">Pose type</th><th>Count</th><th>Share</th><th>Density crops</th><th>Coverage</th></tr>
+      </thead>
+      <tbody>
+        <tr><td class="l key">Native ligand <span class="muted">(lig PDB = receptor PDB)</span></td><td class="num">13,705</td><td class="num">13.7%</td><td class="num">10,507</td><td><span class="pill ok">76.7%</span></td></tr>
+        <tr><td class="l key">Cross-docked <span class="muted">(lig from a different PDB)</span></td><td class="num">86,176</td><td class="num">86.3%</td><td class="num">68,021</td><td><span class="pill ok">78.9%</span></td></tr>
+        <tr class="total"><td class="l">Train (filtered)</td><td class="num">99,881</td><td class="num">100%</td><td class="num">78,528</td><td><span class="pill ok">78.6%</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="muted">Of the native group, ~6.7% of all samples are <code style="font-family:ui-monospace">tt_min</code> self-minimized native poses;
+  the rest are docked. Coverage is ~the same for both groups because availability depends only on the <b>receptor</b> crystal.</p>
+
+  <div class="callout warn">
+    <h3>⚠ Does density exist for cross-docked samples? Yes — but it is the <i>receptor's</i> density, not the docked ligand's.</h3>
+    Each entry is named <span class="fname">{receptor}_{chain}_rec_{ligand-PDB}_{resname}_lig_tt_{docked|min}_{rank}</span>,
+    e.g. <span class="fname">4xe6_X_rec_3fqc_55v_lig_tt_docked_4</span> = ligand <code>55v</code> taken from PDB <code>3fqc</code>
+    and computationally docked into receptor <code>4xe6</code>.
+    <ul>
+      <li>The CCP4 map is downloaded and the crop is validated <b>by the receptor PDB id only</b> (here <code>4xe6</code>) —
+          alignment fits the pocket atoms to the deposited receptor structure and drops a crop on weak density
+          <i>at the receptor atoms</i>. The ligand identity is never consulted.</li>
+      <li>So for the 86% cross-docked majority, the electron density in the ligand region reflects whatever <code>4xe6</code>
+          actually crystallized (its own native ligand / solvent), <b>not</b> the docked <code>55v</code> pose.
+          The <b>pocket / protein</b> density is faithful for every sample; the <b>ligand-region</b> density only
+          matches the modeled ligand for the native self-poses (~7–14%).</li>
+      <li>Practically: the density channel is best read as a faithful <b>receptor-context</b> signal, available for ~79% of
+          all pairs regardless of native vs cross-docked — not as ground-truth density for the generated ligand.</li>
+    </ul>
+  </div>
+
+  <div class="callout">
+    <h3>✔ Density <b>v6</b> — the ligand-matched subset (fixes the mismatch above)</h3>
+    v6 keeps a crop only where the experimental density corresponds to <b>both</b> the pocket <b>and</b> the modeled ligand:
+    <span class="fname">available_v6 = density_available &amp; is_native</span>.
+    <ul>
+      <li><b>Pocket match</b> (inherited from v5): Kabsch-aligned pocket atoms + real density at the receptor atoms.</li>
+      <li><b>Ligand match</b> (new <span class="fname">--native_filter tt_min</span>): the modeled ligand is the receptor's own
+          crystal ligand in its crystal pose (<code>tt_min</code>, ligand PDB = receptor PDB) — so the ligand-region density
+          is genuinely that ligand's, not a cross-docked stand-in.</li>
+      <li>Same v5 arcsinh+z normalization (joint train+test pool) → directly comparable to v5; v5 is left untouched.</li>
+    </ul>
+    <table class="t" style="margin-top:12px; width:auto;">
+      <thead><tr><th class="l">Version</th><th>Train crops</th><th>Test crops</th><th class="l">Ligand-region density</th></tr></thead>
+      <tbody>
+        <tr><td class="l key">v5 (all available)</td><td class="num">78,528</td><td class="num">79</td><td class="l muted">receptor context only (mostly mismatched)</td></tr>
+        <tr><td class="l key">v6 (ligand-matched) <span class="pill ok">new</span></td><td class="num">5,270</td><td class="num">15</td><td class="l"><span class="pill ok">matches the modeled ligand</span></td></tr>
+        <tr><td class="l key">v7 (v6 ∪ PDBbind-train) <span class="pill ok">new</span></td><td class="num">7,873</td><td class="num">15</td><td class="l"><span class="pill ok">matches pocket + ligand</span></td></tr>
+      </tbody>
+    </table>
+    <div class="muted" style="margin-top:8px;">~5.3% of pairs survive — the honest price of requiring true density↔ligand correspondence.
+    Relax with <span class="fname">--native_filter same_pdb</span> (10,507 / 27) to allow redocked native poses.
+    Generate: <span class="fname">python dataset/00b_density_preprocess.py --version v6 --save_gradmag</span>;
+    train: <span class="fname">scripts/pretrain.sh --mode density --data v6 --gradmag</span>.</div>
+  </div>
+
+  <div class="callout">
+    <h3>✔ Density <b>v7</b> — combined matched corpus (CrossDocked v6 ∪ PDBbind-2020-train)</h3>
+    v7 unions the v6 ligand-matched CrossDocked crops with the <b>PDBbind-2020 train split</b> — real holo crystals where
+    density inherently matches pocket + ligand — into one CrossDocked-style pretraining corpus
+    (<span class="fname">data_train_v7.pt</span> + <span class="fname">xray_crops_aligned_v7/</span>). ~1.5× the v6 matched data.
+    <table class="t" style="margin-top:12px; width:auto;">
+      <thead><tr><th class="l">Source</th><th>Complexes</th><th class="l">Notes</th></tr></thead>
+      <tbody>
+        <tr><td class="l key">CrossDocked v6 (tt_min)</td><td class="num">5,270</td><td class="l muted">native crystal poses, ligand-matched</td></tr>
+        <tr><td class="l key">PDBbind-2020 train + EDS</td><td class="num">2,704</td><td class="l muted">all incl. metal/halogen complexes (unsupported atoms masked, like CrossDocked)</td></tr>
+        <tr class="total"><td class="l">v7 train crops</td><td class="num">7,873</td><td class="l">density ↔ pocket + ligand for every sample</td></tr>
+      </tbody>
+    </table>
+    <div class="muted" style="margin-top:8px;">PDBbind density re-cropped from 2F<sub>o</sub>−F<sub>c</sub> maps at the supported-atom ligand
+    centroid with the <b>same v6 arcsinh+z</b> normalization (one value scale; atoms↔density aligned exactly as CrossDocked).
+    <b>Train split only</b> → no leakage into the affinity probe (which tests on PDBbind test). gradmag derived on the fly.
+    Build: <span class="fname">python dataset/00h_make_v7.py</span>;
+    train: <span class="fname">…invfreq_v5 dset.crops_dir=…_v7 dset.data_file=data_train_v7.pt</span> (see <span class="fname">scripts/run_v7_chain.sh</span>).</div>
+  </div>
+
+  <p class="muted" style="margin-top:10px;">Sources: <span class="fname">dataset/crossdocked.py</span> (split/shuffle),
+  <span class="fname">dataset/00a_density_download.py</span> (<code>get_pdb_id</code> → receptor id),
+  <span class="fname">dataset/00b_density_preprocess.py</span> (ligand-centroid crop, Kabsch fit to deposited receptor, density-criterion validity; <code>--native_filter</code> for v6).</p>
+</section>
+
+<!-- ============================ PDBBIND ============================ -->
+<section class="block">
+  <h2 class="sec">PDBbind / LP-PDBBind <span class="role">Downstream — affinity probes</span></h2>
+  <p class="sec-sub">Supervised binding-affinity (pK) set, split by the LP-PDBBind temporal <span class="fname">new_split</span>.
+  Density from PDBe-EDS maps (<span class="fname">eds_cache.json</span>).</p>
+
+  <div class="table-wrap">
+    <table class="t">
+      <thead>
+        <tr><th class="l">Split (structures built)</th><th>Count</th><th>EDS density</th><th>Coverage</th></tr>
+      </thead>
+      <tbody>
+        <tr><td class="l key">Train</td><td class="num">2,999</td><td class="num">2,704</td><td><span class="pill ok">90.2%</span></td></tr>
+        <tr><td class="l key">Val</td><td class="num">626</td><td class="num">580</td><td><span class="pill ok">92.7%</span></td></tr>
+        <tr><td class="l key">Test</td><td class="num">1,439</td><td class="num">1,310</td><td><span class="pill ok">91.0%</span></td></tr>
+        <tr class="total"><td class="l">Total (assigned)</td><td class="num">5,064</td><td class="num">4,594</td><td><span class="pill ok">90.7%</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="muted">Raw index: <b>19,443</b> complexes; <b>5,316</b> with built structures/voxels (+252 unassigned to a split).
+  <b>4,827</b> PDBs have EDS maps cached. PDBbind density coverage (~91%) is much higher than CrossDocked because every
+  entry is a real deposited crystal complex.</p>
+
+  <p class="sec-sub" style="margin-top:28px;">Splits actually used by the probes (after per-experiment quality refilters):</p>
+  <div class="table-wrap">
+    <table class="t">
+      <thead>
+        <tr><th class="l">Split set</th><th>Train</th><th>Val</th><th>Test</th><th>Used for</th></tr>
+      </thead>
+      <tbody>
+        <tr><td class="l key">Canonical <span class="pill grey">current</span></td><td class="num">2,172</td><td class="num">480</td><td class="num">839</td><td class="l muted">260609 refilter, cl1_only=False — all current probes</td></tr>
+        <tr><td class="l key">Density-available <span class="pill warn">legacy</span></td><td class="num">2,704</td><td class="num">580</td><td class="num">1,310</td><td class="l muted">pre-refilter baseline — do not cross-compare</td></tr>
+        <tr><td class="l key">H-bond / interaction subsets</td><td class="num">2,133 / 2,003</td><td class="num">478 / 456</td><td class="num">835 / 804</td><td class="l muted">drop samples lacking the target label</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="notes"><b>Note:</b> the canonical <b>2,172 / 480 / 839</b> and the legacy <b>2,704 / 580 / 1,310</b> are not comparable —
+  always re-probe baselines on the same split before comparing.</p>
+</section>
+
+<!-- ============================ MISATO ============================ -->
+<section class="block">
+  <h2 class="sec">MISATO <span class="role">Downstream — QM / MD probes</span></h2>
+  <p class="sec-sub">Quantum-mechanical and molecular-dynamics property targets (partial charge, interaction energy, RMSF, …),
+  MISATO 8 : 1 : 1 split.</p>
+  <div class="table-wrap">
+    <table class="t">
+      <thead>
+        <tr><th class="l">Split set</th><th>Train</th><th>Val</th><th>Test</th><th>Notes</th></tr>
+      </thead>
+      <tbody>
+        <tr><td class="l key">Full MD split</td><td class="num">11,453</td><td class="num">1,312</td><td class="num">1,341</td><td class="l muted">misato_splits/*_MD.txt</td></tr>
+        <tr><td class="l key">MISATO-overlap probe subset</td><td class="num">2,657</td><td class="num">361</td><td class="num">399</td><td class="l muted">n_test = 399 (e.g. partial-charge, interaction-energy)</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="muted">QM target file: 19,413 entries · MD target file: 14,106 entries · built structures: 14,069.
+  Canonical write-up: <span class="fname">notebook/html/260618/260618_meeting.html</span>.</p>
+</section>
+
+<footer>
+  Generated from <span class="fname">voxbind/dataset/</span> — data_train.pt / data_test.pt, xray_crops_aligned_v5/*_available.npy,
+  pdbbind/index.csv + eds_cache.json, misato/misato_splits/. Counts are a point-in-time snapshot.
+</footer>
+
+</div>
+</body>
+</html>
