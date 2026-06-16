@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VoxBind Baseline Results</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #f4f6f9;
+      color: #2c3040;
+      padding: 40px 24px;
+    }
+    .container { max-width: 720px; margin: 0 auto; }
+    h1 {
+      font-size: 22px; font-weight: 700; margin-bottom: 4px;
+      color: #1a1e2e;
+    }
+    .subtitle {
+      font-size: 13px; color: #666; margin-bottom: 28px;
+    }
+    .subtitle span { margin-right: 16px; }
+    table {
+      width: 100%; border-collapse: collapse;
+      background: #fff;
+      border-radius: 10px;
+      overflow: hidden;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+    }
+    thead tr { background: #2c3a5c; color: #fff; }
+    thead th {
+      padding: 13px 18px; text-align: left;
+      font-size: 12px; font-weight: 600;
+      letter-spacing: 0.05em; text-transform: uppercase;
+    }
+    thead th:not(:first-child) { text-align: right; }
+    tbody tr { border-bottom: 1px solid #eef0f5; }
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover { background: #f7f9fc; }
+    tbody td {
+      padding: 12px 18px; font-size: 14px;
+    }
+    tbody td:not(:first-child) { text-align: right; font-variant-numeric: tabular-nums; }
+    .section-header td {
+      background: #f0f3f9;
+      font-size: 11px; font-weight: 700;
+      letter-spacing: 0.08em; text-transform: uppercase;
+      color: #6070a0; padding: 7px 18px;
+    }
+    .highlight td { font-weight: 600; color: #1a3a7c; }
+    .footer {
+      margin-top: 16px; font-size: 12px; color: #888;
+      display: flex; justify-content: space-between;
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+  <h1>VoxBind Baseline — CrossDocked Test Set</h1>
+  <div class="subtitle">
+    <span>&#x1F4C5; 2026-06-15</span>
+    <span>&#x1F9EA; exp: reproduction (epoch 86)</span>
+    <span>&#x1F4CA; 100 pockets &times; 100 samples</span>
+    <span>Vina exhaustiveness=16</span>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Metric</th>
+        <th>Mean ± Std</th>
+        <th>Median</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr class="section-header"><td colspan="3">Chemical Quality</td></tr>
+      <tr>
+        <td>Validity</td>
+        <td>0.9985</td>
+        <td>—</td>
+      </tr>
+      <tr>
+        <td>Uniqueness</td>
+        <td>1.0000</td>
+        <td>—</td>
+      </tr>
+      <tr>
+        <td>Diversity</td>
+        <td>0.7299</td>
+        <td>—</td>
+      </tr>
+      <tr>
+        <td>QED</td>
+        <td>0.5259</td>
+        <td>—</td>
+      </tr>
+      <tr>
+        <td>SA</td>
+        <td>0.6408</td>
+        <td>—</td>
+      </tr>
+      <tr>
+        <td>Lipinski</td>
+        <td>4.577</td>
+        <td>—</td>
+      </tr>
+
+      <tr class="section-header"><td colspan="3">Vina Docking (kcal/mol, lower = better)</td></tr>
+      <tr>
+        <td>Vina score_only</td>
+        <td>-5.512 &plusmn; 9.085</td>
+        <td>-6.559</td>
+      </tr>
+      <tr>
+        <td>Vina minimize</td>
+        <td>-6.976 &plusmn; 4.382</td>
+        <td>-7.114</td>
+      </tr>
+      <tr class="highlight">
+        <td>Vina dock</td>
+        <td>-8.012 &plusmn; 2.421</td>
+        <td>-8.012</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="footer">
+    <span>9,976 / 10,000 molecules docked successfully</span>
+    <span>VoxBind &sigma;=0.9 &middot; WJS sampling</span>
+  </div>
+
+  <h1 style="margin-top: 48px;">TargetDiff EGNN — Binding Affinity</h1>
+  <div class="subtitle">
+    <span>&#x1F4C5; 2026-06-16</span>
+    <span>&#x1F9EA; PDBBind v2020 &middot; LP-PDBBind split (EDS-available, drop covalent)</span>
+    <span>&#x1F4CA; train 2328 / val 515 / test 1136 &middot; best epoch 17</span>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Subset</th>
+        <th>n</th>
+        <th>RMSE</th>
+        <th>MAE</th>
+        <th>R&sup2;</th>
+        <th>Pearson</th>
+        <th>Spearman</th>
+        <th>Target pK (mean &plusmn; std)</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr class="highlight">
+        <td>All</td>
+        <td>1136</td>
+        <td>1.533</td>
+        <td>1.246</td>
+        <td>0.221</td>
+        <td>0.521</td>
+        <td>0.512</td>
+        <td>6.506 &plusmn; 1.285</td>
+      </tr>
+      <tr>
+        <td>Ki</td>
+        <td>602</td>
+        <td>1.506</td>
+        <td>1.232</td>
+        <td>0.206</td>
+        <td>0.517</td>
+        <td>0.465</td>
+        <td>7.080 &plusmn; 1.274</td>
+      </tr>
+      <tr>
+        <td>Kd</td>
+        <td>534</td>
+        <td>1.563</td>
+        <td>1.263</td>
+        <td>0.143</td>
+        <td>0.434</td>
+        <td>0.416</td>
+        <td>5.859 &plusmn; 0.945</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="footer">
+    <span>EGNN 6-layer &middot; 256 hidden &middot; knn=48 &middot; cutoff=10Å</span>
+    <span>voxbind env (PyTorch 2.10.0+cu128)</span>
+  </div>
+</div>
+</body>
+</html>
