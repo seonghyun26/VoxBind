@@ -15,7 +15,7 @@ Launch
     cd voxbind
     CUDA_VISIBLE_DEVICES=0,1,2,3 torchrun --standalone --nproc_per_node=4 \\
         train_density_cha_mae.py \\
-        --config-name=config_train_atomblob_density_gradmag_cha_mae_40m_v5 \\
+        --config-name=config_train_atomblob_density_gradmag_cha_mae_40m \\
         exp_name=260612_cha_mae_gradmag_v5_pretrain \\
         output_dir=exps/260612_cha_mae_gradmag_v5_pretrain
 """
@@ -221,7 +221,7 @@ def log_metrics(epoch, train_metrics, val_metrics, dt):
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
-@hydra.main(config_path="configs", config_name="config_train_atomblob_density_gradmag_cha_mae_40m_v5",
+@hydra.main(config_path="configs", config_name="config_train_atomblob_density_gradmag_cha_mae_40m",
             version_base=None)
 def main(cfg: DictConfig) -> None:
     assert torch.cuda.is_available(), "GPU required."

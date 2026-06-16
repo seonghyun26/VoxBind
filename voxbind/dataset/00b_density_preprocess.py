@@ -510,6 +510,87 @@ def run_crop(split, samples, R, t, ok, cfg):
     return total, written
 
 
+# ── Resample-manifest mode (prepare for on-the-fly train-time density aug) ──────
+
+def run_resample(args, native_filter, aligned_dir, out_root):
+    """Emit per-split manifests so density can be cropped from the full CCP4 map at the
+    AUGMENTED pose at TRAIN time — no frozen crops written.
+
+    Reuses the cached Kabsch alignment ({split}_transforms.npz, recomputed only if missing)
+    and the normalization recipe from an existing precomputed version's stats.json
+    (--resample_norm_version). Writes, under --resample_out, per split:
+        {split}_manifest.npz   pdb_id, centroid, R, t, ok   (full-length N, positional —
+                               row i aligns with crop index i / DatasetCrossDockedXray order)
+        {split}_available.npy  bool (N,)
+    plus a single resample.json carrying the grid + normalization recipe + ccp4 path so the
+    train-time reader is self-describing.
+    """
+    norm_ver = args.resample_norm_version
+    stats_path = out_root / DIR_NAME[norm_ver] / "stats.json"
+    if not stats_path.exists():
+        sys.exit(f"[error] resample needs the normalization recipe at {stats_path}. "
+                 f"Run `00b … --version {norm_ver}` once first (it writes stats.json).")
+    norm = json.loads(stats_path.read_text())
+
+    ccp4 = Path(args.ccp4_dir)
+    n_maps = len(list(ccp4.glob("*.ccp4"))) if ccp4.exists() else 0
+    if n_maps == 0:
+        sys.exit(f"[error] no .ccp4 maps in {ccp4}. Resample mode needs the FULL maps retained on "
+                 f"disk (this corpus may have streamed+deleted them — re-acquire before resampling).")
+
+    out_dir = out_root / args.resample_out
+    out_dir.mkdir(parents=True, exist_ok=True)
+    cfg = dict(ccp4=ccp4, pdb=Path(args.pdb_dir),
+               min_atoms=args.min_atoms, max_rmsd=args.max_rmsd, min_density=args.min_density,
+               chain_select=args.chain_select, workers=args.workers)
+
+    print("=== density RESAMPLE-manifest mode (on-the-fly aug prep) ===")
+    print(f"  norm recipe  : {norm_ver}  ({norm.get('scheme')})")
+    print(f"  ccp4_dir     : {ccp4}  ({n_maps:,} maps retained)")
+    print(f"  out_dir      : {out_dir}")
+    print(f"  splits       : {args.splits}  (max_len {args.max_len})")
+    if native_filter != "none":
+        print(f"  native_filter: {native_filter}  (availability restricted to ligand-matched poses)")
+
+    for split in args.splits:
+        samples = load_split(args.data_dir, split, args.max_len)
+        R, t, ok = ensure_transforms(split, samples, args, cfg, aligned_dir)
+        if native_filter != "none":
+            nat = is_native_mask(samples, native_filter)
+            ok = ok & nat
+            print(f"[{split}] native_filter={native_filter}: {int(nat.sum()):,} matched | "
+                  f"{int(ok.sum()):,} after ∩ density-available")
+        pdb_ids = np.array([get_pdb_id(p["id"]) for p, _l in samples])
+        centroids = (np.stack([get_centroid(l) for _p, l in samples]).astype(np.float32)
+                     if samples else np.zeros((0, 3), np.float32))
+        np.save(out_dir / f"{split}_available.npy", ok)
+        np.savez(out_dir / f"{split}_manifest.npz",
+                 pdb_id=pdb_ids, centroid=centroids,
+                 R=R.astype(np.float32), t=t.astype(np.float32), ok=ok)
+        print(f"[{split}] manifest: {int(ok.sum()):,} available / {len(samples):,} samples "
+              f"→ {split}_manifest.npz")
+
+    recipe = dict(
+        kind="resample_manifest", grid_dim=GRID_DIM, resolution=RESOLUTION,
+        ccp4_dir=str(ccp4.resolve()), ccp4_ext=".ccp4",
+        frame="kabsch: transform=(R,t) maps crop(CrossDocked)-frame → map(deposited)-frame",
+        norm_version=norm_ver,
+        normalization={k: norm[k] for k in
+                       ("scheme", "formula", "arcsinh_scale", "mu_a", "sigma_a",
+                        "mu", "sigma", "max_abs", "clip_lo_raw", "clip_hi_raw",
+                        "mu_clipped", "sigma_clipped") if k in norm},
+        native_filter=native_filter,
+        train_time_note=(
+            "Per sample i where ok[i]: sample the RAW map (load_raw_grid, NOT z-scored _load_grid) at "
+            "cart = (centroid[i] + R_aug.T @ (o - t_aug)) @ R[i].T + t[i], o = 64³ box offsets (Å); "
+            "then apply `normalization` (v5: x' = (arcsinh(raw/arcsinh_scale) - mu_a)/sigma_a). "
+            "Derive gradmag from x' on the fly. (R_aug,t_aug) = random per-sample aug; "
+            "ideally fold R_aug.T@offsets + the resample into a GPU grid_sample at train time."),
+    )
+    (out_dir / "resample.json").write_text(json.dumps(recipe, indent=2))
+    print(f"\nDone. Resample manifests + recipe → {out_dir}")
+
+
 # ── Main ─────────────────────────────────────────────────────────────────────────
 
 def parse_args():
@@ -567,6 +648,17 @@ def parse_args():
                         "plus a stats.json carrying the density version. v2–v5 only.")
     p.add_argument("--limit", type=int, default=0,
                    help="Process only the first N PDB IDs per split (debug)")
+    # on-the-fly resample manifest (prepare for train-time density augmentation)
+    p.add_argument("--mode", choices=["precompute", "resample"], default="precompute",
+                   help="precompute=write frozen normalized crops (default). resample=write ONLY a "
+                        "per-split manifest (pdb_id, centroid, Kabsch R/t, ok) + a normalization recipe, "
+                        "so density is cropped from the full CCP4 map at the AUGMENTED pose at train "
+                        "time (no crops written). Reuses cached transforms + an existing stats.json.")
+    p.add_argument("--resample_norm_version", default="v5", choices=["v2", "v3", "v4", "v5", "v6"],
+                   help="resample mode: which precomputed version's stats.json supplies the "
+                        "normalization recipe baked into the manifest (default v5 = canonical scale).")
+    p.add_argument("--resample_out", default="xray_resample_v5",
+                   help="resample mode: output dir name (under --out_root) for manifests + recipe.")
     return p.parse_args()
 
 
@@ -577,14 +669,16 @@ def main():
     # v6 (ligand-matched subset) changes the `ok` mask + pool stats globally, so it
     # must be produced on its own to avoid corrupting v1-v5 outputs.
     native_filter = args.native_filter
-    if "v6" in versions:
-        if versions != ["v6"]:
-            sys.exit("[error] --version v6 (ligand-matched subset) must be generated alone: "
-                     "run `--version v6` by itself.")
-        if native_filter == "none":
-            native_filter = "tt_min"   # v6 default
-    elif native_filter != "none":
-        sys.exit("[error] --native_filter only applies to --version v6.")
+    if args.mode == "precompute":
+        if "v6" in versions:
+            if versions != ["v6"]:
+                sys.exit("[error] --version v6 (ligand-matched subset) must be generated alone: "
+                         "run `--version v6` by itself.")
+            if native_filter == "none":
+                native_filter = "tt_min"   # v6 default
+        elif native_filter != "none":
+            sys.exit("[error] --native_filter only applies to --version v6.")
+    # resample mode uses --native_filter as-is (decoupled from the v6 crop-version logic)
 
     need_raw = any(v in versions for v in RAW_VERSIONS)
     need_v4 = "v4" in versions
@@ -592,6 +686,12 @@ def main():
 
     out_root = Path(args.out_root)
     aligned_dir = out_root / DIR_NAME["v1"]
+
+    # Resample-manifest mode: emit manifest + recipe (no crops) and stop.
+    if args.mode == "resample":
+        run_resample(args, native_filter, aligned_dir, out_root)
+        return
+
     ver_dirs = {v: out_root / DIR_NAME[v] for v in versions}
     scratch_dir = out_root / ".raw_crops_scratch"
 

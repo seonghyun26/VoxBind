@@ -114,7 +114,7 @@ from voxbind.dataset.crossdocked_xray import _crop_density, normalize_crop
 
 # ── Config ─────────────────────────────────────────────────────────────────────
 
-PDBBIND_DIR  = Path(__file__).parent / "data" / "pdbbind"
+PDBBIND_DIR  = Path(__file__).parent.parent / "data" / "pdbbind"
 INDEX_CSV    = PDBBIND_DIR / "index.csv"
 STRUCT_DIR   = PDBBIND_DIR / "structures" / "pbpp-2020"
 CCP4_DIR     = PDBBIND_DIR / "ccp4"
@@ -153,7 +153,7 @@ CLIP_HI = +1.647
 V5_ARCSINH_SCALE = 0.5
 
 DEFAULT_V5_REFERENCE_STATS = (
-    Path(__file__).parent / "data" / "xray_crops_aligned_v5" / "stats.json"
+    Path(__file__).parent.parent / "data" / "xray_crops_aligned_v5" / "stats.json"
 )
 
 # Element → channel index lookup (matches voxbind.constants.ELEMENTS_HASH_CROSSDOCKED)

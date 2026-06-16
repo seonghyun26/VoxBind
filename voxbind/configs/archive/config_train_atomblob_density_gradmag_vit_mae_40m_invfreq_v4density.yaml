@@ -1,0 +1,111 @@
+defaults:
+  - dset: crossdocked_xray
+  - model: atomblob_density_vit_mae_40m
+  - vox: default
+  - override hydra/job_logging: custom
+  - _self_
+
+# Atom-blob (SEPARATE ligand+pocket channels) + v4 X-ray density + gradmag ViT-MAE.
+#
+# 13 input channels: 7 ligand + 4 pocket atom-type (element-wise vdW radii for
+# BOTH, via dset.ligand_radius=-1) + 1 z-scored v4 density + 1 gradmag (‖∇ρ‖).
+# A single MLP recon head predicts ALL 13 jointly (dual_head=false), gradmag
+# reconstructed.
+#
+# Loss weighting:
+#   - atoms : channel_weighting=inv_freq  (1/freq, strong rare-atom rebalancing)
+#             with channel_weight_clip_ratio=30 — caps the rare/common weight
+#             ratio so voxel-dense pocket atoms (poc_C freq~0.66) keep a floor
+#             instead of collapsing to ~0.01 (pure 1/freq spread was ~262x).
+#   - density + gradmag : equal weights (both 0.1), down-weighted vs atoms.
+#   - atom_pos_weight=10 : per-voxel up-weighting of atom-ON voxels (orthogonal).
+# Final 13-vec renormalized to sum=13 so L_pretext scale matches the unweighted case.
+
+debug: False
+wandb: True
+wandb_tags: []          # e.g. [pretrain, atomblob_density_gradmag, 40m, invfreq, ligvdw, clip30, crossdocked_xray]
+num_workers: 4
+resume: null
+resume_epoch: null
+exp_dir: exps
+exp_name: atomblob_density_gradmag_vit_mae_40m_invfreq${hydra.job.override_dirname}
+output_dir: null
+
+seed: 42
+num_epochs: 100
+aug: True
+bsz: 8
+accum_steps: 2
+lr: 1e-4
+wd: 5e-2
+
+# ── Input composition ────────────────────────────────────────────────────────
+input_mode: atomblob_density       # 11 atom channels: 7 ligand + 4 pocket (separate)
+with_gradmag: true                 # + gradmag trailing channel → 13 total
+
+# ── Dataset ──────────────────────────────────────────────────────────────────
+dset:
+  crops_dir: /home1/irteam/VoxBind/voxbind/dataset/data/xray_crops_aligned_v4
+  normalize: false                 # v4 crops are pre-normalized on disk
+  ligand_radius: -1                # element-wise vdW radii for ligand atoms (pocket already -1)
+  subset_xray_only: true
+  subset_n: 78428
+  subset_val_n: 100
+  use_xray: true
+
+# ── Model ────────────────────────────────────────────────────────────────────
+model:
+  n_in_channels: 13                # 11 atoms + density + gradmag
+  # Single recon head predicts all 13 channels jointly (dual_head=false,
+  # n_struct_channels=0). Per-patch token-MLP head (~1.0M params) reads the
+  # encoder OUTPUT, so the whole encoder is pre-trained; the head is discarded after.
+  head_style: patch_mlp            # per-patch 2-layer MLP recon head (vs full-res conv)
+  head_hidden_dim: 67              # hidden width → ~1.0M-param head (8192→67→6656)
+  head_depth: 2
+
+# ── MAE knobs ────────────────────────────────────────────────────────────────
+mae:
+  pretext_style: mae
+  density_source: xray
+  sigma_blur_a_lo: 0.30
+  sigma_blur_a_hi: 0.80
+  sigma_noise: 0.0
+  block_size: 8
+  mask_ratio: 0.60
+  mask_strategy: atom_biased
+  mask_atom_tau: 1.0
+  # atom-channel frequency rebalancing (1/freq, clipped)
+  channel_weighting: inv_freq          # 1/freq (vs inv_sqrt_freq = 1/sqrt(freq))
+  channel_weight_clip_ratio: 30.0      # cap rare/common atom-weight ratio (0 = off)
+  # density-domain channels: equal, down-weighted
+  density_channel_weight: 0.1
+  gradmag_channel_weight: 0.1
+  gradmag_reconstruct: true
+  gradmag_noise: false
+  # per-voxel atom-ON up-weighting (orthogonal to channel weighting)
+  atom_pos_weight: 10.0
+  atom_pos_thresh: 0.05
+  lambda_dens: 1.0
+  lambda_str: 1.0
+  struct_pos_weight: 100.0
+  struct_pos_thresh: 0.05
+  ema_decay: 0.999
+  grad_clip: 1.0
+  val_every: 1
+  ckpt_every: 50
+
+# Hydra
+hydra:
+  run:
+    dir: ./${exp_dir}/${exp_name}
+  job:
+    config:
+      override_dirname:
+        kv_sep: ""
+        item_sep: "_"
+        exclude_keys: [
+            "exp_dir", "lr", vox.grid_dim, "wd", "resume", "resume_epoch", "wandb",
+            "num_workers", "exp_name", "output_dir", "out_dir",
+            "bsz", "accum_steps", "seed", "num_epochs", "aug", "pocket_radius",
+            "grid_dim", "debug"
+]

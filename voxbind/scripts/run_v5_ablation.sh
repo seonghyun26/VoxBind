@@ -127,8 +127,8 @@ run_pre(){ local cfg=$1 exp=$2
   wait_free || die "GPUs not free after $exp"
   log "STAGE2: $exp DONE"; }
 run_pre config_train_atomblob_vit_mae_40m_invfreq                    260606_atomblob_vit_mae_40m_invfreq_pretrain
-run_pre config_train_atomblob_density_vit_mae_40m_invfreq_v5         260606_atomblob_density_vit_mae_40m_invfreq_v5_pretrain
-run_pre config_train_atomblob_density_gradmag_vit_mae_40m_invfreq_v5 260606_atomblob_density_gradmag_vit_mae_40m_invfreq_v5_pretrain
+run_pre config_train_atomblob_density_vit_mae_40m_invfreq         260606_atomblob_density_vit_mae_40m_invfreq_v5_pretrain
+run_pre config_train_atomblob_density_gradmag_vit_mae_40m_invfreq 260606_atomblob_density_gradmag_vit_mae_40m_invfreq_v5_pretrain
 run_pre config_train_atomblob_vit_mae_40m_invfreq                    260609_atomblob_vit_mae_40m_invfreq_v5_ligvdw_pretrain
 
 # ---------- STAGE 3: probe ----------

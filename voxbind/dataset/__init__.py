@@ -1,6 +1,7 @@
 import torch
 
 from voxbind.dataset.crossdocked import DatasetCrossdocked
+from voxbind.dataset.crossdocked_density import DatasetCrossDockedDensity
 from voxbind.dataset.crossdocked_xray import DatasetCrossDockedXray
 
 
@@ -18,6 +19,28 @@ def _make_dataset(cfg, split: str, aug: bool):
             subset_n=cfg.dset.get("subset_n", None),
         )
     elif name == "crossdocked_xray":
+        # On-the-fly RESAMPLE mode (opt-in): when dset.resample_dir is set, density is cropped
+        # from the FULL map at the AUGMENTED pose each step (the s3 --resample output) instead of
+        # loading frozen crops; atoms still voxelize on-GPU. Empty → legacy precomputed-crops path.
+        resample_dir = cfg.dset.get("resample_dir", "")
+        if resample_dir:
+            return DatasetCrossDockedDensity(
+                resample_dir=resample_dir,
+                data_dir=cfg.dset.data_dir,
+                split=split,
+                aug=aug,
+                ligand_radius=cfg.dset.ligand_radius,
+                pocket_radius=cfg.dset.pocket_radius,
+                max_len=cfg.dset.get("max_len", 30),
+                delta_translate=cfg.dset.get("delta_translate", 1.0),
+                subset_n=cfg.dset.get("subset_n", None),
+                subset_xray_only=cfg.dset.get("subset_xray_only", False),
+                subset_val_n=cfg.dset.get("subset_val_n", None),
+                return_gradmag=bool(cfg.get("with_gradmag", False)),
+                data_file=cfg.dset.get("data_file", "data_train.pt"),
+                small=cfg.debug,
+                cache_size=cfg.dset.get("cache_size", 32),
+            )
         return DatasetCrossDockedXray(
             data_dir=cfg.dset.data_dir,
             crops_dir=cfg.dset.get("crops_dir", ""),

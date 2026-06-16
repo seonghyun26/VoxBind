@@ -85,6 +85,66 @@
   trustworthy frame-aligned experimental 2F<sub>o</sub>−F<sub>c</sub> electron-density crop.</p>
 </header>
 
+<!-- ============================ DENSITY-ANNOTATION SUMMARY (TOP) ============================ -->
+<section class="block">
+  <h2 class="sec">Density annotation — gathered corpus <span class="role">Summary</span></h2>
+  <p class="sec-sub">The trustworthy <b>density-matched</b> data, pooled across sources: every entry carries an
+  experimental electron-density crop whose signal corresponds to <b>both the pocket and the modeled ligand</b>.
+  Two sources — <b>CrossDocked2020</b> (ligand-matched v6 subset) and <b>PDBbind / LP-PDBBind</b> (real holo
+  crystals, PDBe-EDS). Per-source detail in the sections below.</p>
+
+  <div class="table-wrap">
+    <table class="t">
+      <thead>
+        <tr>
+          <th class="l">Source</th>
+          <th>Data points</th>
+          <th>Unique pockets</th>
+          <th>Unique ligands</th>
+          <th class="l">Density source · split</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="l key">CrossDocked2020 <span class="muted">· ligand-matched (v6)</span></td>
+          <td class="num">5,270</td>
+          <td class="num">4,975</td>
+          <td class="num">3,826</td>
+          <td class="l muted">CCP4 2F<sub>o</sub>−F<sub>c</sub> · pretraining</td>
+        </tr>
+        <tr>
+          <td class="l key">PDBbind / LP-PDBBind <span class="muted">· EDS</span></td>
+          <td class="num">4,594</td>
+          <td class="num">4,594&nbsp;<sup>†</sup></td>
+          <td class="num">3,800</td>
+          <td class="l muted">PDBe-EDS · LP split 2,704 / 580 / 1,310</td>
+        </tr>
+        <tr class="total">
+          <td class="l">Total · matched annotation</td>
+          <td class="num">9,864</td>
+          <td class="num">8,947&nbsp;<sup>‡</sup></td>
+          <td class="num">&le;&nbsp;7,626&nbsp;<sup>§</sup></td>
+          <td class="l muted">density ↔ pocket + ligand</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="notes">
+    <b>De-duplicated, with duplicates checked within and across sources.</b>
+    <b>CrossDocked</b> re-uses pockets/ligands heavily — its 5,270 ligand-matched poses span only
+    <b>4,975 unique receptors</b> and <b>3,826 unique ligands</b> (receptor&nbsp;PDB and ligand resname from the entry id).
+    <b><sup>†</sup>&nbsp;PDBbind</b>'s 4,594 entries are distinct deposited crystals, but de-duplicate to
+    <b>2,967 unique proteins</b> (by sequence) and <b>3,800 unique ligands</b> (by SMILES) — far more redundant than the
+    raw complex count suggests.
+    <b><sup>‡</sup>&nbsp;Total pockets&nbsp;=&nbsp;8,947</b>: union of the 4,975 CrossDocked receptors and 4,594 PDBbind
+    crystals by PDB id — <b>622 PDB crystals appear in both sources</b>, so the true total is 8,947, not 9,569.
+    <b><sup>§</sup>&nbsp;Total ligands&nbsp;&le;&nbsp;7,626</b> is an <i>upper bound only</i>: CrossDocked is keyed by ligand
+    <i>resname</i> and PDBbind by <i>SMILES</i> — no shared identifier to merge across sources, so any chemical present in
+    both is double-counted. The much larger but <b>receptor-context-only</b> CrossDocked density set
+    (<b>78,528</b> v5 crops) is detailed below; only PDBbind <b>train</b> (2,704) enters the v7 pretraining union.
+  </p>
+</section>
+
 <!-- ============================ CROSSDOCKED ============================ -->
 <section class="block">
   <h2 class="sec">CrossDocked2020 <span class="role">Pretraining / generation</span></h2>

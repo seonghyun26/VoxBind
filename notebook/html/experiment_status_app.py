@@ -128,10 +128,18 @@ CHAIN_SCRIPTS = [
          exp="260615_atomblob_density_gradmag_vit_mae_40m_invfreq_v6_pretrain",
          out_csv="probe_results_e99_v5_v6_ligandmatched.csv",
          label="auto-probe — v6 ligand-matched density (C+D+G pretrain → affinity probe, 839 split)"),
+    dict(script="run_v6_uniform_chain.sh",
+         exp="260615_atomblob_density_gradmag_vit_mae_40m_uniform_v6_pretrain",
+         out_csv="probe_results_e99_v5_v6_uniform.csv",
+         label="auto-probe — v6 ligand-matched, UNIFORM loss (matched-weighting partner of invfreq v6)"),
     dict(script="run_v7_chain.sh",
          exp="260615_atomblob_density_gradmag_vit_mae_40m_invfreq_v7_pretrain",
          out_csv="probe_results_e99_v5_v7_combined.csv",
          label="auto-probe — v7 combined CrossDocked∪PDBbind-train (C+D+G pretrain → affinity probe, 839 split)"),
+    dict(script="run_v7_uniform_chain.sh",
+         exp="260615_atomblob_density_gradmag_vit_mae_40m_uniform_v7_pretrain",
+         out_csv="probe_results_e99_v5_v7_combined_uniform.csv",
+         label="auto-probe — v7 combined, UNIFORM loss (C+D+G pretrain → affinity probe, 839 split)"),
 ]
 
 
@@ -234,13 +242,60 @@ COMPLETED = [
          did="C+D+G encoder pretrained on <b>v6</b> — the tt_min subset (5,270) where density matches BOTH pocket and "
              "ligand (vs v5, ~86% cross-docked → ligand-region density mismatched). Tests whether <i>genuinely matched</i> "
              "density carries affinity signal the capacity controls can't explain.",
-         concl="Pending — C+D+G pretrain + probe on GPU 0-3."),
+         concl="v6 test ρ <b>0.606</b> (±0.001, 3 seeds) — sits <b>inside the capacity cluster</b> (noise 0.609 ≈ "
+               "zero 0.599 ≈ real-v5 0.595), not above it. Even <i>genuinely matched</i> density ≈ the controls → "
+               "the cleanest test yet still says <b>capacity, not content</b>. (And v6 matched v5's probe with 15× "
+               "less pretrain data: 5,270 vs 78,428.)"),
+    dict(label="v6 ligand-matched, UNIFORM loss", status_csv="probe_results_e99_v5_v6_uniform.csv",
+         cond="atomblob_density_gradmag",
+         did="Same v6 ligand-matched density + recipe + seed (42) as the invfreq v6 run, but with the <b>fully-uniform</b> "
+             "MAE loss — the matched-weighting partner so v6 can be read against the uniform coords-only (0.601) on "
+             "equal footing (invfreq handicaps coords-only but not 13-ch d+g).",
+         concl="test ρ <b>0.608</b> — barely above coords-only uniform (0.601, <b>+0.007, within noise</b>). Even "
+               "genuinely ligand-matched density under matched loss <b>doesn't beat coords</b>. (Best Pearson r 0.638; "
+               "v6-invfreq best RMSE 1.384 → matched density tightens the <i>fit</i>, not the rank ordering.)"),
     dict(label="v7 combined matched corpus", status_csv="probe_results_e99_v5_v7_combined.csv",
          cond="atomblob_density_gradmag",
          did="C+D+G encoder pretrained on <b>v7</b> = v6 ∪ PDBbind-2020-train matched complexes (7,873) — a larger "
              "ligand-matched density corpus (density ↔ pocket+ligand for every sample). Tests whether more matched "
              "density beats v6 and the contaminated v5.",
-         concl="Pending — queued after v6 frees GPU 0-3."),
+         concl="v7 test ρ <b>0.593</b> (±0.002, 3 seeds) — still <b>in the capacity cluster</b>, if anything a hair "
+               "below v6 (0.606). Going 5,270→7,873 matched complexes + real PDBbind crystals moved affinity <b>not at "
+               "all</b> → <b>settles it: matched density doesn't help in quantity or quality</b>. PLINDER-scale "
+               "(~150k) unlikely to help the probe; relevant only for generative pretraining."),
+    dict(label="v7 combined (uniform loss)", status_csv="probe_results_e99_v5_v7_combined_uniform.csv",
+         cond="atomblob_density_gradmag",
+         did="v7 combined corpus (7,873) re-pretrained with a <b>fully-uniform</b> MAE loss (channel_weighting=uniform, "
+             "all channel/pos weights=1) — the uniform partner of v7-invfreq (0.593); mirrors the v5 invfreq≈uniform tie.",
+         concl="v7-uniform test ρ <b>0.608</b> (±0.003) — vs v7-invfreq 0.593: weighting barely matters (mirrors v5's "
+               "invfreq≈uniform). Still in the 0.593–0.609 plateau → <b>matched density, data scale, AND loss weighting "
+               "all irrelevant to affinity</b>; only channel capacity (coords 0.544→~0.60, reproduced by zeros) moves it."),
+    dict(label="PLINDER ligand-matched, UNIFORM loss", status_csv="probe_results_e99_v5_plinder_uniform.csv",
+         cond="atomblob_density_gradmag",
+         did="C+D+G encoder pretrained on the <b>PLINDER</b> X-ray corpus (RSCC≥0.8 ligand-matched, 17,530 crops — "
+             "~2.2× v7's 7,873 and the largest matched-density pretrain yet), fully-uniform MAE loss. The scale test "
+             "the v6/v7 arc pointed to: does an order-more matched density finally beat the ~0.60 plateau?",
+         concl="test ρ <b>0.602</b> (±0.005, 3 seeds) — <b>below</b> invfreq PLINDER (0.624). <b>Reverses v7</b> "
+               "(where uniform 0.608 > invfreq 0.593): on PLINDER invfreq wins. So loss-weighting's sign is "
+               "corpus-dependent, not a fixed rule; invfreq-PLINDER 0.624 stays the best frozen-probe number. "
+               "(Single pretrain draw each → some gap is run variance.)"),
+    dict(label="PLINDER coords-only, UNIFORM loss", status_csv="probe_results_e99_v5_plinder_coords_uniform.csv",
+         cond="atomblob_ligvdw",
+         did="Coords-only (ligvdw) encoder pretrained on the same PLINDER corpus, fully-uniform loss — the capacity "
+             "baseline for the PLINDER C+D+G run (identical data, no density/gradmag channels).",
+         concl="test ρ <b>0.575</b> (±0.001, n=922) — uniform also <b>lowers coords</b> (invfreq 0.605). So on "
+               "PLINDER invfreq beats uniform for BOTH heads (opposite of v7). Density Δ (C+D+G−coords): invfreq "
+               "+0.019, uniform +0.027 — small but survives matched loss (confounded by 839-vs-922 test pools). "
+               "Best overall stays invfreq C+D+G 0.624; PLINDER's lift is mostly corpus diversity raising coords "
+               "(0.544→0.605)."),
+    dict(label="PLINDER noise control (capacity vs content)", status_csv="probe_results_e99_v5_plinder_noisecontrol.csv",
+         cond="atomblob_density_gradmag",
+         did="Same PLINDER C+D+G recipe (invfreq), but the density channel is replaced by i.i.d. noise drawn "
+             "from PLINDER's empirical density-value distribution (same marginal, zero spatial signal) and the "
+             "gradmag is derived from that noise; encoder pretrained + probed on noise. The disambiguator for the "
+             "clean same-split density Δ (+0.039): is it electron-density CONTENT or just added channel CAPACITY?",
+         concl="<i>Result pending</i> — launched 260616 on GPU 4-7. If noise-CDG ≈ real-CDG (0.624) → capacity "
+               "(reproduces v5); if noise-CDG ≈ coords same-split (0.584) → density content genuinely helps."),
     dict(label="Uniform-loss coords-only", status_csv="probe_results_e99_v5_uniform_coords.csv",
          cond="atomblob_ligvdw",
          did="Coords-only encoder re-pretrained with a <b>fully-uniform</b> MAE loss (no inv_freq, all channel/pos "
@@ -265,9 +320,9 @@ COMPLETED = [
          cond="atomblob_density_gradmag",
          did="Coords + <b>matched-noise</b> density+gradmag re-pretrained with the fully-uniform MAE loss — the "
              "uniform-weights analog of the invfreq noise control (0.609). Noise at both pretrain and probe.",
-         concl="<i>Result pending</i> — if it lands ~0.60 like the rest, it confirms the whole {real, noise, zero, "
-               "coords-only} set collapses to one cluster under matched loss; only the invfreq coords baseline (0.544) "
-               "was ever an outlier."),
+         concl="test ρ <b>0.602</b> — <b>confirmed</b>. Lands right with coords-only (0.601) and real d+g (0.595): "
+               "under matched uniform loss the density <b>content (real/noise)</b> AND even <b>having</b> density "
+               "channels are all irrelevant. Only the invfreq coords baseline (0.544) was ever an outlier."),
     dict(label="ChA-MAEViT (channel-grouped MAE)", status_csv="probe_results_e99_v5_cha_mae.csv",
          cond="atomblob_density_gradmag",
          did="<b>Channel-grouped</b> masked-autoencoder pretraining (ChA-MAEViT — per-channel-group tokens + "
@@ -277,6 +332,26 @@ COMPLETED = [
          concl="ChA-MAEViT test ρ <b>0.613</b> — marginally the <b>best affinity number</b>, but only ~ties the "
                "fused rope3d ViT (0.606; +0.018 vs matched learnable 0.595, ~2.7σ). Channel-aware fusion gives at "
                "most a <b>small</b> affinity gain. (Survived the e3 OOM after the expandable_segments fix → full 100ep.)"),
+    dict(label="ChA-MAEViT on v6 (ligand-matched)", status_csv="probe_results_e99_v5_cha_mae_v6.csv",
+         cond="atomblob_density_gradmag",
+         did="ChA-MAEViT (channel-grouped MAE) pretrained on the <b>v6 ligand-matched</b> density (5,270 crops) "
+             "instead of v5. Queued to launch on the first GPU bank that frees, then frozen-probed on the 839 split.",
+         concl="<b>DEGENERATE — test ρ 0.130</b> (near-chance). ChA-MAE <b>collapsed on the tiny v6 set</b> (5,270 "
+               "crops): frozen features barely vary between complexes (per-dim std <b>0.014 vs v5's 0.102</b>). Not a "
+               "bug (e99 reached, recon loss normal, features extracted). The fused ViT handled v6 fine (0.608) → "
+               "ChA-MAEViT is <b>data-hungry</b>, needs ~78k-crop v5 scale; 15× less data breaks it."),
+    dict(label="PLINDER ligand-matched corpus (C+D+G vs coords)", status_csv="probe_results_e99_plinder_cdg.csv",
+         cond="atomblob_density_gradmag",
+         did="A <b>new standalone density corpus mined from PLINDER</b> — 17,530 X-ray complexes whose ligand is "
+             "well-resolved in its own 2Fo-Fc map (RSCC≥0.8, single proper ligand, all downstream-test PDBs "
+             "excluded), ~2.2× the v7 matched corpus and far more fold-diverse (16.7k ECOD folds). Built by "
+             "streaming PDBe maps→crop→purge (dataset/03a–03c). C+D+G (merged, weighted, +gradmag) and a "
+             "coords-only control are MAE-pretrained on it (GPU 0-3 / 4-7, 260616), to be frozen-probed on the 839 split.",
+         concl="<b>New best (ρ 0.624 ± 0.002)</b> — but it's the <b>corpus, not the density</b>. PLINDER's diverse "
+               "17.5k complexes lift the <b>coords-only</b> baseline 0.544→<b>0.605</b> (+0.061, no density); adding "
+               "density+gradmag contributes only <b>+0.019</b> on top — smaller than the old +0.05 the noise control "
+               "showed was capacity. <b>Reinforces capacity-not-content</b>: the density delta shrank as the coords "
+               "encoder strengthened. Clean follow-up: a PLINDER noise control to confirm the +0.019 is capacity."),
 ]
 
 
@@ -360,13 +435,17 @@ def render():
                 return ("Real coords+density+gradmag, uniform loss, <b>fresh seed 43</b> — the real partner of the "
                         "uniform-noise run (GPU 4-7), and a 2nd independent pretraining draw of uniform-d+g "
                         "(seed42 was 0.595). Tests real-vs-noise under matched loss + pretraining-run variance.")
+            if "v6" in name:
+                return ("v6 ligand-matched density under the <b>uniform</b> loss — matched-weighting partner of the "
+                        "invfreq v6 run (0.606). Reads v6 against the uniform coords-only (0.601) on equal footing.")
             which = "coords+density+gradmag (13ch)" if "density_gradmag" in name else "coords-only (11ch)"
             return (f"No-invfreq variance/confound check — {which} re-pretrained with a <b>fully-uniform</b> MAE "
                     "loss (no inv_freq, no channel/pos weights; all=1). Tests whether the +0.05 &ldquo;capacity&rdquo; "
                     "gap is an invfreq artifact or just pretraining-run variance.")
         if "cha_mae" in name or "channelvit" in name or "channel_vit" in name:
-            return ("ChA-MAEViT — channel-grouped masked-autoencoder pretraining (per-channel-group tokens + "
-                    "attention) on coords+density+gradmag; tests whether channel-aware fusion beats the fused ViT.")
+            v6 = " on the <b>v6 ligand-matched</b> density (5,270 crops)" if "v6" in name else ""
+            return (f"ChA-MAEViT — channel-grouped masked-autoencoder pretraining (per-channel-group tokens + "
+                    f"attention){v6}; tests whether channel-aware fusion beats the fused ViT (cha-MAE v5 = 0.613).")
         if "noisecontrol" in name:
             return ("Density-ablation control — density+gradmag replaced by matched noise; tests whether "
                     "density's +0.05 ρ gain is real signal or just model capacity.")
@@ -374,6 +453,14 @@ def render():
             return ("Density-ablation control — density+gradmag channels <b>zeroed</b> (vs the noise control). "
                     "Isolates raw parameter-capacity (if zero ≈ noise ≈ 0.609) from noise-as-regularizer "
                     "(if zero falls to coords-only 0.544).")
+        if "_v7" in name:
+            return ("v7 combined matched corpus — C+D+G pretrained on CrossDocked v6 ∪ PDBbind-2020-train "
+                    "(7,873; density ↔ pocket+ligand). Tests whether a larger ligand-matched density corpus "
+                    "beats v6 and the contaminated v5.")
+        if "_v6" in name:
+            return ("v6 ligand-matched density — C+D+G pretrained on the tt_min subset (5,270) where density "
+                    "matches both pocket and ligand; tests whether genuinely matched density carries affinity "
+                    "signal the capacity controls can't explain.")
         if "gradmag" in name:
             return ("Gradmag-only — encoder sees only ‖∇ρ‖ (no density values, no atoms); tests whether the "
                     "gradient field alone carries affinity signal.")

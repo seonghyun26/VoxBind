@@ -411,9 +411,9 @@
             <td class="metric"><span class="val">1.977</span> <span class="sd">±0.245</span></td>
           </tr>
 
-          <!-- TargetDiff — external target-aware baseline (affinity); values pending -->
+          <!-- TargetDiff EGNN — external supervised baseline (affinity); test-only, separate split -->
           <tr>
-            <td class="col-method">TargetDiff <span class="tag supervised">baseline</span></td>
+            <td class="col-method">TargetDiff<sup>&Dagger;</sup> <span class="tag supervised">baseline</span></td>
             <td><span class="no">&ndash;</span></td>
             <td><span class="chk">&#10003;</span></td>
             <td><span class="chk">&#10003;</span></td>
@@ -422,11 +422,11 @@
             <td><span class="no">&ndash;</span></td>
             <td><span class="no">&ndash;</span></td>
             <td><span class="no">&ndash;</span></td>
-            <td class="metric div-major"><span class="tbd">TBD</span></td>
-            <td class="metric"><span class="tbd">TBD</span></td>
-            <td class="metric div-minor"><span class="tbd">TBD</span></td>
-            <td class="metric"><span class="tbd">TBD</span></td>
-            <td class="metric"><span class="tbd">TBD</span></td>
+            <td class="metric div-major"><span class="sd">&mdash;</span></td>
+            <td class="metric"><span class="sd">&mdash;</span></td>
+            <td class="metric div-minor"><span class="val">0.521</span></td>
+            <td class="metric"><span class="val">0.512</span></td>
+            <td class="metric"><span class="val">1.533</span></td>
           </tr>
 
           <tr class="grp-start">
@@ -602,6 +602,13 @@
           (0.492&nbsp;&rarr;&nbsp;0.372) &mdash; it over-fits the ~2.1K training complexes. So VoxBind's advantage
           is its <b>pretrained, frozen</b> 40M encoder (only a ~66K MLP head sees labels), not raw capacity:
           matched at 40M params, the from-scratch supervised model is far worse.</li>
+        <li><b><sup>&Dagger;</sup>&nbsp;TargetDiff EGNN baseline is on a different split.</b> The TargetDiff
+          coordinate/atom-type EGNN (6-layer, 256-hidden, supervised from scratch, best epoch&nbsp;17) was trained and
+          evaluated on its <i>own</i> LP-PDBBind split &mdash; EDS-available, drop-covalent,
+          <b>train 2328 / val 515 / test 1136</b> &mdash; a larger test set than the 839 the frozen-probe encoders use,
+          so its <b>test&nbsp;<i>r</i>&nbsp;0.521 / &rho;&nbsp;0.512 / RMSE&nbsp;1.533</b> are <b>not directly comparable</b>
+          to the encoder rows (validation metrics were not reported). It sits broadly in the coords-only / HBGSA range,
+          below the combined encoder.</li>
       </ul>
     </div>
   </section>
@@ -803,6 +810,102 @@
   
 
   
+  <!-- ============================ TABLE 1c — pretraining corpus: CrossDocked vs PLINDER ============================ -->
+  <section class="block">
+    <p class="table-title">Table 1c &nbsp;&middot;&nbsp; Pretraining corpus &mdash; CrossDocked vs PLINDER (affinity)</p>
+    <p class="table-sub">
+      Same frozen-probe affinity task, encoder recipe (<b>uniform</b> weighting, learnable PE) and 3-seed protocol as
+      Table&nbsp;1 &mdash; varying only the <b>self-supervised pretraining corpus</b>: <b>CrossDocked2020</b> vs
+      <b>PLINDER</b>. Two input configs: <b>C</b> (coords, ligvdW) and
+      <b>C&nbsp;+&nbsp;D&nbsp;+&nbsp;G</b> (coords&nbsp;+&nbsp;density&nbsp;+&nbsp;gradmag). <b>Compare corpus within an
+      input block only</b> &mdash; the coords probes run on the density-free n&nbsp;=&nbsp;922 set and the C+D+G probes
+      on the density n&nbsp;=&nbsp;839 set, so the two blocks are not cross-comparable. Better corpus per block in bold.
+    </p>
+
+    <div class="table-wrap">
+      <table class="results">
+        <thead>
+          <tr class="grp">
+            <th class="col-target" rowspan="2">Input</th>
+            <th class="col-method" rowspan="2">Pretraining corpus</th>
+            <th class="div-major" colspan="2">Validation</th>
+            <th class="div-minor" colspan="3">Test</th>
+          </tr>
+          <tr class="sub">
+            <th class="div-major">Pearson&nbsp;<i>r</i></th>
+            <th>Spearman&nbsp;&rho;</th>
+            <th class="div-minor">Pearson&nbsp;<i>r</i></th>
+            <th>Spearman&nbsp;&rho;</th>
+            <th>RMSE</th>
+          </tr>
+        </thead>
+        <tbody>
+
+          <tr class="grp-start">
+            <td class="col-target" rowspan="2">C<span class="tgt-meta">coords (ligvdW)<br>n&nbsp;=&nbsp;2414/514/922</span></td>
+            <td class="col-method">CrossDocked</td>
+            <td class="metric div-major"><span class="val">0.579</span> <span class="sd">±0.001</span></td>
+            <td class="metric"><span class="val">0.559</span> <span class="sd">±0.001</span></td>
+            <td class="metric div-minor"><span class="val">0.620</span> <span class="sd">±0.001</span></td>
+            <td class="metric"><span class="val">0.601</span> <span class="sd">±0.000</span></td>
+            <td class="metric"><span class="val">1.489</span> <span class="sd">±0.082</span></td>
+          </tr>
+          <tr>
+            <td class="col-method">PLINDER</td>
+            <td class="metric div-major"><span class="val">0.571</span> <span class="sd">±0.002</span></td>
+            <td class="metric"><span class="val">0.559</span> <span class="sd">±0.001</span></td>
+            <td class="metric div-minor"><span class="val">0.587</span> <span class="sd">±0.001</span></td>
+            <td class="metric"><span class="val">0.575</span> <span class="sd">±0.001</span></td>
+            <td class="metric"><span class="val">1.506</span> <span class="sd">±0.012</span></td>
+          </tr>
+
+          <tr class="grp-start">
+            <td class="col-target" rowspan="2">C + D + G<span class="tgt-meta">+ density + gradmag<br>n&nbsp;=&nbsp;2172/480/839</span></td>
+            <td class="col-method">CrossDocked</td>
+            <td class="metric div-major"><span class="val">0.603</span> <span class="sd">±0.001</span></td>
+            <td class="metric"><span class="val">0.583</span> <span class="sd">±0.000</span></td>
+            <td class="metric div-minor"><span class="val">0.590</span> <span class="sd">±0.003</span></td>
+            <td class="metric"><span class="val">0.595</span> <span class="sd">±0.002</span></td>
+            <td class="metric"><span class="val">1.436</span> <span class="sd">±0.001</span></td>
+          </tr>
+          <tr>
+            <td class="col-method">PLINDER</td>
+            <td class="metric div-major"><span class="val">0.596</span> <span class="sd">±0.003</span></td>
+            <td class="metric"><span class="val">0.593</span> <span class="sd">±0.002</span></td>
+            <td class="metric div-minor best"><span class="val">0.620</span> <span class="sd">±0.004</span></td>
+            <td class="metric best"><span class="val">0.602</span> <span class="sd">±0.004</span></td>
+            <td class="metric best"><span class="val">1.413</span> <span class="sd">±0.018</span></td>
+          </tr>
+
+        </tbody>
+      </table>
+    </div>
+
+    <div class="legend">
+      <span><b>C</b>&nbsp;coords &middot; <b>D</b>&nbsp;density &middot; <b>G</b>&nbsp;gradmag (C + D + G = all three)</span>
+      <span><span style="background:var(--best-bg);padding:2px 8px;border-radius:4px;font-weight:700;color:#1d5a3a">bold</span> better corpus &mdash; C+D+G block only (coords confounded, see notes)</span>
+    </div>
+
+    <div class="notes">
+      <ul>
+        <li><b>PLINDER lifts the combined encoder.</b> On the matched 839 split, <b>C+D+G</b> pretrained on PLINDER
+          reaches test&nbsp;<i>r</i>&nbsp;<b>0.620</b> / &rho;&nbsp;<b>0.602</b> vs CrossDocked-uniform
+          0.590&nbsp;/&nbsp;0.595, and the inv-freq PLINDER variant (not shown) hits &rho;&nbsp;<b>0.624</b> &mdash; the
+          best frozen-probe number on record. The win is largely <b>corpus diversity</b>: PLINDER's ~17.5k
+          RSCC-validated ligand-matched complexes (~2.2&times; the CrossDocked density set) make a stronger encoder.</li>
+        <li><b>Read the coords block with care &mdash; it is confounded.</b> Coords probes run on the density-free
+          <b>922</b> pool, which is <i>easier</i>: restricting coords to the matched 839 set drops PLINDER coords to
+          &asymp;0.553. So on 922 CrossDocked-uniform coords (0.601) edges PLINDER (0.575), but on the matched 839 split
+          the ranking <b>flips</b> (PLINDER coords &gt; the old CrossDocked coords 0.544). The coords row is therefore
+          <b>not</b> a clean corpus verdict &mdash; the robust comparison is the C+D+G block.</li>
+        <li><b>Density still helps on matched molecules.</b> A same-split (839) C&nbsp;vs&nbsp;C+D+G test on the PLINDER
+          encoder gives a clear &rho;&nbsp;<b>+0.05</b> for the density channels &mdash; larger than the old corpus
+          showed; whether that is electron-density <i>content</i> or added capacity awaits a PLINDER noise control
+          (running).</li>
+      </ul>
+    </div>
+  </section>
+
   </div><!-- /section 1 -->
 
   <!-- ============================================================ -->

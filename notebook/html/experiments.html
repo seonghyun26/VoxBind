@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VoxBind — Experiment &amp; Config Reference</title>
+<style>
+  :root {
+    --ink:        #1c2433;
+    --ink-soft:   #5b6678;
+    --line:       #e3e7ee;
+    --line-strong:#aeb6c4;
+    --bg:         #f5f6f8;
+    --card:       #ffffff;
+    --accent:     #2f6f4f;
+    --best-bg:    #eaf5ee;
+    --warn:       #b07a17;
+    --warn-bg:    #fcf3e0;
+    --bad:        #b0413a;
+    --bad-bg:     #fbecea;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 16px; line-height: 1.55; -webkit-font-smoothing: antialiased;
+  }
+  .page { max-width: 1180px; margin: 0 auto; padding: 48px 24px 96px; }
+  header.doc { border-bottom: 2px solid var(--ink); padding-bottom: 18px; margin-bottom: 40px; }
+  header.doc .date { font-size: 13px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-soft); margin-bottom: 6px; }
+  header.doc h1 { font-size: 28px; font-weight: 650; margin: 0; letter-spacing: -0.01em; }
+  header.doc .lede { margin: 14px 0 0; color: var(--ink-soft); font-size: 14.5px; max-width: 900px; }
+
+  section.block { margin-bottom: 56px; }
+  h2.sec { font-size: 21px; font-weight: 640; margin: 0 0 4px; letter-spacing: -0.01em; }
+  h2.sec .role { font-size: 12.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
+                 color: var(--ink-soft); margin-left: 10px; vertical-align: 2px; }
+  .sec-sub { font-size: 13.5px; color: var(--ink-soft); margin: 0 0 18px; max-width: 1000px; }
+
+  .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--card);
+                box-shadow: 0 1px 2px rgba(20,30,50,.04), 0 8px 24px rgba(20,30,50,.05); margin-bottom: 14px; }
+  table.t { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+  table.t th, table.t td { padding: 11px 14px; text-align: right; white-space: nowrap; }
+  table.t thead th { font-weight: 600; color: var(--ink); background: #fafbfc; border-bottom: 1px solid var(--line);
+                     font-size: 12.5px; }
+  table.t th.l, table.t td.l { text-align: left; }
+  table.t tbody tr { border-top: 1px solid var(--line); }
+  table.t tbody tr:hover { background: #fbfcfd; }
+  table.t td.l.key { font-weight: 560; }
+  table.t tr.total td { font-weight: 680; background: #f7faf8; }
+  table.t tr.best td { background: var(--best-bg); }
+  .num { font-weight: 560; }
+  .muted { color: var(--ink-soft); font-size: 12.5px; }
+  .pill { display: inline-block; font-size: 11px; font-weight: 600; letter-spacing: .03em;
+          padding: 2px 9px; border-radius: 999px; }
+  .pill.ok   { background: var(--best-bg); color: #1d5a3a; }
+  .pill.warn { background: var(--warn-bg); color: var(--warn); }
+  .pill.bad  { background: var(--bad-bg);  color: var(--bad); }
+  .pill.grey { background: #eef1f6; color: var(--ink-soft); }
+
+  .callout { border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 10px;
+             background: var(--card); padding: 18px 20px; margin: 18px 0 0; font-size: 14px; line-height: 1.6; }
+  .callout.warn { border-left-color: var(--warn); }
+  .callout.bad  { border-left-color: var(--bad); }
+  .callout h3 { margin: 0 0 8px; font-size: 14.5px; font-weight: 650; }
+  .callout code { background: #f1f3f7; border-radius: 5px; padding: 1px 6px; font-size: 12.5px;
+                  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+  .callout b { color: var(--ink); }
+  .callout ul { margin: 8px 0 0; padding-left: 20px; } .callout li { margin-bottom: 5px; }
+
+  .fname { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 12px; color: var(--ink-soft); }
+  .notes { margin-top: 16px; font-size: 13px; color: var(--ink-soft); line-height: 1.6; max-width: 1000px; }
+  .notes b { color: var(--ink); font-weight: 600; }
+  .notes ul { margin: 6px 0 0; padding-left: 20px; } .notes li { margin-bottom: 4px; }
+  a { color: var(--accent); }
+  footer { border-top: 1px solid var(--line); margin-top: 40px; padding-top: 16px; font-size: 12px; color: var(--ink-soft); }
+</style>
+</head>
+<body>
+<div class="page">
+
+<header class="doc">
+  <div class="date">VoxBind · Experiment &amp; Config Reference</div>
+  <h1>Density pretraining — versions, configs &amp; results</h1>
+  <p class="lede">The companion to the <a href="dataset.html">Data Card</a>: it maps every density-pretraining
+  <b>experiment</b> to its <b>normalization · data · config · split · result</b>, and inventories the YAML config tree
+  (active vs stale). All headline numbers are <b>frozen-encoder probe test Spearman ρ</b> on the
+  <b>canonical PDBbind affinity split (2,172 / 480 / 839)</b> unless a row is explicitly tagged <span class="pill grey">legacy 1310</span>.
+  Counts and split definitions live in the <a href="dataset.html">Data Card</a>; this card does not duplicate them.</p>
+</header>
+
+<!-- ============================ DENSITY-VERSION CHAIN ============================ -->
+<section class="block">
+  <h2 class="sec">Density-version chain <span class="role">Pretraining data × one fixed encoder</span></h2>
+  <p class="sec-sub">The version axis changes <b>only the self-supervised pretraining data</b>; the probed encoder is the
+  same combined <b>atomblob + density + gradmag</b> (C+D+G) ViT-MAE throughout
+  (<span class="fname">config_train_atomblob_density_gradmag_vit_mae_40m_invfreq</span>, 11 atom channels + density + ‖∇ρ‖,
+  n_in&nbsp;=&nbsp;13, ligvdw radii, patch_mlp head). So this table asks one question: <b>does better / more ligand-matched
+  experimental density buy a better affinity representation?</b></p>
+
+  <div class="table-wrap">
+    <table class="t">
+      <thead>
+        <tr>
+          <th class="l">Ver</th>
+          <th class="l">Normalization (00b)</th>
+          <th class="l">Pretraining data</th>
+          <th>Train crops</th>
+          <th>ρ · invfreq</th>
+          <th>ρ · uniform</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="l key">v5</td>
+          <td class="l">pocket arcsinh+z <span class="muted">— canonical value scale</span></td>
+          <td class="l">full CrossDocked (mostly cross-docked)</td>
+          <td class="num">78,528</td>
+          <td class="num">0.595<span class="muted">±.007</span></td>
+          <td class="num">0.595<span class="muted">±.002</span></td>
+        </tr>
+        <tr class="best">
+          <td class="l key">v6</td>
+          <td class="l">= v5 norm, <b>ligand-matched</b> (tt_min)</td>
+          <td class="l">native crystal poses only</td>
+          <td class="num">5,270</td>
+          <td class="num">0.606<span class="muted">±.001</span></td>
+          <td class="num">0.608<span class="muted">±.003</span></td>
+        </tr>
+        <tr>
+          <td class="l key">v7</td>
+          <td class="l">= v6 norm (one scale, both halves)</td>
+          <td class="l">v6 ∪ PDBbind-2020-train (real holo)</td>
+          <td class="num">7,873</td>
+          <td class="num">0.593<span class="muted">±.003</span></td>
+          <td class="num">0.608<span class="muted">±.004</span></td>
+        </tr>
+        <tr>
+          <td class="l key">plinder</td>
+          <td class="l">= v6 norm</td>
+          <td class="l">PLINDER X-ray, RSCC≥0.8 (~2.2× v7)</td>
+          <td class="num">17,530</td>
+          <td class="num"><span class="pill warn">pretraining 260616</span></td>
+          <td class="num muted">—</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="muted">Source CSVs (<span class="fname">dataset/data/pdbbind/probe_results_e99_v5_*.csv</span>, 3 seeds each):
+  v5 = <span class="fname">filtered_260606invfreq</span> / <span class="fname">uniform_dg</span>;
+  v6 = <span class="fname">v6_ligandmatched</span> / <span class="fname">v6_uniform</span>;
+  v7 = <span class="fname">v7_combined</span> / <span class="fname">v7_combined_uniform</span>.
+  Crops: <span class="fname">xray_crops_aligned_v{5,6,7}/</span>, <span class="fname">…_plinder/</span>;
+  tuple files <span class="fname">data_train{,_v7,_plinder}.pt</span>. PLINDER pretrain running on GPU 0-3 (C+D+G) / 4-7 (coords) — see
+  <span class="fname">log/260616_atomblob_density_gradmag_vit_mae_40m_invfreq_plinder_pretrain.log</span>.</p>
+
+  <div class="callout warn">
+    <h3>⚠ The version gains are within noise — weighting matters more than the data</h3>
+    v5 → v6 → v7 move only <b>0.595 → 0.606 → 0.593</b> (invfreq), all inside ±0.01 seed spread. The one real swing is
+    <b>loss weighting</b>: v7 recovers from 0.593 (invfreq) to <b>0.608 (uniform)</b>, and v6 is flat 0.606→0.608. So far,
+    <b>more / cleaner ligand-matched density has not decisively beaten the v5 baseline</b> on the frozen affinity probe —
+    PLINDER (2.2× the v7 data) is the current attempt to break that ceiling.
+  </div>
+
+  <div class="callout">
+    <h3>Normalization lineage (all in <span class="fname">dataset/00b_density_preprocess.py</span>, the <span class="fname">--version</span> branch)</h3>
+    <ul>
+      <li><b>v1</b> <span class="fname">xray_crops_aligned</span> — per-map z-score, ±3σ clip at load.</li>
+      <li><b>v2</b> pocket-pool z-score &nbsp;<code>x' = (x − μ)/σ</code> <span class="pill grey">crops purged</span></li>
+      <li><b>v3</b> pocket-pool symmetric &nbsp;<code>x' = x / max_abs → [−1,+1]</code></li>
+      <li><b>v4</b> pocket-pool clip+z &nbsp;<code>x' = (clip(x) − μ_c)/σ_c</code> <span class="pill grey">crops purged</span></li>
+      <li><b>v5</b> pocket-pool arcsinh+z &nbsp;<code>x' = (arcsinh(x/s) − μ_a)/σ_a</code> — <b>the canonical scale reused by v6 / v7 / plinder.</b></li>
+      <li><b>v6</b> = v5 norm, but availability restricted to ligand-matched poses (<span class="fname">--native_filter tt_min</span>).</li>
+      <li><b>v7</b> = built by <span class="fname">dataset/00h_make_v7.py</span> (unions v6 + PDBbind train); <b>plinder</b> by <span class="fname">dataset/03c_plinder_preprocess.py</span>. Both reuse the v5/v6 arcsinh+z stats.</li>
+    </ul>
+    <div class="muted" style="margin-top:8px;">On disk: only <span class="fname">v3</span> and <span class="fname">v5</span> survive at the full 78,528 crops; <b>v2 and v4 crop dirs were purged</b> after probing (their results below are from runs whose crops no longer exist).</div>
+  </div>
+
+  <div class="callout warn">
+    <h3>⚠ Two unrelated things are both called "v4"</h3>
+    <b>Density v4</b> = the <i>clip+z normalization</i> above (a crop-dir variant). <b>"merged-density v4"</b> = a separate
+    <i>dual-head encoder</i> config (<span class="fname">config_train_atomblob_merged_density_vit_mae_40m_weighted_v4</span>) that
+    regressed badly. The token "v4" is overloaded across the data axis and the model axis — see the config inventory below.
+  </div>
+</section>
+
+<!-- ============================ LEGACY VERSIONS ============================ -->
+<section class="block">
+  <h2 class="sec">Early versions <span class="role">Legacy split — not comparable</span></h2>
+  <p class="sec-sub">v2 / v3 / v4 were probed on the <b>legacy 2,704 / 580 / 1,310</b> split (pre-260609 refilter, <span class="fname">n_test=1310</span>),
+  so their numbers sit on a <b>different test set</b> than everything above and must never be cross-compared with the 839-split rows.
+  Kept here only for provenance.</p>
+  <div class="table-wrap">
+    <table class="t" style="width:auto;">
+      <thead><tr><th class="l">Ver</th><th class="l">Norm</th><th>ρ (legacy 1310)</th><th class="l">Source</th></tr></thead>
+      <tbody>
+        <tr><td class="l key">v2 <span class="pill grey">legacy</span></td><td class="l">pocket z-score</td><td class="num">0.412<span class="muted">±.057</span></td><td class="l muted"><span class="fname">probe_results_v2.csv</span></td></tr>
+        <tr><td class="l key">v3 <span class="pill grey">legacy</span></td><td class="l">pocket max-abs</td><td class="num">0.439<span class="muted">±.026</span></td><td class="l muted"><span class="fname">probe_results_v3.csv</span></td></tr>
+        <tr><td class="l key">v4 <span class="pill grey">legacy</span></td><td class="l">pocket clip+z</td><td class="num">0.365<span class="muted">±.090</span></td><td class="l muted"><span class="fname">probe_results_v4.csv</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ============================ CONTROLS / ABLATIONS ============================ -->
+<section class="block">
+  <h2 class="sec">Capacity-vs-content controls &amp; ablations <span class="role">v5 C+D+G · canonical 839</span></h2>
+  <p class="sec-sub">All on the same v5 C+D+G encoder + canonical 839 split (3 seeds), so directly comparable. These define what the
+  density channel actually contributes.</p>
+  <div class="table-wrap">
+    <table class="t">
+      <thead><tr><th class="l">Condition</th><th class="l">What it tests</th><th>ρ (839)</th><th class="l">Source CSV</th></tr></thead>
+      <tbody>
+        <tr><td class="l key">real density+gradmag</td><td class="l muted">the actual C+D+G model</td><td class="num">0.595<span class="muted">±.007</span></td><td class="l muted"><span class="fname">filtered_260606invfreq</span></td></tr>
+        <tr><td class="l key">noise density+gradmag</td><td class="l muted">density replaced by Gaussian noise</td><td class="num">0.609<span class="muted">±.002</span></td><td class="l muted"><span class="fname">filtered_noisecontrol</span></td></tr>
+        <tr><td class="l key">zero density+gradmag</td><td class="l muted">density+gradmag channels zeroed</td><td class="num">0.599<span class="muted">±.000</span></td><td class="l muted"><span class="fname">filtered_zerocontrol</span></td></tr>
+        <tr><td class="l key">coords-only (uniform)</td><td class="l muted">no density channel at all <sup>†</sup></td><td class="num">0.601<span class="muted">±.000</span></td><td class="l muted"><span class="fname">uniform_coords</span></td></tr>
+        <tr><td class="l key">gradmag-only</td><td class="l muted">single channel ‖∇ρ‖ as the density input</td><td class="num">0.551<span class="muted">±.002</span></td><td class="l muted"><span class="fname">filtered_gradmagonly</span></td></tr>
+        <tr><td class="l key">density-only</td><td class="l muted">single channel ρ as the density input</td><td class="num">0.505<span class="muted">±.007</span></td><td class="l muted"><span class="fname">filtered_densityonly</span></td></tr>
+        <tr><td class="l key">+ RoPE-3D PE</td><td class="l muted">3D rotary positional encoding (vs learnable)</td><td class="num">0.606<span class="muted">±.005</span></td><td class="l muted"><span class="fname">filtered_rope3d</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="notes"><sup>†</sup> coords-only is <span class="fname">n_test=922</span>, a slightly different test set than the 839-row conditions — read it as "≈0.60", not a same-set delta.</p>
+  <div class="callout">
+    <h3>✔ Finding: the density channel buys <b>capacity, not content</b></h3>
+    <b>noise (0.609) ≥ zero (0.599) ≥ real (0.595)</b>, and coords-only is already ≈0.60 — replacing real electron density with
+    noise or zeros does <b>not</b> hurt the affinity probe. The extra input channels add representational capacity, but the
+    <i>experimental density signal</i> itself is not what drives the affinity gain. (Single-channel <b>gradmag-only 0.551 &gt;
+    density-only 0.505</b> shows ‖∇ρ‖ does carry some real, if coords-redundant, signal.) This is the central motivation for the
+    ligand-matched v6/v7/PLINDER line — to find a regime where real density finally beats the capacity controls.
+  </div>
+</section>
+
+<!-- ============================ ARCHITECTURE VARIANTS ============================ -->
+<section class="block">
+  <h2 class="sec">Encoder variants <span class="role">canonical 839</span></h2>
+  <div class="table-wrap">
+    <table class="t" style="width:auto;">
+      <thead><tr><th class="l">Encoder</th><th class="l">Data</th><th>ρ (839)</th><th class="l">Source</th></tr></thead>
+      <tbody>
+        <tr class="best"><td class="l key">ChA-MAE ViT</td><td class="l">v5</td><td class="num">0.613<span class="muted">±.006</span></td><td class="l muted"><span class="fname">cha_mae</span> — best single number on record</td></tr>
+        <tr><td class="l key">ChA-MAE ViT</td><td class="l">v6</td><td class="num"><span class="pill bad">0.130 ±.001</span></td><td class="l muted"><span class="fname">cha_mae_v6</span> — collapsed</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="callout bad">
+    <h3>⚠ Anomaly: ChA-MAE collapses on v6 but not v5</h3>
+    The v6 ChA-MAE frozen probe scored <b>ρ = 0.130</b> (val loss 1.78 vs ~1.42 for the working runs) — a collapse, <b>not</b> a
+    real density result. Because the <b>v5</b> ChA-MAE probe worked fine (0.613), this is specific to the v6 run / its probe
+    feature extraction (suspected <span class="fname">n_memory_tokens</span> wiring in the probe build), <b>not</b> a property of
+    ligand-matched data. <b>Do not report 0.130 as a v6 finding</b> — flag for a re-probe before trusting.
+  </div>
+</section>
+
+<!-- ============================ CONFIG INVENTORY ============================ -->
+<section class="block">
+  <h2 class="sec">YAML config inventory <span class="role">configs/ — active vs stale</span></h2>
+  <p class="sec-sub">Status is by <b>direct reference-count</b>: <span class="pill ok">active</span> = used by a current top-level
+  launcher (<span class="fname">pretrain.sh</span>, <span class="fname">run_*_chain.sh</span>, <span class="fname">run_v5_ablation.sh</span>);
+  <span class="pill grey">stale</span> = referenced only by an archived <span class="fname">scripts/exps/</span> one-shot or by
+  nothing. Hydra composition: each <span class="fname">config_train_*</span> sets <span class="fname">defaults: [dset, model, vox, wjs]</span>
+  + MAE knobs; <span class="fname">train_density_vit_mae.py</span> selects via <span class="fname">--config-name</span>.</p>
+  <div class="table-wrap">
+    <table class="t">
+      <thead><tr><th class="l">config_train_… (.yaml)</th><th class="l">Trains</th><th class="l">Referenced by</th><th class="l">Status</th></tr></thead>
+      <tbody>
+        <tr><td class="l key">atomblob_vit_mae_40m</td><td class="l muted">coords-only</td><td class="l muted">pretrain.sh, run_v5_ablation</td><td class="l"><span class="pill ok">active</span></td></tr>
+        <tr><td class="l key">atomblob_vit_mae_40m_weighted</td><td class="l muted">coords-only · weighted</td><td class="l muted">pretrain.sh</td><td class="l"><span class="pill ok">active</span></td></tr>
+        <tr><td class="l key">atomblob_vit_mae_40m_invfreq</td><td class="l muted">coords-only · invfreq (ligvdw baseline)</td><td class="l muted">run_v5_ablation</td><td class="l"><span class="pill ok">active</span></td></tr>
+        <tr><td class="l key">atomblob_density_vit_mae_40m</td><td class="l muted">atomblob+density</td><td class="l muted">pretrain.sh</td><td class="l"><span class="pill ok">active</span></td></tr>
+        <tr><td class="l key">atomblob_density_vit_mae_40m_weighted</td><td class="l muted">atomblob+density · weighted</td><td class="l muted">pretrain.sh</td><td class="l"><span class="pill ok">active</span></td></tr>
+        <tr><td class="l key">atomblob_density_vit_mae_40m_invfreq</td><td class="l muted">atomblob+density · invfreq</td><td class="l muted">run_v5_ablation</td><td class="l"><span class="pill ok">active</span></td></tr>
+        <tr class="best"><td class="l key">atomblob_density_gradmag_vit_mae_40m_invfreq</td><td class="l muted">C+D+G · invfreq <b>(workhorse — v5/v6/v7)</b></td><td class="l muted">run_v6/v7, ablation, zerocontrol (+exps/ uniform)</td><td class="l"><span class="pill ok">active</span></td></tr>
+        <tr><td class="l key">atomblob_density_gradmag_cha_mae_40m</td><td class="l muted">C+D+G · ChA-MAE</td><td class="l muted">exps/260615_cha_mae_v6_chain</td><td class="l"><span class="pill ok">active</span></td></tr>
+        <tr><td class="l key">atomblob_merged_density_vit_mae_40m_weighted</td><td class="l muted">merged density · weighted</td><td class="l muted">pretrain.sh</td><td class="l"><span class="pill ok">active</span></td></tr>
+        <tr><td class="l key">density_vit_mae</td><td class="l muted">density-only</td><td class="l muted">pretrain.sh, run_gradmagonly</td><td class="l"><span class="pill ok">active</span></td></tr>
+        <tr><td class="l key">density_vit_mae_40m</td><td class="l muted">density-only · 40M</td><td class="l muted">pretrain.sh, run_gradmagonly</td><td class="l"><span class="pill ok">active</span></td></tr>
+        <tr><td class="l key">density_vit_mae_40m_xray</td><td class="l muted">density-only · 40M · xray</td><td class="l muted">pretrain.sh, run_gradmagonly</td><td class="l"><span class="pill ok">active</span></td></tr>
+        <tr><td class="l key">atomblob_density_vit_mae_40m_v2</td><td class="l muted">atomblob+density · v2</td><td class="l muted">exps/260531 only</td><td class="l"><span class="pill grey">stale</span></td></tr>
+        <tr><td class="l key">atomblob_merged_density_vit_mae_40m_weighted_v2</td><td class="l muted">merged · v2</td><td class="l muted">exps/260530 only</td><td class="l"><span class="pill grey">stale</span></td></tr>
+        <tr><td class="l key">atomblob_merged_density_vit_mae_40m_weighted_v3</td><td class="l muted">merged · v3</td><td class="l muted">exps/260530 only</td><td class="l"><span class="pill grey">stale</span></td></tr>
+        <tr><td class="l key">atomblob_merged_density_vit_mae_40m_weighted_v4</td><td class="l muted">merged · v4 (dual-head)</td><td class="l muted">exps/260601 only</td><td class="l"><span class="pill grey">stale</span></td></tr>
+        <tr><td class="l key">atomblob_merged_density_gradmag_vit_mae_40m_weighted_v4</td><td class="l muted">merged+gradmag · v4</td><td class="l muted"><b>nothing</b></td><td class="l"><span class="pill grey">stale</span></td></tr>
+        <tr><td class="l key">density_mae</td><td class="l muted">CNN-MAE density (pre-ViT)</td><td class="l muted"><b>nothing</b></td><td class="l"><span class="pill grey">stale</span></td></tr>
+        <tr><td class="l key">density_vit_electra</td><td class="l muted">ELECTRA objective (abandoned)</td><td class="l muted">exps/260524 only</td><td class="l"><span class="pill grey">stale</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="notes"><b>Archived 260616:</b> 8 stale / superseded configs + <span class="fname">model/density_mae.yaml</span> moved to
+  <span class="fname">configs/archive/</span> (incl. the dead <span class="fname">…_invfreq</span> v4-density twin, kept as
+  <span class="fname">…_invfreq_v4density</span>). <b>Names standardized</b> — every active config is now
+  <span class="fname">&lt;input&gt;_&lt;arch&gt;_40m[_weighting]</span>; the <span class="fname">_v5</span> version suffix was dropped (v5 is the
+  canonical density scale, recorded here + in each run's wandb tags). Sampling configs
+  (<span class="fname">config_sample</span>, <span class="fname">config_sample_from_file</span>) are a separate axis, left in place.
+  <span class="muted">Remaining by-design: weighting (<span class="fname">weighted</span>/<span class="fname">invfreq</span>/<span class="fname">uniform</span>) lives in the MAE block; <span class="fname">n_in</span> is not in the filename.</span></p>
+</section>
+
+<!-- ============================ DATA & SPLITS (POINTER) ============================ -->
+<section class="block">
+  <h2 class="sec">Data artifacts &amp; splits <span class="role">summary — full detail in the Data Card</span></h2>
+  <div class="table-wrap">
+    <table class="t">
+      <thead><tr><th class="l">Artifact</th><th class="l">Role</th><th>Count</th><th class="l">Producer</th></tr></thead>
+      <tbody>
+        <tr><td class="l key">data_train.pt</td><td class="l muted">CrossDocked pretraining tuples</td><td class="num">99,981</td><td class="l muted">preprocess_crossdocked</td></tr>
+        <tr><td class="l key">data_train_v7.pt</td><td class="l muted">v6 ∪ PDBbind-train tuples</td><td class="num">7,974</td><td class="l muted">00h_make_v7</td></tr>
+        <tr><td class="l key">data_train_plinder.pt</td><td class="l muted">PLINDER tuples</td><td class="num">17,720</td><td class="l muted">03c_plinder_preprocess</td></tr>
+        <tr><td class="l key">data_test.pt</td><td class="l muted">CrossDocked generation test</td><td class="num">100</td><td class="l muted">preprocess_crossdocked</td></tr>
+        <tr><td class="l key">xray_crops_aligned{,_v3,_v5}/</td><td class="l muted">full density crops (v1/v3/v5)</td><td class="num">78,528</td><td class="l muted">00b_density_preprocess</td></tr>
+        <tr><td class="l key">…_v6 / …_v6_gradmag /</td><td class="l muted">ligand-matched crops (+‖∇ρ‖)</td><td class="num">5,270</td><td class="l muted">00b <span class="fname">--native_filter tt_min</span></td></tr>
+        <tr><td class="l key">…_v7 / …_plinder /</td><td class="l muted">combined / PLINDER crops</td><td class="num">7,873 / 17,530</td><td class="l muted">00h / 03c</td></tr>
+        <tr><td class="l key">…_v5_noise / …_v5_zero /</td><td class="l muted">control dirs <b>(empty — done via on-the-fly hooks)</b></td><td class="num">0</td><td class="l muted"><span class="fname">--noise_voxels_dir</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="notes">
+    <b>Splits</b> (defined &amp; counted in the <a href="dataset.html">Data Card</a>):
+    <ul>
+      <li><b>Affinity probe — canonical 2,172 / 480 / 839</b>: density+structure-available subset of <span class="fname">new_split</span> in
+          <span class="fname">pdbbind/index.csv</span> (260609 refilter, cl1_only=False). The <b>legacy 2,704 / 580 / 1,310</b> is the pre-refilter
+          set — never cross-compare. (Full LP-PDBBind <span class="fname">new_split</span> = 11,513 / 2,422 / 4,860.)</li>
+      <li><b>MISATO QM/MD</b> — 8:1:1, <span class="fname">--split misato</span>, density-overlap probe subset n_test = 399.</li>
+      <li><b>CrossDocked generation</b> — <span class="fname">data_test.pt</span> (100); val carved from the train tail (shuffle-1234, last 100, max_len ≤ 30).</li>
+    </ul>
+  </p>
+</section>
+
+<footer>
+  Generated from <span class="fname">dataset/data/pdbbind/probe_results_e99_v5_*.csv</span> (3-seed means±std),
+  <span class="fname">dataset/00b_density_preprocess.py</span> · <span class="fname">00h_make_v7.py</span> · <span class="fname">03c_plinder_preprocess.py</span>,
+  <span class="fname">configs/</span> × <span class="fname">scripts/</span> reference-count, and crop-dir <span class="fname">train_available.npy</span> counts.
+  Point-in-time snapshot, 2026-06-16. Companion: <a href="dataset.html">Data Card</a> · <a href="260618/260618_meeting.html">260618 meeting</a>.
+</footer>
+
+</div>
+</body>
+</html>

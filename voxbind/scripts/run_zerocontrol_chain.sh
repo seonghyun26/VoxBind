@@ -1,7 +1,7 @@
 #!/bin/bash
 # run_zerocontrol_chain.sh — CAPACITY control for the density-ablation story.
 # Same combined encoder as 260606 / the noise control (260612): dedicated config
-# config_train_atomblob_density_gradmag_vit_mae_40m_invfreq_v5 (head_style=patch_mlp,
+# config_train_atomblob_density_gradmag_vit_mae_40m_invfreq (head_style=patch_mlp,
 # n_in=13, ligvdw, invfreq), bsz=8/accum=3 — IDENTICAL recipe, ONLY density+gradmag are
 # ZERO-filled (train: gradmag derived ‖∇0‖=0; probe: zero voxels). Isolates whether the
 # +0.05 affinity gain is added-channel capacity (zeros reproduce it) vs needs varying input.
@@ -26,10 +26,10 @@ if [ ! -d "$ZD/density/train" ] || [ ! -d "$ZV/density" ]; then
 fi
 
 # 1. pretrain (~9.5h) — dedicated config (== 260606/noise), data=zero, bsz=8/accum=3
-echo "[$(ts)] launching ZERO-control pretrain on GPU $GPUS (config_train_atomblob_density_gradmag_vit_mae_40m_invfreq_v5)" >> "$LOG"
+echo "[$(ts)] launching ZERO-control pretrain on GPU $GPUS (config_train_atomblob_density_gradmag_vit_mae_40m_invfreq)" >> "$LOG"
 CUDA_VISIBLE_DEVICES=$GPUS $PY/torchrun --standalone --nproc_per_node=$NPROC \
     train_density_vit_mae.py \
-    --config-name=config_train_atomblob_density_gradmag_vit_mae_40m_invfreq_v5 \
+    --config-name=config_train_atomblob_density_gradmag_vit_mae_40m_invfreq \
     dset.data_dir="$DATA" \
     dset.crops_dir="$ZD/density" \
     bsz=8 accum_steps=3 \

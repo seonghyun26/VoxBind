@@ -26,9 +26,9 @@ import numpy as np
 import torch
 
 HERE = Path(__file__).resolve().parent
-PB = HERE / "data" / "pdbbind"
+PB = HERE.parent / "data" / "pdbbind"
 PYBIN = sys.executable
-REF_STATS = HERE / "data" / "xray_crops_aligned_v5" / "stats.json"
+REF_STATS = HERE.parent / "data" / "xray_crops_aligned_v5" / "stats.json"
 
 # separate dirs so we never touch the pbpp-2020 voxel caches / metadata
 MQB        = PB / "voxels_mqb"

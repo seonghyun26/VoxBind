@@ -33,7 +33,7 @@ from pathlib import Path
 import h5py
 import numpy as np
 
-HERE = Path(__file__).resolve().parent
+HERE = Path(__file__).resolve().parent.parent
 MISATO = HERE / "data" / "misato"
 
 CHARGE_PROP = "gfn2_charge"

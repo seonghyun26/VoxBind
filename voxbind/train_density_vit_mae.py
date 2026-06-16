@@ -629,6 +629,9 @@ def _val_cache_path(cfg) -> str:
         "dset_name": cfg.dset.dset_name,
         "subset_n": cfg.dset.get("subset_n", None),
         "subset_xray_only": cfg.dset.get("subset_xray_only", False),
+        # resample mode reads density from a different source (full-map crop at the
+        # augmented pose) → must key the cache so it can't reuse a frozen-crops blob.
+        "resample_dir": cfg.dset.get("resample_dir", ""),
         "density_source": cfg.mae.get("density_source", "synthetic"),
         "input_mode": cfg.get("input_mode", "density"),
         # with_gradmag adds an xray_gradmag tensor to the cache (xray source),
@@ -689,6 +692,7 @@ def _ch_freq_cache_path(cfg, n_samples: int, merge_lig_poc: bool = False) -> str
         "dset_name": cfg.dset.dset_name,
         "subset_n": cfg.dset.get("subset_n", None),
         "subset_xray_only": cfg.dset.get("subset_xray_only", False),
+        "resample_dir": cfg.dset.get("resample_dir", ""),
         "grid_dim": cfg.vox.grid_dim,
         "resolution": cfg.vox.resolution,
         # Blob radii set per-channel atom-positive-voxel frequencies, so they

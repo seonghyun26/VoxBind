@@ -75,7 +75,7 @@ from tqdm import tqdm
 
 # ── Config ─────────────────────────────────────────────────────────────────────
 
-PDBBIND_DIR = Path(__file__).parent / "data" / "pdbbind"
+PDBBIND_DIR = Path(__file__).parent.parent / "data" / "pdbbind"
 RAW_DIR     = PDBBIND_DIR / "raw"
 STRUCT_DIR  = PDBBIND_DIR / "structures"
 INDEX_CSV   = PDBBIND_DIR / "index.csv"

@@ -35,7 +35,7 @@ from pathlib import Path
 import h5py
 import numpy as np
 
-HERE = Path(__file__).resolve().parent
+HERE = Path(__file__).resolve().parent.parent
 QM_PATH = HERE / "data" / "misato" / "QM.hdf5"
 PDB_DIR = HERE / "data" / "pdb"                       # deposited PDBs (pdbe entry-files)
 POCKET_CUTOFF = 14.0   # A, residue-complete; >= voxel-box half-diagonal (8√3≈13.9) so

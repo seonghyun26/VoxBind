@@ -1,5 +1,7 @@
 dset_name: crossdocked_xray
 data_dir: dataset/data
+data_file: data_train.pt     # train/val source tuples; override (e.g. data_train_v7.pt) for the
+                             # combined CrossDocked∪PDBbind corpus. Test always uses data_test.pt.
 
 # Density source — set one of the two paths below:
 #   crops_dir  : precomputed float16 crops (fast; aligned crops from dataset/00b_density_preprocess.py)
@@ -8,6 +10,12 @@ data_dir: dataset/data
 # crops_dir takes priority when the split sub-directory exists.
 crops_dir: dataset/data/xray_crops_aligned   # frame-corrected crops (dataset/00b_density_preprocess.py)
 ccp4_dir:  dataset/data/ccp4                 # fallback: output of dataset/00a_density_download.py
+
+# OPT-IN on-the-fly RESAMPLE (overrides crops_dir when set): density is cropped from the FULL map at the
+# AUGMENTED pose each step (DatasetCrossDockedDensity) instead of rotating a frozen crop — single
+# interpolation, no edge zero-fill. Point at the `s3 --resample` output ({split}_manifest.npz +
+# resample.json); the full CCP4 maps must be retained. "" → legacy frozen-crops path (default).
+resample_dir: ""
 
 ligand_radius: 0.5
 pocket_radius: -1

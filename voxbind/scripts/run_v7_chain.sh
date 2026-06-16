@@ -1,7 +1,7 @@
 #!/bin/bash
 # run_v7_chain.sh — COMBINED ligand-matched corpus point for the density story.
 # Same combined C+D+G encoder / recipe as 260606 / v6 (config
-# config_train_atomblob_density_gradmag_vit_mae_40m_invfreq_v5, n_in=13, ligvdw,
+# config_train_atomblob_density_gradmag_vit_mae_40m_invfreq, n_in=13, ligvdw,
 # invfreq, bsz=8/accum=3) — ONLY the pretraining data changes to v7:
 #   v7 = CrossDocked v6 (5,270 ligand-matched) ∪ PDBbind-2020-train matched (~2,704),
 #   one unified corpus (data_train_v7.pt + xray_crops_aligned_v7) where density
@@ -39,7 +39,7 @@ echo "[$(ts)] v7 pool N=$N → subset_n=$SUBN subset_val_n=100" >> "$LOG"
 echo "[$(ts)] launching v7 combined C+D+G pretrain on GPU $GPUS" >> "$LOG"
 CUDA_VISIBLE_DEVICES=$GPUS $PY/torchrun --standalone --nproc_per_node=$NPROC \
     train_density_vit_mae.py \
-    --config-name=config_train_atomblob_density_gradmag_vit_mae_40m_invfreq_v5 \
+    --config-name=config_train_atomblob_density_gradmag_vit_mae_40m_invfreq \
     dset.data_dir="$DATA" \
     dset.crops_dir="$V7" \
     dset.data_file=data_train_v7.pt \

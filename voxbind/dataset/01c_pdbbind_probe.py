@@ -1276,6 +1276,7 @@ def train_one(
         "test_spearman":     float(spearmanr(pred_te, yte_np).statistic),
         "test_pearson":      float(pearsonr (pred_te, yte_np).statistic),
         "test_rmse":         float(np.sqrt(((pred_te - yte_np) ** 2).mean())),
+        "test_mae":          float(np.abs(pred_te - yte_np).mean()),
         "epoch_stopped":     int(best_epoch),
     }
 
@@ -1399,7 +1400,7 @@ def run_probe(args: argparse.Namespace) -> None:
 
     print("\n── Summary (mean ± std across seeds) ───────────────────────────────")
     agg = df.groupby("condition")[
-        ["test_spearman", "test_pearson", "test_rmse", "best_val_spearman", "val_pearson"]
+        ["test_spearman", "test_pearson", "test_rmse", "test_mae", "best_val_spearman", "val_pearson"]
     ].agg(["mean", "std"]).round(4)
     print(agg.to_string())
     if args.no_write_csv:
@@ -1762,6 +1763,7 @@ def train_finetune(splits, factory, *, seed, device, condition, n_in,
         "test_spearman":     float(spearmanr(pred_te, yte).statistic),
         "test_pearson":      float(pearsonr (pred_te, yte).statistic),
         "test_rmse":         float(np.sqrt(((pred_te - yte) ** 2).mean())),
+        "test_mae":          float(np.abs(pred_te - yte).mean()),
         "epoch_stopped":     int(best_epoch),
     }
 
@@ -1839,6 +1841,7 @@ def train_pool(data: dict, *, seed: int, device: str, pool: str, pool_heads: int
         "test_spearman":     float(spearmanr(pred_te, yte).statistic),
         "test_pearson":      float(pearsonr (pred_te, yte).statistic),
         "test_rmse":         float(np.sqrt(((pred_te - yte) ** 2).mean())),
+        "test_mae":          float(np.abs(pred_te - yte).mean()),
         "epoch_stopped":     int(best_epoch),
     }
 

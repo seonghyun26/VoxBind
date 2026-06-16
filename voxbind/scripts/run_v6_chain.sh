@@ -1,7 +1,7 @@
 #!/bin/bash
 # run_v6_chain.sh — LIGAND-MATCHED density point for the density-ablation story.
 # Same combined C+D+G encoder as 260606 / noise / zero controls: dedicated config
-# config_train_atomblob_density_gradmag_vit_mae_40m_invfreq_v5 (head_style=patch_mlp,
+# config_train_atomblob_density_gradmag_vit_mae_40m_invfreq (head_style=patch_mlp,
 # n_in=13, ligvdw, invfreq), bsz=8/accum=3 — IDENTICAL recipe, ONLY the CrossDocked
 # density data is swapped to v6 (xray_crops_aligned_v6): the tt_min ligand-MATCHED
 # subset where the experimental density corresponds to BOTH pocket and ligand
@@ -35,7 +35,7 @@ fi
 echo "[$(ts)] launching v6 ligand-matched C+D+G pretrain on GPU $GPUS" >> "$LOG"
 CUDA_VISIBLE_DEVICES=$GPUS $PY/torchrun --standalone --nproc_per_node=$NPROC \
     train_density_vit_mae.py \
-    --config-name=config_train_atomblob_density_gradmag_vit_mae_40m_invfreq_v5 \
+    --config-name=config_train_atomblob_density_gradmag_vit_mae_40m_invfreq \
     dset.data_dir="$DATA" \
     dset.crops_dir="$V6" \
     dset.subset_n=5170 dset.subset_val_n=100 \
