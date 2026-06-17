@@ -213,10 +213,13 @@ COMPLETED = [
                "density+gradmag → the <b>gradmag channel is redundant</b> on top of density."),
     dict(label="HBGSA — external supervised baseline",
          status_csv="probe_results_e99_v5_filtered_hbgsa_no_cl1.csv", cond="hbgsa_supervised",
-         did="Reimplemented an external <b>fully-supervised</b> affinity model (H-bond graph + sequence + pocket + "
-             "SMILES), trained end-to-end on the same split.",
-         concl="Loses to our <b>frozen self-supervised</b> probe → the SSL representation beats "
-               "supervised-from-scratch on this task."),
+         did="Reimplemented the external <b>fully-supervised</b> affinity model at the paper's stated <b>3.06M</b> "
+             "params (H-bond graph + sequence + pocket + SMILES, dilated-conv towers restored), trained end-to-end "
+             "on the same split.",
+         concl="Test ρ <b>0.533</b> — the paper-faithful 3M beats our earlier 0.77M trim (0.492), but still "
+               "<b>loses to the frozen self-supervised probe</b> (PLINDER C+D+G 0.624). SSL representation beats "
+               "supervised-from-scratch; naive 40M width-scaling regresses further (0.372). (Rank ρ/r improve at "
+               "3M; absolute-scale RMSE high & seed-unstable.)"),
     dict(label="Noise control", status_csv="probe_results_e99_v5_filtered_noisecontrol.csv",
          cond="atomblob_density_gradmag",
          did="Negative control: density+gradmag replaced by <b>matched random noise</b> (same value distribution, "
@@ -294,8 +297,20 @@ COMPLETED = [
              "from PLINDER's empirical density-value distribution (same marginal, zero spatial signal) and the "
              "gradmag is derived from that noise; encoder pretrained + probed on noise. The disambiguator for the "
              "clean same-split density Δ (+0.039): is it electron-density CONTENT or just added channel CAPACITY?",
-         concl="<i>Result pending</i> — launched 260616 on GPU 4-7. If noise-CDG ≈ real-CDG (0.624) → capacity "
-               "(reproduces v5); if noise-CDG ≈ coords same-split (0.584) → density content genuinely helps."),
+         concl="noise-CDG test ρ <b>0.568</b> (±.004, RMSE 1.443, MAE 1.165) — <b>below BOTH real (0.624) and "
+               "coords (0.584)</b>. Replacing real density with noise destroys the +0.040 gain (capacity rejected) "
+               "and even underperforms no-density coords → the PLINDER density benefit is genuine <b>electron-density "
+               "CONTENT, not capacity</b>. <b>Reverses v5</b> (where noise≈real≈capacity): at PLINDER scale, density "
+               "carries real binding signal. real 0.624 &gt; coords 0.584 &gt; noise 0.568."),
+    dict(label="On-the-fly resample aug (v5, invfreq)", status_csv="probe_results_e99_v5_resample.csv",
+         cond="atomblob_density_gradmag",
+         did="Full v5 C+D+G pretrain where density is cropped from the full CCP4 maps at the AUGMENTED pose "
+             "(dset.resample_dir=xray_resample_v5, no zero-fill) instead of warping the frozen 64³ crop. Same "
+             "corpus / invfreq / 839 split — isolates the density-augmentation method.",
+         concl="resample-aug beats zero-fill in BOTH weightings: invfreq <b>0.609</b> vs 0.595 (+0.014), "
+               "uniform <b>0.607</b> vs 0.595 (+0.012) (±.002, RMSE ~1.390). Cropping density at the augmented "
+               "pose beats frozen zero-fill crops, consistently & weighting-independent (modest, ~2σ, single draw, "
+               "but replicates). Cost ~4× CPU/epoch (GPU grid_sample = future fix)."),
     dict(label="Uniform-loss coords-only", status_csv="probe_results_e99_v5_uniform_coords.csv",
          cond="atomblob_ligvdw",
          did="Coords-only encoder re-pretrained with a <b>fully-uniform</b> MAE loss (no inv_freq, all channel/pos "
@@ -352,6 +367,15 @@ COMPLETED = [
                "density+gradmag contributes only <b>+0.019</b> on top — smaller than the old +0.05 the noise control "
                "showed was capacity. <b>Reinforces capacity-not-content</b>: the density delta shrank as the coords "
                "encoder strengthened. Clean follow-up: a PLINDER noise control to confirm the +0.019 is capacity."),
+    *[dict(label=f"PLINDER OTF size sweep — {pct}", status_csv=f"probe_results_e99_v5_plinder_otf_p{pp}.csv",
+           cond="atomblob_density_gradmag",
+           did=(f"<b>Resample-OTF C+D+G</b> (on-the-fly density re-cropped from the full 2Fo-Fc map at the "
+                f"augmented pose) pretrained on a <b>random {pct} ({sn:,})</b> of the PLINDER pool — nested "
+                f"subsets via the seed-1234 preshuffle, fixed 100 epochs — then frozen-probed on the 839 split. "
+                f"Pretrain-corpus <b>dataset-size sweep</b> (GPU 0-3, 260617). Maps re-acquired from PDBe."),
+           concl="<i>Result pending</i>.")
+      for pct, pp, sn in [("50%", "50", 8715), ("25%", "25", 4358), ("10%", "10", 1743),
+                          ("5%", "05", 872), ("1%", "01", 174)]],
 ]
 
 

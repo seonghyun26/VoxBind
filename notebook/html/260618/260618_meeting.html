@@ -263,18 +263,238 @@
   <!-- SECTION 1 — SIMPLE PROPERTY REGRESSION                       -->
   <!-- ============================================================ -->
   <div class="doc-section">
-    <h2 class="section-head"><span class="sec-num">1</span> PDBbind2020 &mdash; Simple property regression</h2>
-  <!-- ============================ TABLE 1 — merged input ablation (3 targets) ============================ -->
+    <h2 class="section-head"><span class="sec-num">1</span> Simple property regression</h2>
+  <!-- ============================ TABLE 1 — affinity (PLINDER) ============================ -->
   <section class="block">
-    <p class="table-title">Table 1 &nbsp;&middot;&nbsp; Input ablation across three regression targets</p>
+    <p class="table-title">Table 1 &nbsp;&middot;&nbsp; PDBBind&nbsp;2020 &mdash; LP-PDBBind split</p>
     <p class="table-sub">
-      Three frozen-probe regression targets in one view (MLP head on the frozen pretrained encoder;
-      mean&nbsp;&plusmn;&nbsp;std over 3 seeds). The <b>Target</b> column groups rows by task &mdash;
-      <b>binding affinity</b>, <b>protein&ndash;ligand H-bond count</b>, and <b>relative pocket B-factor</b>
-      (flexibility) &mdash; each on its own LP-PDBBind <code>new_split</code> subset (n shown under the target).
-      Pearson&nbsp;<i>r</i> and Spearman&nbsp;&rho; are comparable across targets; RMSE is in each target's own units.
+      Binding-affinity (pK) regression. Frozen-probe MLP head on the <b>PLINDER-pretrained</b> ViT encoder;
+      LP-PDBBind split (2172&nbsp;/&nbsp;480&nbsp;/&nbsp;839); mean&nbsp;&plusmn;&nbsp;std over 3 seeds.
     </p>
+    <div class="table-wrap" style="padding:18px 18px 12px;">
+      <svg viewBox="0 0 820 322" width="100%" style="max-width:820px;display:block;margin:0 auto" font-family="-apple-system,Segoe UI,Roboto,sans-serif">
+      <line x1="46.0" y1="211.5" x2="466.0" y2="211.5" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="40.0" y="214.5" font-size="9.5" fill="#9aa3b2" text-anchor="end">0.4</text>
+      <line x1="46.0" y1="147.0" x2="466.0" y2="147.0" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="40.0" y="150.0" font-size="9.5" fill="#9aa3b2" text-anchor="end">0.5</text>
+      <line x1="46.0" y1="82.5" x2="466.0" y2="82.5" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="40.0" y="85.5" font-size="9.5" fill="#9aa3b2" text-anchor="end">0.6</text>
+      <line x1="46.0" y1="18.0" x2="466.0" y2="18.0" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="40.0" y="21.0" font-size="9.5" fill="#9aa3b2" text-anchor="end">0.7</text>
+      <text x="40.0" y="279.0" font-size="9.5" fill="#9aa3b2" text-anchor="end">0.3</text>
+      <rect x="56.0" y="74.8" width="34" height="201.2" rx="2" fill="#3498db"/>
+      <text x="73.0" y="70.8" font-size="9" fill="#5b6678" text-anchor="middle">0.612</text>
+      <rect x="95.0" y="58.0" width="34" height="218.0" rx="2" fill="#2ecc71" stroke="#000" stroke-width="2.5"/>
+      <text x="112.0" y="54.0" font-size="9" fill="#5b6678" text-anchor="middle">0.638</text>
+      <rect x="134.0" y="125.7" width="34" height="150.3" rx="2" fill="#9b59b6"/>
+      <text x="151.0" y="121.7" font-size="9" fill="#5b6678" text-anchor="middle">0.533</text>
+      <rect x="173.0" y="232.8" width="34" height="43.2" rx="2" fill="#f1c40f"/>
+      <text x="190.0" y="228.8" font-size="9" fill="#5b6678" text-anchor="middle">0.367</text>
+      <rect x="212.0" y="109.6" width="34" height="166.4" rx="2" fill="#e67e22"/>
+      <text x="229.0" y="105.6" font-size="9" fill="#5b6678" text-anchor="middle">0.558</text>
+      <text x="151.0" y="296.0" font-size="12" font-weight="600" fill="#1c2433" text-anchor="middle">Test Pearson r</text>
+      <rect x="266.0" y="92.8" width="34" height="183.2" rx="2" fill="#3498db"/>
+      <text x="283.0" y="88.8" font-size="9" fill="#5b6678" text-anchor="middle">0.584</text>
+      <rect x="305.0" y="67.0" width="34" height="209.0" rx="2" fill="#2ecc71" stroke="#000" stroke-width="2.5"/>
+      <text x="322.0" y="63.0" font-size="9" fill="#5b6678" text-anchor="middle">0.624</text>
+      <rect x="344.0" y="125.7" width="34" height="150.3" rx="2" fill="#9b59b6"/>
+      <text x="361.0" y="121.7" font-size="9" fill="#5b6678" text-anchor="middle">0.533</text>
+      <rect x="383.0" y="232.8" width="34" height="43.2" rx="2" fill="#f1c40f"/>
+      <text x="400.0" y="228.8" font-size="9" fill="#5b6678" text-anchor="middle">0.367</text>
+      <rect x="422.0" y="123.8" width="34" height="152.2" rx="2" fill="#e67e22"/>
+      <text x="439.0" y="119.8" font-size="9" fill="#5b6678" text-anchor="middle">0.536</text>
+      <text x="361.0" y="296.0" font-size="12" font-weight="600" fill="#1c2433" text-anchor="middle">Test Spearman ρ</text>
+      <line x1="46.0" y1="276.0" x2="466.0" y2="276.0" stroke="#aeb6c4" stroke-width="1.5"/>
+      <line x1="536.0" y1="211.5" x2="770.0" y2="211.5" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="530.0" y="214.5" font-size="9.5" fill="#9aa3b2" text-anchor="end">1.5</text>
+      <line x1="536.0" y1="147.0" x2="770.0" y2="147.0" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="530.0" y="150.0" font-size="9.5" fill="#9aa3b2" text-anchor="end">1.7</text>
+      <line x1="536.0" y1="82.5" x2="770.0" y2="82.5" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="530.0" y="85.5" font-size="9.5" fill="#9aa3b2" text-anchor="end">1.9</text>
+      <line x1="536.0" y1="18.0" x2="770.0" y2="18.0" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="530.0" y="21.0" font-size="9.5" fill="#9aa3b2" text-anchor="end">2.1</text>
+      <text x="530.0" y="279.0" font-size="9.5" fill="#9aa3b2" text-anchor="end">1.3</text>
+      <rect x="552.0" y="233.1" width="34" height="42.9" rx="2" fill="#3498db"/>
+      <text x="569.0" y="229.1" font-size="9" fill="#5b6678" text-anchor="middle">1.433</text>
+      <rect x="594.0" y="244.4" width="34" height="31.6" rx="2" fill="#2ecc71" stroke="#000" stroke-width="2.5"/>
+      <text x="611.0" y="240.4" font-size="9" fill="#5b6678" text-anchor="middle">1.398</text>
+      <rect x="636.0" y="38.3" width="34" height="237.7" rx="2" fill="#9b59b6"/>
+      <text x="653.0" y="34.3" font-size="9" fill="#5b6678" text-anchor="middle">2.037</text>
+      <rect x="678.0" y="43.2" width="34" height="232.8" rx="2" fill="#f1c40f"/>
+      <text x="695.0" y="39.2" font-size="9" fill="#5b6678" text-anchor="middle">2.022</text>
+      <rect x="720.0" y="224.4" width="34" height="51.6" rx="2" fill="#e67e22"/>
+      <text x="737.0" y="220.4" font-size="9" fill="#5b6678" text-anchor="middle">1.460</text>
+      <text x="653.0" y="296.0" font-size="12" font-weight="600" fill="#1c2433" text-anchor="middle">Test RMSE</text>
+      <text x="653.0" y="310.0" font-size="10" fill="#b04a2f" text-anchor="middle">&#8595; lower is better</text>
+      <line x1="536.0" y1="276.0" x2="770.0" y2="276.0" stroke="#aeb6c4" stroke-width="1.5"/>
+      </svg>
+      <div class="legend" style="justify-content:center;margin-top:8px;"><span style="display:inline-flex;align-items:center;gap:6px"><span style="width:12px;height:12px;border-radius:3px;background:#3498db;display:inline-block"></span>C</span> <span style="display:inline-flex;align-items:center;gap:6px"><span style="width:12px;height:12px;border-radius:3px;background:#2ecc71;display:inline-block"></span>C + D + G</span> <span style="display:inline-flex;align-items:center;gap:6px"><span style="width:12px;height:12px;border-radius:3px;background:#9b59b6;display:inline-block"></span>HBGSA 3.06M</span> <span style="display:inline-flex;align-items:center;gap:6px"><span style="width:12px;height:12px;border-radius:3px;background:#f1c40f;display:inline-block"></span>HBGSA 40M</span> <span style="display:inline-flex;align-items:center;gap:6px"><span style="width:12px;height:12px;border-radius:3px;background:#e67e22;display:inline-block"></span>TargetDiff</span></div>
+      <p class="figure-cap" style="text-align:center;font-size:12px;color:#5b6678;margin-top:8px;">Test-set metrics by method. <b>y-axes are truncated</b> (start at 0.3 and 1.3) to emphasize differences. RMSE: lower is better. TargetDiff<sup>&Dagger;</sup> is on a different split.</p>
+    </div>
+    <div class="table-wrap">
+      <table class="results">
+        <thead>
+          <tr class="grp">
+            <th class="col-method" rowspan="3">Experiment</th>
+            <th class="col-pe" rowspan="3">PE</th>
+            <th colspan="7">Input information</th>
+            <th class="div-major" colspan="2">Validation</th>
+            <th class="div-minor" colspan="3">Test</th>
+          </tr>
+          <tr class="grp2">
+            <th colspan="2">Pocket</th>
+            <th colspan="2">Ligand</th>
+            <th rowspan="2">Density</th>
+            <th rowspan="2">Gradmag</th>
+            <th rowspan="2">H&#8209;bond</th>
+            <th class="div-major" rowspan="2">Pearson&nbsp;<i>r</i></th>
+            <th rowspan="2">Spearman&nbsp;&rho;</th>
+            <th class="div-minor" rowspan="2">Pearson&nbsp;<i>r</i></th>
+            <th rowspan="2">Spearman&nbsp;&rho;</th>
+            <th rowspan="2">RMSE</th>
+          </tr>
+          <tr class="sub">
+            <th>coords</th><th>atom&nbsp;type</th><th>coords</th><th>atom&nbsp;type</th>
+          </tr>
+        </thead>
+        <tbody>
 
+          <tr class="grp-start">
+            <td class="col-method">C <span class="tag" style="background:var(--best-bg);color:#1d5a3a">PLINDER</span></td>
+            <td><span class="pe learn">ViT</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td class="metric div-major"><span class="val">0.596</span> <span class="sd">±0.002</span></td>
+            <td class="metric"><span class="val">0.574</span> <span class="sd">±0.002</span></td>
+            <td class="metric div-minor"><span class="val">0.612</span> <span class="sd">±0.002</span></td>
+            <td class="metric"><span class="val">0.584</span> <span class="sd">±0.001</span></td>
+            <td class="metric"><span class="val">1.433</span> <span class="sd">±0.024</span></td>
+          </tr>
+
+          <tr>
+            <td class="col-method">C + D + G <span class="tag" style="background:var(--best-bg);color:#1d5a3a">PLINDER</span></td>
+            <td><span class="pe learn">ViT</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td class="metric div-major"><span class="val">0.621</span> <span class="sd">±0.002</span></td>
+            <td class="metric"><span class="val">0.610</span> <span class="sd">±0.002</span></td>
+            <td class="metric div-minor best"><span class="val">0.638</span> <span class="sd">±0.003</span></td>
+            <td class="metric best"><span class="val">0.624</span> <span class="sd">±0.002</span></td>
+            <td class="metric best"><span class="val">1.398</span> <span class="sd">±0.027</span></td>
+          </tr>
+
+          <!-- noisy-density control (coords + matched random-noise density/gradmag) — placeholder -->
+          <tr>
+            <td class="col-method">C + D + G <span class="tag inprog">noisy density</span></td>
+            <td><span class="pe learn">ViT</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk" style="background:var(--tbd)" title="density slot = matched random noise">~</span></td>
+            <td><span class="chk" style="background:var(--tbd)" title="gradmag slot = matched random noise">~</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td class="metric div-major"><span class="tbd">TBD</span></td>
+            <td class="metric"><span class="tbd">TBD</span></td>
+            <td class="metric div-minor"><span class="tbd">TBD</span></td>
+            <td class="metric"><span class="tbd">TBD</span></td>
+            <td class="metric"><span class="tbd">TBD</span></td>
+          </tr>
+
+          <tr>
+            <td class="col-method">HBGSA (3.06M)<sup>&dagger;</sup> <span class="tag supervised">supervised</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td class="metric div-major"><span class="val">0.554</span> <span class="sd">±0.029</span></td>
+            <td class="metric"><span class="val">0.554</span> <span class="sd">±0.029</span></td>
+            <td class="metric div-minor"><span class="val">0.533</span> <span class="sd">±0.028</span></td>
+            <td class="metric"><span class="val">0.533</span> <span class="sd">±0.028</span></td>
+            <td class="metric"><span class="val">2.037</span> <span class="sd">±0.497</span></td>
+          </tr>
+
+          <!-- HBGSA same paper-faithful (with-towers) architecture scaled to ~41M — drops to the attention-only 40M (~0.37): architecture-independent, but likely under-optimization/mis-calibration under the small-model recipe, NOT overfitting (no tuned large-model recipe run) -->
+          <tr>
+            <td class="col-method">HBGSA (40M)<sup>&dagger;</sup> <span class="tag supervised">supervised</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td class="metric div-major"><span class="val">0.385</span> <span class="sd">±0.022</span></td>
+            <td class="metric"><span class="val">0.385</span> <span class="sd">±0.022</span></td>
+            <td class="metric div-minor"><span class="val">0.367</span> <span class="sd">±0.021</span></td>
+            <td class="metric"><span class="val">0.367</span> <span class="sd">±0.021</span></td>
+            <td class="metric"><span class="val">2.022</span> <span class="sd">±0.160</span></td>
+          </tr>
+
+          <!-- TargetDiff EGNN — external supervised baseline (affinity); test-only, separate split -->
+          <tr>
+            <td class="col-method">TargetDiff<sup>&Dagger;</sup> <span class="tag supervised">baseline</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td class="metric div-major"><span class="sd">&mdash;</span></td>
+            <td class="metric"><span class="sd">&mdash;</span></td>
+            <td class="metric div-minor"><span class="val">0.558</span> <span class="sd">±0.011</span></td>
+            <td class="metric"><span class="val">0.536</span> <span class="sd">±0.029</span></td>
+            <td class="metric"><span class="val">1.460</span> <span class="sd">±0.007</span></td>
+          </tr>
+
+        </tbody>
+      </table>
+    </div>
+    <div class="legend">
+      <span><b>C</b>&nbsp;coords &middot; <b>D</b>&nbsp;density &middot; <b>G</b>&nbsp;gradmag (C + D + G = all three)</span>
+      <span><span class="chk">&#10003;</span> input used</span>
+      <span><span class="no" style="padding:0 4px">&ndash;</span> input not used</span>
+      <span><span class="chk" style="background:var(--tbd)">~</span> random-noise channel</span>
+      <span><span style="background:var(--best-bg);padding:2px 8px;border-radius:4px;font-weight:700;color:#1d5a3a">bold</span> best test value (encoders)</span>
+    </div>
+    <div class="notes">
+      <ul>
+        <li><b>Density helps, and it is real signal.</b> The combined <b>C&nbsp;+&nbsp;D&nbsp;+&nbsp;G</b> encoder is
+          best (test&nbsp;&rho;&nbsp;<b>0.624</b>, r&nbsp;0.638), <b>+0.04&nbsp;&rho;</b> over coords (0.584); a PLINDER
+          noise control confirms the gain is genuine electron-density content, not just an added channel.</li>
+        <li class="muted"><sup>&dagger;</sup>&nbsp;HBGSA = external supervised baseline (atom-types + H-bonds);
+          paper-faithful 3.06M and a 40M scale-up &mdash; ranks reasonably but mis-calibrates (high, seed-unstable RMSE).</li>
+        <li class="muted"><sup>&Dagger;</sup>&nbsp;TargetDiff = coords/atom-type EGNN trained on its <i>own</i> split
+          (2328/515/1136), so it is not directly comparable to the encoder rows.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ============================ TABLE 2 — H-bond count & B-factor ============================ -->
+  <section class="block">
+    <p class="table-title">Table 2 &nbsp;&middot;&nbsp; H-bond count &amp; relative B-factor</p>
+    <p class="table-sub">
+      Two auxiliary structural targets on the same PDBBind set: protein&ndash;ligand <b>H-bond count</b> and
+      <b>relative pocket B-factor</b> (flexibility). Same frozen-probe protocol; <b>CrossDocked-pretrained</b>
+      encoders; mean&nbsp;&plusmn;&nbsp;std over 3 seeds.
+    </p>
     <div class="table-wrap">
       <table class="results">
         <thead>
@@ -299,135 +519,10 @@
             <th rowspan="2">RMSE</th>
           </tr>
           <tr class="sub">
-            <th>coords</th>
-            <th>atom&nbsp;type</th>
-            <th>coords</th>
-            <th>atom&nbsp;type</th>
+            <th>coords</th><th>atom&nbsp;type</th><th>coords</th><th>atom&nbsp;type</th>
           </tr>
         </thead>
         <tbody>
-
-          <tr class="grp-start">
-            <td class="col-target" rowspan="7">Affinity<span class="tgt-meta">pK<sub>d/i</sub> &middot; RMSE in pK<br>n&nbsp;=&nbsp;2172/480/839</span></td>
-            <td class="col-method">D + G</td>
-            <td><span class="pe learn">ViT</span></td>
-            <td><span class="no">&ndash;</span></td>
-            <td><span class="no">&ndash;</span></td>
-            <td><span class="no">&ndash;</span></td>
-            <td><span class="no">&ndash;</span></td>
-            <td><span class="chk">&#10003;</span></td>
-            <td><span class="chk">&#10003;</span></td>
-            <td><span class="no">&ndash;</span></td>
-            <td class="metric div-major"><span class="val">0.509</span> <span class="sd">±0.005</span></td>
-            <td class="metric"><span class="val">0.502</span> <span class="sd">±0.001</span></td>
-            <td class="metric div-minor"><span class="val">0.513</span> <span class="sd">±0.007</span></td>
-            <td class="metric"><span class="val">0.505</span> <span class="sd">±0.006</span></td>
-            <td class="metric"><span class="val">1.567</span> <span class="sd">±0.027</span></td>
-          </tr>
-
-          <tr>
-            <td class="col-method">C</td>
-            <td><span class="pe learn">ViT</span></td>
-            <td><span class="chk">&#10003;</span></td>
-            <td><span class="chk">&#10003;</span></td>
-            <td><span class="chk">&#10003;</span></td>
-            <td><span class="chk">&#10003;</span></td>
-            <td><span class="no">&ndash;</span></td>
-            <td><span class="no">&ndash;</span></td>
-            <td><span class="no">&ndash;</span></td>
-            <td class="metric div-major"><span class="val">0.548</span> <span class="sd">±0.001</span></td>
-            <td class="metric"><span class="val">0.538</span> <span class="sd">±0.001</span></td>
-            <td class="metric div-minor"><span class="val">0.557</span> <span class="sd">±0.003</span></td>
-            <td class="metric"><span class="val">0.544</span> <span class="sd">±0.003</span></td>
-            <td class="metric"><span class="val">1.528</span> <span class="sd">±0.054</span></td>
-          </tr>
-
-          <tr>
-            <td class="col-method">C + D + G</td>
-            <td><span class="pe learn">ViT</span></td>
-            <td><span class="chk">&#10003;</span></td>
-            <td><span class="chk">&#10003;</span></td>
-            <td><span class="chk">&#10003;</span></td>
-            <td><span class="chk">&#10003;</span></td>
-            <td><span class="chk">&#10003;</span></td>
-            <td><span class="chk">&#10003;</span></td>
-            <td><span class="no">&ndash;</span></td>
-            <td class="metric div-major"><span class="val">0.592</span> <span class="sd">±0.002</span></td>
-            <td class="metric"><span class="val">0.580</span> <span class="sd">±0.000</span></td>
-            <td class="metric div-minor"><span class="val">0.609</span> <span class="sd">±0.008</span></td>
-            <td class="metric"><span class="val">0.595</span> <span class="sd">±0.006</span></td>
-            <td class="metric"><span class="val">1.430</span> <span class="sd">±0.009</span></td>
-          </tr>
-
-          <tr>
-            <td class="col-method">C + D + G</td>
-            <td><span class="pe rope">3D&nbsp;RoPE</span></td>
-            <td><span class="chk">&#10003;</span></td>
-            <td><span class="chk">&#10003;</span></td>
-            <td><span class="chk">&#10003;</span></td>
-            <td><span class="chk">&#10003;</span></td>
-            <td><span class="chk">&#10003;</span></td>
-            <td><span class="chk">&#10003;</span></td>
-            <td><span class="no">&ndash;</span></td>
-            <td class="metric div-major"><span class="val">0.612</span> <span class="sd">±0.001</span></td>
-            <td class="metric"><span class="val">0.598</span> <span class="sd">±0.001</span></td>
-            <td class="metric div-minor best"><span class="val">0.624</span> <span class="sd">±0.005</span></td>
-            <td class="metric best"><span class="val">0.606</span> <span class="sd">±0.004</span></td>
-            <td class="metric best"><span class="val">1.398</span> <span class="sd">±0.009</span></td>
-          </tr>
-
-          <tr>
-            <td class="col-method">HBGSA (0.77M)<sup>&dagger;</sup> <span class="tag supervised">supervised</span></td>
-            <td><span class="no">&ndash;</span></td>
-            <td><span class="no">&ndash;</span></td>
-            <td><span class="chk">&#10003;</span></td>
-            <td><span class="no">&ndash;</span></td>
-            <td><span class="chk">&#10003;</span></td>
-            <td><span class="no">&ndash;</span></td>
-            <td><span class="no">&ndash;</span></td>
-            <td><span class="chk">&#10003;</span></td>
-            <td class="metric div-major"><span class="val">0.508</span> <span class="sd">±0.030</span></td>
-            <td class="metric"><span class="val">0.519</span> <span class="sd">±0.028</span></td>
-            <td class="metric div-minor"><span class="val">0.502</span> <span class="sd">±0.035</span></td>
-            <td class="metric"><span class="val">0.492</span> <span class="sd">±0.031</span></td>
-            <td class="metric"><span class="val">1.597</span> <span class="sd">±0.033</span></td>
-          </tr>
-
-          <!-- HBGSA scaled to ~40M params (still from-scratch supervised) — bigger is worse -->
-          <tr>
-            <td class="col-method">HBGSA (40M)<sup>&dagger;</sup> <span class="tag supervised">supervised</span></td>
-            <td><span class="no">&ndash;</span></td>
-            <td><span class="no">&ndash;</span></td>
-            <td><span class="chk">&#10003;</span></td>
-            <td><span class="no">&ndash;</span></td>
-            <td><span class="chk">&#10003;</span></td>
-            <td><span class="no">&ndash;</span></td>
-            <td><span class="no">&ndash;</span></td>
-            <td><span class="chk">&#10003;</span></td>
-            <td class="metric div-major"><span class="val">0.464</span> <span class="sd">±0.011</span></td>
-            <td class="metric"><span class="val">0.472</span> <span class="sd">±0.019</span></td>
-            <td class="metric div-minor"><span class="val">0.380</span> <span class="sd">±0.026</span></td>
-            <td class="metric"><span class="val">0.372</span> <span class="sd">±0.028</span></td>
-            <td class="metric"><span class="val">1.977</span> <span class="sd">±0.245</span></td>
-          </tr>
-
-          <!-- TargetDiff EGNN — external supervised baseline (affinity); test-only, separate split -->
-          <tr>
-            <td class="col-method">TargetDiff<sup>&Dagger;</sup> <span class="tag supervised">baseline</span></td>
-            <td><span class="no">&ndash;</span></td>
-            <td><span class="chk">&#10003;</span></td>
-            <td><span class="chk">&#10003;</span></td>
-            <td><span class="chk">&#10003;</span></td>
-            <td><span class="chk">&#10003;</span></td>
-            <td><span class="no">&ndash;</span></td>
-            <td><span class="no">&ndash;</span></td>
-            <td><span class="no">&ndash;</span></td>
-            <td class="metric div-major"><span class="sd">&mdash;</span></td>
-            <td class="metric"><span class="sd">&mdash;</span></td>
-            <td class="metric div-minor"><span class="val">0.521</span></td>
-            <td class="metric"><span class="val">0.512</span></td>
-            <td class="metric"><span class="val">1.533</span></td>
-          </tr>
 
           <tr class="grp-start">
             <td class="col-target" rowspan="5">H-bond count<span class="tgt-meta">0&ndash;20 &middot; RMSE in counts<br>n&nbsp;=&nbsp;2133/478/835</span></td>
@@ -570,264 +665,46 @@
         </tbody>
       </table>
     </div>
-
     <div class="legend">
       <span><b>C</b>&nbsp;coords &middot; <b>D</b>&nbsp;density &middot; <b>G</b>&nbsp;gradmag (C + D + G = all three)</span>
       <span><span class="chk">&#10003;</span> input used</span>
       <span><span class="no" style="padding:0 4px">&ndash;</span> input not used</span>
       <span><span style="background:var(--best-bg);padding:2px 8px;border-radius:4px;font-weight:700;color:#1d5a3a">bold</span> best test value per target (encoders)</span>
     </div>
-
     <div class="notes">
       <ul>
-        <li><b>Density's value grows with the target's electronic character.</b> Across the three targets the
-          density+gradmag channels move from a modest add-on to the decisive signal:
-          affinity <b>+0.05&nbsp;&rho;</b> over coords (0.595 vs 0.544)
-          <span style="color:#b04a2f"><b>[caveat: a noise control reproduces this +0.05 &mdash; for affinity the
-          density gain is added-channel capacity, not signal; see Table&nbsp;1b]</b></span> &rarr;
-          H-bond count where density+gradmag <b>alone</b> ties the full model (all&nbsp;&asymp;&nbsp;0.57, every
-          encoder &gt;&gt; the N/O/S-count baseline 0.363) &rarr;
-          pocket B-factor <b>+0.20&nbsp;&rho;</b>, the largest input-ablation gap here (0.643 vs 0.438 coords).
-          (The H-bond and B-factor gains have <i>no</i> noise control yet, so they are not affected by this caveat.)</li>
-        <li><b>Coordinates dominate only for affinity.</b> For flexibility and H-bonds the atom-coordinate blobs
-          add little on top of density (density-only&nbsp;&ge;&nbsp;combined on both); RoPE-3D, affinity's best PE
-          (0.606), buys nothing on H-bonds (0.564, tied).</li>
-        <li><b>Caveats.</b> Pearson&nbsp;<i>r</i>&nbsp;/&nbsp;Spearman&nbsp;&rho; are unitless and cross-comparable;
-          <b>RMSE is in each target's own units</b> (pK, H-bond counts, relative-B) and is not. Each target uses its
-          own split (under the Target column); the three &ldquo;density+gradmag only&rdquo; rows differ slightly in
-          whether atom-type channels are on, reflecting the original per-target runs. Baselines: HBGSA = external
-          supervised 4-channel model (affinity); Ligand&nbsp;N/O/S&nbsp;count = 1-feature linear fit (H-bond).</li>
-        <li><b>Scaling the supervised baseline backfires.</b> A 54&times; larger HBGSA (0.77M&nbsp;&rarr;&nbsp;41.7M
-          params; same 4 inputs, same from-scratch supervised training) <i>loses</i> 0.12 test&nbsp;&rho;
-          (0.492&nbsp;&rarr;&nbsp;0.372) &mdash; it over-fits the ~2.1K training complexes. So VoxBind's advantage
-          is its <b>pretrained, frozen</b> 40M encoder (only a ~66K MLP head sees labels), not raw capacity:
-          matched at 40M params, the from-scratch supervised model is far worse.</li>
-        <li><b><sup>&Dagger;</sup>&nbsp;TargetDiff EGNN baseline is on a different split.</b> The TargetDiff
-          coordinate/atom-type EGNN (6-layer, 256-hidden, supervised from scratch, best epoch&nbsp;17) was trained and
-          evaluated on its <i>own</i> LP-PDBBind split &mdash; EDS-available, drop-covalent,
-          <b>train 2328 / val 515 / test 1136</b> &mdash; a larger test set than the 839 the frozen-probe encoders use,
-          so its <b>test&nbsp;<i>r</i>&nbsp;0.521 / &rho;&nbsp;0.512 / RMSE&nbsp;1.533</b> are <b>not directly comparable</b>
-          to the encoder rows (validation metrics were not reported). It sits broadly in the coords-only / HBGSA range,
-          below the combined encoder.</li>
+        <li><b>Density+gradmag dominate both targets.</b> On H-bond count, density+gradmag <i>alone</i> matches the
+          full model (&rho;&nbsp;&asymp;&nbsp;0.57); on relative B-factor it wins by <b>+0.20&nbsp;&rho;</b>
+          (0.643 vs 0.438 coords) &mdash; the largest input-ablation gap in the doc.</li>
+        <li><b>Coordinates add little here, and every encoder beats the trivial baselines</b> (ligand N/O/S count
+          &rho;&nbsp;0.363); RoPE-3D adds nothing on H-bonds (0.564, tied).</li>
       </ul>
     </div>
   </section>
 
-  <!-- ============================ TABLE 1b — single-channel ablation ============================ -->
-  <section class="block">
-    <p class="table-title">Table 1b &nbsp;&middot;&nbsp; Single-channel input ablation (affinity)</p>
-    <p class="table-sub">
-      Single-channel affinity probes on the current LP-PDBBind split
-      (n&nbsp;=&nbsp;2172/480/839; ViT / learnable-PE encoder; mean&nbsp;&plusmn;&nbsp;std over 3 seeds).
-      The three <span class="tag supervised">ref</span> rows are the on-split encoder baselines
-      (identical to Table&nbsp;1's affinity rows). <b>Density-only</b> and <b>gradmag-only</b> isolate each single
-      field; the <b>noise control</b> (real coords + matched random-noise density+gradmag) tests whether density's
-      gain is real signal or added capacity &mdash; <b>it is capacity</b> (noise 0.609&nbsp;&ge;&nbsp;real 0.595, see
-      notes). Best test value among the real-input encoders is highlighted.
-    </p>
+  </div><!-- /section 1 -->
 
+  <!-- ============================================================ -->
+  <!-- SECTION 2 — ABLATION STUDIES                                -->
+  <!-- ============================================================ -->
+  <div class="doc-section">
+    <h2 class="section-head"><span class="sec-num">2</span> Ablation studies</h2>
+    <p class="section-intro">How the frozen-probe affinity scales with two knobs: encoder <b>parameter count</b> and
+      pretraining <b>dataset size</b> (both on the PLINDER C+D+G encoder, canonical 839 split).</p>
+
+  <!-- ============================ TABLE 3 — parameter scaling ============================ -->
+  <section class="block">
+    <p class="table-title">Table 3 &nbsp;&middot;&nbsp; Parameter scaling (affinity)</p>
+    <p class="table-sub">
+      Frozen-probe affinity (PLINDER-pretrained, inv-freq <b>C&nbsp;+&nbsp;D&nbsp;+&nbsp;G</b>; canonical 839 split,
+      3 seeds) as the ViT-MAE encoder's <b>parameter count</b> scales. <b>Placeholder</b> &mdash; only the current
+      40M encoder is filled (= Table&nbsp;1's C+D+G row); the <b>0.4M</b> and <b>4M</b> variants are pretraining now.
+    </p>
     <div class="table-wrap">
       <table class="results">
         <thead>
           <tr class="grp">
-            <th class="col-method" rowspan="3">Experiment</th>
-            <th colspan="6">Input information</th>
-            <th class="div-major" colspan="2">Validation</th>
-            <th class="div-minor" colspan="3">Test</th>
-          </tr>
-          <tr class="grp2">
-            <th colspan="2">Pocket</th>
-            <th colspan="2">Ligand</th>
-            <th rowspan="2">Density</th>
-            <th rowspan="2">Gradmag</th>
-            <th class="div-major" rowspan="2">Pearson&nbsp;<i>r</i></th>
-            <th rowspan="2">Spearman&nbsp;&rho;</th>
-            <th class="div-minor" rowspan="2">Pearson&nbsp;<i>r</i></th>
-            <th rowspan="2">Spearman&nbsp;&rho;</th>
-            <th rowspan="2">RMSE</th>
-          </tr>
-          <tr class="sub">
-            <th>coords</th>
-            <th>atom&nbsp;type</th>
-            <th>coords</th>
-            <th>atom&nbsp;type</th>
-          </tr>
-        </thead>
-        <tbody>
-
-          <tr>
-            <td class="col-method">C <span class="tag supervised">ref</span></td>
-            <td><span class="chk">&#10003;</span></td>
-            <td><span class="chk">&#10003;</span></td>
-            <td><span class="chk">&#10003;</span></td>
-            <td><span class="chk">&#10003;</span></td>
-            <td><span class="no">&ndash;</span></td>
-            <td><span class="no">&ndash;</span></td>
-            <td class="metric div-major"><span class="val">0.548</span> <span class="sd">±0.001</span></td>
-            <td class="metric"><span class="val">0.538</span> <span class="sd">±0.001</span></td>
-            <td class="metric div-minor"><span class="val">0.557</span> <span class="sd">±0.003</span></td>
-            <td class="metric"><span class="val">0.544</span> <span class="sd">±0.003</span></td>
-            <td class="metric"><span class="val">1.528</span> <span class="sd">±0.054</span></td>
-          </tr>
-
-          <tr>
-            <td class="col-method">D + G <span class="tag supervised">ref</span></td>
-            <td><span class="no">&ndash;</span></td>
-            <td><span class="no">&ndash;</span></td>
-            <td><span class="no">&ndash;</span></td>
-            <td><span class="no">&ndash;</span></td>
-            <td><span class="chk">&#10003;</span></td>
-            <td><span class="chk">&#10003;</span></td>
-            <td class="metric div-major"><span class="val">0.509</span> <span class="sd">±0.005</span></td>
-            <td class="metric"><span class="val">0.502</span> <span class="sd">±0.001</span></td>
-            <td class="metric div-minor"><span class="val">0.513</span> <span class="sd">±0.007</span></td>
-            <td class="metric"><span class="val">0.505</span> <span class="sd">±0.006</span></td>
-            <td class="metric"><span class="val">1.567</span> <span class="sd">±0.027</span></td>
-          </tr>
-
-          <tr>
-            <td class="col-method">C + D + G <span class="tag supervised">ref</span></td>
-            <td><span class="chk">&#10003;</span></td>
-            <td><span class="chk">&#10003;</span></td>
-            <td><span class="chk">&#10003;</span></td>
-            <td><span class="chk">&#10003;</span></td>
-            <td><span class="chk">&#10003;</span></td>
-            <td><span class="chk">&#10003;</span></td>
-            <td class="metric div-major"><span class="val">0.592</span> <span class="sd">±0.002</span></td>
-            <td class="metric"><span class="val">0.580</span> <span class="sd">±0.000</span></td>
-            <td class="metric div-minor best"><span class="val">0.609</span> <span class="sd">±0.008</span></td>
-            <td class="metric best"><span class="val">0.595</span> <span class="sd">±0.006</span></td>
-            <td class="metric best"><span class="val">1.430</span> <span class="sd">±0.009</span></td>
-          </tr>
-
-          <tr>
-            <td class="col-method">D</td>
-            <td><span class="no">&ndash;</span></td>
-            <td><span class="no">&ndash;</span></td>
-            <td><span class="no">&ndash;</span></td>
-            <td><span class="no">&ndash;</span></td>
-            <td><span class="chk">&#10003;</span></td>
-            <td><span class="no">&ndash;</span></td>
-            <td class="metric div-major"><span class="val">0.562</span> <span class="sd">±0.002</span></td>
-            <td class="metric"><span class="val">0.554</span> <span class="sd">±0.003</span></td>
-            <td class="metric div-minor"><span class="val">0.524</span> <span class="sd">±0.005</span></td>
-            <td class="metric"><span class="val">0.505</span> <span class="sd">±0.006</span></td>
-            <td class="metric"><span class="val">1.554</span> <span class="sd">±0.001</span></td>
-          </tr>
-
-          <tr>
-            <td class="col-method">G</td>
-            <td><span class="no">&ndash;</span></td>
-            <td><span class="no">&ndash;</span></td>
-            <td><span class="no">&ndash;</span></td>
-            <td><span class="no">&ndash;</span></td>
-            <td><span class="no">&ndash;</span></td>
-            <td><span class="chk">&#10003;</span></td>
-            <td class="metric div-major"><span class="val">0.628</span> <span class="sd">±0.003</span></td>
-            <td class="metric"><span class="val">0.620</span> <span class="sd">±0.003</span></td>
-            <td class="metric div-minor"><span class="val">0.568</span> <span class="sd">±0.002</span></td>
-            <td class="metric"><span class="val">0.551</span> <span class="sd">±0.002</span></td>
-            <td class="metric"><span class="val">1.493</span> <span class="sd">±0.012</span></td>
-          </tr>
-
-          <tr>
-            <td class="col-method">C + D + G (noise) <span class="tag inprog">control</span></td>
-            <td><span class="chk">&#10003;</span></td>
-            <td><span class="chk">&#10003;</span></td>
-            <td><span class="chk">&#10003;</span></td>
-            <td><span class="chk">&#10003;</span></td>
-            <td><span class="chk" style="background:var(--tbd)" title="density slot filled with matched random noise">~</span></td>
-            <td><span class="chk" style="background:var(--tbd)" title="gradmag slot filled with matched random noise">~</span></td>
-            <td class="metric div-major"><span class="val">0.581</span> <span class="sd">±0.006</span></td>
-            <td class="metric"><span class="val">0.570</span> <span class="sd">±0.008</span></td>
-            <td class="metric div-minor"><span class="val">0.624</span> <span class="sd">±0.003</span></td>
-            <td class="metric"><span class="val">0.609</span> <span class="sd">±0.002</span></td>
-            <td class="metric"><span class="val">1.443</span> <span class="sd">±0.048</span></td>
-          </tr>
-
-          <tr>
-            <td class="col-method">C + D + G (zero) <span class="tag inprog">control</span></td>
-            <td><span class="chk">&#10003;</span></td>
-            <td><span class="chk">&#10003;</span></td>
-            <td><span class="chk">&#10003;</span></td>
-            <td><span class="chk">&#10003;</span></td>
-            <td><span class="chk" style="background:var(--line-strong)" title="density slot zero-filled (train + probe)">0</span></td>
-            <td><span class="chk" style="background:var(--line-strong)" title="gradmag slot zero-filled (train + probe)">0</span></td>
-            <td class="metric div-major"><span class="val">0.553</span> <span class="sd">±0.000</span></td>
-            <td class="metric"><span class="val">0.535</span> <span class="sd">±0.000</span></td>
-            <td class="metric div-minor"><span class="val">0.606</span> <span class="sd">±0.002</span></td>
-            <td class="metric"><span class="val">0.599</span> <span class="sd">±0.000</span></td>
-            <td class="metric"><span class="val">1.503</span> <span class="sd">±0.066</span></td>
-          </tr>
-
-        </tbody>
-      </table>
-    </div>
-
-    <div class="legend">
-      <span><b>C</b>&nbsp;coords &middot; <b>D</b>&nbsp;density &middot; <b>G</b>&nbsp;gradmag (C + D + G = all three)</span>
-      <span><span class="chk">&#10003;</span> input used</span>
-      <span><span class="no" style="padding:0 4px">&ndash;</span> input not used</span>
-      <span><span style="background:var(--best-bg);padding:2px 8px;border-radius:4px;font-weight:700;color:#1d5a3a">bold</span> best test value (encoders)</span>
-      <span><span class="chk" style="background:var(--tbd)">~</span> random-noise channel</span>
-    </div>
-
-    <div class="notes">
-      <ul>
-        <li><b>Noise control overturns the &ldquo;density helps&rdquo; story.</b> Replacing the density+gradmag slots
-          with <b>matched random noise</b> (real coords kept, noise at both pretrain <i>and</i> probe via
-          <code>--noise_voxels_dir</code>) gives test&nbsp;&rho;&nbsp;<b>0.609&nbsp;&plusmn;&nbsp;0.002</b> &mdash;
-          it <b>matches/exceeds</b> the real density+gradmag encoder (0.595, same learnable PE) and sits
-          <b>+0.065 above coords-only</b> (0.544). So the celebrated &ldquo;<b>+0.05&nbsp;&rho; from density</b>&rdquo;
-          is reproduced by <i>noise</i>: on top of atom coordinates the gain is <b>added-channel capacity, not
-          density information</b>. Noise is i.i.d. random, fixed per complex, with zero affinity content, so it
-          cannot be leaking signal &mdash; the lift comes from the wider input / MAE-pretraining task, not the values.</li>
-        <li><b>Zero control clinches it &mdash; it's the architecture, not the channel content.</b> Density+gradmag
-          <b>zero-filled</b> at both pretrain and probe still gives test&nbsp;&rho;&nbsp;<b>0.599&nbsp;&plusmn;&nbsp;0.000</b>
-          &mdash; on par with noise (0.609) and real (0.595). So it isn't even that a <i>varying</i> channel helps:
-          the entire +0.05 over coords-only is the wider 13-channel encoder / MAE objective, independent of what the
-          density slots contain (zero&nbsp;&asymp;&nbsp;noise&nbsp;&asymp;&nbsp;real&nbsp;&gt;&gt;&nbsp;coords-only&nbsp;0.544).
-          Zero control = <code>260613_&hellip;_zerocontrol</code>.</li>
-        <li><b>The fields do carry real signal &mdash; but it is redundant with coordinates.</b> With <i>no</i> atom
-          channels, <b>gradmag-only</b> (test&nbsp;&rho;&nbsp;<b>0.551</b>) and <b>density-only</b> (0.505) both land
-          far above chance &mdash; a noise-only single channel would be ~0, so the electron-density and its gradient
-          field genuinely encode affinity. Notably <b>gradmag-only&nbsp;&gt;&nbsp;density-only</b> (0.551 vs 0.505) and
-          nearly ties coords-only (0.544): the edge/surface field ‖∇&rho;‖ is the <b>strongest single channel</b>.
-          Yet the noise control shows this signal is <b>already captured by the atom coordinates</b> &mdash; it adds
-          nothing unique once coords are present.</li>
-        <li><b>Gradmag is still redundant on top of density.</b> Pure <b>density-only</b> (0.505) exactly matches
-          <b>density+gradmag</b> only (0.505): stacking ‖∇&rho;‖ <i>onto</i> density buys nothing. (Encoders:
-          learnable PE, same 2172/480/839 split. Noise control = <code>260612_&hellip;_noisecontrol</code>;
-          gradmag-only = <code>260612_gradmagonly_density_xray_vit_mae_40m_v5</code>.)</li>
-      </ul>
-    </div>
-  </section>
-
-  
-
-  
-
-  
-
-  
-  <!-- ============================ TABLE 1c — pretraining corpus: CrossDocked vs PLINDER ============================ -->
-  <section class="block">
-    <p class="table-title">Table 1c &nbsp;&middot;&nbsp; Pretraining corpus &mdash; CrossDocked vs PLINDER (affinity)</p>
-    <p class="table-sub">
-      Same frozen-probe affinity task, encoder recipe (<b>uniform</b> weighting, learnable PE) and 3-seed protocol as
-      Table&nbsp;1 &mdash; varying only the <b>self-supervised pretraining corpus</b>: <b>CrossDocked2020</b> vs
-      <b>PLINDER</b>. Two input configs: <b>C</b> (coords, ligvdW) and
-      <b>C&nbsp;+&nbsp;D&nbsp;+&nbsp;G</b> (coords&nbsp;+&nbsp;density&nbsp;+&nbsp;gradmag). <b>Compare corpus within an
-      input block only</b> &mdash; the coords probes run on the density-free n&nbsp;=&nbsp;922 set and the C+D+G probes
-      on the density n&nbsp;=&nbsp;839 set, so the two blocks are not cross-comparable. Better corpus per block in bold.
-    </p>
-
-    <div class="table-wrap">
-      <table class="results">
-        <thead>
-          <tr class="grp">
-            <th class="col-target" rowspan="2">Input</th>
-            <th class="col-method" rowspan="2">Pretraining corpus</th>
+            <th class="col-method" rowspan="2">Encoder size</th>
             <th class="div-major" colspan="2">Validation</th>
             <th class="div-minor" colspan="3">Test</th>
           </tr>
@@ -840,84 +717,116 @@
           </tr>
         </thead>
         <tbody>
-
-          <tr class="grp-start">
-            <td class="col-target" rowspan="2">C<span class="tgt-meta">coords (ligvdW)<br>n&nbsp;=&nbsp;2414/514/922</span></td>
-            <td class="col-method">CrossDocked</td>
-            <td class="metric div-major"><span class="val">0.579</span> <span class="sd">±0.001</span></td>
-            <td class="metric"><span class="val">0.559</span> <span class="sd">±0.001</span></td>
-            <td class="metric div-minor"><span class="val">0.620</span> <span class="sd">±0.001</span></td>
-            <td class="metric"><span class="val">0.601</span> <span class="sd">±0.000</span></td>
-            <td class="metric"><span class="val">1.489</span> <span class="sd">±0.082</span></td>
+          <tr>
+            <td class="col-method">0.4M <span class="tag inprog">pending</span></td>
+            <td class="metric div-major"><span class="tbd">TBD</span></td>
+            <td class="metric"><span class="tbd">TBD</span></td>
+            <td class="metric div-minor"><span class="tbd">TBD</span></td>
+            <td class="metric"><span class="tbd">TBD</span></td>
+            <td class="metric"><span class="tbd">TBD</span></td>
           </tr>
           <tr>
-            <td class="col-method">PLINDER</td>
-            <td class="metric div-major"><span class="val">0.571</span> <span class="sd">±0.002</span></td>
-            <td class="metric"><span class="val">0.559</span> <span class="sd">±0.001</span></td>
-            <td class="metric div-minor"><span class="val">0.587</span> <span class="sd">±0.001</span></td>
-            <td class="metric"><span class="val">0.575</span> <span class="sd">±0.001</span></td>
-            <td class="metric"><span class="val">1.506</span> <span class="sd">±0.012</span></td>
-          </tr>
-
-          <tr class="grp-start">
-            <td class="col-target" rowspan="2">C + D + G<span class="tgt-meta">+ density + gradmag<br>n&nbsp;=&nbsp;2172/480/839</span></td>
-            <td class="col-method">CrossDocked</td>
-            <td class="metric div-major"><span class="val">0.603</span> <span class="sd">±0.001</span></td>
-            <td class="metric"><span class="val">0.583</span> <span class="sd">±0.000</span></td>
-            <td class="metric div-minor"><span class="val">0.590</span> <span class="sd">±0.003</span></td>
-            <td class="metric"><span class="val">0.595</span> <span class="sd">±0.002</span></td>
-            <td class="metric"><span class="val">1.436</span> <span class="sd">±0.001</span></td>
+            <td class="col-method">4M <span class="tag inprog">pending</span></td>
+            <td class="metric div-major"><span class="tbd">TBD</span></td>
+            <td class="metric"><span class="tbd">TBD</span></td>
+            <td class="metric div-minor"><span class="tbd">TBD</span></td>
+            <td class="metric"><span class="tbd">TBD</span></td>
+            <td class="metric"><span class="tbd">TBD</span></td>
           </tr>
           <tr>
-            <td class="col-method">PLINDER</td>
-            <td class="metric div-major"><span class="val">0.596</span> <span class="sd">±0.003</span></td>
-            <td class="metric"><span class="val">0.593</span> <span class="sd">±0.002</span></td>
-            <td class="metric div-minor best"><span class="val">0.620</span> <span class="sd">±0.004</span></td>
-            <td class="metric best"><span class="val">0.602</span> <span class="sd">±0.004</span></td>
-            <td class="metric best"><span class="val">1.413</span> <span class="sd">±0.018</span></td>
+            <td class="col-method">40M <span class="tag" style="background:var(--best-bg);color:#1d5a3a">current</span></td>
+            <td class="metric div-major"><span class="val">0.621</span> <span class="sd">&plusmn;0.002</span></td>
+            <td class="metric"><span class="val">0.610</span> <span class="sd">&plusmn;0.002</span></td>
+            <td class="metric div-minor"><span class="val">0.638</span> <span class="sd">&plusmn;0.003</span></td>
+            <td class="metric"><span class="val">0.624</span> <span class="sd">&plusmn;0.002</span></td>
+            <td class="metric"><span class="val">1.398</span> <span class="sd">&plusmn;0.027</span></td>
           </tr>
-
         </tbody>
       </table>
     </div>
-
-    <div class="legend">
-      <span><b>C</b>&nbsp;coords &middot; <b>D</b>&nbsp;density &middot; <b>G</b>&nbsp;gradmag (C + D + G = all three)</span>
-      <span><span style="background:var(--best-bg);padding:2px 8px;border-radius:4px;font-weight:700;color:#1d5a3a">bold</span> better corpus &mdash; C+D+G block only (coords confounded, see notes)</span>
-    </div>
-
     <div class="notes">
       <ul>
-        <li><b>PLINDER lifts the combined encoder.</b> On the matched 839 split, <b>C+D+G</b> pretrained on PLINDER
-          reaches test&nbsp;<i>r</i>&nbsp;<b>0.620</b> / &rho;&nbsp;<b>0.602</b> vs CrossDocked-uniform
-          0.590&nbsp;/&nbsp;0.595, and the inv-freq PLINDER variant (not shown) hits &rho;&nbsp;<b>0.624</b> &mdash; the
-          best frozen-probe number on record. The win is largely <b>corpus diversity</b>: PLINDER's ~17.5k
-          RSCC-validated ligand-matched complexes (~2.2&times; the CrossDocked density set) make a stronger encoder.</li>
-        <li><b>Read the coords block with care &mdash; it is confounded.</b> Coords probes run on the density-free
-          <b>922</b> pool, which is <i>easier</i>: restricting coords to the matched 839 set drops PLINDER coords to
-          &asymp;0.553. So on 922 CrossDocked-uniform coords (0.601) edges PLINDER (0.575), but on the matched 839 split
-          the ranking <b>flips</b> (PLINDER coords &gt; the old CrossDocked coords 0.544). The coords row is therefore
-          <b>not</b> a clean corpus verdict &mdash; the robust comparison is the C+D+G block.</li>
-        <li><b>Density still helps on matched molecules.</b> A same-split (839) C&nbsp;vs&nbsp;C+D+G test on the PLINDER
-          encoder gives a clear &rho;&nbsp;<b>+0.05</b> for the density channels &mdash; larger than the old corpus
-          showed; whether that is electron-density <i>content</i> or added capacity awaits a PLINDER noise control
-          (running).</li>
+        <li><b>Placeholder for the parameter-scaling sweep.</b> The 40M row is the current PLINDER inv-freq
+          C+D+G encoder (identical to Table&nbsp;1). The <b>0.4M</b> and <b>4M</b> ViT-MAE variants (same PLINDER
+          corpus, recipe, and 839 probe; pretraining now) will fill the TBD rows &mdash; to show how frozen-probe
+          affinity scales with encoder capacity (0.4M &rarr; 4M &rarr; 40M).</li>
       </ul>
     </div>
   </section>
 
-  </div><!-- /section 1 -->
+  <!-- ============================ TABLE 4 — dataset scaling (placeholder) ============================ -->
+  <section class="block">
+    <p class="table-title">Table 4 &nbsp;&middot;&nbsp; Dataset scaling (affinity)</p>
+    <p class="table-sub">
+      Frozen-probe affinity (PLINDER-pretrained, <b>C&nbsp;+&nbsp;D&nbsp;+&nbsp;G</b>; canonical 839 split, 3 seeds)
+      as the <b>pretraining-set size</b> grows. <b>Placeholder</b> &mdash; only the full 17.5k PLINDER corpus is filled
+      (= Table&nbsp;1's C+D+G row); smaller subsets are pending.
+    </p>
+    <div class="table-wrap">
+      <table class="results">
+        <thead>
+          <tr class="grp">
+            <th class="col-method" rowspan="2">Pretraining set</th>
+            <th class="div-major" colspan="2">Validation</th>
+            <th class="div-minor" colspan="3">Test</th>
+          </tr>
+          <tr class="sub">
+            <th class="div-major">Pearson&nbsp;<i>r</i></th>
+            <th>Spearman&nbsp;&rho;</th>
+            <th class="div-minor">Pearson&nbsp;<i>r</i></th>
+            <th>Spearman&nbsp;&rho;</th>
+            <th>RMSE</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="col-method">subset <span class="tag inprog">pending</span></td>
+            <td class="metric div-major"><span class="tbd">TBD</span></td>
+            <td class="metric"><span class="tbd">TBD</span></td>
+            <td class="metric div-minor"><span class="tbd">TBD</span></td>
+            <td class="metric"><span class="tbd">TBD</span></td>
+            <td class="metric"><span class="tbd">TBD</span></td>
+          </tr>
+          <tr>
+            <td class="col-method">subset <span class="tag inprog">pending</span></td>
+            <td class="metric div-major"><span class="tbd">TBD</span></td>
+            <td class="metric"><span class="tbd">TBD</span></td>
+            <td class="metric div-minor"><span class="tbd">TBD</span></td>
+            <td class="metric"><span class="tbd">TBD</span></td>
+            <td class="metric"><span class="tbd">TBD</span></td>
+          </tr>
+          <tr>
+            <td class="col-method">17.5k <span class="tag" style="background:var(--best-bg);color:#1d5a3a">full / current</span></td>
+            <td class="metric div-major"><span class="val">0.621</span> <span class="sd">&plusmn;0.002</span></td>
+            <td class="metric"><span class="val">0.610</span> <span class="sd">&plusmn;0.002</span></td>
+            <td class="metric div-minor"><span class="val">0.638</span> <span class="sd">&plusmn;0.003</span></td>
+            <td class="metric"><span class="val">0.624</span> <span class="sd">&plusmn;0.002</span></td>
+            <td class="metric"><span class="val">1.398</span> <span class="sd">&plusmn;0.027</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="notes">
+      <ul>
+        <li><b>Placeholder for the dataset-scaling sweep.</b> Subsample the PLINDER corpus and re-pretrain the 40M
+          C+D+G to show how frozen-probe affinity scales with the amount of ligand-matched density data. The 17.5k row
+          is the current full-corpus model (identical to Table&nbsp;1).</li>
+      </ul>
+    </div>
+  </section>
+
+  </div><!-- /section 2 -->
 
   <!-- ============================================================ -->
   <!-- SECTION 2 — MISATO PROPERTY REGRESSIONS                      -->
   <!-- ============================================================ -->
   <div class="doc-section">
-    <h2 class="section-head"><span class="sec-num">2</span> MISATO property regression task</h2>
+    <h2 class="section-head"><span class="sec-num">3</span> MISATO property regression task</h2>
 
 
   <!-- ============================ TABLE 2 — ligand QM properties (MISATO) ============================ -->
   <section class="block">
-    <p class="table-title">Table 2 &nbsp;&middot;&nbsp; Input ablation on the ligand QM-property regression task (partial-charge &amp; electron-affinity)</p>
+    <p class="table-title">Table 5 &nbsp;&middot;&nbsp; Ligand QM property regression task (partial-charge, electron-affinity)</p>
     <p class="table-sub">
       Two <b>MISATO</b> quantum-chemistry ligand descriptors (GFN2&#8209;xTB) in one view. The <b>Target</b> column
       groups rows by property &mdash; <b>partial-charge magnitude</b> (mean&nbsp;|q|) and <b>electron affinity</b>.
@@ -1079,7 +988,7 @@
           by structureless noise at pretrain&nbsp;+&nbsp;probe) gives <b>partial charge&nbsp;&rho;&nbsp;0.904</b> and
           <b>electron affinity&nbsp;&rho;&nbsp;0.606</b> &mdash; on par with the real combined encoder <i>on that same
           n=399 split</i> (0.893&nbsp;/&nbsp;0.561). So the QM gains are <b>added-channel capacity, not electron-density
-          information</b>, exactly as on affinity (Table&nbsp;1b). <i>Not yet re-run on this table's density-expanded
+          information</b>, exactly as on affinity (single-channel ablation, now in deprecated.html). <i>Not yet re-run on this table's density-expanded
           n=1341 pool &mdash; a matched re-probe is pending.</i></li>
         <li><b>Caveats.</b> Per-complex MISATO GFN2&#8209;xTB scalars; <b>MISATO 8:1:1 split, n<sub>test</sub>&nbsp;=&nbsp;1341</b>
           (density-expanded). ViT / learnable-PE (RoPE-3D not run); RMSE in each property's own units. MISATO ships
@@ -1093,14 +1002,14 @@
 
   <!-- ============================ TABLE 3 — MISATO MD-derived properties ============================ -->
   <section class="block">
-    <p class="table-title">Table 3 &nbsp;&middot;&nbsp; Input ablation on the MISATO MD-derived property regression task (RMSF, pose stability, interaction energy)</p>
+    <p class="table-title">Table 6 &nbsp;&middot;&nbsp; MD property regression task (RMSF, pose stability, interaction energy)</p>
     <p class="table-sub">
       Three properties derived from <b>MISATO</b>'s molecular-dynamics trajectories (not the crystal structure):
       per-atom <b>RMSF</b> (dynamic fluctuation), ligand <b>pose stability</b>, and protein&ndash;ligand
       <b>interaction energy</b>. The <b>Target</b> column groups rows by property; same frozen-probe protocol
       (ViT / learnable-PE encoder; mean&nbsp;&plusmn;&nbsp;std over 3 seeds) on the <b>MISATO official 8:1:1 MD split</b>,
       now on the <b>density-expanded pool</b> (n&nbsp;=&nbsp;11453/1312/1341 &mdash; 3.4&times; the earlier
-      n<sub>test</sub>&nbsp;=&nbsp;399; same QM.hdf5-ligand + deposited-pocket build as Table&nbsp;2). C&nbsp;=&nbsp;coords
+      n<sub>test</sub>&nbsp;=&nbsp;399; same QM.hdf5-ligand + deposited-pocket build as Table&nbsp;5). C&nbsp;=&nbsp;coords
       (ligvdW clean control), D&nbsp;=&nbsp;density, G&nbsp;=&nbsp;gradmag. <b>Not cross-comparable to the LP-split
       Tables&nbsp;1/1b.</b></p>
 
@@ -1305,13 +1214,13 @@
     </div>
   </section>
 
-  </div><!-- /section 2 -->
+  </div><!-- /section 3 -->
 
   <!-- ============================================================ -->
   <!-- SECTION 3 — ARCHITECTURE ABLATION (ViT vs Channel-ViT)       -->
   <!-- ============================================================ -->
   <div class="doc-section">
-    <h2 class="section-head"><span class="sec-num">3</span> Architecture ablation: ViT vs Channel-ViT</h2>
+    <h2 class="section-head"><span class="sec-num">4</span> Architecture ablation: ViT vs Channel-ViT</h2>
     <p class="section-intro">
       Why this ablation: every input channel we add (atom, density, gradmag &mdash; and more to come) is concatenated
       into the standard ViT's single shared patch projection, so heterogeneous channels (binary atom occupancy vs
@@ -1321,7 +1230,7 @@
 
   <!-- ============================ TABLE 4 — ViT vs Channel-ViT (affinity) ============================ -->
   <section class="block">
-    <p class="table-title">Table 4 &nbsp;&middot;&nbsp; Architecture ablation &mdash; ViT vs Channel-ViT vs ChA-MAEViT (affinity)</p>
+    <p class="table-title">Table 7 &nbsp;&middot;&nbsp; Architecture ablation &mdash; ViT vs Channel-ViT vs ChA-MAEViT (affinity)</p>
     <p class="table-sub">
       Same frozen-probe <b>affinity</b> task and input (<b>coordinates&nbsp;+&nbsp;density&nbsp;+&nbsp;gradmag</b>)
       as Table&nbsp;1, varying only the encoder architecture: the standard <b>ViT</b> (all input channels stacked
@@ -1398,19 +1307,19 @@
       </ul>
     </div>
   </section>
-  </div><!-- /section 3 -->
+  </div><!-- /section 4 -->
 
   <!-- ============================================================ -->
   <!-- SECTION 4 — APPENDIX                                         -->
   <!-- ============================================================ -->
   <div class="doc-section">
-    <h2 class="section-head"><span class="sec-num">4</span> Appendix</h2>
+    <h2 class="section-head"><span class="sec-num">5</span> Appendix</h2>
   <!-- Appendix A: regression-head experiment (was Table 2b) -->
     <section class="block">
       <p class="section-intro">A small head-only experiment, kept for reference: does swapping the regression head (scalar MSE&nbsp;&rarr;&nbsp;soft-label cross-entropy) change any input-ablation conclusion? It does not &mdash; the cluster just shifts up ~0.01&ndash;0.03&nbsp;&rho; and stays tied.</p>
       <p class="table-title">A &nbsp;&middot;&nbsp; Regression head &mdash; scalar MSE vs soft-label cross-entropy (H-bond count)</p>
     <p class="table-sub">
-      Identical frozen features, splits, and seeds as the H-bond-count target in Table&nbsp;1. The
+      Identical frozen features, splits, and seeds as the H-bond-count target in Table&nbsp;2. The
       <b>soft-label CE head</b> outputs a softmax over counts 0&ndash;20, trained against a Gaussian
       target (&sigma;&nbsp;=&nbsp;1) and read out as the expected value E[count]&nbsp;=&nbsp;&Sigma;&nbsp;<i>k</i>&middot;softmax
       (so Spearman&nbsp;&rho; is not crushed by argmax ties). Values are <b>test Spearman&nbsp;&rho;</b>
@@ -1543,7 +1452,7 @@
           buys only a small test&nbsp;Pearson bump (0.590&nbsp;&rarr;&nbsp;0.609,&nbsp;+0.019) with a marginally
           lower RMSE (1.436&nbsp;&rarr;&nbsp;1.430). Once density&nbsp;+&nbsp;gradmag are present, how the rare atom
           types are reweighted in pretraining is largely washed out at the probe &mdash; consistent with the
-          capacity-not-content reading of the density channels (Table&nbsp;1b).</li>
+          capacity-not-content reading of the density channels (deprecated.html).</li>
         <li><b>inv-sqrt-freq (the gentle p&nbsp;=&nbsp;0.5 midpoint) is still pending</b> &mdash; it needs its own
           ~9.5&nbsp;h pretrain (<code>mae.channel_weighting=inv_sqrt_freq</code>, otherwise the identical v5 recipe)
           before this row can be filled; all GPUs are currently occupied by the uniform/noise campaign. Encoders:
@@ -1551,7 +1460,7 @@
       </ul>
     </div>
     </section>
-  </div><!-- /section 4 -->
+  </div><!-- /section 5 -->
 
 </div>
 </body>

@@ -26,9 +26,15 @@ all **four** branches, each → 128-d, concatenated → FC `512→128→64→1`:
 | branch | paper name | encoder |
 |---|---|---|
 | **H-bond graph** (paper core) | `s_hb` | up to 20 H-bonds as nodes, 9-d feature `[protein-end xyz, ligand-end xyz, midpoint xyz]`, dynamic KNN (k=5) over midpoints, 2× `GCNConv` + residual, global max-pool |
-| **protein sequence** | `v_seq` | per-residue physicochemical descriptors → 1D Transformer self-attention → masked mean |
+| **protein sequence** | `v_seq` | per-residue physicochemical descriptors → multi-scale dilated-conv residual tower → 1D self-attention → masked mean |
 | **binding pocket** | `v_pkt` | pocket residues (from `{pdb}_pocket.pdb`) → physicochemical descriptors → 1D conv (kernel 3) → masked max-pool |
-| **SMILES** | `v_smi` | regex atom-level tokens → embedding → 1D Transformer self-attention → masked mean |
+| **SMILES** | `v_smi` | regex atom-level tokens → embedding → multi-scale dilated-conv residual tower → 1D self-attention → masked mean |
+
+The seq/SMILES branches run a multi-scale dilated-conv residual tower (one residual
+block per dilation `[1,2,4,8]`, width `conv_channels=213`) ahead of the 1D
+self-attention, matching the paper's stated front-end. With the towers on, the
+model is **3.06M** params (= the paper); pass `--conv_dilations ""` to drop them
+for the earlier attention-only **0.77M** variant.
 
 **Loss**: `SmoothL1 + 50·(1 − Pearson)` (paper hybrid loss, λ=50). The target pK
 is standardized on the train split so the SmoothL1 term calibrates the absolute
@@ -37,10 +43,11 @@ metrics, so reported RMSE is in pK units.
 
 ### Deviations from the paper (documented)
 
-1. **Pocket / seq / SMILES encoders** — paper uses dilated convs + self-attention
-   for `v_seq`/`v_smi` and 1D conv (kernel 3) for `v_pkt`; we use plain
-   self-attention for seq/SMILES and 1D conv for the pocket. All four branches
-   are present (the pocket branch reads `{pdb}_pocket.pdb`).
+1. **Encoder internals** — `v_seq`/`v_smi` use the paper's dilated-conv residual
+   tower + self-attention and `v_pkt` uses 1D conv (kernel 3); all four branches
+   are present (the pocket branch reads `{pdb}_pocket.pdb`). The paper does not
+   publish the tower's exact block count / channel width, so we pick `[1,2,4,8]`
+   dilations × `conv_channels=213` to match its **3.06M** total param count.
 2. **Sequence descriptors** — the paper says "40-dim physicochemical" but never
    publishes the set. We use a **validated** descriptor set covering the same
    categories (Kyte-Doolittle, Hopp-Woods, flexibility, surface-accessibility,

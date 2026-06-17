@@ -34,9 +34,12 @@ Usage (PLINDER density pool, gradmag derived from the noise):
 """
 import argparse
 import glob
+import os
 import shutil
 import sys
 import time
+import zlib
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 import numpy as np
@@ -109,20 +112,74 @@ def _noise_gradmag(noise_d: np.ndarray, g_pool, rng, gradmag_mode: str) -> np.nd
     return _draw(g_pool, rng, noise_d.shape)
 
 
-def materialize_train(crops_dir, out_dir, d_pool, g_pool, gradmag_mode, seed):
+# ---------------------------------------------------------------------------
+# parallel materialization (ProcessPoolExecutor). Each crop is independent: the
+# density noise is drawn from the shared pool seeded per-complex, and (for
+# gradmag_mode=from_noise) the gradmag is a single 64^3 conv on that noise. We
+# fan out across processes, each pinned to 1 torch thread to avoid the
+# many-procs × many-threads oversubscription that made the serial run crawl.
+# Pools are reloaded from disk in each worker (cheap, ~24MB) so nothing large
+# is pickled per task.
+# ---------------------------------------------------------------------------
+_WORKER = {}
+
+
+def _init_worker(pools_path, gradmag_mode, seed):
+    torch.set_num_threads(1)
+    d_pool, g_pool = _load_pools(Path(pools_path))
+    _WORKER.update(d_pool=d_pool, g_pool=g_pool, gradmag_mode=gradmag_mode, seed=seed)
+
+
+def _train_one(item):
+    idx, out_d_str, out_g_str = item
+    seed = _WORKER["seed"]
+    rng = np.random.default_rng(seed + idx)                  # fixed-per-complex
+    nd = _draw(_WORKER["d_pool"], rng, (GRID, GRID, GRID))
+    np.save(Path(out_d_str) / f"{idx:06d}.npy", nd)
+    np.save(Path(out_g_str) / f"{idx:06d}.npy",
+            _noise_gradmag(nd, _WORKER["g_pool"], rng, _WORKER["gradmag_mode"]))
+    return idx
+
+
+def _probe_one(item):
+    pid, shape, out_d_str, out_g_str = item
+    seed = _WORKER["seed"]
+    # stable (cross-process, reproducible) per-pid seed — NOT Python's randomized hash().
+    rng = np.random.default_rng(seed + (zlib.crc32(pid.encode()) % 10_000_019))
+    nd = _draw(_WORKER["d_pool"], rng, tuple(shape))
+    np.save(Path(out_d_str) / f"{pid}.npy", nd)
+    np.save(Path(out_g_str) / f"{pid}.npy",
+            _noise_gradmag(nd, _WORKER["g_pool"], rng, _WORKER["gradmag_mode"]))
+    return pid
+
+
+def _run_pool(fn, items, pools_path, gradmag_mode, seed, workers, label, log_every):
+    """Map fn over items across `workers` procs (or serially if workers<=1)."""
+    t0 = time.time()
+    n = len(items)
+    if workers <= 1:
+        _init_worker(str(pools_path), gradmag_mode, seed)
+        for i, it in enumerate(items):
+            fn(it)
+            if (i + 1) % log_every == 0:
+                el = time.time() - t0
+                print(f"  {label} {i+1}/{n}  ({el:.0f}s, {(i+1)/el:.0f}/s)", flush=True)
+    else:
+        with ProcessPoolExecutor(max_workers=workers, initializer=_init_worker,
+                                 initargs=(str(pools_path), gradmag_mode, seed)) as ex:
+            for i, _ in enumerate(ex.map(fn, items, chunksize=32)):
+                if (i + 1) % log_every == 0:
+                    el = time.time() - t0
+                    print(f"  {label} {i+1}/{n}  ({el:.0f}s, {(i+1)/el:.0f}/s)", flush=True)
+    print(f"[{label}] done {n} in {time.time()-t0:.0f}s ({n/max(time.time()-t0,1e-9):.0f}/s)")
+
+
+def materialize_train(crops_dir, out_dir, pools_path, gradmag_mode, seed, workers):
     crops = sorted(glob.glob(str(crops_dir / "train" / "[0-9]*.npy")))
     out_d = out_dir / "density" / "train"; out_g = out_dir / "gradmag" / "train"
     out_d.mkdir(parents=True, exist_ok=True); out_g.mkdir(parents=True, exist_ok=True)
-    t0 = time.time()
-    for i, c in enumerate(crops):
-        idx = int(Path(c).stem)
-        rng = np.random.default_rng(seed + idx)             # fixed-per-complex
-        nd = _draw(d_pool, rng, (GRID, GRID, GRID))
-        np.save(out_d / f"{idx:06d}.npy", nd)
-        np.save(out_g / f"{idx:06d}.npy", _noise_gradmag(nd, g_pool, rng, gradmag_mode))
-        if (i + 1) % 2000 == 0:
-            el = time.time() - t0
-            print(f"  train {i+1}/{len(crops)}  ({el:.0f}s, {(i+1)/el:.0f}/s)", flush=True)
+    items = [(int(Path(c).stem), str(out_d), str(out_g)) for c in crops]
+    _run_pool(_train_one, items, pools_path, gradmag_mode, seed, workers, "train", 4000)
     # mirror availability/stats so the loader's subset logic matches the real crops.
     # crops_dir=out_dir/density at train time → put the files in BOTH out_dir/ and out_dir/density/.
     for f in ("train_available.npy", "test_available.npy", "stats.json"):
@@ -130,10 +187,10 @@ def materialize_train(crops_dir, out_dir, d_pool, g_pool, gradmag_mode, seed):
         if src.exists():
             (out_dir / f).write_bytes(src.read_bytes())
             (out_dir / "density" / f).write_bytes(src.read_bytes())
-    print(f"[train] done {len(crops)} crops in {time.time()-t0:.0f}s -> {out_dir}")
+    print(f"[train] mirrored availability/stats -> {out_dir}")
 
 
-def materialize_probe(probe_vox_dir, probe_out_dir, d_pool, g_pool, gradmag_mode, seed):
+def materialize_probe(probe_vox_dir, probe_out_dir, pools_path, gradmag_mode, seed, workers):
     dens = sorted(glob.glob(str(probe_vox_dir / "density" / "*.npy")))
     if not dens:
         sys.exit(f"[error] no probe voxels at {probe_vox_dir}/density/*.npy")
@@ -143,17 +200,8 @@ def materialize_probe(probe_vox_dir, probe_out_dir, d_pool, g_pool, gradmag_mode
     src_stats = probe_vox_dir / "stats.json"
     if src_stats.exists():
         shutil.copyfile(src_stats, probe_out_dir / "stats.json")
-    t0 = time.time()
-    for i, c in enumerate(dens):
-        pid = Path(c).stem
-        shape = np.load(c).shape
-        rng = np.random.default_rng(seed + (abs(hash(pid)) % 10_000_019))
-        nd = _draw(d_pool, rng, shape)
-        np.save(out_d / f"{pid}.npy", nd)
-        np.save(out_g / f"{pid}.npy", _noise_gradmag(nd, g_pool, rng, gradmag_mode))
-        if (i + 1) % 500 == 0:
-            print(f"  probe {i+1}/{len(dens)}", flush=True)
-    print(f"[probe] done {len(dens)} complexes in {time.time()-t0:.0f}s -> {probe_out_dir}")
+    items = [(Path(c).stem, np.load(c, mmap_mode="r").shape, str(out_d), str(out_g)) for c in dens]
+    _run_pool(_probe_one, items, pools_path, gradmag_mode, seed, workers, "probe", 1000)
 
 
 def main():
@@ -172,25 +220,25 @@ def main():
                     help="pool=draw gradmag i.i.d. from real-gradmag dist (v5 control); "
                          "from_noise=derive ‖∇(noise density)‖ (self-consistent noise pair)")
     ap.add_argument("--seed", type=int, default=SEED0)
+    ap.add_argument("--workers", type=int, default=max(1, (os.cpu_count() or 8) - 8),
+                    help="parallel processes for train/probe materialization (1=serial)")
     args = ap.parse_args()
 
     crops_dir = Path(args.crops_dir); out_dir = Path(args.out_dir)
     probe_vox_dir = Path(args.probe_vox_dir); probe_out_dir = Path(args.probe_out_dir)
     pools_path = out_dir / "pools.npz"
 
-    print(f"=== noise crops ===  gradmag_mode={args.gradmag_mode}")
+    print(f"=== noise crops ===  gradmag_mode={args.gradmag_mode}  workers={args.workers}")
     print(f"  crops_dir : {crops_dir}\n  out_dir   : {out_dir}")
     if args.stage in ("probe", "all"):
         print(f"  probe_vox : {probe_vox_dir}\n  probe_out : {probe_out_dir}")
 
     if args.stage in ("pools", "all"):
-        d_pool, g_pool = build_pools(crops_dir, pools_path, args.gradmag_mode, args.seed)
-    else:
-        d_pool, g_pool = _load_pools(pools_path)
+        build_pools(crops_dir, pools_path, args.gradmag_mode, args.seed)
     if args.stage in ("train", "all"):
-        materialize_train(crops_dir, out_dir, d_pool, g_pool, args.gradmag_mode, args.seed)
+        materialize_train(crops_dir, out_dir, pools_path, args.gradmag_mode, args.seed, args.workers)
     if args.stage in ("probe", "all"):
-        materialize_probe(probe_vox_dir, probe_out_dir, d_pool, g_pool, args.gradmag_mode, args.seed)
+        materialize_probe(probe_vox_dir, probe_out_dir, pools_path, args.gradmag_mode, args.seed, args.workers)
     print("DONE")
 
 

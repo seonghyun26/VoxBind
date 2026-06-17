@@ -1183,6 +1183,61 @@ def soft_count_targets(y: torch.Tensor, num_classes: int, sigma: float) -> torch
     return torch.softmax(-(d * d) / (2.0 * sigma * sigma), dim=1)
 
 
+def _macro_f1(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    """Unweighted mean per-class F1 over the labels present in true∪pred (numpy; no sklearn)."""
+    labels = np.union1d(np.unique(y_true), np.unique(y_pred))
+    f1s = []
+    for c in labels:
+        tp = float(((y_pred == c) & (y_true == c)).sum())
+        fp = float(((y_pred == c) & (y_true != c)).sum())
+        fn = float(((y_pred != c) & (y_true == c)).sum())
+        prec = tp / (tp + fp) if (tp + fp) else 0.0
+        rec  = tp / (tp + fn) if (tp + fn) else 0.0
+        f1s.append(2 * prec * rec / (prec + rec) if (prec + rec) else 0.0)
+    return float(np.mean(f1s)) if f1s else 0.0
+
+
+def classification_metrics(y_true: np.ndarray, y_pred: np.ndarray, K: int) -> dict:
+    """Multiclass metrics for integer counts 0..K-1 (numpy-only).
+
+    accuracy, within-1 accuracy (|Δcount|≤1), macro-F1 (over present labels),
+    balanced accuracy (mean recall over true-present classes), quadratic-weighted
+    Cohen's κ over the full 0..K-1 ordinal scale, and the majority-class baseline.
+    """
+    y_true = np.rint(y_true).astype(int)
+    y_pred = np.rint(np.clip(y_pred, 0, K - 1)).astype(int)
+    acc = float((y_true == y_pred).mean())
+    within1 = float((np.abs(y_true - y_pred) <= 1).mean())
+    macro_f1 = _macro_f1(y_true, y_pred)
+    # balanced accuracy = mean recall over classes present in y_true
+    recalls = []
+    for c in np.unique(y_true):
+        denom = (y_true == c).sum()
+        recalls.append(float(((y_pred == c) & (y_true == c)).sum()) / float(denom))
+    bal_acc = float(np.mean(recalls)) if recalls else 0.0
+    # quadratic-weighted kappa over the 0..K-1 rating scale
+    cls = np.arange(K)
+    O = np.zeros((K, K), dtype=np.float64)
+    for t, p in zip(y_true, y_pred):
+        if 0 <= t < K and 0 <= p < K:
+            O[t, p] += 1.0
+    w = (cls[:, None] - cls[None, :]) ** 2 / float((K - 1) ** 2) if K > 1 else np.zeros((K, K))
+    E = np.outer(O.sum(axis=1), O.sum(axis=0)) / max(O.sum(), 1.0)
+    denom = float((w * E).sum())
+    qwk = float(1.0 - (w * O).sum() / denom) if denom > 0 else 0.0
+    _, counts = np.unique(y_true, return_counts=True)
+    maj_acc = float(counts.max() / counts.sum())
+    return {
+        "n_classes":         int(K),
+        "test_accuracy":     acc,
+        "test_within1_acc":  within1,
+        "test_macro_f1":     macro_f1,
+        "test_balanced_acc": bal_acc,
+        "test_qwk":          qwk,
+        "majority_acc":      maj_acc,
+    }
+
+
 def train_one(
     data: dict, *, seed: int, device: str, max_epochs: int, patience: int,
     batch_size: int, lr: float, weight_decay: float, hidden: int, dropout: float,
@@ -1227,6 +1282,15 @@ def train_one(
     best_state = None
     best_epoch = -1
     epochs_since_best = 0
+    # classification head: track a SECOND best state by val macro-F1 (argmax), so the
+    # classification metrics get a class-selected model while the regression metrics keep
+    # their E[count]-Spearman selection (existing behaviour unchanged). Early stopping
+    # stays on Spearman so the softmax regression numbers are bit-identical.
+    do_clf = head == "softmax"
+    yva_int = np.rint(yva.cpu().numpy()).astype(int) if do_clf else None
+    best_val_f1 = -np.inf
+    best_state_clf = None
+    best_epoch_clf = -1
 
     for epoch in range(max_epochs):
         # mini-batch SGD
@@ -1248,6 +1312,14 @@ def train_one(
         with torch.no_grad():
             pred_va = predict(Xva).cpu().numpy()
         val_spearman = spearmanr(pred_va, yva.cpu().numpy()).statistic
+        if do_clf:
+            with torch.no_grad():
+                pred_va_cls = model(Xva).argmax(dim=1).cpu().numpy()
+            val_f1 = _macro_f1(yva_int, pred_va_cls)
+            if val_f1 > best_val_f1:
+                best_val_f1 = val_f1
+                best_state_clf = {k: v.detach().clone() for k, v in model.state_dict().items()}
+                best_epoch_clf = epoch
         if val_spearman > best_val:
             best_val = val_spearman
             best_state = {k: v.detach().clone() for k, v in model.state_dict().items()}
@@ -1267,7 +1339,7 @@ def train_one(
     yva_np = yva.cpu().numpy()
     yte_np = yte.cpu().numpy()
 
-    return {
+    out = {
         "n_train": int(n_train),
         "n_val":   int(Xva.shape[0]),
         "n_test":  int(Xte.shape[0]),
@@ -1279,6 +1351,16 @@ def train_one(
         "test_mae":          float(np.abs(pred_te - yte_np).mean()),
         "epoch_stopped":     int(best_epoch),
     }
+    if do_clf:
+        # argmax classification metrics from the macro-F1-selected model (counts as classes)
+        model.load_state_dict(best_state_clf or best_state)
+        model.eval()
+        with torch.no_grad():
+            pred_te_cls = model(Xte).argmax(dim=1).cpu().numpy()
+        out.update(classification_metrics(yte_np, pred_te_cls, K))
+        out["best_val_macro_f1"] = float(best_val_f1)
+        out["clf_epoch_stopped"] = int(best_epoch_clf)
+    return out
 
 
 def run_probe(args: argparse.Namespace) -> None:
@@ -1395,13 +1477,25 @@ def run_probe(args: argparse.Namespace) -> None:
                   f"test_ρ={m['test_spearman']:.4f}  "
                   f"test_r={m['test_pearson']:.4f}  "
                   f"test_rmse={m['test_rmse']:.4f}")
+            if "test_accuracy" in m:
+                print(f"           clf(K={m['n_classes']}): acc={m['test_accuracy']:.3f}  "
+                      f"±1acc={m['test_within1_acc']:.3f}  macroF1={m['test_macro_f1']:.3f}  "
+                      f"balAcc={m['test_balanced_acc']:.3f}  QWK={m['test_qwk']:.3f}  "
+                      f"(majority={m['majority_acc']:.3f})")
 
     df = pd.DataFrame(rows)
 
     print("\n── Summary (mean ± std across seeds) ───────────────────────────────")
-    agg = df.groupby("condition")[
-        ["test_spearman", "test_pearson", "test_rmse", "test_mae", "best_val_spearman", "val_pearson"]
-    ].agg(["mean", "std"]).round(4)
+    metric_cols = ["test_spearman", "test_pearson", "test_rmse", "test_mae",
+                   "best_val_spearman", "val_pearson"]
+    if "test_accuracy" in df.columns:
+        clf_cols = ["test_accuracy", "test_within1_acc", "test_macro_f1",
+                    "test_balanced_acc", "test_qwk", "majority_acc"]
+        agg_clf = df.groupby("condition")[clf_cols].agg(["mean", "std"]).round(4)
+        print("  [classification — counts as classes]")
+        print(agg_clf.to_string())
+        print("  [regression — E[count]]")
+    agg = df.groupby("condition")[metric_cols].agg(["mean", "std"]).round(4)
     print(agg.to_string())
     if args.no_write_csv:
         print("\n[write] disabled (--no_write_csv)")

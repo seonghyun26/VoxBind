@@ -50,5 +50,14 @@ SMILES_MAX_LEN = 200     # truncate SMILES token stream
 EMB_DIM    = 128         # per-branch embedding (paper: each branch → 128)
 GCN_HIDDEN = 128
 
+# ── seq / SMILES dilated-conv residual tower (paper v_seq/v_smi front-end) ────
+# "Multi-scale dilated convolutions with dilated residual blocks, followed by 1D
+# self-attention." conv_channels is the tower width = the main capacity knob;
+# the default lands the full model near the paper's 3.06M. Set CONV_DILATIONS=()
+# for the attention-only branch (the earlier ~0.77M reproduction).
+CONV_CHANNELS   = 213            # tower width (tuned so the full model ≈ 3.06M)
+CONV_DILATIONS  = (1, 2, 4, 8)   # one residual block per dilation (multi-scale)
+CONVS_PER_BLOCK = 2              # dilated convs per residual block
+
 # ── training ─────────────────────────────────────────────────────────────────
 PEARSON_LAMBDA = 50.0    # hybrid loss: SmoothL1 + λ·(1 - Pearson)

@@ -1,16 +1,22 @@
-"""model.py — HBGSA (pragmatic core): 3-branch multimodal affinity model.
+"""model.py — HBGSA: full 4-branch multimodal binding-affinity model.
 
 Branches (each → EMB_DIM):
   • H-bond graph : GCN over the H-bond nodes (dynamic-KNN edges built upstream),
                    2 conv layers + residual, global max-pool         [paper core]
-  • protein seq  : physicochemical descriptors → 1D self-attention → masked mean
-  • SMILES       : token embedding → 1D self-attention → masked mean
+  • protein seq  : physicochemical descriptors → multi-scale dilated-conv
+                   residual tower → 1D self-attention → masked mean
+  • binding pkt  : pocket-residue descriptors → 1D conv (kernel 3) → masked max
+  • SMILES       : token embedding → multi-scale dilated-conv residual tower →
+                   1D self-attention → masked mean
 
-Fusion: concat(3·EMB) → FC EMB·3 → 128 → 64 → 1.
+Fusion: concat(4·EMB) → FC 4·EMB → 128 → 64 → 1.
 Loss  : SmoothL1 + λ·(1 − Pearson)  (paper hybrid loss, λ=50).
 
-The ambiguous/underspecified 4th branch from the paper is intentionally dropped
-(pragmatic-core scope). Reference: HBGSA, arXiv 2604.23115.
+The dilated-conv residual towers in the seq/SMILES branches mirror the paper's
+"multi-scale dilated convolutions with dilated residual blocks, followed by 1D
+self-attention" front-end (closing the parameter gap vs the paper's 3.06M model);
+set conv_dilations=() to fall back to the attention-only branch. Reference:
+HBGSA, arXiv 2604.23115.
 """
 from __future__ import annotations
 
@@ -19,7 +25,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.nn import GCNConv, global_max_pool
 
-from config import EMB_DIM, GCN_HIDDEN, PEARSON_LAMBDA
+from config import (CONV_CHANNELS, CONV_DILATIONS, CONVS_PER_BLOCK, EMB_DIM,
+                    GCN_HIDDEN, PEARSON_LAMBDA)
 from featurize import SEQ_FEAT_DIM
 
 
@@ -43,15 +50,71 @@ class HBondGCN(nn.Module):
         return self.proj(h)
 
 
+class DilatedConvBlock(nn.Module):
+    """Residual block of `n_convs` dilated 1D convs (per-position LayerNorm + GELU).
+
+    Runs in (B, L, C) layout; convs transpose to (B, C, L) internally. The residual
+    is added around the whole block. Per-position LayerNorm keeps stats independent
+    of padded positions (which the attention mask drops downstream)."""
+
+    def __init__(self, channels: int, dilation: int, n_convs: int = 2):
+        super().__init__()
+        self.convs = nn.ModuleList(
+            nn.Conv1d(channels, channels, kernel_size=3, padding=dilation, dilation=dilation)
+            for _ in range(n_convs)
+        )
+        self.norms = nn.ModuleList(nn.LayerNorm(channels) for _ in range(n_convs))
+
+    def forward(self, h):                                       # h: (B, L, C)
+        x = h
+        for conv, norm in zip(self.convs, self.norms):
+            y = conv(x.transpose(1, 2)).transpose(1, 2)         # (B, L, C)
+            x = norm(F.gelu(y))
+        return h + x                                            # residual around block
+
+
+class DilatedConvTower(nn.Module):
+    """Multi-scale dilated-conv residual tower (paper v_seq/v_smi front-end).
+
+    On (B, L, d_model): per-position channel adapter → one residual block per
+    dilation (increasing dilation = multi-scale receptive field) → project back to
+    d_model. Padded positions are zeroed on output so the trailing attention/pool
+    never sees conv leakage into the pad region."""
+
+    def __init__(self, d_model: int, conv_channels: int = CONV_CHANNELS,
+                 dilations=CONV_DILATIONS, convs_per_block: int = CONVS_PER_BLOCK):
+        super().__init__()
+        self.stem = nn.Linear(d_model, conv_channels)
+        self.blocks = nn.ModuleList(
+            DilatedConvBlock(conv_channels, d, convs_per_block) for d in dilations
+        )
+        self.head = nn.Linear(conv_channels, d_model)
+
+    def forward(self, h, key_padding_mask):                     # h: (B, L, d_model)
+        h = self.stem(h)
+        for blk in self.blocks:
+            h = blk(h)
+        h = self.head(h)
+        return h.masked_fill(key_padding_mask.unsqueeze(-1), 0.0)
+
+
 class SelfAttnPool(nn.Module):
-    """Project → 1D Transformer self-attention → masked mean-pool → out_dim."""
+    """[embed/proj] → dilated-conv residual tower → 1D self-attention → masked mean.
+
+    Matches the paper's v_seq / v_smi branch: multi-scale dilated convolutions with
+    dilated residual blocks, followed by 1D self-attention. Pass conv_dilations=()
+    to disable the tower (attention-only, the previous behaviour)."""
 
     def __init__(self, in_dim: int, d_model: int, out_dim: int = EMB_DIM,
-                 n_heads: int = 4, n_layers: int = 2, embedding: bool = False):
+                 n_heads: int = 4, n_layers: int = 2, embedding: bool = False,
+                 conv_channels: int = CONV_CHANNELS, conv_dilations=CONV_DILATIONS,
+                 convs_per_block: int = CONVS_PER_BLOCK):
         super().__init__()
         self.embedding = nn.Embedding(in_dim, d_model, padding_idx=0) if embedding \
             else None
         self.proj_in = None if embedding else nn.Linear(in_dim, d_model)
+        self.tower = DilatedConvTower(d_model, conv_channels, conv_dilations,
+                                      convs_per_block) if conv_dilations else None
         layer = nn.TransformerEncoderLayer(d_model, n_heads, dim_feedforward=2 * d_model,
                                            batch_first=True, activation="gelu")
         self.encoder = nn.TransformerEncoder(layer, n_layers)
@@ -59,6 +122,8 @@ class SelfAttnPool(nn.Module):
 
     def forward(self, x, key_padding_mask):
         h = self.embedding(x) if self.embedding is not None else self.proj_in(x)
+        if self.tower is not None:
+            h = self.tower(h, key_padding_mask)                      # dilated-conv front-end
         h = self.encoder(h, src_key_padding_mask=key_padding_mask)   # True = pad
         valid = (~key_padding_mask).unsqueeze(-1).float()            # (B,L,1)
         pooled = (h * valid).sum(1) / valid.sum(1).clamp_min(1.0)    # masked mean
@@ -89,14 +154,19 @@ class HBGSA(nn.Module):
                  smi_d_model: int = 128, emb_dim: int = EMB_DIM,
                  n_layers: int = 2, n_heads: int = 4,
                  gcn_hidden: int = GCN_HIDDEN, pocket_hidden: int = 128,
-                 head_hidden: int = 128):
+                 head_hidden: int = 128, conv_channels: int = CONV_CHANNELS,
+                 conv_dilations=CONV_DILATIONS, convs_per_block: int = CONVS_PER_BLOCK):
         super().__init__()
         self.hb = HBondGCN(in_dim=9, hidden=gcn_hidden, out_dim=emb_dim)
         self.seq = SelfAttnPool(SEQ_FEAT_DIM, seq_d_model, emb_dim,
-                                n_heads=n_heads, n_layers=n_layers, embedding=False)
+                                n_heads=n_heads, n_layers=n_layers, embedding=False,
+                                conv_channels=conv_channels, conv_dilations=conv_dilations,
+                                convs_per_block=convs_per_block)
         self.pkt = PocketConv(SEQ_FEAT_DIM, hidden=pocket_hidden, out_dim=emb_dim)
         self.smi = SelfAttnPool(smiles_vocab_size, smi_d_model, emb_dim,
-                                n_heads=n_heads, n_layers=n_layers, embedding=True)
+                                n_heads=n_heads, n_layers=n_layers, embedding=True,
+                                conv_channels=conv_channels, conv_dilations=conv_dilations,
+                                convs_per_block=convs_per_block)
         self.head = nn.Sequential(
             nn.Linear(4 * emb_dim, head_hidden), nn.GELU(), nn.Dropout(0.1),
             nn.Linear(head_hidden, head_hidden // 2), nn.GELU(),

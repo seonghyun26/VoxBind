@@ -21,7 +21,7 @@ import torch
 from scipy.stats import pearsonr, spearmanr
 from torch.utils.data import DataLoader
 
-from config import RESULTS_DIR
+from config import (CONV_CHANNELS, CONV_DILATIONS, CONVS_PER_BLOCK, RESULTS_DIR)
 from dataset import HBGSADataset, collate
 from featurize import build_smiles_vocab
 from manifest import build_manifest
@@ -84,6 +84,8 @@ def run_one_seed(manifest, vocab, seed, args, device):
         seq_d_model=args.d_model, smi_d_model=args.d_model, emb_dim=args.emb_dim,
         n_layers=args.n_layers, n_heads=args.n_heads, gcn_hidden=args.gcn_hidden,
         pocket_hidden=args.pocket_hidden, head_hidden=args.head_hidden,
+        conv_channels=args.conv_channels, conv_dilations=args.conv_dilations_tuple,
+        convs_per_block=args.convs_per_block,
     ).to(device)
     n_param = sum(p.numel() for p in model.parameters())
     print(f"  seed{seed} model params: {n_param:,} (~{n_param/1e6:.1f}M)", flush=True)
@@ -147,7 +149,8 @@ def main():
     ap.add_argument("--batch_size", type=int, default=64)
     ap.add_argument("--lr", type=float, default=1e-3)
     ap.add_argument("--weight_decay", type=float, default=1e-5)
-    # model size knobs (defaults = the ~0.77M paper-scale model)
+    # model size knobs (defaults ≈ the paper's 3.06M model; set --conv_dilations ""
+    # to drop the dilated-conv towers → the earlier ~0.77M attention-only variant)
     ap.add_argument("--emb_dim",      type=int, default=128, help="per-branch embedding dim")
     ap.add_argument("--d_model",      type=int, default=128, help="seq/SMILES transformer width")
     ap.add_argument("--n_layers",     type=int, default=2,   help="transformer layers per attn branch")
@@ -155,10 +158,16 @@ def main():
     ap.add_argument("--gcn_hidden",   type=int, default=128)
     ap.add_argument("--pocket_hidden",type=int, default=128)
     ap.add_argument("--head_hidden",  type=int, default=128)
+    # seq/SMILES dilated-conv residual tower (paper v_seq/v_smi front-end)
+    ap.add_argument("--conv_channels",  type=int, default=CONV_CHANNELS, help="dilated-conv tower width")
+    ap.add_argument("--conv_dilations", default=",".join(map(str, CONV_DILATIONS)),
+                    help="comma-sep dilations, one residual block each; empty = attention-only (no tower)")
+    ap.add_argument("--convs_per_block",type=int, default=CONVS_PER_BLOCK, help="dilated convs per residual block")
     ap.add_argument("--num_workers", type=int, default=4)
     ap.add_argument("--probe_pids", default="", help="optional file of test pdb_ids to also score")
     ap.add_argument("--device", default="cuda")
     args = ap.parse_args()
+    args.conv_dilations_tuple = tuple(int(d) for d in args.conv_dilations.split(",") if d.strip())
 
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
     print(f"=== HBGSA train/eval  (device={device})  tag={args.tag} ===")
