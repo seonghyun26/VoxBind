@@ -28,6 +28,8 @@ GPUS=${GPUS:-0,1,2,3}
 NPROC=$(awk -F, '{print NF}' <<< "$GPUS")
 PROBE_GPU=${GPUS%%,*}
 FRACS="0.01 0.05 0.10 0.25 0.50"   # ascending: 1% 5% 10% 25% 50%
+PROBE_GRACE=${PROBE_GRACE:-10}     # small settle so the exited torchrun frees GPU memory
+                                   # before the features step (not the crash fix — see below).
 ts(){ date "+%F %T"; }
 
 mkdir -p "$VOX/log"
@@ -72,15 +74,27 @@ for FRAC in $FRACS; do
     fi
 
     # frozen-encoder probe on canonical 2172/480/839 (PDBbind v5 voxels)
-    echo "[$(ts)] [p${PCT}] features + 3-seed probe -> $CSV" | tee -a "$MASTER"
+    if [ -f "$CSV" ]; then
+        echo "[$(ts)] [p${PCT}] CSV already exists — skip probe" | tee -a "$MASTER"; continue
+    fi
+    # --num_workers 0 is the real fix: the multiprocess feature DataLoader forks workers
+    # AFTER CUDA init, and the pinned-memory fd-share path then flakily dies with
+    # "CUDA error: invalid argument" in the pin_memory thread. Single-process + pin-free
+    # (01c sets pin_memory=False when num_workers==0) is deterministic. Small grace too.
+    echo "[$(ts)] [p${PCT}] settling ${PROBE_GRACE}s, then features(nw0) + 3-seed probe -> $CSV" | tee -a "$MASTER"
+    sleep "$PROBE_GRACE"
     CUDA_VISIBLE_DEVICES=$PROBE_GPU $PY/python dataset/01c_pdbbind_probe.py features \
-        --condition atomblob_density_gradmag --voxel_version v5 --epoch 99 \
+        --condition atomblob_density_gradmag --voxel_version v5 --epoch 99 --num_workers 0 \
         --atom_source ligvdw --exp_dir "exps/$EXP" --tag "$TAG" >> "$LOG" 2>&1 \
     && CUDA_VISIBLE_DEVICES=$PROBE_GPU $PY/python dataset/01c_pdbbind_probe.py probe \
         --conditions atomblob_density_gradmag --voxel_version v5 --epoch 99 --seeds 3 \
         --feature_tag "$TAG" --exp_dir "exps/$EXP" --allow_stale_features \
         --out_csv "$CSV" >> "$LOG" 2>&1
-    echo "[$(ts)] [p${PCT}] DONE subset_n=$SUBN -> $CSV" | tee -a "$MASTER"
+    if [ -f "$CSV" ]; then
+        echo "[$(ts)] [p${PCT}] DONE subset_n=$SUBN -> $CSV" | tee -a "$MASTER"
+    else
+        echo "[$(ts)] [p${PCT}] PROBE FAILED (no CSV) — see $LOG" | tee -a "$MASTER"
+    fi
 done
 
 echo "[$(ts)] === PLINDER OTF C+D+G size sweep COMPLETE ===" | tee -a "$MASTER"

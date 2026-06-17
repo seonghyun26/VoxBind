@@ -1,0 +1,119 @@
+defaults:
+  - dset: crossdocked_xray
+  - model: atomblob_density_vit_mae_40m
+  - vox: default
+  - override hydra/job_logging: custom
+  - _self_
+
+# (c) Atom-blob (SEPARATE lig+poc) + v5 X-ray density + gradmag ViT-MAE.
+# ── PLINDER OTF (on-the-fly resample-aug) C+D+G — 100% / FULL-CORPUS point of the
+#    dataset-scaling sweep (Table 4). Identical recipe to
+#    config_train_atomblob_density_gradmag_vit_mae_40m_invfreq EXCEPT the dset block points
+#    at the PLINDER ligand-matched corpus via the on-the-fly RESAMPLE path (dset.resample_dir,
+#    DatasetCrossDockedDensity) at FULL size (subset_n=17430 = entire train pool, val=100).
+#    Pairs with the 1–50% otf subset runs (260617_plinder_otf_cdg_invfreq_p{01,05,10,25,50})
+#    so the scaling curve is recipe-matched (all otf). The frozen-crop full counterpart is
+#    260616_…_invfreq_plinder (crops_dir + zero-fill aug). 13 input channels: 7 lig + 4 poc
+#    (vdW radii) + 1 v5 density + 1 gradmag.
+
+debug: False
+wandb: True
+wandb_tags: [pretrain, atomblob_density_gradmag, 40m, invfreq, plinder, otf, ligvdw, clip30, sizesweep, p100]
+num_workers: 16
+prefetch_factor: 8
+resume: null
+resume_epoch: null
+exp_dir: exps
+exp_name: 260617_plinder_otf_cdg_invfreq_p100_pretrain
+output_dir: null
+
+seed: 42
+num_epochs: 100
+aug: True
+bsz: 32
+accum_steps: 1
+lr: 1e-4
+wd: 5e-2
+
+# ── Throughput knobs — amp + compile ON by default (260611; verified same results). ────
+# bf16 autocast + torch.compile ≈ 2.8x faster than fp32-eager with no accuracy change
+# (cosine >=0.999 / loss within 1%), verified on RTX 3090 via benchmark_vit_opts.py.
+# channels_last / fused / foreach_ema stay off — flip them on for the full ~2.8x stack.
+amp:
+  enabled: true       # bf16 autocast (no GradScaler); biggest single win + unlocks flash SDPA
+  dtype: bf16         # bf16 only; fp16 intentionally unsupported (would need a scaler)
+channels_last: false  # channels_last_3d memory format for the Conv3d patch-embed/heads
+optimizer:
+  fused: false        # CUDA-fused AdamW (betas=(0.99,0.999), eps=1e-8 ~ vendored AdamW)
+ema:
+  foreach: false      # multi-tensor EMA update (2 kernels vs a 45M-param Python loop)
+compile:
+  enabled: true       # torch.compile; validate under DDP (start mode=default, not reduce-overhead)
+  backend: inductor
+  mode: default
+  fullgraph: false
+  dynamic: false
+# model.rope_fast (rope3d only) lives in the model: block below.
+
+input_mode: atomblob_density
+with_gradmag: true                 # + gradmag → 13 channels
+
+dset:
+  data_dir: /home/shpark/prj-denovo/VoxBind/voxbind/dataset/data
+  crops_dir: ""                    # off: no frozen crops (resample_dir takes priority)
+  resample_dir: /home/shpark/prj-denovo/VoxBind/voxbind/dataset/data/xray_resample_plinder   # on: OTF resample-aug
+  data_file: data_train_plinder.pt # PLINDER ligand-matched corpus (17,530 tuples; pre-shuffled seed 1234)
+  normalize: false                 # OTF path applies its own arcsinh+z recipe (resample.json); ±3σ clip stays off
+  ligand_radius: -1                # element-wise vdW radii (lig + poc)
+  subset_xray_only: true
+  subset_n: 17430                  # FULL train pool = 17,530 − 100 val (p50 was 8715)
+  subset_val_n: 100
+  use_xray: true
+
+model:
+  n_in_channels: 13                # 11 atoms + density + gradmag
+  head_style: patch_mlp            # per-patch 2-layer MLP recon head (~1.0M params)
+  head_hidden_dim: 67
+  head_depth: 2
+
+mae:
+  pretext_style: mae
+  density_source: xray
+  sigma_blur_a_lo: 0.30
+  sigma_blur_a_hi: 0.80
+  sigma_noise: 0.0
+  block_size: 8
+  mask_ratio: 0.60
+  mask_strategy: atom_biased
+  mask_atom_tau: 1.0
+  channel_weighting: inv_freq
+  channel_weight_clip_ratio: 30.0
+  density_channel_weight: 0.1
+  gradmag_channel_weight: 0.1
+  gradmag_reconstruct: true
+  gradmag_noise: false
+  atom_pos_weight: 10.0
+  atom_pos_thresh: 0.05
+  lambda_dens: 1.0
+  lambda_str: 1.0
+  struct_pos_weight: 100.0
+  struct_pos_thresh: 0.05
+  ema_decay: 0.999
+  grad_clip: 1.0
+  val_every: 1
+  ckpt_every: 50
+
+hydra:
+  run:
+    dir: ./${exp_dir}/${exp_name}
+  job:
+    config:
+      override_dirname:
+        kv_sep: ""
+        item_sep: "_"
+        exclude_keys: [
+            "exp_dir", "lr", vox.grid_dim, "wd", "resume", "resume_epoch", "wandb",
+            "num_workers", "exp_name", "output_dir", "out_dir",
+            "bsz", "accum_steps", "seed", "num_epochs", "aug", "pocket_radius",
+            "grid_dim", "debug"
+]

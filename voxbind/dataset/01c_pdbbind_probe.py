@@ -768,6 +768,54 @@ def load_voxels_for(
     return x
 
 
+class _ExtractDataset(Dataset):
+    """Per-complex voxel builder for frozen feature extraction.
+
+    Returns (pid, x) so a DataLoader worker pool overlaps disk I/O + voxel
+    assembly (np.load + float32 promote + cat + on-the-fly gradmag) with the
+    GPU forward of the previous batch. A failed complex is surfaced as
+    (pid, None, err) instead of raising, so one bad file doesn't kill the whole
+    batch — preserving the old serial loop's per-pid error logging."""
+
+    def __init__(self, pids, condition, n_in, atom_dir, dens_dir,
+                 input_mode, with_gradmag, gradmag_dir):
+        self.pids = list(pids)
+        self.condition = condition
+        self.n_in = n_in
+        self.atom_dir = atom_dir
+        self.dens_dir = dens_dir
+        self.input_mode = input_mode
+        self.with_gradmag = with_gradmag
+        self.gradmag_dir = gradmag_dir
+
+    def __len__(self) -> int:
+        return len(self.pids)
+
+    def __getitem__(self, i: int):
+        pid = self.pids[i]
+        try:
+            x = load_voxels_for(pid, self.condition, self.n_in,
+                                self.atom_dir, self.dens_dir,
+                                input_mode=self.input_mode,
+                                with_gradmag=self.with_gradmag,
+                                gradmag_dir=self.gradmag_dir)
+            return pid, x, ""
+        except Exception as e:                                   # logged, not fatal
+            return pid, None, repr(e)[:160]
+
+
+def _extract_collate(batch):
+    """Drop failed items, stack the survivors. Returns (pids, x|None, errors)."""
+    good = [(pid, x) for pid, x, err in batch if x is not None]
+    errs = [(pid, err) for pid, x, err in batch if x is None]
+    if good:
+        pids, xs = zip(*good)
+        x = torch.stack(xs, dim=0)
+    else:
+        pids, x = (), None
+    return list(pids), x, errs
+
+
 def run_features(args: argparse.Namespace) -> None:
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -865,31 +913,47 @@ def run_features(args: argparse.Namespace) -> None:
     n_err = 0
     err_log: list[tuple[str, str]] = []
 
-    # Batched forward pass.
-    pbar = tqdm(range(0, len(pids), args.batch_size), unit="batch",
-                desc=f"encode {args.condition}")
-    for start in pbar:
-        batch_pids = pids[start : start + args.batch_size]
-        tensors, used_pids = [], []
-        for pid in batch_pids:
-            try:
-                tensors.append(load_voxels_for(pid, args.condition, n_in,
-                                                atom_dir, dens_dir,
-                                                input_mode=spec.input_mode,
-                                                with_gradmag=spec.with_gradmag,
-                                                gradmag_dir=gradmag_dir))
-                used_pids.append(pid)
-            except Exception as e:
-                err_log.append((pid, repr(e)[:160]))
-                n_err += 1
-        if not tensors:
+    # Worker-pooled, prefetched forward pass. Voxel assembly (np.load + float32
+    # promote + cat + gradmag) runs in DataLoader workers and overlaps with the
+    # GPU forward; H2D is async (pinned + non_blocking) and the only D2H sync is
+    # a single .cpu() at the end. The frozen encoder is LayerNorm-only and the
+    # rep is per-sample mean-pooled, so batch_size is mathematically
+    # result-neutral — features are identical regardless of batching.
+    on_cuda = str(args.device).startswith("cuda")
+    num_workers = getattr(args, "num_workers", 8)
+    ds = _ExtractDataset(pids, args.condition, n_in, atom_dir, dens_dir,
+                         spec.input_mode, spec.with_gradmag, gradmag_dir)
+    # pin_memory only with workers: pinning + the multiprocessing worker fd-share path
+    # can flakily fail with "CUDA error: invalid argument" in the pin_memory thread
+    # (fork-after-CUDA-init). num_workers=0 → single-process, no fork, no pin → robust.
+    pin = on_cuda and num_workers > 0
+    loader = DataLoader(
+        ds, batch_size=args.batch_size, shuffle=False,
+        num_workers=num_workers, pin_memory=pin,
+        persistent_workers=num_workers > 0,
+        prefetch_factor=4 if num_workers > 0 else None,
+        collate_fn=_extract_collate,
+    )
+
+    feat_chunks: list[torch.Tensor] = []                            # kept on-device
+    ordered_pids: list[str] = []
+    pbar = tqdm(loader, unit="batch", desc=f"encode {args.condition}")
+    for batch_pids, x, errs in pbar:
+        for pid, msg in errs:
+            err_log.append((pid, msg))
+            n_err += 1
+        if x is None:
             continue
-        x = torch.stack(tensors, dim=0).to(args.device)            # (B, n_in, G, G, G)
+        x = x.to(args.device, non_blocking=on_cuda)                # (B, n_in, G, G, G)
         tokens = encode_tokens(encoder, x)                          # (B, N, D)
-        feats = tokens.mean(dim=1).cpu()                            # (B, D)
-        for pid, vec in zip(used_pids, feats):
+        feat_chunks.append(tokens.mean(dim=1))                      # (B, D), still on device
+        ordered_pids.extend(batch_pids)
+        pbar.set_postfix(saved=len(ordered_pids), err=n_err, refresh=False)
+
+    if feat_chunks:                                                 # single D2H sync
+        all_feats = torch.cat(feat_chunks, dim=0).cpu()
+        for pid, vec in zip(ordered_pids, all_feats):
             features[pid] = vec.contiguous().clone()
-        pbar.set_postfix(saved=len(features), err=n_err, refresh=False)
 
     if out_path.is_symlink():
         out_path.unlink()
@@ -2135,7 +2199,13 @@ def build_parser() -> argparse.ArgumentParser:
                          "v3 = pocket-pool symmetric max-abs; v4 = pocket-pool "
                          "clip + z-score; v5 = arcsinh + z-score. Atom source "
                          "is selected by --atom_source / pretrained cfg.")
-    pf.add_argument("--batch_size", type=int, default=16)
+    pf.add_argument("--batch_size", type=int, default=48,
+                    help="Frozen-encoder forward batch. Result-neutral (LayerNorm-only "
+                         "encoder + per-sample mean-pool → identical features at any batch); "
+                         "purely a throughput/VRAM knob. Raise freely if VRAM allows.")
+    pf.add_argument("--num_workers", type=int, default=8,
+                    help="DataLoader workers for voxel assembly (np.load + cat + gradmag). "
+                         "Overlaps disk I/O with the GPU forward; 0 = synchronous.")
     pf.add_argument("--device",     default="cuda" if torch.cuda.is_available() else "cpu")
     pf.add_argument("--out_dir",    default=str(FEAT_DIR))
     pf.add_argument("--max_complexes", type=int, default=0,
