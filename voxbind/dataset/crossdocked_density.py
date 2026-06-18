@@ -32,6 +32,7 @@ Usage
 """
 
 import json
+import os
 from collections import OrderedDict
 from pathlib import Path
 from typing import Optional
@@ -113,6 +114,15 @@ def _resample_density(
             o = o - np.asarray(t_aug, dtype=o.dtype).reshape(1, 3)
         o = o @ np.asarray(R_aug, dtype=o.dtype)          # row-vec @ R_aug ≡ R_aug.T @ col-vec
 
+    # Optional diagnostic (env VOXBIND_RESAMPLE_BOXMASK=1, default off): replicate the frozen-crop
+    # zero-fill of rotated-out corners. Frozen rotates a ±(G·res/2) box so corners that leave the box
+    # become 0; OTF instead pulls in real peripheral map density there. Zeroing those voxels makes OTF
+    # pocket-focused like frozen, isolating whether that peripheral density is what hurts on PLINDER.
+    box_mask = None
+    if os.environ.get("VOXBIND_RESAMPLE_BOXMASK", "0") == "1":
+        half = G * res * 0.5
+        box_mask = np.any(np.abs(o) > half, axis=1)
+
     cart = o + np.asarray(center_cart, dtype=o.dtype).reshape(1, 3)
     if R_kab is not None:
         cart = cart @ np.asarray(R_kab, dtype=o.dtype).T + np.asarray(t_kab, dtype=o.dtype).reshape(1, 3)
@@ -122,6 +132,8 @@ def _resample_density(
     cj = (frac[:, 1] * nv) % nv
     ck = (frac[:, 2] * nw) % nw
     dens = scipy.ndimage.map_coordinates(arr, [ci, cj, ck], order=1, mode="wrap", prefilter=False)
+    if box_mask is not None:
+        dens[box_mask] = 0.0
     return dens.reshape(G, G, G).astype(np.float32)
 
 

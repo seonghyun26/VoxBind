@@ -374,7 +374,7 @@ COMPLETED = [
                 f"subsets via the seed-1234 preshuffle, fixed 100 epochs — then frozen-probed on the 839 split. "
                 f"Pretrain-corpus <b>dataset-size sweep</b> (GPU 0-3, 260617). Maps re-acquired from PDBe."),
            concl="<i>Result pending</i>.")
-      for pct, pp, sn in [("50%", "50", 8715), ("25%", "25", 4358), ("10%", "10", 1743),
+      for pct, pp, sn in [("100%", "100", 17430), ("50%", "50", 8715), ("25%", "25", 4358), ("10%", "10", 1743),
                           ("5%", "05", 872), ("1%", "01", 174)]],
 ]
 
@@ -466,10 +466,15 @@ def render():
             return (f"No-invfreq variance/confound check — {which} re-pretrained with a <b>fully-uniform</b> MAE "
                     "loss (no inv_freq, no channel/pos weights; all=1). Tests whether the +0.05 &ldquo;capacity&rdquo; "
                     "gap is an invfreq artifact or just pretraining-run variance.")
-        if "cha_mae" in name or "channelvit" in name or "channel_vit" in name:
+        if "channelvit" in name or "channel_vit" in name:
+            return ("Channel-ViT — grouped patch-embed (per-channel-group tokens [7,4,1,1] + cross-group "
+                    "attention) on PLINDER C+D+G; SAME input/data/recipe as the best fused ViT (ρ0.624), only "
+                    "the patch embed differs. Architecture ablation (Table 6).")
+        if "cha_mae" in name or "chamae" in name:
             v6 = " on the <b>v6 ligand-matched</b> density (5,270 crops)" if "v6" in name else ""
-            return (f"ChA-MAEViT — channel-grouped masked-autoencoder pretraining (per-channel-group tokens + "
-                    f"attention){v6}; tests whether channel-aware fusion beats the fused ViT (cha-MAE v5 = 0.613).")
+            return (f"ChA-MAEViT — token-drop multi-channel MAE (DCP masking + memory tokens + channel-aware "
+                    f"decoder, pixel+Fourier loss){v6} on PLINDER C+D+G; tests whether channel-aware fusion beats "
+                    f"the fused ViT (cha-MAE v5 = 0.613, best fused ViT = 0.624). Architecture ablation (Table 6).")
         if "noisecontrol" in name:
             return ("Density-ablation control — density+gradmag replaced by matched noise; tests whether "
                     "density's +0.05 ρ gain is real signal or just model capacity.")
