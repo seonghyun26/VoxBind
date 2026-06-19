@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>260618 Meeting — Property Regression Probes</title>
+<style>
+  :root {
+    --ink:        #1c2433;
+    --ink-soft:   #5b6678;
+    --line:       #e3e7ee;
+    --line-strong:#aeb6c4;
+    --bg:         #f5f6f8;
+    --card:       #ffffff;
+    --accent:     #2f6f4f;   /* green for checks / best */
+    --best-bg:    #eaf5ee;
+    --tbd:        #b07a17;
+    --tbd-bg:     #fcf3e0;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 16px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  .page {
+    max-width: 1600px;
+    margin: 0 auto;
+    padding: 48px 24px 96px;
+  }
+  header.doc {
+    border-bottom: 2px solid var(--ink);
+    padding-bottom: 18px;
+    margin-bottom: 40px;
+  }
+  header.doc .date {
+    font-size: 13px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    margin-bottom: 6px;
+  }
+  header.doc h1 {
+    font-size: 28px;
+    font-weight: 650;
+    margin: 0;
+    letter-spacing: -0.01em;
+  }
+  section.block { margin-bottom: 56px; }
+  .table-title {
+    font-size: 19px;
+    font-weight: 620;
+    margin: 0 0 4px;
+  }
+  .table-sub {
+    font-size: 13.5px;
+    color: var(--ink-soft);
+    margin: 0 0 18px;
+    max-width: 1080px;
+  }
+
+  .table-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--card);
+    box-shadow: 0 1px 2px rgba(20,30,50,.04), 0 8px 24px rgba(20,30,50,.05);
+  }
+  table.results {
+    border-collapse: collapse;
+    width: 100%;
+    font-variant-numeric: tabular-nums;
+  }
+  table.results th, table.results td {
+    padding: 11px 9px;
+    text-align: center;
+    white-space: nowrap;
+  }
+  /* header */
+  table.results thead th {
+    font-weight: 600;
+    color: var(--ink);
+    background: #fafbfc;
+    border-bottom: 1px solid var(--line);
+  }
+  table.results thead tr.grp th {
+    font-size: 10.5px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    font-weight: 600;
+    padding-top: 13px;
+    padding-bottom: 6px;
+  }
+  table.results thead tr.grp2 th {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--ink);
+    padding-top: 6px;
+    padding-bottom: 6px;
+  }
+  table.results thead tr.grp2 th i { font-style: italic; font-weight: 500; }
+  table.results thead tr.sub th {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--ink-soft);
+    letter-spacing: .02em;
+    padding-top: 0;
+    padding-bottom: 11px;
+  }
+  /* method column */
+  .col-method { text-align: left !important; min-width: 170px; }
+  thead .col-method { vertical-align: middle; }
+  td.col-method { font-weight: 560; }
+  td.col-method .tag {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .04em;
+    padding: 2px 8px;
+    border-radius: 999px;
+    margin-left: 7px;
+    vertical-align: middle;
+  }
+  .tag.supervised { background: #eef1f6; color: #5b6678; }
+  .tag.inprog { background: var(--tbd-bg); color: var(--tbd); }
+
+  /* positional-encoding pills */
+  .col-pe { min-width: 74px; }
+  .pe { display: inline-block; font-size: 11px; font-weight: 600; letter-spacing: .02em;
+        padding: 2px 9px; border-radius: 999px; white-space: nowrap; }
+  .pe.rope  { background: var(--best-bg); color: #1d5a3a; }
+  .pe.learn { background: #eef1f6; color: #5b6678; }
+
+  /* the vertical division between INPUT block and METRICS block */
+  .div-major { border-left: 2.5px solid var(--line-strong); }
+  /* lighter division between validation and test */
+  .div-minor { border-left: 1px dashed var(--line-strong); }
+
+  table.results tbody tr { border-top: 1px solid var(--line); }
+  table.results tbody tr:hover { background: #fbfcfd; }
+
+  /* check icons */
+  .chk {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 15px; height: 15px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #fff;
+    font-size: 9px;
+    line-height: 1;
+  }
+  .no { color: var(--line-strong); font-size: 14px; }
+
+  /* metric cells */
+  .metric { font-size: 14.5px; }
+  .metric .val { font-weight: 560; }
+  .metric .sd { color: #9aa3b2; font-size: 10.5px; font-weight: 400; }
+  td.best { background: var(--best-bg); }
+  td.best .val { font-weight: 720; color: #1d5a3a; }
+  .tbd {
+    color: var(--tbd);
+    font-weight: 600;
+    font-size: 13px;
+  }
+
+  .notes {
+    margin-top: 18px;
+    font-size: 13px;
+    color: var(--ink-soft);
+    line-height: 1.6;
+    max-width: 1080px;
+  }
+  .notes b { color: var(--ink); font-weight: 600; }
+  .notes ul { margin: 6px 0 0; padding-left: 20px; }
+  .notes li { margin-bottom: 4px; }
+  .legend {
+    display: flex; flex-wrap: wrap; gap: 18px;
+    margin-top: 14px; font-size: 12.5px; color: var(--ink-soft);
+    align-items: center;
+  }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .placeholder {
+    border: 1.5px dashed var(--line-strong);
+    border-radius: 12px;
+    padding: 28px;
+    text-align: center;
+    color: var(--ink-soft);
+    font-size: 14px;
+    background: repeating-linear-gradient(45deg,#fff,#fff 12px,#fafbfc 12px,#fafbfc 24px);
+  }
+
+  /* figure cards (gradmag pipeline, dataset filtering) */
+  .figure-wrap {
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--card);
+    box-shadow: 0 1px 2px rgba(20,30,50,.04), 0 8px 24px rgba(20,30,50,.05);
+    padding: 20px 20px 14px;
+    overflow-x: auto;
+  }
+  .figure-img { display: block; width: 100%; min-width: 760px; height: auto; }
+  .figure-img.wide { min-width: 1040px; }
+  .figure-cap {
+    margin-top: 10px;
+    font-size: 12.5px;
+    color: var(--ink-soft);
+    text-align: center;
+  }
+  .notes code, .figure-cap code, .table-sub code {
+    background: #f0f2f5; padding: 1px 5px; border-radius: 4px; font-size: 12.5px;
+  }
+
+  /* ---- top-level document sections ---- */
+  .doc-section { margin-bottom: 64px; }
+  .section-head {
+    font-size: 22px;
+    font-weight: 660;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+    margin: 0 0 30px;
+    padding-bottom: 12px;
+    border-bottom: 2px solid var(--line-strong);
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .section-head .sec-num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px; height: 30px;
+    border-radius: 8px;
+    background: var(--accent);
+    color: #fff;
+    font-size: 15px;
+    font-weight: 700;
+    flex: 0 0 auto;
+  }
+  .col-target { text-align:left !important; vertical-align:top; font-weight:650; min-width:124px;
+                background:#fafbfc; border-right:2.5px solid var(--line-strong); }
+  td.col-target .tgt-meta { display:block; margin-top:5px; font-size:11px; font-weight:400;
+                            color:var(--ink-soft); line-height:1.45; }
+  table.results tbody tr.grp-start td { border-top:2px solid var(--line-strong); }
+  .section-intro { font-size:13.5px; color:var(--ink-soft); margin:-6px 0 22px; max-width:1080px; line-height:1.6; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="doc">
+    <div class="date">2026 · 06 · 25 — Meeting</div>
+    <h1>Binding-affinity probe — encoder comparison &amp; model-size scaling</h1>
+  </header>
+
+  <!-- ============================================================ -->
+  <!-- SECTION 1 — BINDING AFFINITY                                 -->
+  <!-- ============================================================ -->
+  <div class="doc-section">
+    <h2 class="section-head"><span class="sec-num">1</span> Binding-affinity regression</h2>
+  <section class="block">
+    <p class="table-title">Table 1 &nbsp;&middot;&nbsp; PDBBind&nbsp;2020 &mdash; LP-PDBBind split</p>
+    <p class="table-sub">
+      Binding-affinity (pK) regression. Frozen-probe MLP head on the <b>PLINDER-pretrained</b> ViT encoder;
+      LP-PDBBind split (2172&nbsp;/&nbsp;480&nbsp;/&nbsp;839); mean&nbsp;&plusmn;&nbsp;std over 3 seeds.
+    </p>
+    <div class="table-wrap" style="padding:18px 18px 12px;">
+      <svg viewBox="0 0 820 322" width="100%" style="max-width:820px;display:block;margin:0 auto" font-family="-apple-system,Segoe UI,Roboto,sans-serif">
+      <line x1="46.0" y1="211.5" x2="466.0" y2="211.5" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="40.0" y="214.5" font-size="9.5" fill="#9aa3b2" text-anchor="end">0.4</text>
+      <line x1="46.0" y1="147.0" x2="466.0" y2="147.0" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="40.0" y="150.0" font-size="9.5" fill="#9aa3b2" text-anchor="end">0.5</text>
+      <line x1="46.0" y1="82.5" x2="466.0" y2="82.5" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="40.0" y="85.5" font-size="9.5" fill="#9aa3b2" text-anchor="end">0.6</text>
+      <line x1="46.0" y1="18.0" x2="466.0" y2="18.0" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="40.0" y="21.0" font-size="9.5" fill="#9aa3b2" text-anchor="end">0.7</text>
+      <text x="40.0" y="279.0" font-size="9.5" fill="#9aa3b2" text-anchor="end">0.3</text>
+      <rect x="56.0" y="74.8" width="34" height="201.2" rx="2" fill="#3498db"/>
+      <text x="73.0" y="70.8" font-size="9" fill="#5b6678" text-anchor="middle">0.612</text>
+      <rect x="95.0" y="58.0" width="34" height="218.0" rx="2" fill="#2ecc71" stroke="#000" stroke-width="2.5"/>
+      <text x="112.0" y="54.0" font-size="9" fill="#5b6678" text-anchor="middle">0.638</text>
+      <rect x="134.0" y="125.7" width="34" height="150.3" rx="2" fill="#9b59b6"/>
+      <text x="151.0" y="121.7" font-size="9" fill="#5b6678" text-anchor="middle">0.533</text>
+      <rect x="173.0" y="232.8" width="34" height="43.2" rx="2" fill="#f1c40f"/>
+      <text x="190.0" y="228.8" font-size="9" fill="#5b6678" text-anchor="middle">0.367</text>
+      <rect x="212.0" y="109.6" width="34" height="166.4" rx="2" fill="#e67e22"/>
+      <text x="229.0" y="105.6" font-size="9" fill="#5b6678" text-anchor="middle">0.558</text>
+      <text x="151.0" y="296.0" font-size="12" font-weight="600" fill="#1c2433" text-anchor="middle">Test Pearson r</text>
+      <rect x="266.0" y="92.8" width="34" height="183.2" rx="2" fill="#3498db"/>
+      <text x="283.0" y="88.8" font-size="9" fill="#5b6678" text-anchor="middle">0.584</text>
+      <rect x="305.0" y="67.0" width="34" height="209.0" rx="2" fill="#2ecc71" stroke="#000" stroke-width="2.5"/>
+      <text x="322.0" y="63.0" font-size="9" fill="#5b6678" text-anchor="middle">0.624</text>
+      <rect x="344.0" y="125.7" width="34" height="150.3" rx="2" fill="#9b59b6"/>
+      <text x="361.0" y="121.7" font-size="9" fill="#5b6678" text-anchor="middle">0.533</text>
+      <rect x="383.0" y="232.8" width="34" height="43.2" rx="2" fill="#f1c40f"/>
+      <text x="400.0" y="228.8" font-size="9" fill="#5b6678" text-anchor="middle">0.367</text>
+      <rect x="422.0" y="123.8" width="34" height="152.2" rx="2" fill="#e67e22"/>
+      <text x="439.0" y="119.8" font-size="9" fill="#5b6678" text-anchor="middle">0.536</text>
+      <text x="361.0" y="296.0" font-size="12" font-weight="600" fill="#1c2433" text-anchor="middle">Test Spearman ρ</text>
+      <line x1="46.0" y1="276.0" x2="466.0" y2="276.0" stroke="#aeb6c4" stroke-width="1.5"/>
+      <line x1="536.0" y1="211.5" x2="770.0" y2="211.5" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="530.0" y="214.5" font-size="9.5" fill="#9aa3b2" text-anchor="end">1.5</text>
+      <line x1="536.0" y1="147.0" x2="770.0" y2="147.0" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="530.0" y="150.0" font-size="9.5" fill="#9aa3b2" text-anchor="end">1.7</text>
+      <line x1="536.0" y1="82.5" x2="770.0" y2="82.5" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="530.0" y="85.5" font-size="9.5" fill="#9aa3b2" text-anchor="end">1.9</text>
+      <line x1="536.0" y1="18.0" x2="770.0" y2="18.0" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="530.0" y="21.0" font-size="9.5" fill="#9aa3b2" text-anchor="end">2.1</text>
+      <text x="530.0" y="279.0" font-size="9.5" fill="#9aa3b2" text-anchor="end">1.3</text>
+      <rect x="552.0" y="233.1" width="34" height="42.9" rx="2" fill="#3498db"/>
+      <text x="569.0" y="229.1" font-size="9" fill="#5b6678" text-anchor="middle">1.433</text>
+      <rect x="594.0" y="244.4" width="34" height="31.6" rx="2" fill="#2ecc71" stroke="#000" stroke-width="2.5"/>
+      <text x="611.0" y="240.4" font-size="9" fill="#5b6678" text-anchor="middle">1.398</text>
+      <rect x="636.0" y="38.3" width="34" height="237.7" rx="2" fill="#9b59b6"/>
+      <text x="653.0" y="34.3" font-size="9" fill="#5b6678" text-anchor="middle">2.037</text>
+      <rect x="678.0" y="43.2" width="34" height="232.8" rx="2" fill="#f1c40f"/>
+      <text x="695.0" y="39.2" font-size="9" fill="#5b6678" text-anchor="middle">2.022</text>
+      <rect x="720.0" y="224.4" width="34" height="51.6" rx="2" fill="#e67e22"/>
+      <text x="737.0" y="220.4" font-size="9" fill="#5b6678" text-anchor="middle">1.460</text>
+      <text x="653.0" y="296.0" font-size="12" font-weight="600" fill="#1c2433" text-anchor="middle">Test RMSE</text>
+      <text x="653.0" y="310.0" font-size="10" fill="#b04a2f" text-anchor="middle">&#8595; lower is better</text>
+      <line x1="536.0" y1="276.0" x2="770.0" y2="276.0" stroke="#aeb6c4" stroke-width="1.5"/>
+      </svg>
+      <div class="legend" style="justify-content:center;margin-top:8px;"><span style="display:inline-flex;align-items:center;gap:6px"><span style="width:12px;height:12px;border-radius:3px;background:#3498db;display:inline-block"></span>C</span> <span style="display:inline-flex;align-items:center;gap:6px"><span style="width:12px;height:12px;border-radius:3px;background:#2ecc71;display:inline-block"></span>C + D + G</span> <span style="display:inline-flex;align-items:center;gap:6px"><span style="width:12px;height:12px;border-radius:3px;background:#9b59b6;display:inline-block"></span>HBGSA 3.06M</span> <span style="display:inline-flex;align-items:center;gap:6px"><span style="width:12px;height:12px;border-radius:3px;background:#f1c40f;display:inline-block"></span>HBGSA 40M</span> <span style="display:inline-flex;align-items:center;gap:6px"><span style="width:12px;height:12px;border-radius:3px;background:#e67e22;display:inline-block"></span>TargetDiff</span></div>
+      <p class="figure-cap" style="text-align:center;font-size:12px;color:#5b6678;margin-top:8px;">Test-set metrics by method. <b>y-axes are truncated</b> (start at 0.3 and 1.3) to emphasize differences. RMSE: lower is better. TargetDiff<sup>&Dagger;</sup> is on a different split.</p>
+    </div>
+    <div class="table-wrap">
+      <table class="results">
+        <thead>
+          <tr class="grp">
+            <th class="col-method" rowspan="3">Experiment</th>
+            <th class="col-pe" rowspan="3">Pre&#8209;trained</th>
+            <th class="col-pe" rowspan="3">PE</th>
+            <th colspan="7">Input information</th>
+            <th class="div-major" colspan="2">Validation</th>
+            <th class="div-minor" colspan="3">Test</th>
+          </tr>
+          <tr class="grp2">
+            <th colspan="2">Pocket</th>
+            <th colspan="2">Ligand</th>
+            <th rowspan="2">Density</th>
+            <th rowspan="2">Gradmag</th>
+            <th rowspan="2">H&#8209;bond</th>
+            <th class="div-major" rowspan="2">Pearson&nbsp;<i>r</i></th>
+            <th rowspan="2">Spearman&nbsp;&rho;</th>
+            <th class="div-minor" rowspan="2">Pearson&nbsp;<i>r</i></th>
+            <th rowspan="2">Spearman&nbsp;&rho;</th>
+            <th rowspan="2">RMSE</th>
+          </tr>
+          <tr class="sub">
+            <th>coords</th><th>atom&nbsp;type</th><th>coords</th><th>atom&nbsp;type</th>
+          </tr>
+        </thead>
+        <tbody>
+
+          <tr class="grp-start">
+            <td class="col-method">C <span class="tag" style="background:var(--best-bg);color:#1d5a3a">PLINDER</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="pe learn">ViT</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td class="metric div-major"><span class="val">0.596</span> <span class="sd">±0.002</span></td>
+            <td class="metric"><span class="val">0.574</span> <span class="sd">±0.002</span></td>
+            <td class="metric div-minor"><span class="val">0.612</span> <span class="sd">±0.002</span></td>
+            <td class="metric"><span class="val">0.584</span> <span class="sd">±0.001</span></td>
+            <td class="metric"><span class="val">1.433</span> <span class="sd">±0.024</span></td>
+          </tr>
+
+          <tr>
+            <td class="col-method">C + D + G <span class="tag" style="background:var(--best-bg);color:#1d5a3a">PLINDER</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="pe learn">ViT</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td class="metric div-major"><span class="val">0.621</span> <span class="sd">±0.002</span></td>
+            <td class="metric"><span class="val">0.610</span> <span class="sd">±0.002</span></td>
+            <td class="metric div-minor best"><span class="val">0.638</span> <span class="sd">±0.003</span></td>
+            <td class="metric best"><span class="val">0.624</span> <span class="sd">±0.002</span></td>
+            <td class="metric best"><span class="val">1.398</span> <span class="sd">±0.027</span></td>
+          </tr>
+
+          <!-- D ablation: density only (no coords/atom-type, no gradmag), PLINDER-pretrained, 839 split — value pending -->
+          <tr>
+            <td class="col-method">D <span class="tag" style="background:var(--best-bg);color:#1d5a3a">PLINDER</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="pe learn">ViT</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td class="metric div-major"><span class="tbd">TBA</span></td>
+            <td class="metric"><span class="tbd">TBA</span></td>
+            <td class="metric div-minor"><span class="tbd">TBA</span></td>
+            <td class="metric"><span class="tbd">TBA</span></td>
+            <td class="metric"><span class="tbd">TBA</span></td>
+          </tr>
+
+          <!-- G ablation: gradmag only (no coords/atom-type, no density), PLINDER-pretrained, 839 split — value pending -->
+          <tr>
+            <td class="col-method">G <span class="tag" style="background:var(--best-bg);color:#1d5a3a">PLINDER</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="pe learn">ViT</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td class="metric div-major"><span class="tbd">TBA</span></td>
+            <td class="metric"><span class="tbd">TBA</span></td>
+            <td class="metric div-minor"><span class="tbd">TBA</span></td>
+            <td class="metric"><span class="tbd">TBA</span></td>
+            <td class="metric"><span class="tbd">TBA</span></td>
+          </tr>
+
+          <!-- D + G ablation: density+gradmag only (no coords/atom-type), PLINDER-pretrained, 839 split — value pending -->
+          <tr>
+            <td class="col-method">D + G <span class="tag" style="background:var(--best-bg);color:#1d5a3a">PLINDER</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="pe learn">ViT</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td class="metric div-major"><span class="tbd">TBA</span></td>
+            <td class="metric"><span class="tbd">TBA</span></td>
+            <td class="metric div-minor"><span class="tbd">TBA</span></td>
+            <td class="metric"><span class="tbd">TBA</span></td>
+            <td class="metric"><span class="tbd">TBA</span></td>
+          </tr>
+
+          <!-- noisy-density control (coords + matched random-noise density/gradmag) — frozen-crop PLINDER, 839 split, 3 seeds -->
+          <tr>
+            <td class="col-method">C + D + G <span class="tag supervised">noisy density</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="pe learn">ViT</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk" style="background:var(--tbd)" title="density slot = matched random noise">~</span></td>
+            <td><span class="chk" style="background:var(--tbd)" title="gradmag slot = matched random noise">~</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td class="metric div-major"><span class="val">0.567</span> <span class="sd">±0.001</span></td>
+            <td class="metric"><span class="val">0.550</span> <span class="sd">±0.001</span></td>
+            <td class="metric div-minor"><span class="val">0.588</span> <span class="sd">±0.004</span></td>
+            <td class="metric"><span class="val">0.568</span> <span class="sd">±0.004</span></td>
+            <td class="metric"><span class="val">1.443</span> <span class="sd">±0.017</span></td>
+          </tr>
+
+          <tr>
+            <td class="col-method">HBGSA (3.06M)<sup>&dagger;</sup> <span class="tag supervised">supervised</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td class="metric div-major"><span class="val">0.554</span> <span class="sd">±0.029</span></td>
+            <td class="metric"><span class="val">0.554</span> <span class="sd">±0.029</span></td>
+            <td class="metric div-minor"><span class="val">0.533</span> <span class="sd">±0.028</span></td>
+            <td class="metric"><span class="val">0.533</span> <span class="sd">±0.028</span></td>
+            <td class="metric"><span class="val">2.037</span> <span class="sd">±0.497</span></td>
+          </tr>
+
+          <!-- HBGSA same paper-faithful (with-towers) architecture scaled to ~41M — drops to the attention-only 40M (~0.37): architecture-independent, but likely under-optimization/mis-calibration under the small-model recipe, NOT overfitting (no tuned large-model recipe run) -->
+          <tr>
+            <td class="col-method">HBGSA (40M)<sup>&dagger;</sup> <span class="tag supervised">supervised</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td class="metric div-major"><span class="val">0.385</span> <span class="sd">±0.022</span></td>
+            <td class="metric"><span class="val">0.385</span> <span class="sd">±0.022</span></td>
+            <td class="metric div-minor"><span class="val">0.367</span> <span class="sd">±0.021</span></td>
+            <td class="metric"><span class="val">0.367</span> <span class="sd">±0.021</span></td>
+            <td class="metric"><span class="val">2.022</span> <span class="sd">±0.160</span></td>
+          </tr>
+
+          <!-- TargetDiff EGNN — external supervised baseline (affinity); test-only, separate split -->
+          <tr>
+            <td class="col-method">TargetDiff<sup>&Dagger;</sup> <span class="tag supervised">baseline</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="chk">&#10003;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td><span class="no">&ndash;</span></td>
+            <td class="metric div-major"><span class="sd">&mdash;</span></td>
+            <td class="metric"><span class="sd">&mdash;</span></td>
+            <td class="metric div-minor"><span class="val">0.558</span> <span class="sd">±0.011</span></td>
+            <td class="metric"><span class="val">0.536</span> <span class="sd">±0.029</span></td>
+            <td class="metric"><span class="val">1.460</span> <span class="sd">±0.007</span></td>
+          </tr>
+
+        </tbody>
+      </table>
+    </div>
+    <div class="legend">
+      <span><b>C</b>&nbsp;coords &middot; <b>D</b>&nbsp;density &middot; <b>G</b>&nbsp;gradmag (C + D + G = all three)</span>
+      <span><span class="chk">&#10003;</span> input used</span>
+      <span><span class="no" style="padding:0 4px">&ndash;</span> input not used</span>
+      <span><span class="chk" style="background:var(--tbd)">~</span> random-noise channel</span>
+      <span><span style="background:var(--best-bg);padding:2px 8px;border-radius:4px;font-weight:700;color:#1d5a3a">bold</span> best test value (encoders)</span>
+    </div>
+    <div class="notes">
+      <ul>
+        <li><b>Density helps, and it is real signal.</b> The combined <b>C&nbsp;+&nbsp;D&nbsp;+&nbsp;G</b> encoder is
+          best (test&nbsp;&rho;&nbsp;<b>0.624</b>, r&nbsp;0.638), <b>+0.04&nbsp;&rho;</b> over coords (0.584). The matched
+          <b>random-noise</b> control (density+gradmag slots = noise) collapses to <b>&rho;&nbsp;0.568</b> &mdash;
+          <i>below even coords-only</i> &mdash; so the gain is genuine electron-density content, not just an added
+          channel (real beats noise by <b>+0.056&nbsp;&rho;</b>).</li>
+        <li class="muted"><sup>&dagger;</sup>&nbsp;HBGSA = external supervised baseline (atom-types + H-bonds);
+          paper-faithful 3.06M and a 40M scale-up &mdash; ranks reasonably but mis-calibrates (high, seed-unstable RMSE).</li>
+        <li class="muted"><sup>&Dagger;</sup>&nbsp;TargetDiff = coords/atom-type EGNN trained on its <i>own</i> split
+          (2328/515/1136), so it is not directly comparable to the encoder rows.</li>
+      </ul>
+    </div>
+  </section>
+  </div><!-- /section 1 -->
+
+  <!-- ============================================================ -->
+  <!-- SECTION 2 — MODEL-SIZE ABLATION                             -->
+  <!-- ============================================================ -->
+  <div class="doc-section">
+    <h2 class="section-head"><span class="sec-num">2</span> Model-size ablation</h2>
+  <section class="block">
+    <p class="table-title">Table 2 &nbsp;&middot;&nbsp; Parameter scaling (affinity)</p>
+    <p class="table-sub">
+      Frozen-probe affinity on the <b>CrossDocked&nbsp;v5</b> corpus (inv-freq <b>C&nbsp;+&nbsp;D&nbsp;+&nbsp;G</b>,
+      ligvdW; canonical 839 split, 3 seeds) as the ViT-MAE encoder's <b>parameter count</b> scales &mdash; same
+      corpus/recipe at every size, only the width changes. <b>0.4M</b> and <b>40M</b> filled; <b>4M</b> is probing now.
+      NB this is the CrossDocked-v5 sweep, so the 40M anchor is the v5 encoder (&rho;&nbsp;0.595), <i>not</i> the
+      cross-corpus PLINDER best (0.624) &mdash; see Table&nbsp;1.
+    </p>
+    <div class="table-wrap">
+      <table class="results">
+        <thead>
+          <tr class="grp">
+            <th class="col-method" rowspan="2">Encoder size</th>
+            <th class="div-major" colspan="2">Validation</th>
+            <th class="div-minor" colspan="3">Test</th>
+          </tr>
+          <tr class="sub">
+            <th class="div-major">Pearson&nbsp;<i>r</i></th>
+            <th>Spearman&nbsp;&rho;</th>
+            <th class="div-minor">Pearson&nbsp;<i>r</i></th>
+            <th>Spearman&nbsp;&rho;</th>
+            <th>RMSE</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="col-method">0.4M</td>
+            <td class="metric div-major"><span class="val">0.568</span> <span class="sd">&plusmn;0.002</span></td>
+            <td class="metric"><span class="val">0.529</span> <span class="sd">&plusmn;0.003</span></td>
+            <td class="metric div-minor"><span class="val">0.613</span> <span class="sd">&plusmn;0.002</span></td>
+            <td class="metric"><span class="val">0.596</span> <span class="sd">&plusmn;0.001</span></td>
+            <td class="metric"><span class="val">1.413</span> <span class="sd">&plusmn;0.015</span></td>
+          </tr>
+          <tr>
+            <td class="col-method">4M <span class="tag inprog">pending</span></td>
+            <td class="metric div-major"><span class="tbd">TBD</span></td>
+            <td class="metric"><span class="tbd">TBD</span></td>
+            <td class="metric div-minor"><span class="tbd">TBD</span></td>
+            <td class="metric"><span class="tbd">TBD</span></td>
+            <td class="metric"><span class="tbd">TBD</span></td>
+          </tr>
+          <tr>
+            <td class="col-method">40M</td>
+            <td class="metric div-major"><span class="val">0.592</span> <span class="sd">&plusmn;0.002</span></td>
+            <td class="metric"><span class="val">0.580</span> <span class="sd">&plusmn;0.001</span></td>
+            <td class="metric div-minor"><span class="val">0.609</span> <span class="sd">&plusmn;0.010</span></td>
+            <td class="metric"><span class="val">0.595</span> <span class="sd">&plusmn;0.007</span></td>
+            <td class="metric"><span class="val">1.431</span> <span class="sd">&plusmn;0.011</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="notes">
+      <ul>
+        <li><b>Affinity barely scales with encoder size.</b> On CrossDocked&nbsp;v5 the <b>0.4M</b> model already
+          reaches test&nbsp;&rho;&nbsp;<b>0.596</b> &mdash; statistically tied with the <b>40M</b> (0.595,&nbsp;&minus;0.001).
+          A ~100× parameter increase buys essentially nothing on the frozen affinity probe, so encoder capacity is
+          not the bottleneck; the ceiling is set by the data/representation, not model size. <b>4M</b> is probing now.</li>
+      </ul>
+    </div>
+  </section>
+  </div><!-- /section 2 -->
+
+</div>
+</body>
+</html>

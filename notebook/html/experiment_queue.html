@@ -1,0 +1,257 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Experiment Queue — VoxBind</title>
+<style>
+:root{--ink:#1c2433;--soft:#5b6678;--line:#e3e7ee;--bg:#f5f6f8;--card:#fff;
+--run:#1d6fd0;--run-bg:#e7f0fc;--queue:#b07a17;--queue-bg:#fcf3e0;--done:#2f6f4f;--done-bg:#eaf5ee;
+--err:#b4413a;--err-bg:#fbecea}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+.page{max-width:1280px;margin:0 auto;padding:40px 24px 90px}
+header.doc{border-bottom:2px solid var(--ink);padding-bottom:15px;margin-bottom:26px}
+header.doc .date{font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:var(--soft);margin-bottom:6px}
+header.doc h1{font-size:26px;font-weight:650;margin:0}
+header.doc .sub{font-size:13px;color:var(--soft);margin-top:6px}
+.sec{margin-bottom:34px}
+.sec-head{font-size:18px;font-weight:640;margin:0 0 12px;display:flex;align-items:center;gap:10px}
+.dot{width:11px;height:11px;border-radius:50%}
+.dot.run{background:var(--run)}.dot.queue{background:var(--queue)}.dot.done{background:var(--done)}
+.sec-head .count{font-size:12.5px;font-weight:500;color:var(--soft)}
+.wrap{overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:var(--card);box-shadow:0 1px 2px rgba(20,30,50,.04),0 8px 24px rgba(20,30,50,.05)}
+table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}
+th,td{padding:10px 13px;text-align:left;vertical-align:top}
+thead th{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--soft);background:#fafbfc;border-bottom:1px solid var(--line);white-space:nowrap}
+tbody tr{border-top:1px solid var(--line)}tbody tr:hover{background:#fbfcfd}
+tr.grp td{background:#f3f5f8;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--soft);padding:6px 13px}
+.exp{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;color:#1d4ed8;word-break:break-word}
+.pill{display:inline-block;font-size:11px;font-weight:600;padding:2px 9px;border-radius:999px;white-space:nowrap}
+.pill.run{background:var(--run-bg);color:var(--run)}.pill.queue{background:var(--queue-bg);color:var(--queue)}
+.pill.done{background:var(--done-bg);color:var(--done)}
+.num{font-weight:660;white-space:nowrap}.pm{color:var(--soft);font-weight:500;font-size:12px}
+.best .num{color:#1d5a3a;font-weight:760}
+.mut{color:var(--soft)}.small{font-size:12.5px;color:var(--soft)}
+.tag{display:inline-block;font-size:10.5px;font-weight:600;padding:1px 7px;border-radius:999px;background:#eef1f6;color:var(--soft);margin-left:6px}
+code{background:#f0f2f5;padding:1px 5px;border-radius:4px;font-size:12px;font-family:ui-monospace,Menlo,Consolas,monospace}
+.empty{padding:18px;color:var(--soft);font-size:13.5px;text-align:center}
+.legend{display:flex;flex-wrap:wrap;gap:18px;margin-top:10px;font-size:12px;color:var(--soft)}
+.note{margin-top:11px;font-size:12.5px;color:var(--soft);line-height:1.55}
+a{color:#1d4ed8;text-decoration:none}a:hover{text-decoration:underline}
+</style></head><body><div class="page">
+
+<header class="doc"><div class="date">VoxBind · density &amp; affinity line</div>
+<h1>Experiment Queue</h1>
+<div class="sub">Running / Queued / Done — a <b>fully standalone file</b>: values are computed in-page from
+probe-CSV data <b>embedded at build time</b> (<span id="livestamp">loading…</span>). No server, no network —
+just open it. Affinity = LP-PDBBind <code>new_split</code>, canonical 839 test split (unless noted).
+Refresh values with <code>python notebook/html/build_queue_html.py</code>.</div></header>
+
+<section class="sec"><h2 class="sec-head"><span class="dot run"></span> Running
+<span class="count" id="run-count"></span></h2>
+<div class="wrap"><table><thead><tr>
+<th style="width:30%">Experiment</th><th>What it does</th><th style="width:9%">GPU</th>
+<th style="width:24%">Result CSV</th></tr></thead><tbody id="run-body"></tbody></table></div>
+<div class="note">Live process / epoch state isn't in this static file — check it on the host with
+<code>nvidia-smi</code> or the status dashboard if running.</div></section>
+
+<section class="sec"><h2 class="sec-head"><span class="dot queue"></span> Queued
+<span class="count" id="queue-count"></span></h2>
+<div class="wrap"><table><thead><tr>
+<th style="width:4%">#</th><th style="width:28%">Experiment</th><th>What it does</th>
+<th style="width:26%">Fires when</th></tr></thead><tbody id="queue-body"></tbody></table></div>
+<div class="note">Each queued item is a gated background script in <code>voxbind/scripts/run_*_chain.sh</code>
+(polls for GPU-idle or a predecessor checkpoint, then fires).</div></section>
+
+<section class="sec"><h2 class="sec-head"><span class="dot done"></span> Done
+<span class="count" id="done-count"></span></h2>
+<div class="wrap"><table><thead><tr>
+<th style="width:21%">Experiment</th><th style="width:40%">What it does</th>
+<th style="width:13%">test&nbsp;&rho;</th><th style="width:13%">val&nbsp;&rho;</th>
+<th style="width:13%">RMSE</th></tr></thead><tbody id="done-body"></tbody></table></div>
+<div class="legend"><span>test/val&nbsp;&rho; = Spearman, mean&nbsp;±&nbsp;std over seeds</span>
+<span>n = test molecules</span><span>values parsed in-page from embedded CSV data</span></div></section>
+
+<script>
+// ── data (Running / Queued hand-maintained; Done mirrors experiment_status_app.py COMPLETED + queue tail) ──
+const RUNNING = [
+  {exp:"260619_plinder_gradmagonly_otf_vit_mae_40m_pretrain", gpu:"0-3",
+   what:"Gradmag-only (1-channel &Vert;&nabla;&rho;&Vert;) 40M ViT-MAE on PLINDER, <b>on-the-fly resample</b> aug (&nabla;&rho; fed into the density channel), then frozen affinity probe on 839.",
+   csv:"probe_results_e99_v5_plinder_gradmagonly_otf.csv", cond:"density_gradmag"},
+];
+const QUEUED = [
+  {n:1, exp:"260619_plinder_dg_otf_vit_mae_40m_pretrain", gpu:"0-3",
+   what:"Density+gradmag (2-channel, <b>no coords</b>) 40M, OTF resample &rarr; probe.",
+   gate:"after gradmag-only checkpoint + GPU&nbsp;0 idle", csv:"probe_results_e99_v5_plinder_dg_otf.csv", cond:"atomblob_density_gradmag"},
+];
+const DONE = [
+  {grp:"Affinity — headline (PLINDER, 40M)"},
+  {label:"C + D + G — full model", tag:"invfreq", best:true, cond:"atomblob_density_gradmag",
+   csv:"probe_results_e99_plinder_cdg.csv",
+   desc:"Coords + X-ray density + gradient field, MAE-pretrained on the 17.5k PLINDER ligand-matched corpus, frozen &rarr; affinity. <b>Best encoder on record.</b>"},
+  {label:"Coords only", cond:"atomblob_ligvdw", csv:"probe_results_e99_plinder_coords.csv",
+   desc:"Same PLINDER corpus, atoms only (element-wise vdW radii, no density). The capacity baseline for C+D+G."},
+  {label:"C + D + G", tag:"uniform", cond:"atomblob_density_gradmag", csv:"probe_results_e99_v5_plinder_uniform.csv",
+   desc:"PLINDER C+D+G with fully-uniform MAE loss (the invfreq partner). On PLINDER invfreq beats uniform."},
+  {label:"Coords only", tag:"uniform", cond:"atomblob_ligvdw", csv:"probe_results_e99_v5_plinder_coords_uniform.csv",
+   desc:"PLINDER coords-only, uniform loss (n=922 pool)."},
+  {label:"Noise control", cond:"atomblob_density_gradmag", csv:"probe_results_e99_v5_plinder_noisecontrol.csv",
+   desc:"Density replaced by matched noise. Below both real and coords &rarr; on PLINDER density is <b>content, not capacity</b> (reverses the CrossDocked verdict)."},
+
+  {grp:"Affinity — PLINDER single-channel (frozen)"},
+  {label:"Density only", cond:"density_gradmag", csv:"probe_results_e99_v5_plinder_densityonly.csv",
+   desc:"Only the X-ray density field, no atoms (1-channel)."},
+  {label:"Gradmag only", cond:"density_gradmag", csv:"probe_results_e99_v5_plinder_gradmagonly.csv",
+   desc:"Only &Vert;&nabla;&rho;&Vert; (edge/surface map), no density values, no atoms."},
+  {label:"Density only (839)", cond:"density_gradmag", csv:"probe_results_e99_v5_plinder_donly839.csv",
+   desc:"Density-only re-probed restricted to the canonical 839 split (density-only otherwise covers a larger pool)."},
+
+  {grp:"Affinity — PLINDER on-the-fly resample aug"},
+  {label:"OTF C+D+G — 100% (full)", cond:"atomblob_density_gradmag", csv:"probe_results_e99_v5_plinder_otf_p100.csv",
+   desc:"C+D+G where density is re-cropped from the full 2Fo-Fc map at the augmented pose (no zero-fill). Full corpus."},
+  {label:"OTF C+D+G — seed 0", cond:"atomblob_density_gradmag", csv:"probe_results_e99_v5_plinder_otf_seed0.csv",
+   desc:"Variance re-draw of the OTF full run (pretraining-seed sensitivity)."},
+  {label:"OTF C+D+G — 0.4M params", cond:"atomblob_density_gradmag", csv:"probe_results_e99_v5_plinder_otf_0p4m.csv",
+   desc:"OTF C+D+G at 0.4M params (param-scaling point)."},
+  {label:"OTF C+D+G — 4M params", cond:"atomblob_density_gradmag", csv:"probe_results_e99_v5_plinder_otf_4m.csv",
+   desc:"OTF C+D+G at 4M params (param-scaling point)."},
+  {label:"OTF size sweep — 50%", cond:"atomblob_density_gradmag", csv:"probe_results_e99_v5_plinder_otf_p50.csv",
+   desc:"OTF C+D+G on a random 50% of the PLINDER pool (corpus-size sweep, nested subsets)."},
+  {label:"OTF size sweep — 25%", cond:"atomblob_density_gradmag", csv:"probe_results_e99_v5_plinder_otf_p25.csv",
+   desc:"OTF C+D+G on 25% of the pool."},
+  {label:"OTF size sweep — 10%", cond:"atomblob_density_gradmag", csv:"probe_results_e99_v5_plinder_otf_p10_clean.csv",
+   desc:"OTF C+D+G on 10% of the pool."},
+  {label:"OTF size sweep — 5%", cond:"atomblob_density_gradmag", csv:"probe_results_e99_v5_plinder_otf_p05.csv",
+   desc:"OTF C+D+G on 5% of the pool."},
+  {label:"OTF size sweep — 1%", cond:"atomblob_density_gradmag", csv:"probe_results_e99_v5_plinder_otf_p01.csv",
+   desc:"OTF C+D+G on 1% of the pool."},
+  {label:"OTF density-only (1ch)", cond:"density_gradmag", csv:"probe_results_e99_v5_plinder_densityonly_otf.csv",
+   desc:"1-channel density encoder under OTF resample (no atoms, no gradmag) — the OTF counterpart of the frozen density-only."},
+
+  {grp:"Affinity — architecture ablation (PLINDER C+D+G)"},
+  {label:"Channel-ViT", cond:"atomblob_density_gradmag", csv:"probe_results_e99_v5_plinder_channelvit.csv",
+   desc:"Grouped patch-embed (per-channel-group tokens [7,4,1,1] + cross-group attention); same input/data/recipe, only the patch embed differs."},
+  {label:"ChA-MAEViT (PLINDER)", cond:"atomblob_density_gradmag", csv:"probe_results_e99_v5_plinder_chamae.csv",
+   desc:"Token-drop channel-aware MAE (DCP masking + memory tokens + Fourier loss) pretrained on PLINDER."},
+  {label:"ChA-MAEViT (v5 corpus)", cond:"atomblob_density_gradmag", csv:"probe_results_e99_v5_cha_mae.csv",
+   desc:"ChA-MAEViT on the CrossDocked v5 corpus."},
+  {label:"ChA-MAEViT (v6)", cond:"atomblob_density_gradmag", csv:"probe_results_e99_v5_cha_mae_v6.csv",
+   desc:"ChA-MAEViT on the tiny v6 ligand-matched set &mdash; <b>collapsed</b> (data-hungry; near-chance)."},
+
+  {grp:"Affinity — CrossDocked v5 (older corpus + controls)"},
+  {label:"C + D + G (RoPE-3D)", tag:"invfreq", cond:"atomblob_density_gradmag", csv:"probe_results_e99_v5_filtered_rope3d.csv",
+   desc:"Full 13-ch encoder, 3D-RoPE PE. The CrossDocked headline before PLINDER."},
+  {label:"Coords only", cond:"atomblob_ligvdw", csv:"probe_results_e99_v5_filtered_atomblob_ligvdw.csv",
+   desc:"Atoms only (matched control for &ldquo;does density help?&rdquo;)."},
+  {label:"Density only", cond:"density_gradmag", csv:"probe_results_e99_v5_filtered_densityonly.csv",
+   desc:"No atom channels &mdash; density field alone."},
+  {label:"Gradmag only", cond:"density_gradmag", csv:"probe_results_e99_v5_filtered_gradmagonly.csv",
+   desc:"Only &Vert;&nabla;&rho;&Vert; &mdash; strongest single channel on CrossDocked."},
+  {label:"Noise control", cond:"atomblob_density_gradmag", csv:"probe_results_e99_v5_filtered_noisecontrol.csv",
+   desc:"Density+gradmag &rarr; matched noise. Matches real &rarr; capacity, not signal (on CrossDocked)."},
+  {label:"Zero control", cond:"atomblob_density_gradmag", csv:"probe_results_e99_v5_filtered_zerocontrol.csv",
+   desc:"Density+gradmag zero-filled. Still matches real &rarr; pure patch-embed capacity."},
+  {label:"Coords only", tag:"uniform", cond:"atomblob_ligvdw", csv:"probe_results_e99_v5_uniform_coords.csv",
+   desc:"Coords-only, fully-uniform loss &mdash; jumps vs invfreq (the +0.05 gap was an invfreq artifact)."},
+  {label:"C + D + G", tag:"uniform", cond:"atomblob_density_gradmag", csv:"probe_results_e99_v5_uniform_dg.csv",
+   desc:"Full 13-ch, uniform loss. &le; uniform coords-only &rarr; density adds nothing under matched loss."},
+  {label:"Noise control", tag:"uniform", cond:"atomblob_density_gradmag", csv:"probe_results_e99_v5_uniform_noise.csv",
+   desc:"Matched-noise density+gradmag, uniform loss. Lands with coords/real &rarr; content irrelevant."},
+  {label:"OTF resample", tag:"invfreq", cond:"atomblob_density_gradmag", csv:"probe_results_e99_v5_resample.csv",
+   desc:"v5 C+D+G with density cropped at the augmented pose (no zero-fill). Beats frozen zero-fill crops."},
+  {label:"OTF resample", tag:"uniform", cond:"atomblob_density_gradmag", csv:"probe_results_e99_v5_resample_uniform.csv",
+   desc:"Resample-aug under uniform loss (weighting-independent gain over zero-fill)."},
+
+  {grp:"Affinity — matched-density corpora (CrossDocked)"},
+  {label:"v6 ligand-matched", tag:"invfreq", cond:"atomblob_density_gradmag", csv:"probe_results_e99_v5_v6_ligandmatched.csv",
+   desc:"C+D+G on the 5,270 tt_min subset where density matches both pocket and ligand. Inside the capacity cluster."},
+  {label:"v6 ligand-matched", tag:"uniform", cond:"atomblob_density_gradmag", csv:"probe_results_e99_v5_v6_uniform.csv",
+   desc:"v6 under uniform loss &mdash; barely above coords (within noise)."},
+  {label:"v7 combined", tag:"invfreq", cond:"atomblob_density_gradmag", csv:"probe_results_e99_v5_v7_combined.csv",
+   desc:"v6 &cup; PDBbind-2020-train matched (7,873). More matched density moves affinity not at all."},
+  {label:"v7 combined", tag:"uniform", cond:"atomblob_density_gradmag", csv:"probe_results_e99_v5_v7_combined_uniform.csv",
+   desc:"v7 under uniform loss."},
+
+  {grp:"Baselines"},
+  {label:"HBGSA (supervised)", cond:"hbgsa_supervised", csv:"probe_results_e99_v5_filtered_hbgsa_no_cl1.csv",
+   desc:"External fully-supervised affinity model, paper-faithful 3.06M params, trained on the same split. Loses to the frozen SSL probe."},
+];
+
+// ── CSV data embedded at build time → page is fully standalone (no server, no fetch, works offline) ──
+//    refresh values by re-running:  python notebook/html/build_queue_html.py
+// <CSV_DATA>
+const BUILD_TIME = "2026-06-19 16:45";
+const CSV_DATA = {"probe_results_e99_plinder_cdg.csv": "condition,seed,n_train,n_val,n_test,best_val_spearman,val_pearson,test_spearman,test_pearson,test_rmse,epoch_stopped\natomblob_density_gradmag,0,2172,480,839,0.6100704384557009,0.6206302046775818,0.62609187759578,0.6418273448944092,1.360534906387329,197\natomblob_density_gradmag,1,2172,480,839,0.607699623985604,0.6184641718864441,0.6239547999663138,0.6372232437133789,1.408426284790039,181\natomblob_density_gradmag,2,2172,480,839,0.6123541201499505,0.6242954134941101,0.6209564867777183,0.635465145111084,1.4239510297775269,156", "probe_results_e99_plinder_coords.csv": "condition,seed,n_train,n_val,n_test,best_val_spearman,val_pearson,test_spearman,test_pearson,test_rmse,epoch_stopped\natomblob_ligvdw,0,2414,514,922,0.5714678641271569,0.5860751867294312,0.6036301629144433,0.6314139366149902,1.435639500617981,176\natomblob_ligvdw,1,2414,514,922,0.5700164477378697,0.5837163925170898,0.6030533738922121,0.631851315498352,1.4668480157852173,194\natomblob_ligvdw,2,2414,514,922,0.5700759200645763,0.5880696773529053,0.6077681619598577,0.6370112299919128,1.4029594659805298,186", "probe_results_e99_v5_cha_mae.csv": "condition,seed,n_train,n_val,n_test,best_val_spearman,val_pearson,test_spearman,test_pearson,test_rmse,epoch_stopped\natomblob_density_gradmag,0,2172,480,839,0.5608120992370954,0.5880423188209534,0.6082783154453881,0.6072796583175659,1.458616018295288,89\natomblob_density_gradmag,1,2172,480,839,0.5642063711689504,0.5909795761108398,0.6199960037055288,0.6207020878791809,1.3880678415298462,99\natomblob_density_gradmag,2,2172,480,839,0.5602804048390234,0.5895365476608276,0.6120048396700013,0.6139394044876099,1.4294975996017456,84", "probe_results_e99_v5_cha_mae_v6.csv": "condition,seed,n_train,n_val,n_test,best_val_spearman,val_pearson,test_spearman,test_pearson,test_rmse,epoch_stopped\natomblob_density_gradmag,0,2172,480,839,0.15079938219929867,0.17392443120479584,0.12863213235633994,0.14264780282974243,1.788033127784729,199\natomblob_density_gradmag,1,2172,480,839,0.15152378868940652,0.17542243003845215,0.13042571951425694,0.14489126205444336,1.7867764234542847,198\natomblob_density_gradmag,2,2172,480,839,0.15124969480174735,0.17480875551700592,0.1301998956100394,0.14430725574493408,1.7795528173446655,195", "probe_results_e99_v5_filtered_atomblob_ligvdw.csv": "condition,seed,n_train,n_val,n_test,best_val_spearman,val_pearson,test_spearman,test_pearson,test_rmse,epoch_stopped\natomblob_ligvdw,0,2172,480,839,0.5379727323316698,0.550261378288269,0.545804550912301,0.5573378801345825,1.4840548038482666,197\natomblob_ligvdw,1,2172,480,839,0.5380312187154578,0.5476261377334595,0.5465744328387723,0.5594363212585449,1.60354745388031,195\natomblob_ligvdw,2,2172,480,839,0.5367046954467986,0.5475201606750488,0.5395296169936247,0.5533907413482666,1.4962176084518433,189\natomblob_density_gradmag,0,2172,480,839,0.5803599522912727,0.5935413837432861,0.6004609254236964,0.6161384582519531,1.4195854663848877,187\natomblob_density_gradmag,1,2172,480,839,0.5796371734370773,0.5893872976303101,0.5870343085711348,0.5973434448242188,1.4298852682113647,198\natomblob_density_gradmag,2,2172,480,839,0.5793834249983241,0.5935628414154053,0.5967415971873091,0.6122220754623413,1.441927433013916,199", "probe_results_e99_v5_filtered_densityonly.csv": "condition,seed,n_train,n_val,n_test,best_val_spearman,val_pearson,test_spearman,test_pearson,test_rmse,epoch_stopped\ndensity_gradmag,0,2172,480,839,0.5577472608139232,0.5628890991210938,0.5079341727348415,0.5294721126556396,1.5538650751113892,82\ndensity_gradmag,1,2172,480,839,0.5536852783762445,0.5640784502029419,0.4962357467620141,0.5179247856140137,1.554996371269226,77\ndensity_gradmag,2,2172,480,839,0.5499041716425268,0.5600264072418213,0.5093768428747822,0.5254725217819214,1.5529085397720337,65", "probe_results_e99_v5_filtered_gradmagonly.csv": "condition,seed,n_train,n_val,n_test,best_val_spearman,val_pearson,test_spearman,test_pearson,test_rmse,epoch_stopped\ndensity_gradmag,0,2172,480,839,0.6158307504589763,0.6244720816612244,0.5512737502610839,0.5673116445541382,1.4933052062988281,52\ndensity_gradmag,1,2172,480,839,0.621545271638581,0.6300002932548523,0.5492566250716528,0.5650755167007446,1.4791367053985596,47\ndensity_gradmag,2,2172,480,839,0.621711236247122,0.6298167109489441,0.553891033868625,0.5705365538597107,1.5075370073318481,52", "probe_results_e99_v5_filtered_hbgsa_no_cl1.csv": "condition,seed,n_train,n_val,n_test,best_val_spearman,val_pearson,test_spearman,test_pearson,test_rmse,epoch_stopped\nhbgsa_supervised,0,2133,478,835,0.5775,0.575527012348175,0.4497869365524431,0.4599214196205139,1.6540437936782837,\nhbgsa_supervised,1,2133,478,835,0.5051,0.48788437247276306,0.46189212624966963,0.4768739342689514,1.6204346418380737,\nhbgsa_supervised,2,2133,478,835,0.5104,0.4920063018798828,0.5468062762638324,0.5619717240333557,1.5583373308181763,", "probe_results_e99_v5_filtered_noisecontrol.csv": "condition,seed,n_train,n_val,n_test,best_val_spearman,val_pearson,test_spearman,test_pearson,test_rmse,epoch_stopped\natomblob_density_gradmag,0,2172,480,839,0.5593051796548046,0.5737390518188477,0.6113997386840615,0.62125563621521,1.4459888935089111,41\natomblob_density_gradmag,1,2172,480,839,0.5728383212125884,0.5805982947349548,0.6065188030299017,0.6222417950630188,1.4991090297698975,199\natomblob_density_gradmag,2,2172,480,839,0.5770877530528526,0.587397575378418,0.6087745530106888,0.6289095878601074,1.3824533224105835,194", "probe_results_e99_v5_filtered_rope3d.csv": "condition,seed,n_train,n_val,n_test,best_val_spearman,val_pearson,test_spearman,test_pearson,test_rmse,epoch_stopped\natomblob_density_gradmag,0,2172,480,839,0.5993317849960288,0.6104360222816467,0.6079699238277003,0.6258199214935303,1.3893431425094604,177\natomblob_density_gradmag,1,2172,480,839,0.5979003877200765,0.6131030321121216,0.6002045622601628,0.6178044080734253,1.3950005769729614,162\natomblob_density_gradmag,2,2172,480,839,0.5978806390710052,0.6124931573867798,0.610170103694639,0.6298203468322754,1.4097840785980225,124", "probe_results_e99_v5_filtered_zerocontrol.csv": "condition,seed,n_train,n_val,n_test,best_val_spearman,val_pearson,test_spearman,test_pearson,test_rmse,epoch_stopped\natomblob_density_gradmag,0,2172,480,839,0.5355146765766647,0.5529813170433044,0.5986836949549009,0.6072542667388916,1.4640545845031738,87\natomblob_density_gradmag,1,2172,480,839,0.5359953174616158,0.5531262755393982,0.598901096688136,0.6063033938407898,1.4497426748275757,89\natomblob_density_gradmag,2,2172,480,839,0.5348051900824211,0.5522618889808655,0.5979528252558992,0.603700578212738,1.5961073637008667,68", "probe_results_e99_v5_plinder_chamae.csv": "condition,seed,n_train,n_val,n_test,best_val_spearman,val_pearson,test_spearman,test_pearson,test_rmse,test_mae,epoch_stopped\natomblob_density_gradmag,0,2172,480,839,0.5653440886717637,0.5899907350540161,0.6001595051693223,0.6223843097686768,1.5683403015136719,1.270957589149475,134\natomblob_density_gradmag,1,2172,480,839,0.5685525388369456,0.5937726497650146,0.604413138371096,0.6252560615539551,1.4202516078948975,1.1395729780197144,150\natomblob_density_gradmag,2,2172,480,839,0.5686609936432462,0.5888487696647644,0.6007261882516216,0.6213325262069702,1.4591447114944458,1.173000693321228,161", "probe_results_e99_v5_plinder_channelvit.csv": "condition,seed,n_train,n_val,n_test,best_val_spearman,val_pearson,test_spearman,test_pearson,test_rmse,test_mae,epoch_stopped\natomblob_density_gradmag,0,2172,480,839,0.6038687658474953,0.6154236793518066,0.6195060751488891,0.6353293657302856,1.3996179103851318,1.1163383722305298,188\natomblob_density_gradmag,1,2172,480,839,0.6026409315696618,0.6139441728591919,0.6203758547922117,0.6355314254760742,1.3934534788131714,1.1131210327148438,186\natomblob_density_gradmag,2,2172,480,839,0.6008125538946593,0.6122698783874512,0.6139265545037278,0.62770676612854,1.4101901054382324,1.127763271331787,199", "probe_results_e99_v5_plinder_coords_uniform.csv": "condition,seed,n_train,n_val,n_test,best_val_spearman,val_pearson,test_spearman,test_pearson,test_rmse,epoch_stopped\natomblob_ligvdw,0,2414,514,922,0.5579018110711856,0.5679083466529846,0.5761204537464795,0.5872915983200073,1.4981513023376465,142\natomblob_ligvdw,1,2414,514,922,0.5591453836084466,0.5712430477142334,0.5738585252047497,0.5858427882194519,1.5234168767929077,196\natomblob_ligvdw,2,2414,514,922,0.5610526514053344,0.5734089612960815,0.5751460787575806,0.5874474048614502,1.4960901737213135,184", "probe_results_e99_v5_plinder_densityonly.csv": "condition,seed,n_train,n_val,n_test,best_val_spearman,val_pearson,test_spearman,test_pearson,test_rmse,test_mae,epoch_stopped\ndensity_gradmag,0,7015,1667,3055,0.4341180233283146,0.44456976652145386,0.4413481756226321,0.431436151266098,1.5799145698547363,1.2351922988891602,92\ndensity_gradmag,1,7015,1667,3055,0.43115028675666495,0.4361059069633484,0.424990307033072,0.421049565076828,1.5809168815612793,1.24543297290802,110\ndensity_gradmag,2,7015,1667,3055,0.4350315763417489,0.4407868981361389,0.4536247941301389,0.44330090284347534,1.560646891593933,1.2279701232910156,124", "probe_results_e99_v5_plinder_densityonly_otf.csv": "condition,seed,n_train,n_val,n_test,best_val_spearman,val_pearson,test_spearman,test_pearson,test_rmse,test_mae,epoch_stopped\ndensity_gradmag,0,2172,480,839,0.4110605347837114,0.42312076687812805,0.33139463898727556,0.32221731543540955,1.729006290435791,1.3888113498687744,114\ndensity_gradmag,1,2172,480,839,0.4164902739331651,0.4258345365524292,0.34787410487141623,0.3361683785915375,1.8620729446411133,1.4996296167373657,109\ndensity_gradmag,2,2172,480,839,0.4272128680518342,0.42550840973854065,0.3473642943019751,0.3372774124145508,1.763698935508728,1.4123252630233765,152", "probe_results_e99_v5_plinder_donly839.csv": "condition,seed,n_train,n_val,n_test,best_val_spearman,val_pearson,test_spearman,test_pearson,test_rmse,test_mae,epoch_stopped\ndensity_gradmag,0,2172,480,839,0.4547531729996419,0.45513367652893066,0.38420990050739395,0.3765276074409485,1.6751664876937866,1.3228251934051514,135\ndensity_gradmag,1,2172,480,839,0.45819670804511425,0.4475841820240021,0.40562394583246997,0.39106157422065735,1.6696984767913818,1.3147839307785034,142\ndensity_gradmag,2,2172,480,839,0.445369634946158,0.45585089921951294,0.3820981808257831,0.3732922077178955,1.710679292678833,1.364861011505127,77", "probe_results_e99_v5_plinder_gradmagonly.csv": "condition,seed,n_train,n_val,n_test,best_val_spearman,val_pearson,test_spearman,test_pearson,test_rmse,test_mae,epoch_stopped\ndensity_gradmag,0,2172,480,839,0.3013631912275332,0.32474485039711,0.22861270955328528,0.22954194247722626,1.8012412786483765,1.478744387626648,55\ndensity_gradmag,1,2172,480,839,0.2995266753729682,0.3280860185623169,0.22453864435164855,0.22826248407363892,1.8385157585144043,1.5153846740722656,71\ndensity_gradmag,2,2172,480,839,0.29787326855855556,0.32455646991729736,0.2317965340110463,0.23305568099021912,1.9297627210617065,1.5931622982025146,48", "probe_results_e99_v5_plinder_noisecontrol.csv": "condition,seed,n_train,n_val,n_test,best_val_spearman,val_pearson,test_spearman,test_pearson,test_rmse,test_mae,epoch_stopped\natomblob_density_gradmag,0,2172,480,839,0.5498185037390009,0.5678856372833252,0.5690121224386886,0.588025689125061,1.4380230903625488,1.1571029424667358,189\natomblob_density_gradmag,1,2172,480,839,0.5487480618539028,0.5677132606506348,0.5722274817803209,0.5933678150177002,1.4241989850997925,1.1476939916610718,121\natomblob_density_gradmag,2,2172,480,839,0.5519139222127085,0.5657476782798767,0.5625494015375777,0.5840054750442505,1.4655689001083374,1.1889503002166748,169", "probe_results_e99_v5_plinder_otf_0p4m.csv": "condition,seed,n_train,n_val,n_test,best_val_spearman,val_pearson,test_spearman,test_pearson,test_rmse,test_mae,epoch_stopped\natomblob_density_gradmag,0,2172,480,839,0.5480453029214308,0.5787630081176758,0.6174917438038732,0.6459136009216309,1.357406735420227,1.08882737159729,59\natomblob_density_gradmag,1,2172,480,839,0.5527870403706854,0.5763903856277466,0.614989607223973,0.6464211940765381,1.3551714420318604,1.0868202447891235,182\natomblob_density_gradmag,2,2172,480,839,0.5522112370393856,0.5759702920913696,0.6155977204790902,0.6465729475021362,1.3513588905334473,1.0844365358352661,153", "probe_results_e99_v5_plinder_otf_4m.csv": "condition,seed,n_train,n_val,n_test,best_val_spearman,val_pearson,test_spearman,test_pearson,test_rmse,test_mae,epoch_stopped\natomblob_density_gradmag,0,2172,480,839,0.5607542096531419,0.5800679922103882,0.5969131981434127,0.6194138526916504,1.4361371994018555,1.1586703062057495,189\natomblob_density_gradmag,1,2172,480,839,0.5565383613672048,0.5754305124282837,0.5962935864563309,0.6188638210296631,1.3931150436401367,1.1221848726272583,199\natomblob_density_gradmag,2,2172,480,839,0.5605576454894465,0.5803792476654053,0.5980823580424195,0.6198566555976868,1.4068294763565063,1.1301119327545166,194", "probe_results_e99_v5_plinder_otf_p01.csv": "condition,seed,n_train,n_val,n_test,best_val_spearman,val_pearson,test_spearman,test_pearson,test_rmse,test_mae,epoch_stopped\natomblob_density_gradmag,0,2172,480,839,0.5672758754817383,0.576924204826355,0.57448047855443,0.5881354212760925,1.5030949115753174,1.213635802268982,114\natomblob_density_gradmag,1,2172,480,839,0.5703416362319275,0.5802239179611206,0.589732176811043,0.6041398048400879,1.4107712507247925,1.1439359188079834,132\natomblob_density_gradmag,2,2172,480,839,0.5714229290231085,0.5865520238876343,0.5767388293503817,0.591052770614624,1.435034155845642,1.157378911972046,122", "probe_results_e99_v5_plinder_otf_p05.csv": "condition,seed,n_train,n_val,n_test,best_val_spearman,val_pearson,test_spearman,test_pearson,test_rmse,test_mae,epoch_stopped\natomblob_density_gradmag,0,2172,480,839,0.5331805924236592,0.5637090802192688,0.5933241260609681,0.5999276638031006,1.450743556022644,1.1745221614837646,194\natomblob_density_gradmag,1,2172,480,839,0.5328734575269769,0.5634074807167053,0.594301341721346,0.601548433303833,1.4325801134109497,1.1583569049835205,198\natomblob_density_gradmag,2,2172,480,839,0.5328428037172922,0.563382625579834,0.5944661887012735,0.6009572148323059,1.4487597942352295,1.167719841003418,198", "probe_results_e99_v5_plinder_otf_p100.csv": "condition,seed,n_train,n_val,n_test,best_val_spearman,val_pearson,test_spearman,test_pearson,test_rmse,test_mae,epoch_stopped\natomblob_density_gradmag,0,2172,480,839,0.5788567762715807,0.5964038372039795,0.6010278015352463,0.624038815498352,1.3906277418136597,1.0979514122009277,198\natomblob_density_gradmag,1,2172,480,839,0.5795729360730654,0.5953586101531982,0.5971194671843159,0.6186528205871582,1.3910036087036133,1.0963387489318848,161\natomblob_density_gradmag,2,2172,480,839,0.5761955915547,0.5976310968399048,0.6013052556842557,0.6239275932312012,1.386183261871338,1.0918892621994019,124", "probe_results_e99_v5_plinder_otf_p10_clean.csv": "condition,seed,n_train,n_val,n_test,best_val_spearman,val_pearson,test_spearman,test_pearson,test_rmse,test_mae,epoch_stopped\natomblob_density_gradmag,0,2172,480,839,0.5112353401794811,0.5524793267250061,0.5585685999422356,0.5584999322891235,1.4887635707855225,1.2032171487808228,198\natomblob_density_gradmag,1,2172,480,839,0.5140951375507318,0.5533474683761597,0.5627087725824518,0.5625361204147339,1.478710412979126,1.193223237991333,198\natomblob_density_gradmag,2,2172,480,839,0.2921735396642381,0.3066352605819702,0.2669010062175132,0.27661895751953125,1.8141496181488037,1.4317229986190796,0", "probe_results_e99_v5_plinder_otf_p25.csv": "condition,seed,n_train,n_val,n_test,best_val_spearman,val_pearson,test_spearman,test_pearson,test_rmse,test_mae,epoch_stopped\natomblob_density_gradmag,0,2172,480,839,0.512266827311741,0.5480904579162598,0.6006599385809629,0.6296457052230835,1.5018967390060425,1.214453101158142,199\natomblob_density_gradmag,1,2172,480,839,0.5123284062037625,0.5482481718063354,0.6012004712795365,0.630742609500885,1.515202283859253,1.2282357215881348,193\natomblob_density_gradmag,2,2172,480,839,0.5144103152993968,0.5501715540885925,0.6025061516082268,0.6315945386886597,1.499427318572998,1.2132925987243652,191", "probe_results_e99_v5_plinder_otf_p50.csv": "condition,seed,n_train,n_val,n_test,best_val_spearman,val_pearson,test_spearman,test_pearson,test_rmse,test_mae,epoch_stopped\natomblob_density_gradmag,0,2172,480,839,0.5357769972312237,0.5551341772079468,0.5810272484549825,0.6039872169494629,1.4620792865753174,1.1751234531402588,139\natomblob_density_gradmag,1,2172,480,839,0.5427367141383949,0.566938579082489,0.5835855463873443,0.6090632677078247,1.4309834241867065,1.149269461631775,184\natomblob_density_gradmag,2,2172,480,839,0.5418797638304819,0.5564233064651489,0.5754775965464777,0.5950899124145508,1.4371806383132935,1.152347207069397,199", "probe_results_e99_v5_plinder_otf_seed0.csv": "condition,seed,n_train,n_val,n_test,best_val_spearman,val_pearson,test_spearman,test_pearson,test_rmse,test_mae,epoch_stopped\natomblob_density_gradmag,0,2172,480,839,0.5899666934828862,0.598791778087616,0.611258118144804,0.629665195941925,1.3819410800933838,1.0966041088104248,191\natomblob_density_gradmag,1,2172,480,839,0.5881371764627448,0.5972641706466675,0.6120086260301856,0.6320323944091797,1.373405933380127,1.086708903312683,196\natomblob_density_gradmag,2,2172,480,839,0.5890149605103372,0.5943671464920044,0.6095204973265475,0.6258111000061035,1.4072993993759155,1.1177475452423096,184", "probe_results_e99_v5_plinder_uniform.csv": "condition,seed,n_train,n_val,n_test,best_val_spearman,val_pearson,test_spearman,test_pearson,test_rmse,epoch_stopped\natomblob_density_gradmag,0,2172,480,839,0.5943274013650326,0.5973285436630249,0.6080598774498609,0.6264548301696777,1.3872668743133545,197\natomblob_density_gradmag,1,2172,480,839,0.5898724533635544,0.5917539596557617,0.5983316096019873,0.616059422492981,1.4281489849090576,135\natomblob_density_gradmag,2,2172,480,839,0.5942292006649806,0.5983431935310364,0.6007070377180852,0.6186245083808899,1.4229353666305542,177", "probe_results_e99_v5_resample.csv": "condition,seed,n_train,n_val,n_test,best_val_spearman,val_pearson,test_spearman,test_pearson,test_rmse,test_mae,epoch_stopped\natomblob_density_gradmag,0,2172,480,839,0.6051092956854459,0.6121699213981628,0.6102812580646246,0.6347443461418152,1.4335944652557373,1.1527531147003174,146\natomblob_density_gradmag,1,2172,480,839,0.60819659548421,0.6166172027587891,0.6100870909574891,0.6392458081245422,1.3672194480895996,1.0933159589767456,193\natomblob_density_gradmag,2,2172,480,839,0.6082010986102345,0.6166695356369019,0.6052490464606729,0.6335264444351196,1.3697361946105957,1.0968971252441406,190", "probe_results_e99_v5_resample_uniform.csv": "condition,seed,n_train,n_val,n_test,best_val_spearman,val_pearson,test_spearman,test_pearson,test_rmse,test_mae,epoch_stopped\natomblob_density_gradmag,0,2172,480,839,0.5834601646682758,0.5938346982002258,0.6049956092141995,0.6288241147994995,1.3866651058197021,1.1244808435440063,44\natomblob_density_gradmag,1,2172,480,839,0.5936936541952491,0.591655969619751,0.6082181106381004,0.6346272230148315,1.4063867330551147,1.1294751167297363,145\natomblob_density_gradmag,2,2172,480,839,0.5941642579920732,0.5946276783943176,0.6083014972845738,0.6353746652603149,1.3774545192718506,1.10818612575531,146", "probe_results_e99_v5_uniform_coords.csv": "condition,seed,n_train,n_val,n_test,best_val_spearman,val_pearson,test_spearman,test_pearson,test_rmse,epoch_stopped\natomblob_ligvdw,0,2414,514,922,0.560332223257527,0.5805847644805908,0.6002108899177537,0.6204241514205933,1.6048108339309692,199\natomblob_ligvdw,1,2414,514,922,0.5580606543211929,0.5775962471961975,0.6011321677050042,0.6187174320220947,1.4334219694137573,191\natomblob_ligvdw,2,2414,514,922,0.5593525205085951,0.580182671546936,0.6005165050394672,0.6205247640609741,1.4299200773239136,196", "probe_results_e99_v5_uniform_dg.csv": "condition,seed,n_train,n_val,n_test,best_val_spearman,val_pearson,test_spearman,test_pearson,test_rmse,epoch_stopped\natomblob_density_gradmag,0,2172,480,839,0.5830318794051758,0.6032079458236694,0.5950811290961981,0.5898030996322632,1.4364354610443115,44\natomblob_density_gradmag,1,2172,480,839,0.5828468172019284,0.6011744141578674,0.5970906651882543,0.5930802822113037,1.4345263242721558,53\natomblob_density_gradmag,2,2172,480,839,0.5824403422600555,0.6034901142120361,0.5923458030222586,0.5868806838989258,1.4374361038208008,39", "probe_results_e99_v5_uniform_noise.csv": "condition,seed,n_train,n_val,n_test,best_val_spearman,val_pearson,test_spearman,test_pearson,test_rmse,epoch_stopped\natomblob_density_gradmag,0,2172,480,839,0.5989383311414554,0.6121149063110352,0.601633994657293,0.6222230792045593,1.3978744745254517,178\natomblob_density_gradmag,1,2172,480,839,0.5992144867012704,0.6129066348075867,0.5999971167724799,0.6205565929412842,1.3926228284835815,193\natomblob_density_gradmag,2,2172,480,839,0.5998210523513159,0.6119646430015564,0.603394431581295,0.6233015060424805,1.3879518508911133,177", "probe_results_e99_v5_v6_ligandmatched.csv": "condition,seed,n_train,n_val,n_test,best_val_spearman,val_pearson,test_spearman,test_pearson,test_rmse,epoch_stopped\natomblob_density_gradmag,0,2172,480,839,0.5611897650233176,0.5878784656524658,0.607004982755308,0.6281770467758179,1.3771312236785889,198\natomblob_density_gradmag,1,2172,480,839,0.5603550048183447,0.5859647989273071,0.606620844387377,0.6278282999992371,1.3812788724899292,197\natomblob_density_gradmag,2,2172,480,839,0.5630808609354807,0.5874471664428711,0.6047480949178863,0.6266504526138306,1.393949031829834,199", "probe_results_e99_v5_v6_uniform.csv": "condition,seed,n_train,n_val,n_test,best_val_spearman,val_pearson,test_spearman,test_pearson,test_rmse,epoch_stopped\natomblob_density_gradmag,0,2172,480,839,0.5753721705465838,0.6023287177085876,0.6055253932313505,0.6348828673362732,1.3693596124649048,156\natomblob_density_gradmag,1,2172,480,839,0.586302125480501,0.6123827695846558,0.612206308301567,0.6413861513137817,1.3959559202194214,193\natomblob_density_gradmag,2,2172,480,839,0.5800238454753487,0.6039954423904419,0.6076302349759829,0.6364074945449829,1.5049926042556763,164", "probe_results_e99_v5_v7_combined.csv": "condition,seed,n_train,n_val,n_test,best_val_spearman,val_pearson,test_spearman,test_pearson,test_rmse,epoch_stopped\natomblob_density_gradmag,0,2172,480,839,0.5606659917866864,0.5819072723388672,0.5960454219562266,0.6159951686859131,1.3978948593139648,185\natomblob_density_gradmag,1,2172,480,839,0.5578410668970117,0.576778769493103,0.5909215112988526,0.6113981008529663,1.4022356271743774,196\natomblob_density_gradmag,2,2172,480,839,0.5557421218788268,0.5754838585853577,0.5921420758875064,0.6118661165237427,1.4137706756591797,188", "probe_results_e99_v5_v7_combined_uniform.csv": "condition,seed,n_train,n_val,n_test,best_val_spearman,val_pearson,test_spearman,test_pearson,test_rmse,epoch_stopped\natomblob_density_gradmag,0,2172,480,839,0.5867250937996203,0.6035799980163574,0.6113771562357576,0.6373345255851746,1.3814834356307983,176\natomblob_density_gradmag,1,2172,480,839,0.5817423577262599,0.6011608242988586,0.6043500076467481,0.633647620677948,1.4649900197982788,120\natomblob_density_gradmag,2,2172,480,839,0.5912309868051586,0.6011660099029541,0.6082006160923444,0.6332648992538452,1.3822598457336426,184"};
+// </CSV_DATA>
+
+// ── helpers ──
+function parseCSV(t){
+  const L=t.trim().split(/\r?\n/); const H=L[0].split(",");
+  return L.slice(1).filter(x=>x.trim()).map(l=>{const c=l.split(","),o={};H.forEach((h,i)=>o[h.trim()]=c[i]);return o;});
+}
+function stats(rows,cond){
+  const r=rows.filter(x=>x.condition===cond); if(!r.length) return null;
+  const col=k=>r.map(x=>parseFloat(x[k])).filter(v=>!isNaN(v));
+  const m=a=>a.length?a.reduce((s,v)=>s+v,0)/a.length:NaN;
+  const sd=a=>{if(a.length<2)return 0;const u=m(a);return Math.sqrt(a.reduce((s,v)=>s+(v-u)**2,0)/a.length);};
+  const ts=col("test_spearman"),bv=col("best_val_spearman"),rm=col("test_rmse");
+  return {ts:[m(ts),sd(ts)],bv:[m(bv),sd(bv)],rm:[m(rm),sd(rm)],n:r[0].n_test,k:r.length};
+}
+const f3=v=>isNaN(v)?"—":v.toFixed(3);
+const pm=s=>" <span class='pm'>±"+(s).toFixed(3).replace(/^0\./,".")+"</span>";
+function cell(pair){return pair&&!isNaN(pair[0]) ? "<span class='num'>"+f3(pair[0])+"</span>"+(pair[1]?pm(pair[1]):"") : "<span class='mut'>—</span>";}
+function getStats(csv,cond){ const t=CSV_DATA[csv]; return t ? stats(parseCSV(t),cond) : null; }
+
+// ── render Running / Queued ──
+function renderRunning(){
+  document.getElementById("run-count").textContent="— "+RUNNING.length+" training"+(RUNNING.length==1?"":"s");
+  document.getElementById("run-body").innerHTML = RUNNING.length ? RUNNING.map(r=>
+    `<tr><td><span class="pill run">training</span><br><span class="exp">${r.exp}</span></td>
+     <td class="small" style="white-space:normal">${r.what}</td><td>GPU ${r.gpu}</td>
+     <td class="small"><code>${r.csv}</code><div id="rc_${r.csv}" class="small mut">checking…</div></td></tr>`).join("")
+    : `<tr><td colspan="4"><div class="empty">Nothing training right now.</div></td></tr>`;
+}
+function renderQueued(){
+  document.getElementById("queue-count").textContent="— "+QUEUED.length+" armed";
+  document.getElementById("queue-body").innerHTML = QUEUED.length ? QUEUED.map(q=>
+    `<tr><td>${q.n}</td><td><span class="pill queue">chained</span><br><span class="exp">${q.exp}</span></td>
+     <td class="small" style="white-space:normal">${q.what}</td>
+     <td class="small">${q.gate}<div id="rc_${q.csv}" class="small mut"></div></td></tr>`).join("")
+    : `<tr><td colspan="4"><div class="empty">No chained steps armed.</div></td></tr>`;
+}
+function renderDone(){
+  let html="",n=0;
+  for(const d of DONE){
+    if(d.grp){html+=`<tr class="grp"><td colspan="5">${d.grp}</td></tr>`;continue;}
+    n++;
+    const id="d_"+d.csv;
+    const tag=d.tag?`<span class="tag">${d.tag}</span>`:"";
+    html+=`<tr class="${d.best?'best':''}" id="${id}">
+      <td style="white-space:normal"><b>${d.label}</b>${tag}</td>
+      <td class="small" style="white-space:normal">${d.desc}</td>
+      <td class="t">…</td><td class="v">…</td><td class="r">…</td></tr>`;
+  }
+  document.getElementById("done-body").innerHTML=html;
+  document.getElementById("done-count").textContent="— "+n+" experiments";
+}
+
+// ── fill values from the embedded CSV data (synchronous; no network) ──
+function fill(){
+  renderRunning();renderQueued();renderDone();
+  document.getElementById("livestamp").textContent="values embedded from CSVs @ "+BUILD_TIME;
+  DONE.filter(d=>!d.grp).forEach(d=>{
+    const tr=document.getElementById("d_"+d.csv); if(!tr)return;
+    const s=getStats(d.csv,d.cond);
+    if(!s){["t","v","r"].forEach(c=>{tr.querySelector("."+c).innerHTML="<span class='mut'>—</span>";});return;}
+    tr.querySelector(".t").innerHTML=cell(s.ts)+`<div class="small mut">n=${s.n}, ${s.k} seed${s.k==1?"":"s"}</div>`;
+    tr.querySelector(".v").innerHTML=cell(s.bv);
+    tr.querySelector(".r").innerHTML=cell(s.rm);
+  });
+  [...RUNNING,...QUEUED].forEach(x=>{
+    const el=document.getElementById("rc_"+x.csv); if(!el)return;
+    const s=getStats(x.csv,x.cond);
+    el.innerHTML = s ? `<span style="color:var(--done)">✓ landed — test &rho; ${cell(s.ts)}</span>`
+                     : "<span class='mut'>result pending</span>";
+  });
+}
+fill();
+</script>
+</div></body></html>
