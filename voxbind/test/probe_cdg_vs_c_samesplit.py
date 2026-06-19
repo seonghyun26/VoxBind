@@ -29,6 +29,10 @@ PAIRS = {
                 "atomblob_ligvdw_e99_v5_plinder.pt"),
     "uniform": ("atomblob_density_gradmag_e99_v5_plinder_uniform.pt",
                 "atomblob_ligvdw_e99_v5_plinder_coords_uniform.pt"),
+    # 260618 general-set expansion: same invfreq PLINDER encoders, features re-extracted
+    # over the full LP split (refined+core+general, ~15k). See project_pdbbind_general_expansion.
+    "invfreq_full": ("atomblob_density_gradmag_e99_v5_plinder_full.pt",
+                     "atomblob_ligvdw_e99_v5_plinder_full.pt"),
 }
 
 

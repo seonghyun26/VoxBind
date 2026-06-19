@@ -111,6 +111,17 @@ STRUCT_MAX_RETRIES   = 4
 STRUCT_RETRY_BACKOFF = 2.0
 CHUNK = 1 << 20  # 1 MB
 
+# general — PDBbind general set (everything outside the refined set). The v2020
+# `PDBbind_v2020_other_PL.tar.gz` is registration-gated on pdbbind-plus.org.cn, so by
+# default we pull deepchem's no-auth v2019 mirror. v2019 general ⊂ v2020 by PDB id, and
+# we only use these structures for voxel occupancy (heavy-atom coords + element types),
+# so the version offset is immaterial — everything joins on the version-stable PDB id to
+# the v2020 LP-PDBbind labels/split and the v2020 PDBe-EDS maps already on disk. Pass a
+# registered v2020 other_PL tarball via `general --tar PATH` to use it instead.
+GENERAL_TAR_NAME = "pdbbind_v2019_other_PL.tar.gz"
+GENERAL_TAR_URL  = ("https://deepchemdata.s3-us-west-1.amazonaws.com/datasets/"
+                    "pdbbindv2019/pdbbind_v2019_other_PL.tar.gz")
+
 # density — PDBe EDS per-map downloads.
 PDBE_EDS_MAP_URL = "https://www.ebi.ac.uk/pdbe/entry-files/{pdb_id}.ccp4"
 EDS_RETRY_WAIT  = 2.0
@@ -281,14 +292,21 @@ def extract_zip(zip_path: Path, dst_root: Path, force: bool) -> None:
 
 
 def detect_struct_root(struct_root: Path) -> Path:
-    """Find the directory that actually holds <pdb_id>/ children.
+    """Find the directory that actually holds the refined <pdb_id>/ children.
 
     The zip may extract to struct_root/ directly, or into one of several
-    sibling subdirs (e.g. pbpp-2020/ plus readme/). Pick whichever path has
-    the most 4-char alnum children.
+    sibling subdirs (e.g. pbpp-2020/ plus readme/). Prefer a child literally
+    named `pbpp-2020` (the canonical refined root that 01b reads); otherwise
+    pick whichever path has the most 4-char alnum children. The name preference
+    matters because sibling dirs like misato_qm_built also hold thousands of
+    4-char-pdb-id subdirs and would otherwise win the count.
     """
     if not struct_root.exists():
         return struct_root
+
+    canonical = struct_root / "pbpp-2020"
+    if canonical.is_dir():
+        return canonical
 
     def n_pdbids(d: Path) -> int:
         try:
@@ -410,6 +428,97 @@ def run_index(args: argparse.Namespace) -> None:
     print(f"\n[write] {index_out}  ({len(df_out):,} rows, {len(keep_cols)} cols)")
 
     print("\nNext: python dataset/01a_pdbbind_acquire.py density")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# general — PDBbind general set structures (downstream-regression expansion)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def run_general(args: argparse.Namespace) -> None:
+    """Add the PDBbind general-set complexes to the structure tree.
+
+    The refined set lives under structures/<root>/<pid>/ (root auto-detected, normally
+    `pbpp-2020`). General and refined PDB ids are disjoint, so we stream-extract the
+    general complexes into that *same* root: re-running `index` then flips has_struct for
+    them and the existing voxelizer (which reads structures/pbpp-2020/<pid>/) picks them
+    up unchanged. Density, LP-PDBbind split and pK are already keyed on PDB id.
+    """
+    import tarfile
+
+    raw_dir    = Path(args.raw_dir).resolve()
+    struct_dir = Path(args.struct_dir).resolve()
+    csv_path   = raw_dir / CSV_NAME
+
+    print("=== PDBbind general-set acquisition ===")
+    if not csv_path.exists():
+        sys.exit(f"[error] {csv_path} missing — run `structures` first")
+
+    # Which PDB ids are the general set, per LP-PDBbind.
+    lp = load_lp_pdbbind(csv_path)
+    if "category" not in lp.columns:
+        sys.exit("[error] LP_PDBBind.csv has no `category` column")
+    general_ids = set(lp.loc[lp["category"] == "general", "pdb_id"].str.lower())
+    print(f"  general ids in LP index : {len(general_ids):,}")
+
+    # Resolve the tarball: an explicit --tar (e.g. a registered v2020 other_PL) wins;
+    # otherwise download deepchem's no-auth v2019 mirror.
+    tar_path = Path(args.tar).resolve() if args.tar else raw_dir / GENERAL_TAR_NAME
+    if not tar_path.exists():
+        if args.tar:
+            sys.exit(f"[error] --tar {tar_path} not found")
+        print(f"  downloading general set → {tar_path}")
+        if not download(GENERAL_TAR_URL, tar_path, requests.Session()):
+            sys.exit("[error] general-set download failed")
+    print(f"  tarball                 : {tar_path}  ({tar_path.stat().st_size/1e9:.2f} GB)")
+
+    # Target = the refined `pbpp-2020` root that 01b reads (structures/pbpp-2020/<pid>/).
+    # Use it explicitly: detect_struct_root() can be misled by a larger sibling such as
+    # misato_qm_built (which also holds 4-char-pdb-id dirs). Only fall back to the heuristic
+    # if the conventional root is absent.
+    target_root = struct_dir / "pbpp-2020"
+    if not target_root.exists():
+        target_root = detect_struct_root(struct_dir)
+    target_root.mkdir(parents=True, exist_ok=True)
+    print(f"  structure root          : {target_root}")
+
+    # Stream-extract only LP-general complexes (skip refined/other ids in the mirror),
+    # flattening <inner>/<pid>/<file> → <root>/<pid>/<file>.
+    placed, skipped, seen_ids = 0, 0, set()
+    with tarfile.open(tar_path, "r:gz") as tf:
+        for m in tqdm(tf, desc="extract general", unit="file"):
+            if not m.isfile():
+                continue
+            parts = Path(m.name).parts
+            if len(parts) < 2:
+                continue
+            pid = parts[-2].lower()
+            if pid not in general_ids:
+                skipped += 1
+                continue
+            src = tf.extractfile(m)
+            if src is None:
+                continue
+            out = target_root / pid / parts[-1]
+            out.parent.mkdir(parents=True, exist_ok=True)
+            with src:
+                out.write_bytes(src.read())
+            placed += 1
+            seen_ids.add(pid)
+
+    print(f"\n  placed {placed:,} files for {len(seen_ids):,} general complexes "
+          f"({skipped:,} non-general files skipped)")
+    no_struct = general_ids - seen_ids
+    print(f"  general ids without v2019 structures: {len(no_struct):,} "
+          "(added after v2019 / absent from mirror)")
+
+    # Refresh index.csv so has_struct flips for the newly-available general complexes.
+    if not args.no_reindex:
+        print("\n── Rebuilding index.csv ───────────────────────────────────────")
+        run_index(argparse.Namespace(
+            raw_dir=str(raw_dir), struct_dir=str(struct_dir),
+            index_out=str(INDEX_CSV), force_extract=False))
+        print("\nNext: re-run density (covers any general ids without a cached map), "
+              "then 01b voxelize.")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -621,6 +730,20 @@ def build_parser() -> argparse.ArgumentParser:
     pi.add_argument("--force_extract", action="store_true",
                     help="Re-extract pbpp-2020.zip even if structures/ is populated")
     pi.set_defaults(func=run_index)
+
+    pg = sub.add_parser(
+        "general",
+        help="Add PDBbind general-set structures (deepchem v2019 mirror, or --tar v2020)",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    pg.add_argument("--raw_dir",    default=str(RAW_DIR))
+    pg.add_argument("--struct_dir", default=str(STRUCT_DIR))
+    pg.add_argument("--tar", default=None,
+                    help="Use a local general-set tarball (e.g. a registered v2020 "
+                         "PDBbind_v2020_other_PL.tar.gz) instead of the deepchem v2019 mirror")
+    pg.add_argument("--no_reindex", action="store_true",
+                    help="Skip the automatic index.csv rebuild after extraction")
+    pg.set_defaults(func=run_general)
 
     pden = sub.add_parser(
         "density",

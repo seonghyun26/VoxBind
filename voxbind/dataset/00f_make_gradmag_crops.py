@@ -18,7 +18,7 @@ nesting 00e uses for the noise control:
 
 Usage:  python dataset/00f_make_gradmag_crops.py [train|probe|all]
 """
-import sys, glob, time
+import argparse, glob, time
 from pathlib import Path
 import numpy as np
 import torch
@@ -26,10 +26,8 @@ from voxbind.models.density_mae import gradient_magnitude3d, per_sample_zscore
 
 HERE  = Path(__file__).resolve().parent
 DATA  = HERE / "data"
-CROPS = DATA / "xray_crops_aligned_v5"
-GMAG  = CROPS / "gradmag"                       # nested inside the v5 version
-PVOX  = DATA / "pdbbind" / "voxels_v5"
-PGMAG = PVOX / "gradmag"                         # nested inside voxels_v5
+CROPS = DATA / "xray_crops_aligned_v5"          # default v5 train crops
+PVOX  = DATA / "pdbbind" / "voxels_v5"          # default PDBbind probe voxels (corpus-independent)
 GRID  = 64
 
 
@@ -38,9 +36,9 @@ def _gradmag(density_np: np.ndarray) -> np.ndarray:
     return per_sample_zscore(g).view(GRID, GRID, GRID).numpy().astype(np.float16)
 
 
-def materialize_train():
-    crops = sorted(glob.glob(str(CROPS / "train" / "[0-9]*.npy")))
-    out = GMAG / "train"; out.mkdir(parents=True, exist_ok=True)
+def materialize_train(crops_dir: Path, out_dir: Path):
+    crops = sorted(glob.glob(str(crops_dir / "train" / "[0-9]*.npy")))
+    out = out_dir / "train"; out.mkdir(parents=True, exist_ok=True)
     t0 = time.time()
     for i, c in enumerate(crops):
         idx = int(Path(c).stem)
@@ -49,15 +47,15 @@ def materialize_train():
             el = time.time() - t0
             print(f"  train {i+1}/{len(crops)}  ({el:.0f}s, {(i+1)/el:.0f}/s)", flush=True)
     for f in ("train_available.npy", "test_available.npy", "stats.json"):
-        src = CROPS / f
+        src = crops_dir / f
         if src.exists():
-            (GMAG / f).write_bytes(src.read_bytes())
-    print(f"[train] done {len(crops)} crops in {time.time()-t0:.0f}s -> {GMAG}")
+            (out_dir / f).write_bytes(src.read_bytes())
+    print(f"[train] done {len(crops)} crops in {time.time()-t0:.0f}s -> {out_dir}")
 
 
-def materialize_probe():
-    dens = sorted(glob.glob(str(PVOX / "density" / "*.npy")))
-    out = PGMAG / "density"; out.mkdir(parents=True, exist_ok=True)
+def materialize_probe(probe_vox_dir: Path, probe_out: Path):
+    dens = sorted(glob.glob(str(probe_vox_dir / "density" / "*.npy")))
+    out = probe_out / "density"; out.mkdir(parents=True, exist_ok=True)
     t0 = time.time()
     for i, c in enumerate(dens):
         pid = Path(c).stem
@@ -65,16 +63,31 @@ def materialize_probe():
         if (i + 1) % 500 == 0:
             print(f"  probe {i+1}/{len(dens)}", flush=True)
     for f in ("stats.json",):
-        src = PVOX / f
+        src = probe_vox_dir / f
         if src.exists():
-            (PGMAG / f).write_bytes(src.read_bytes())
-    print(f"[probe] done {len(dens)} complexes in {time.time()-t0:.0f}s -> {PGMAG}")
+            (probe_out / f).write_bytes(src.read_bytes())
+    print(f"[probe] done {len(dens)} complexes in {time.time()-t0:.0f}s -> {probe_out}")
 
 
 if __name__ == "__main__":
-    stage = sys.argv[1] if len(sys.argv) > 1 else "all"
-    if stage in ("train", "all"):
-        materialize_train()
-    if stage in ("probe", "all"):
-        materialize_probe()
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0],
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("stage", nargs="?", default="all", choices=["train", "probe", "all"])
+    ap.add_argument("--crops_dir", default=str(CROPS), help="train density crops (train/{idx}.npy)")
+    ap.add_argument("--out", default="", help="train gradmag output dir (default: <crops_dir>/gradmag)")
+    ap.add_argument("--probe_vox_dir", default=str(PVOX), help="PDBbind probe voxels (has density/)")
+    ap.add_argument("--probe_out", default="", help="probe gradmag output (default: <probe_vox_dir>/gradmag)")
+    ap.add_argument("--threads", type=int, default=0, help="cap torch CPU threads (0 = leave default)")
+    args = ap.parse_args()
+    if args.threads > 0:
+        torch.set_num_threads(args.threads)
+    crops_dir = Path(args.crops_dir); out_dir = Path(args.out) if args.out else crops_dir / "gradmag"
+    probe_vox_dir = Path(args.probe_vox_dir); probe_out = Path(args.probe_out) if args.probe_out else probe_vox_dir / "gradmag"
+    print(f"=== gradmag crops ===  stage={args.stage}  threads={args.threads or 'default'}")
+    if args.stage in ("train", "all"):
+        print(f"  train: {crops_dir} -> {out_dir}")
+        materialize_train(crops_dir, out_dir)
+    if args.stage in ("probe", "all"):
+        print(f"  probe: {probe_vox_dir} -> {probe_out}")
+        materialize_probe(probe_vox_dir, probe_out)
     print("DONE")

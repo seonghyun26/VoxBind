@@ -343,6 +343,14 @@ class DatasetCrossDockedDensity(DatasetCrossDockedXray):
         else:
             xray_available = torch.tensor(True)
 
+        # gradmag-only OTF (env VOXBIND_OTF_GRADMAG_AS_DENSITY=1): replace the single density
+        # channel with on-the-fly ‖∇ρ‖ (per-sample z-scored), so input_mode=density trains a
+        # gradmag-only encoder on the resampled-at-augmented-pose density. ‖∇·‖ is rotation-
+        # invariant, so this matches the frozen gradmag-only crop under the same aug.
+        if os.environ.get("VOXBIND_OTF_GRADMAG_AS_DENSITY", "0") == "1" and bool(xray_available):
+            g = gradient_magnitude3d(xray_density.view(1, 1, _GRID_DIM, _GRID_DIM, _GRID_DIM))
+            xray_density = per_sample_zscore(g).view(_GRID_DIM, _GRID_DIM, _GRID_DIM)
+
         out = {
             "pocket": pocket,
             "ligand": ligand,
