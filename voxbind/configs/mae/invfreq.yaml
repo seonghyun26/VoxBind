@@ -1,0 +1,6 @@
+# Objective: inverse-frequency channel weighting (the canonical pretext).
+defaults:
+  - _base
+  - _self_
+channel_weighting: inv_freq
+channel_weight_clip_ratio: 30.0

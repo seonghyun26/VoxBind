@@ -1,4 +1,5 @@
 model_name: atomblob_density_gradmag_cha_mae_40m
+arch: cha_mae                  # P1c/#4: routes the unified pretrain entrypoint to the ChA training path
 # ChA-MAEViT (arXiv:2503.19331) — token-drop multi-channel MAE, 3D voxel adaptation.
 # Encoder = grouped DensityViT (channel_group, [7,4,1,1]) + l memory tokens; a
 # lightweight channel-aware transformer DECODER reconstructs masked per-group
@@ -6,6 +7,9 @@ model_name: atomblob_density_gradmag_cha_mae_40m
 # fused 40m ViT-MAE so a later frozen probe is apples-to-apples vs Table 1.
 n_channels: 32
 patch_size: 8
+# Input composition lives with the model (P1b/#2); n_in_channels must equal its implied width.
+input_mode: atomblob_density
+with_gradmag: true
 n_in_channels: 13              # 7 lig + 4 poc atom-type + 1 density + 1 gradmag
 dim: 512
 depth: 12

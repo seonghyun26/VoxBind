@@ -34,6 +34,7 @@ import copy
 import hashlib
 import json
 import logging
+import math
 import os
 import threading
 import time
@@ -44,7 +45,7 @@ import torch
 import torch.distributed as dist
 import torch.nn.functional as F
 import wandb
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig, OmegaConf, open_dict
 from tqdm import tqdm
 
 from voxbind.dataset import create_dataloaders
@@ -1094,8 +1095,31 @@ def log_metrics(epoch, train_metrics, val_metrics, dt):
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
+def _reconcile_input_keys(cfg: DictConfig) -> None:
+    """P1b/#2: ``input_mode`` and ``with_gradmag`` canonically live under ``cfg.model`` — the model
+    config fixes the input channel layout. Pre-P1b configs (and in-flight resumes that reload an old
+    ``cfg.yaml``) put them at the top level. Mirror the two locations in place so ``cfg.model.*`` is
+    authoritative when present, else inherits the legacy top-level value; a top-level copy is kept so
+    the existing ``cfg.get('input_mode')`` readers keep working. Idempotent."""
+    if "model" not in cfg or cfg.model is None:
+        return
+    with open_dict(cfg):
+        for key, default in (("input_mode", "density"), ("with_gradmag", False)):
+            in_model = OmegaConf.select(cfg, f"model.{key}", default=None)
+            top = OmegaConf.select(cfg, key, default=None)
+            val = in_model if in_model is not None else (top if top is not None else default)
+            cfg.model[key] = val
+            cfg[key] = val
+
+
 @hydra.main(config_path="configs", config_name="config_train_density_vit_mae", version_base=None)
 def main(cfg: DictConfig) -> None:
+    # P1c/#4: single pretraining entrypoint. Dispatch to the architecture's training path BEFORE any
+    # ViT-MAE-specific setup — ChA-MAE has its own token-space objective + train/val loop. ViT-MAE
+    # (the default when cfg.model.arch is unset) falls through unchanged below.
+    if str(cfg.model.get("arch", "vit_mae")) == "cha_mae":
+        from voxbind.train_density_cha_mae import run as run_cha
+        return run_cha(cfg)
     assert torch.cuda.is_available(), "GPU required."
     rank, local_rank, world_size = _setup_ddp()
     is_main = (rank == 0)
@@ -1125,6 +1149,10 @@ def main(cfg: DictConfig) -> None:
         cfg.wandb = wandb_override
         cfg.resume_epoch = resume_epoch_override
         cfg.num_epochs = num_epochs_override
+
+    # P1b/#2: input_mode/with_gradmag canonically live under cfg.model; mirror the legacy top-level
+    # location both ways. Runs AFTER the resume reload above so pre-P1b resumes are normalized too.
+    _reconcile_input_keys(cfg)
 
     if is_main:
         logger.info("cfg:\n" + OmegaConf.to_yaml(cfg))
@@ -1295,12 +1323,16 @@ def main(cfg: DictConfig) -> None:
     #   mae.density_channel_weight : float, default 1.0        (density-channel side,
     #                                                           only used when
     #                                                           input_mode='atomblob_density')
-    # When both are at defaults (`uniform` + `1.0`), `ch_weight` stays None
-    # and compute_losses takes the unweighted code path — preserving baseline behavior.
-    # When either is non-default for atomblob_density, the final 12-vec is
-    # renormalized to sum=n_channels so the overall L_pretext scale matches the
-    # unweighted case (gradient share shifts; total mass preserved).
-    ch_weight = None
+    # When both are at defaults (`uniform` + `1.0`) and no warm-up is set,
+    # `build_ch_weight` stays None and compute_losses takes the unweighted code
+    # path — preserving baseline behavior. When anything is non-default for
+    # atomblob_density, the final 12-vec is renormalized to sum=n_channels so the
+    # overall L_pretext scale matches the unweighted case (gradient share shifts;
+    # total mass preserved). A non-zero mae.density_weight_warmup_epochs makes the
+    # density+gradmag entries time-varying (cosine 0 -> target), rebuilt each epoch.
+    # `build_ch_weight(epoch)` is set below: either a closure returning the (possibly
+    # warm-up-scaled) weight vector, or None to take the unweighted code path.
+    build_ch_weight = None
     ch_weighting = str(cfg.mae.get("channel_weighting", "uniform"))
     if ch_weighting not in ("uniform", "inv_sqrt_freq", "inv_freq"):
         raise ValueError(
@@ -1324,7 +1356,18 @@ def main(cfg: DictConfig) -> None:
     needs_gradmag_weight = (
         with_gradmag and gradmag_reconstruct and gradmag_channel_weight != 1.0
     )
-    if needs_atom_weights or needs_dens_downweight or needs_gradmag_weight:
+    # Optional cosine warm-up on the density+gradmag reconstruction supervision:
+    # their channel weights ramp 0 -> their configured targets over the first
+    # `density_weight_warmup_epochs` epochs (cosine), then hold. 0 = off (default).
+    # Because the weight vector is renormalized to sum=n_recon, scale=0 puts the
+    # full loss mass on the atom channels -> "pure atomblob MAE first, then fold
+    # in density/gradmag". Anchored at absolute epoch 0 so resume is consistent.
+    dens_warmup_epochs = int(cfg.mae.get("density_weight_warmup_epochs", 0))
+    has_aux_recon = (
+        (input_mode in _density_modes) or (with_gradmag and gradmag_reconstruct)
+    )
+    needs_warmup = dens_warmup_epochs > 0 and has_aux_recon
+    if needs_atom_weights or needs_dens_downweight or needs_gradmag_weight or needs_warmup:
         if needs_atom_weights and input_mode not in _atomblob_modes:
             raise ValueError(
                 f"channel_weighting={ch_weighting!r} requires an atomblob* input_mode; "
@@ -1363,30 +1406,40 @@ def main(cfg: DictConfig) -> None:
         # Reconstructed-channel weight vector [atoms, density?, gradmag?]; length
         # = n_recon (gradmag excluded when input-only). Renormalized to sum =
         # n_recon so L_pretext magnitude matches the unweighted case; inter-channel
-        # gradient ratios are preserved.
-        parts = [atom_w]
-        if n_density > 0:
-            parts.append(torch.tensor([density_channel_weight]))
-        if with_gradmag and gradmag_reconstruct:
-            parts.append(torch.tensor([gradmag_channel_weight]))
-        raw = torch.cat(parts, dim=0)
-        assert raw.shape[0] == layout["n_recon"], (
-            f"weight vector length {raw.shape[0]} != n_recon {layout['n_recon']}"
-        )
-        ch_weight = (raw * (float(layout["n_recon"]) / float(raw.sum()))).to(device)
+        # gradient ratios are preserved. The density+gradmag entries are scaled by
+        # `aux_scale` (1.0 unless the warm-up is active) so the vector can be rebuilt
+        # cheaply each epoch without recomputing the (cached) atom-side weights.
+        def _aux_scale(epoch: int) -> float:
+            if dens_warmup_epochs <= 0:
+                return 1.0
+            p = min(1.0, max(0.0, float(epoch) / float(dens_warmup_epochs)))
+            return 0.5 * (1.0 - math.cos(math.pi * p))      # cosine 0 -> 1
+
+        def build_ch_weight(epoch: int):
+            scale = _aux_scale(epoch)
+            parts = [atom_w]
+            if n_density > 0:
+                parts.append(torch.tensor([density_channel_weight * scale]))
+            if with_gradmag and gradmag_reconstruct:
+                parts.append(torch.tensor([gradmag_channel_weight * scale]))
+            raw = torch.cat(parts, dim=0)
+            assert raw.shape[0] == layout["n_recon"], (
+                f"weight vector length {raw.shape[0]} != n_recon {layout['n_recon']}"
+            )
+            denom = float(raw.sum())
+            if denom <= 0.0:        # degenerate: all channels at 0 (e.g. density-only + scale 0)
+                denom = float(raw.shape[0])
+                raw = torch.ones_like(raw)
+            return (raw * (float(layout["n_recon"]) / denom)).to(device), scale
 
         if is_main:
             logger.info(
-                f"using channel weights on {ch_weight.shape[0]} channels "
-                f"(sum={float(ch_weight.sum()):.3f})  "
+                f"using channel weights on {layout['n_recon']} channels  "
                 f"channel_weighting={ch_weighting}  channel_weight_clip_ratio={channel_weight_clip or 'off'}  "
                 f"density_channel_weight={density_channel_weight}  "
-                f"gradmag_channel_weight={gradmag_channel_weight}  merge_lig_poc={merge_lig_poc}"
+                f"gradmag_channel_weight={gradmag_channel_weight}  merge_lig_poc={merge_lig_poc}  "
+                f"density_weight_warmup_epochs={dens_warmup_epochs or 'off'}"
             )
-            if n_density > 0:
-                logger.info(f"  effective density weight = {float(ch_weight[n_atom]):.4f}")
-            if with_gradmag and gradmag_reconstruct:
-                logger.info(f"  effective gradmag weight = {float(ch_weight[n_atom + n_density]):.4f}")
 
     sigma_blur_vox_range = (
         cfg.mae.sigma_blur_a_lo / cfg.vox.resolution,
@@ -1406,6 +1459,21 @@ def main(cfg: DictConfig) -> None:
         t0 = time.time()
         if hasattr(loader_train.sampler, "set_epoch"):
             loader_train.sampler.set_epoch(epoch)
+
+        # (re)build per-channel loss weights for this epoch; aux_scale < 1 only
+        # while the density/gradmag warm-up is ramping (constant otherwise).
+        if build_ch_weight is not None:
+            ch_weight, aux_scale = build_ch_weight(epoch)
+            if is_main and dens_warmup_epochs > 0 and epoch <= dens_warmup_epochs:
+                n_atom_ = layout["n_atom"]
+                msg = f"[epoch {epoch}] density/gradmag warm-up scale={aux_scale:.4f}"
+                if layout["n_density"] > 0:
+                    msg += f"  eff density={float(ch_weight[n_atom_]):.4f}"
+                if with_gradmag and gradmag_reconstruct:
+                    msg += f"  eff gradmag={float(ch_weight[n_atom_ + layout['n_density']]):.4f}"
+                logger.info(msg)
+        else:
+            ch_weight, aux_scale = None, 1.0
 
         if pretext_style == "electra":
             corruption_ops = tuple(cfg.electra.corruption_ops)
@@ -1448,6 +1516,8 @@ def main(cfg: DictConfig) -> None:
                 log_payload = {"train": train_metrics, "epoch": epoch}
                 if val_metrics is not None:
                     log_payload["val"] = val_metrics
+                if dens_warmup_epochs > 0:
+                    log_payload["aux_weight_scale"] = aux_scale
                 try:
                     wandb.log(log_payload, step=global_step)
                 except Exception as e:

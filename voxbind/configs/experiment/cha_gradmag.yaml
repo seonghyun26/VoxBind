@@ -1,0 +1,21 @@
+# @package _global_
+# Experiment preset: ChA-MAEViT, 13ch atomblob+density+gradmag, v5 CrossDocked X-ray crops.
+# arch: cha_mae (in the model file) routes the unified entrypoint to the ChA training path (P1c/#4).
+defaults:
+  - override /dset: crossdocked_xray_v5
+  - override /model: atomblob_density_gradmag_cha_mae_40m
+  - override /mae: cha
+exp_name: 260612_cha_mae_gradmag_v5_pretrain
+compile:
+  enabled: false               # ChA (grouped patch-embed + DCP) is not torch.compile'd
+wandb_tags:
+  - pretrain
+  - cha_mae
+  - atomblob_density_gradmag
+  - 40m
+  - v5
+  - ligvdw
+  - crossdocked_xray
+  - channelvit
+  - memory_tokens
+  - dcp

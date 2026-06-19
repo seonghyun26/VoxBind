@@ -1,0 +1,15 @@
+# Objective: ChA-MAE token-drop reconstruction (pixel + Fourier loss). Distinct from the ViT-MAE
+# loss family — its masking/decoder/memory-token knobs live in the model config; this block only
+# carries the shared density-prep + training keys the ChA loop reads. Standalone (no _base).
+density_source: xray
+sigma_blur_a_lo: 0.3
+sigma_blur_a_hi: 0.8
+sigma_noise: 0.0
+block_size: 8
+mask_ratio: 0.6
+mask_strategy: atom_biased
+gradmag_reconstruct: true
+ema_decay: 0.999
+grad_clip: 1.0
+val_every: 1
+ckpt_every: 50

@@ -47,8 +47,8 @@ from voxbind.voxelizer import Voxelizer
 # Reuse the ViT-MAE trainer's infrastructure verbatim.
 from voxbind.train_density_vit_mae import (
     AsyncCheckpointSaver, MAEPrefetcher, _amp_setup, _build_merged_atoms,
-    _channel_layout, _cleanup_ddp, _setup_ddp, _unwrap, maybe_compile_model,
-    precompute_val,
+    _channel_layout, _cleanup_ddp, _reconcile_input_keys, _setup_ddp, _unwrap,
+    maybe_compile_model, precompute_val,
 )
 
 logger = logging.getLogger("train-density-cha-mae")
@@ -221,9 +221,10 @@ def log_metrics(epoch, train_metrics, val_metrics, dt):
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
-@hydra.main(config_path="configs", config_name="config_train_atomblob_density_gradmag_cha_mae_40m",
-            version_base=None)
-def main(cfg: DictConfig) -> None:
+def run(cfg: DictConfig) -> None:
+    """ChA-MAE pretraining loop. Invoked directly (standalone entrypoint) or dispatched from the
+    unified train_density_vit_mae.py entrypoint when cfg.model.arch == 'cha_mae' (P1c/#4). The loop
+    body below is unchanged from the original main() — only the wrapper + reconcile call are new."""
     assert torch.cuda.is_available(), "GPU required."
     rank, local_rank, world_size = _setup_ddp()
     is_main = (rank == 0)
@@ -252,6 +253,10 @@ def main(cfg: DictConfig) -> None:
         cfg.wandb = wandb_override
         cfg.resume_epoch = resume_epoch_override
         cfg.num_epochs = num_epochs_override
+
+    # P1b/#2: mirror input_mode/with_gradmag between cfg.model and the legacy top-level location
+    # (after the resume reload, matching the ViT-MAE entrypoint).
+    _reconcile_input_keys(cfg)
 
     if is_main:
         logger.info("cfg:\n" + OmegaConf.to_yaml(cfg))
@@ -445,6 +450,12 @@ def main(cfg: DictConfig) -> None:
     if world_size > 1:
         dist.barrier()
     _cleanup_ddp()
+
+
+@hydra.main(config_path="configs", config_name="config_train_atomblob_density_gradmag_cha_mae_40m",
+            version_base=None)
+def main(cfg: DictConfig) -> None:
+    run(cfg)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,21 @@
+# @package _global_
+# Experiment preset: coords-only baseline (the "C" in C vs C+D+G). 11ch atomblob, no density input,
+# inv-freq weighting. Uses the v5 crop dir only for the x-ray availability/subset match.
+defaults:
+  - override /dset: crossdocked_xray_v5
+  - override /model: atomblob_vit_mae_40m
+  - override /mae: invfreq
+dset:
+  use_xray: false              # coords-only: atoms in, density not loaded as a channel
+  normalize: true
+mae:
+  density_source: synthetic    # no real x-ray density channel for coords-only
+exp_name: 260606_atomblob_vit_mae_40m_invfreq_pretrain
+wandb_tags:
+  - pretrain
+  - atomblob
+  - 40m
+  - invfreq
+  - ligvdw
+  - clip30
+  - crossdocked_xray

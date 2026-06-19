@@ -1,0 +1,19 @@
+# @package _global_
+# Experiment preset: PLINDER on-the-fly resample, 13ch atomblob+density+gradmag, inv-freq weighting.
+# Same model + objective as the canonical CrossDocked run; only the data (PLINDER + OTF) differs.
+defaults:
+  - override /dset: plinder_otf
+  - override /model: atomblob_density_gradmag_vit_mae_40m
+  - override /mae: invfreq
+exp_name: 260617_plinder_otf_cdg_invfreq_p100_pretrain
+wandb_tags:
+  - pretrain
+  - atomblob_density_gradmag
+  - 40m
+  - invfreq
+  - plinder
+  - otf
+  - ligvdw
+  - clip30
+  - sizesweep
+  - p100

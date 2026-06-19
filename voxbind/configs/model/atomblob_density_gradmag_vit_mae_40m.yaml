@@ -1,0 +1,25 @@
+# Model group option: ~45.4M ViT-MAE, 13-channel input (7 lig + 4 poc atom-type + density + gradmag).
+# = atomblob_density_vit_mae_40m (12ch) with n_in_channels=13 and the patch_mlp recon head baked in.
+# Factored out of the old config_train_atomblob_density_gradmag_vit_mae_40m_invfreq.yaml `model:` block.
+model_name: atomblob_density_vit_mae_40m   # logging only (kept for P1 parity); arch dispatch added in P1c (#4)
+n_channels: 32
+patch_size: 8
+# Input composition lives WITH the model (P1b/#2): the model file fixes the input channels.
+# n_in_channels MUST equal atoms(input_mode) + has_density + with_gradmag (asserted at build).
+input_mode: atomblob_density
+with_gradmag: true
+n_in_channels: 13       # 11 atom-type (7 lig + 4 poc) + 1 density + 1 gradmag
+dim: 512
+depth: 12
+heads: 8
+mlp_ratio: 4
+dropout: 0.1
+pos_encoding: learnable
+rope_fast: false
+n_struct_channels: 0    # disabled: atoms ARE part of the input
+dual_head: false
+head_hidden_dim: 67     # per-patch 2-layer MLP recon head (~1.0M params)
+head_depth: 2
+patch_embed_mode: fused
+channel_groups: null
+head_style: patch_mlp

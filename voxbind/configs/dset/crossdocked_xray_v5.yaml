@@ -1,0 +1,19 @@
+# Data group option: CrossDocked + v5 X-ray density crops (ligvdw, pre-normalized on disk).
+# Self-contained cfg.dset (the canonical invfreq/gradmag pretraining data). Factored out of the
+# old config_train_atomblob_density_gradmag_vit_mae_40m_invfreq.yaml `dset:` override block.
+dset_name: crossdocked_xray
+# P2: paths reference a single configurable data root (portable across servers). Set
+# VOXBIND_DATA_ROOT to point elsewhere; defaults to the in-repo dataset/data.
+data_dir: ${oc.env:VOXBIND_DATA_ROOT,dataset/data}
+data_file: data_train.pt       # train/val source tuples; test always uses data_test.pt
+crops_dir: ${oc.env:VOXBIND_DATA_ROOT,dataset/data}/xray_crops_aligned_v5
+ccp4_dir: ${oc.env:VOXBIND_DATA_ROOT,dataset/data}/ccp4
+resample_dir: ''               # "" → frozen-crops path (no on-the-fly resample)
+ligand_radius: -1              # element-wise vdW radii (lig + poc) — "ligvdw"
+pocket_radius: -1
+use_xray: true
+cache_size: 32
+normalize: false               # v5 crops are pre-normalized on disk
+subset_n: 78428                # full CrossDocked x-ray subset
+subset_xray_only: true
+subset_val_n: 100

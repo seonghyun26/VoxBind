@@ -17,10 +17,21 @@ model_name: atomblob_vit_mae_40m
 # branch — current voxbind.py hardcodes (B,1,G³) for the density slot).
 n_channels: 32          # backbone width; encoder spatial out has C/2 = 16 channels
 patch_size: 8           # at G=64 → 8³=512 tokens (unchanged)
+# Input composition lives with the model (P1b/#2); coords-only 11ch, no density/gradmag.
+input_mode: atomblob
+with_gradmag: false
 n_in_channels: 11       # 7 ligand + 4 pocket atom-type channels
 dim: 512                # transformer hidden width (matches density 40M)
 depth: 12               # transformer blocks (matches density 40M)
 heads: 8                # attention heads (matches density 40M)
 mlp_ratio: 4
 dropout: 0.1
+pos_encoding: learnable
+rope_fast: false
 n_struct_channels: 0    # disabled: atoms ARE the input
+dual_head: false
+head_hidden_dim: 67     # per-patch 2-layer MLP recon head
+head_depth: 2
+head_style: patch_mlp
+patch_embed_mode: fused
+channel_groups: null

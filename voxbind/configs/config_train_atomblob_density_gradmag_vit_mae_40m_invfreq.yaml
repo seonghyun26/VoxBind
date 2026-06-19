@@ -81,6 +81,11 @@ mae:
   channel_weight_clip_ratio: 30.0
   density_channel_weight: 0.1
   gradmag_channel_weight: 0.1
+  # Cosine warm-up on the density+gradmag reconstruction supervision: their
+  # weights ramp 0 -> the targets above over the first N epochs, then hold.
+  # 0 = off (baseline). Mass-preserving renorm => scale 0 == pure-atomblob MAE,
+  # so this is "atomblob first, then fold in density/gradmag". Try N=10.
+  density_weight_warmup_epochs: 0
   gradmag_reconstruct: true
   gradmag_noise: false
   atom_pos_weight: 10.0

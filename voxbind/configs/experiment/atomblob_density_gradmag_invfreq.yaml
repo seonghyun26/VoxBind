@@ -1,0 +1,19 @@
+# @package _global_
+# Experiment preset: the canonical 13ch atomblob+density+gradmag ViT-MAE, inv-freq weighting,
+# on the v5 CrossDocked X-ray crops. Reproduces the old
+# config_train_atomblob_density_gradmag_vit_mae_40m_invfreq.yaml exactly (P1 parity gate).
+# Group overrides are explicit (self-documenting) even where they match the base defaults.
+defaults:
+  - override /dset: crossdocked_xray_v5
+  - override /model: atomblob_density_gradmag_vit_mae_40m
+  - override /mae: invfreq
+exp_name: 260606_atomblob_density_gradmag_vit_mae_40m_invfreq_v5_pretrain
+wandb_tags:
+  - pretrain
+  - atomblob_density_gradmag
+  - 40m
+  - invfreq
+  - v5
+  - ligvdw
+  - clip30
+  - crossdocked_xray

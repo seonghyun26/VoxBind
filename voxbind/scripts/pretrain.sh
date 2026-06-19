@@ -8,8 +8,12 @@
 # ── Usage ─────────────────────────────────────────────────────────────────────
 #   bash scripts/pretrain.sh --mode MODE --gpus GPUS [options]
 #
-# Required:
-#   --mode MODE     density | atomblob | atomblob_density | atomblob_merged_density
+# Required (one of):
+#   --mode MODE       density | atomblob | atomblob_density | atomblob_merged_density   (generator)
+#   --experiment NAME launch a migrated preset: configs/experiment/NAME.yaml via
+#                     --config-name=pretrain +experiment=NAME (arch auto-dispatched). Skips the
+#                     generator; combine with --gpus / --name / --dry-run / -- <hydra overrides>.
+# And:
 #   --gpus GPUS     comma list or dash range — "1,2,3,4,5" or "4-7" or "4,5"
 #
 # Options:
@@ -48,8 +52,10 @@
 #   37 = --mode atomblob_merged_density --weighted --data v2 --gpus 4,5,6,7
 set -u
 
-VOX=/home/shpark/prj-denovo/VoxBind/voxbind
-PY=/home/shpark/.conda/envs/voxbind/bin
+# Portable roots (P3): derive the repo from this script's own location; allow env overrides so the
+# launcher runs unchanged on another server / conda env (VOXBIND_ROOT, VOXBIND_PY).
+VOX="${VOXBIND_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+PY="${VOXBIND_PY:-/home/shpark/.conda/envs/voxbind/bin}"
 DATA=$VOX/dataset/data
 LOG=$VOX/log
 ts(){ date "+%Y-%m-%d %H:%M:%S"; }
@@ -58,7 +64,7 @@ die(){ echo "pretrain.sh: $*" >&2; exit 1; }
 # ── Defaults ──────────────────────────────────────────────────────────────────
 MODE=""; GPUS=""; DATA_VER="v1"; WEIGHTED=0; GRADMAG=0
 EPOCHS=100; BSZ=8; TARGET=80; ACCUM=""; LR=1e-4; WD=5e-2; SEED=42
-NAME=""; EXTRA_TAGS=""; DRYRUN=0
+NAME=""; EXTRA_TAGS=""; DRYRUN=0; EXPERIMENT=""
 PASSTHRU=()
 
 # ── Arg parse ─────────────────────────────────────────────────────────────────
@@ -77,6 +83,7 @@ while [[ $# -gt 0 ]]; do
         --wd)       WD="$2"; shift 2;;
         --seed)     SEED="$2"; shift 2;;
         --name)     NAME="$2"; shift 2;;
+        --experiment) EXPERIMENT="$2"; shift 2;;
         --tags)     EXTRA_TAGS="$2"; shift 2;;
         --dry-run)  DRYRUN=1; shift;;
         --)         shift; PASSTHRU=("$@"); break;;
@@ -85,7 +92,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-[[ -n "$MODE" ]] || die "--mode is required (density|atomblob|atomblob_density|atomblob_merged_density)"
+[[ -n "$MODE" || -n "$EXPERIMENT" ]] || die "--mode (generator) or --experiment <preset> is required"
 [[ -n "$GPUS" ]] || die "--gpus is required (e.g. 1,2,3,4,5 or 4-7)"
 
 # ── GPU spec → CUDA list + nproc ──────────────────────────────────────────────
@@ -105,6 +112,27 @@ expand_gpus(){
 CUDA_LIST=$(expand_gpus "$GPUS")
 NPROC=$(awk -F, '{print NF}' <<< "$CUDA_LIST")
 [[ "$NPROC" -ge 1 ]] || die "could not parse --gpus '$GPUS'"
+
+# ── Preset path (P3): launch a migrated experiment preset via the unified config ──────────────
+# `--experiment NAME` → train_density_vit_mae.py --config-name=pretrain +experiment=NAME. The arch
+# (ViT-MAE vs ChA) is auto-dispatched from cfg.model.arch. This early-returns BEFORE the mode→config
+# generator below, which is left byte-unchanged for the existing --mode launches.
+if [[ -n "$EXPERIMENT" ]]; then
+    EXP="${NAME:-$EXPERIMENT}"
+    CMD=( "$PY/torchrun" --standalone --nproc_per_node="$NPROC" train_density_vit_mae.py
+          --config-name=pretrain "+experiment=$EXPERIMENT" )
+    [[ -n "$NAME" ]] && CMD+=( "exp_name=$NAME" )
+    [[ ${#PASSTHRU[@]} -gt 0 ]] && CMD+=( "${PASSTHRU[@]}" )
+    echo "[$(ts)] pretrain  experiment=$EXPERIMENT  GPUs=$CUDA_LIST  nproc=$NPROC  exp=$EXP"
+    if [[ "$DRYRUN" -eq 1 ]]; then
+        echo "CUDA_VISIBLE_DEVICES=$CUDA_LIST \\"; printf '  %q' "${CMD[@]}"; echo; exit 0
+    fi
+    mkdir -p "$LOG"; cd "$VOX" || die "cd $VOX failed"
+    echo "[$(ts)] launching $EXP  ->  log: $LOG/${EXP}.log"
+    CUDA_VISIBLE_DEVICES="$CUDA_LIST" "${CMD[@]}" >> "$LOG/${EXP}.log" 2>&1
+    echo "[$(ts)] $EXP done (exit $?)  ->  exps/$EXP"
+    exit 0
+fi
 
 # ── accum_steps: ceil(target / (bsz*nproc)) unless forced ─────────────────────
 PERSTEP=$((BSZ * NPROC))

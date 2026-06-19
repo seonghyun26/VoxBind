@@ -1,0 +1,69 @@
+# Base pretraining config (config_name="pretrain"). A run is composed as:
+#     train_pretrain.py --config-name=pretrain +experiment=<name>
+# The reusable axes are top-level Hydra groups (dset/ model/ mae/ vox/); this base selects the
+# canonical option per axis and holds run-metadata + optim + runtime (throughput) knobs.
+# Experiment presets (configs/experiment/*.yaml) override one option per axis + set exp_name/tags.
+defaults:
+  - dset: crossdocked_xray_v5
+  - model: atomblob_density_gradmag_vit_mae_40m
+  - mae: invfreq
+  - vox: default
+  - override hydra/job_logging: custom
+  - _self_
+
+# ── run metadata ───────────────────────────────────────────────────────────────
+debug: false
+wandb: true
+wandb_tags: []
+num_workers: 16
+prefetch_factor: 8
+resume: null
+resume_epoch: null
+exp_dir: exps
+exp_name: ???            # set by the experiment preset (mandatory)
+output_dir: null
+
+# ── optim / schedule ─────────────────────────────────────────────────────────────
+seed: 42
+num_epochs: 100
+aug: true
+bsz: 32
+accum_steps: 1
+lr: 1e-4
+wd: 5e-2
+
+# ── runtime / throughput knobs (260611; amp + compile ON by default) ─────────────
+amp:
+  enabled: true
+  dtype: bf16
+channels_last: false
+optimizer:
+  fused: false
+ema:
+  foreach: false
+compile:
+  enabled: true
+  backend: inductor
+  mode: default
+  fullgraph: false
+  dynamic: false
+
+# ── input composition: lives in the model/ group now (P1b/#2) — the selected model file fixes
+#    input_mode / with_gradmag / n_in_channels together. The trainer mirrors them to the legacy
+#    top-level location at runtime for back-compat (_reconcile_input_keys). ───────────────────────
+
+# ── hydra plumbing (de-duped from the 14 monoliths) ──────────────────────────────
+hydra:
+  run:
+    dir: ./${exp_dir}/${exp_name}
+  job:
+    config:
+      override_dirname:
+        kv_sep: ""
+        item_sep: "_"
+        exclude_keys: [
+            "exp_dir", "lr", vox.grid_dim, "wd", "resume", "resume_epoch", "wandb",
+            "num_workers", "exp_name", "output_dir", "out_dir",
+            "bsz", "accum_steps", "seed", "num_epochs", "aug", "pocket_radius",
+            "grid_dim", "debug"
+]

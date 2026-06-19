@@ -1,0 +1,27 @@
+# Objective base: the stable MAE pretext keys shared by every weighting variant.
+# Per-variant files (invfreq/weighted/uniform) include this via `defaults: [_base, _self_]`
+# and override only the channel-weighting knobs. Not a standalone choice (leading _).
+pretext_style: mae
+density_source: xray
+sigma_blur_a_lo: 0.3
+sigma_blur_a_hi: 0.8
+sigma_noise: 0.0
+block_size: 8
+mask_ratio: 0.6
+mask_strategy: atom_biased
+mask_atom_tau: 1.0
+density_channel_weight: 0.1
+gradmag_channel_weight: 0.1
+density_weight_warmup_epochs: 0
+gradmag_reconstruct: true
+gradmag_noise: false
+atom_pos_weight: 10.0
+atom_pos_thresh: 0.05
+lambda_dens: 1.0
+lambda_str: 1.0
+struct_pos_weight: 100.0
+struct_pos_thresh: 0.05
+ema_decay: 0.999
+grad_clip: 1.0
+val_every: 1
+ckpt_every: 50

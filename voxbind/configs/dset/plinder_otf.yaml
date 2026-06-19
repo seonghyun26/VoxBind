@@ -1,0 +1,18 @@
+# Data group: PLINDER ligand-matched X-ray density corpus with ON-THE-FLY resample augmentation.
+# Density is cropped from the full CCP4 map at the augmented pose each step (single interp, no
+# edge zero-fill) instead of rotating a frozen crop. resample_dir = the s3 --resample output
+# ({split}_manifest.npz + resample.json); the full CCP4 maps must be retained on disk.
+dset_name: crossdocked_xray
+data_dir: ${oc.env:VOXBIND_DATA_ROOT,dataset/data}
+data_file: data_train_plinder.pt
+crops_dir: ''                  # OTF resample path → no frozen crops
+ccp4_dir: ${oc.env:VOXBIND_DATA_ROOT,dataset/data}/ccp4
+resample_dir: ${oc.env:VOXBIND_DATA_ROOT,dataset/data}/xray_resample_plinder
+ligand_radius: -1
+pocket_radius: -1
+use_xray: true
+cache_size: 32
+normalize: false               # density pre-normalized in the resample recipe
+subset_n: 17430                # PLINDER corpus size
+subset_xray_only: true
+subset_val_n: 100
