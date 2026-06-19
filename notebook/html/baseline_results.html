@@ -184,6 +184,81 @@
     <span>EGNN 6-layer &middot; 256 hidden &middot; knn=48 &middot; cutoff=10Å</span>
     <span>voxbind env (PyTorch 2.10.0+cu128)</span>
   </div>
+
+  <h1 style="margin-top: 48px;">TargetDiff EGNN — Binding Affinity (Timesplit)</h1>
+  <div class="subtitle">
+    <span>&#x1F4C5; 2026-06-18</span>
+    <span>&#x1F9EA; PDBBind v2020 &middot; EquiBind timesplit (arxiv:2202.05146) &middot; test = post-2019 structures</span>
+    <span>&#x1F4CA; train 15,138 / val 820 / test 304 &middot; 3 seeds (2021/2022/2023) &middot; mean &plusmn; std</span>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Subset</th>
+        <th>n</th>
+        <th>RMSE</th>
+        <th>MAE</th>
+        <th>R&sup2;</th>
+        <th>Pearson</th>
+        <th>Spearman</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr class="section-header"><td colspan="7">Our results (test n=304; paper has 363 — 59 structures missing)</td></tr>
+      <tr class="highlight">
+        <td>All</td>
+        <td>304</td>
+        <td>1.384 &plusmn; 0.030</td>
+        <td>1.093 &plusmn; 0.027</td>
+        <td>0.446 &plusmn; 0.024</td>
+        <td>0.695 &plusmn; 0.025</td>
+        <td>0.650 &plusmn; 0.042</td>
+      </tr>
+      <tr>
+        <td>Ki</td>
+        <td>58</td>
+        <td>1.281 &plusmn; 0.146</td>
+        <td>0.996 &plusmn; 0.104</td>
+        <td>0.617 &plusmn; 0.089</td>
+        <td>0.825 &plusmn; 0.017</td>
+        <td>0.796 &plusmn; 0.028</td>
+      </tr>
+      <tr>
+        <td>Kd</td>
+        <td>148</td>
+        <td>1.363 &plusmn; 0.099</td>
+        <td>1.079 &plusmn; 0.068</td>
+        <td>0.177 &plusmn; 0.120</td>
+        <td>0.496 &plusmn; 0.090</td>
+        <td>0.463 &plusmn; 0.086</td>
+      </tr>
+      <tr>
+        <td>IC50</td>
+        <td>98</td>
+        <td>1.466 &plusmn; 0.085</td>
+        <td>1.173 &plusmn; 0.114</td>
+        <td>0.124 &plusmn; 0.103</td>
+        <td>0.521 &plusmn; 0.065</td>
+        <td>0.527 &plusmn; 0.057</td>
+      </tr>
+      <tr class="section-header"><td colspan="7">Paper Table 9 reference (EGNN baseline, n=363)</td></tr>
+      <tr>
+        <td>All</td>
+        <td>363</td>
+        <td>1.445</td>
+        <td>1.141</td>
+        <td>—</td>
+        <td>0.648</td>
+        <td>0.598</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="footer">
+    <span>EGNN 6-layer &middot; 256 hidden &middot; knn=48 &middot; cutoff=10Å &middot; DDP 3×GPU</span>
+    <span>Note: our test n=304 vs paper n=363; 59 missing structures may inflate metrics</span>
+  </div>
 </div>
 </body>
 </html>

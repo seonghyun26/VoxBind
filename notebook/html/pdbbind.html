@@ -1,0 +1,748 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PDBBind Split Comparison</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #f4f6f9;
+      color: #2c3040;
+      padding: 40px 24px;
+    }
+    .container { max-width: 900px; margin: 0 auto; }
+    h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; color: #1a1e2e; }
+    .subtitle { font-size: 13px; color: #666; margin-bottom: 32px; }
+
+    h2 { font-size: 14px; font-weight: 700; text-transform: uppercase;
+         letter-spacing: 0.06em; color: #6070a0; margin: 32px 0 12px; }
+
+    /* Two-column layout */
+    .split-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+
+    .card {
+      background: #fff;
+      border-radius: 10px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+      padding: 20px 22px;
+    }
+    .card-title {
+      font-size: 13px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.07em; color: #fff;
+      background: #2c3a5c; margin: -20px -22px 16px;
+      padding: 10px 22px; border-radius: 10px 10px 0 0;
+    }
+    .card-title.orange { background: #7c4a1e; }
+
+    /* Data count bars */
+    .count-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+    .count-label { font-size: 12px; width: 38px; color: #555; font-weight: 600; }
+    .count-bar-wrap { flex: 1; background: #eef0f5; border-radius: 4px; height: 18px; overflow: hidden; }
+    .count-bar { height: 100%; border-radius: 4px; display: flex; align-items: center; padding-left: 8px;
+                 font-size: 11px; color: #fff; font-weight: 600; white-space: nowrap; }
+    .count-bar.train { background: #3b6fc9; }
+    .count-bar.val   { background: #6ba3c9; }
+    .count-bar.test  { background: #9bc1e0; }
+    .count-n { font-size: 12px; color: #555; width: 52px; text-align: right; }
+
+    /* Stats rows */
+    .stat-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 14px; }
+    .stat-box { background: #f7f9fc; border-radius: 6px; padding: 9px 12px; }
+    .stat-box .label { font-size: 11px; color: #888; margin-bottom: 2px; }
+    .stat-box .value { font-size: 13px; font-weight: 700; color: #2c3040; }
+    .stat-box .sub   { font-size: 11px; color: #aaa; }
+
+    /* Tables */
+    table {
+      width: 100%; border-collapse: collapse;
+      background: #fff; border-radius: 10px; overflow: hidden;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+    }
+    thead tr { background: #2c3a5c; color: #fff; }
+    thead th {
+      padding: 11px 16px; text-align: left;
+      font-size: 12px; font-weight: 600;
+      letter-spacing: 0.05em; text-transform: uppercase;
+    }
+    thead th:not(:first-child) { text-align: right; }
+    tbody tr { border-bottom: 1px solid #eef0f5; }
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover { background: #f7f9fc; }
+    tbody td { padding: 10px 16px; font-size: 13px; }
+    tbody td:not(:first-child) { text-align: right; font-variant-numeric: tabular-nums; }
+    .section-row td {
+      background: #f0f3f9; font-size: 11px; font-weight: 700;
+      letter-spacing: 0.08em; text-transform: uppercase; color: #6070a0; padding: 6px 16px;
+    }
+
+    /* Chart canvas */
+    .chart-wrap { margin-top: 16px; height: 140px; }
+
+    /* Similarity badge */
+    .ks-badge {
+      display: inline-block; border-radius: 20px; padding: 3px 10px;
+      font-size: 11px; font-weight: 700;
+    }
+    .ks-green { background: #e6f4ec; color: #276b40; }
+    .ks-yellow { background: #fdf3e3; color: #8a5e00; }
+
+    .note { font-size: 12px; color: #888; margin-top: 12px; line-height: 1.6; }
+    .note strong { color: #555; }
+
+    .footer { margin-top: 24px; font-size: 12px; color: #aaa; text-align: right; }
+
+    /* Kind pills */
+    .kind-row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 12px; }
+    .kind-pill {
+      font-size: 11px; border-radius: 12px; padding: 2px 9px;
+      font-weight: 600;
+    }
+    .kind-ki   { background: #e8eeff; color: #3050b0; }
+    .kind-kd   { background: #e8f5e9; color: #2e6b44; }
+    .kind-ic50 { background: #fce8e8; color: #8b2020; }
+    .kind-unk  { background: #f0f0f0; color: #777; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <h1>PDBBind 2020 — Split Comparison</h1>
+  <p class="subtitle">LP-PDBBind split vs. EquiBind Timesplit. No PDB ID overlap between train/val/test in either split.</p>
+
+  <!-- ── Dataset Overview ── -->
+  <h2>PDBBind 2020 — Dataset Overview</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Category</th>
+        <th>Total</th>
+        <th>LP split assigned</th>
+        <th>EDS coverage (all)</th>
+        <th>EDS coverage (split)</th>
+        <th>Split+EDS available</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>general</strong></td>
+        <td>14,108</td>
+        <td>13,713 <span style="color:#aaa;font-size:11px">(395 excl.)</span></td>
+        <td><span class="ks-badge ks-green">91.5%</span> 12,907/14,108</td>
+        <td>91.5% 12,554/13,713</td>
+        <td>12,554</td>
+      </tr>
+      <tr>
+        <td><strong>refined</strong></td>
+        <td>5,050</td>
+        <td>4,803 <span style="color:#aaa;font-size:11px">(247 excl.)</span></td>
+        <td><span class="ks-badge ks-yellow">78.7%</span> 3,974/5,050</td>
+        <td>78.3% 3,760/4,803</td>
+        <td>3,760</td>
+      </tr>
+      <tr>
+        <td><strong>core</strong></td>
+        <td>285</td>
+        <td>279 <span style="color:#aaa;font-size:11px">(6 excl.)</span></td>
+        <td><span class="ks-badge ks-yellow">78.9%</span> 225/285</td>
+        <td>78.9% 220/279</td>
+        <td>220</td>
+      </tr>
+      <tr style="background:#f0f3f9;font-weight:600">
+        <td>Total</td>
+        <td>19,443</td>
+        <td>18,795</td>
+        <td>88.0% 17,106/19,443</td>
+        <td>87.4% 16,534/18,795</td>
+        <td>16,534</td>
+      </tr>
+    </tbody>
+  </table>
+  <p class="note">
+    <strong>EDS (Electron Density Server):</strong> 2Fo-Fc CCP4 maps from PDBe. general set coverage was not queried until 2026-06-18 — prior analyses used refined+core only.
+    Excluded entries (NaN in new_split) are mostly non-covalent structures whose split assignment was withheld; reason is not documented in LP_PDBBind.csv.
+  </p>
+
+  <!-- ── Full LP Split by Category ── -->
+  <h2>LP-PDBBind Split — by Category</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Category</th>
+        <th>Train</th>
+        <th>Val</th>
+        <th>Test</th>
+        <th>Total (split)</th>
+        <th>+EDS filter</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>general</td>
+        <td>8,509</td><td>1,790</td><td>3,414</td><td>13,713</td>
+        <td>12,554 <span style="color:#aaa;font-size:11px">(91.5%)</span></td>
+      </tr>
+      <tr>
+        <td>refined</td>
+        <td>2,880</td><td>590</td><td>1,333</td><td>4,803</td>
+        <td>3,760 <span style="color:#aaa;font-size:11px">(78.3%)</span></td>
+      </tr>
+      <tr>
+        <td>core</td>
+        <td>124</td><td>42</td><td>113</td><td>279</td>
+        <td>220 <span style="color:#aaa;font-size:11px">(78.9%)</span></td>
+      </tr>
+      <tr style="background:#f0f3f9;font-weight:600">
+        <td>All</td>
+        <td>11,513</td><td>2,422</td><td>4,860</td><td>18,795</td>
+        <td>16,534</td>
+      </tr>
+      <tr style="background:#e8eeff">
+        <td><strong>refined+EDS only ← our use</strong></td>
+        <td>2,328</td><td>515</td><td>1,136</td><td>3,979</td>
+        <td>3,979 <span style="color:#aaa;font-size:11px">(100% by def.)</span></td>
+      </tr>
+    </tbody>
+  </table>
+  <p class="note">
+    <strong>Our LP-PDBBind split</strong> (bottom row) uses only refined entries with EDS available — a small subset of the full LP split.
+    The general set (91.5% EDS coverage) was never included in our VoxBind dataset despite being queryable.
+  </p>
+
+  <!-- ── Data counts ── -->
+  <h2>Split Comparison — Current Usage</h2>
+  <div class="split-grid">
+
+    <!-- LP-PDBBind -->
+    <div class="card">
+      <div class="card-title">LP-PDBBind Split</div>
+      <div class="count-row">
+        <span class="count-label">Train</span>
+        <div class="count-bar-wrap">
+          <div class="count-bar train" style="width:76.1%">11,513</div>
+        </div>
+        <span class="count-n">11,513</span>
+      </div>
+      <div class="count-row">
+        <span class="count-label">Val</span>
+        <div class="count-bar-wrap">
+          <div class="count-bar val" style="width:16.0%">2,422</div>
+        </div>
+        <span class="count-n">2,422</span>
+      </div>
+      <div class="count-row">
+        <span class="count-label">Test</span>
+        <div class="count-bar-wrap">
+          <div class="count-bar test" style="width:32.1%">4,860</div>
+        </div>
+        <span class="count-n">4,860</span>
+      </div>
+      <div class="stat-grid">
+        <div class="stat-box">
+          <div class="label">Total (split)</div>
+          <div class="value">18,795</div>
+          <div class="sub">of 19,443</div>
+        </div>
+        <div class="stat-box">
+          <div class="label">Source</div>
+          <div class="value">Gen+Ref</div>
+          <div class="sub">+Core</div>
+        </div>
+        <div class="stat-box">
+          <div class="label">ID overlap</div>
+          <div class="value" style="color:#276b40">0</div>
+          <div class="sub">all splits</div>
+        </div>
+      </div>
+      <p style="font-size:11px;color:#aaa;margin-top:10px">
+        Our use: refined+EDS only → 2,328 / 515 / 1,136
+      </p>
+      <div class="kind-row">
+        <span class="kind-pill kind-ki">Ki</span>
+        <span class="kind-pill kind-kd">Kd</span>
+        <span class="kind-pill kind-ic50">IC50</span>
+      </div>
+    </div>
+
+    <!-- Timesplit -->
+    <div class="card">
+      <div class="card-title orange">EquiBind Timesplit</div>
+      <div class="count-row">
+        <span class="count-label">Train</span>
+        <div class="count-bar-wrap">
+          <div class="count-bar train" style="width:93.1%">15,138</div>
+        </div>
+        <span class="count-n">15,138</span>
+      </div>
+      <div class="count-row">
+        <span class="count-label">Val</span>
+        <div class="count-bar-wrap">
+          <div class="count-bar val" style="width:5.0%"></div>
+        </div>
+        <span class="count-n">820</span>
+      </div>
+      <div class="count-row">
+        <span class="count-label">Test</span>
+        <div class="count-bar-wrap">
+          <div class="count-bar test" style="width:1.9%"></div>
+        </div>
+        <span class="count-n">304</span>
+      </div>
+      <div class="stat-grid">
+        <div class="stat-box">
+          <div class="label">Total</div>
+          <div class="value">16,262</div>
+          <div class="sub">of 19,443</div>
+        </div>
+        <div class="stat-box">
+          <div class="label">Source</div>
+          <div class="value">General</div>
+          <div class="sub">+Refined</div>
+        </div>
+        <div class="stat-box">
+          <div class="label">ID overlap</div>
+          <div class="value" style="color:#276b40">0</div>
+          <div class="sub">all splits</div>
+        </div>
+      </div>
+      <div class="kind-row">
+        <span class="kind-pill kind-ki">Ki</span>
+        <span class="kind-pill kind-kd">Kd</span>
+        <span class="kind-pill kind-ic50">IC50</span>
+      </div>
+    </div>
+  </div>
+
+  <p style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:#6070a0;margin:14px 0 8px">LP-PDBBind Split — with EDS filter</p>
+  <table>
+    <thead>
+      <tr>
+        <th>Category</th>
+        <th>Train</th>
+        <th>Val</th>
+        <th>Test</th>
+        <th>Total (EDS)</th>
+        <th>EDS%</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>general</td>
+        <td>7,732</td><td>1,686</td><td>3,136</td><td>12,554</td>
+        <td><span class="ks-badge ks-green">90.9%</span></td>
+      </tr>
+      <tr>
+        <td>refined</td>
+        <td>2,230</td><td>485</td><td>1,045</td><td>3,760</td>
+        <td><span class="ks-badge ks-yellow">78.4%</span></td>
+      </tr>
+      <tr>
+        <td>core</td>
+        <td>98</td><td>30</td><td>92</td><td>220</td>
+        <td><span class="ks-badge ks-yellow">79.0%</span></td>
+      </tr>
+      <tr style="font-weight:600">
+        <td>All</td>
+        <td>10,060</td><td>2,201</td><td>4,273</td><td>16,534</td>
+        <td>87.9%</td>
+      </tr>
+      <tr style="background:#e8eeff">
+        <td><strong>refined only ← our use</strong></td>
+        <td>2,328</td><td>515</td><td>1,136</td><td>3,979</td>
+        <td>—</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- ── Affinity Distributions ── -->
+  <h2>Binding Affinity (pKa) Distribution</h2>
+  <div class="split-grid">
+    <div class="card">
+      <div class="card-title">LP-PDBBind — pKa Distribution</div>
+      <div class="chart-wrap"><canvas id="chartLP"></canvas></div>
+      <div class="stat-grid" style="margin-top:12px">
+        <div class="stat-box">
+          <div class="label">Train mean±std</div>
+          <div class="value">6.21 ± 1.90</div>
+        </div>
+        <div class="stat-box">
+          <div class="label">Val mean±std</div>
+          <div class="value">6.88 ± 1.65</div>
+        </div>
+        <div class="stat-box">
+          <div class="label">Test mean±std</div>
+          <div class="value">6.58 ± 1.75</div>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title orange">Timesplit — pKa Distribution</div>
+      <div class="chart-wrap"><canvas id="chartTS"></canvas></div>
+      <div class="stat-grid" style="margin-top:12px">
+        <div class="stat-box">
+          <div class="label">Train mean±std</div>
+          <div class="value">6.33 ± 1.88</div>
+        </div>
+        <div class="stat-box">
+          <div class="label">Val mean±std</div>
+          <div class="value">6.31 ± 1.87</div>
+        </div>
+        <div class="stat-box">
+          <div class="label">Test mean±std</div>
+          <div class="value">6.49 ± 1.86</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Similarity Metrics ── -->
+  <h2>Train–Test Similarity</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Metric</th>
+        <th>LP-PDBBind</th>
+        <th>Timesplit</th>
+        <th>Interpretation</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr class="section-row"><td colspan="4">PDB ID Overlap</td></tr>
+      <tr>
+        <td>Train ∩ Test</td>
+        <td>0 / 11,513</td>
+        <td>0 / 15,138</td>
+        <td>No leakage — disjoint by design</td>
+      </tr>
+      <tr>
+        <td>Train ∩ Val</td>
+        <td>0 / 11,513</td>
+        <td>0 / 15,138</td>
+        <td>No leakage — disjoint by design</td>
+      </tr>
+      <tr>
+        <td>Val ∩ Test</td>
+        <td>0 / 2,422</td>
+        <td>0 / 820</td>
+        <td>No leakage — disjoint by design</td>
+      </tr>
+      <tr class="section-row"><td colspan="4">pKa Distribution (Train vs Test)</td></tr>
+      <tr>
+        <td>KS statistic D</td>
+        <td>0.131</td>
+        <td>0.062</td>
+        <td>Lower = more similar distributions</td>
+      </tr>
+      <tr>
+        <td>KS p-value</td>
+        <td><span class="ks-badge" style="background:#fde8e8;color:#8b0000">p &lt; 0.001</span></td>
+        <td><span class="ks-badge ks-yellow">p = 0.19</span></td>
+        <td>LP test set has significantly higher pKa than train</td>
+      </tr>
+      <tr>
+        <td>Mean Δ (train − test)</td>
+        <td>−0.37</td>
+        <td>−0.17</td>
+        <td>Both splits: test is higher-affinity than train</td>
+      </tr>
+      <tr class="section-row"><td colspan="4">Measurement Type Distribution (Test)</td></tr>
+      <tr>
+        <td>Ki fraction</td>
+        <td>28.3% (1,374/4,860)</td>
+        <td>19.1% (58/304)</td>
+        <td>—</td>
+      </tr>
+      <tr>
+        <td>Kd fraction</td>
+        <td>26.2% (1,273/4,860)</td>
+        <td>48.7% (148/304)</td>
+        <td>—</td>
+      </tr>
+      <tr>
+        <td>IC50 fraction</td>
+        <td>45.5% (2,213/4,860)</td>
+        <td>32.2% (98/304)</td>
+        <td>—</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- ── Key Differences ── -->
+  <h2>Key Differences</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Property</th>
+        <th>LP-PDBBind Split</th>
+        <th>EquiBind Timesplit</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Split criterion</td>
+        <td>Random stratified</td>
+        <td>Time-based (test = post-2019)</td>
+      </tr>
+      <tr>
+        <td>Source data</td>
+        <td>PDBBind general + refined + core</td>
+        <td>PDBBind general + refined (combined)</td>
+      </tr>
+      <tr>
+        <td>Covalent binders</td>
+        <td>Excluded</td>
+        <td>Included</td>
+      </tr>
+      <tr>
+        <td>Measurement types</td>
+        <td>Ki / Kd / IC50 (from index)</td>
+        <td>Ki / Kd / IC50 labeled</td>
+      </tr>
+      <tr>
+        <td>Paper reference</td>
+        <td>LP-PDBBind (VoxBind / EDS project)</td>
+        <td>EquiBind (arxiv:2202.05146) → TargetDiff Table 9</td>
+      </tr>
+      <tr>
+        <td>Test set size (full split)</td>
+        <td>4,860 <span style="color:#aaa;font-size:11px">(our use: 1,136)</span></td>
+        <td>304 <span style="color:#aaa;font-size:11px">(paper: 363)</span></td>
+      </tr>
+      <tr>
+        <td>Train/Test ratio</td>
+        <td>2.37× <span style="color:#aaa;font-size:11px">(our use: 2.05×)</span></td>
+        <td>49.8×</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p class="note" style="margin-top:16px">
+    <strong>Note on Timesplit coverage:</strong> The paper's original timesplit has 363 test / 968 val entries.
+    Our version has 304 / 820 because 3,181 entries in the combined index failed to parse during LMDB
+    processing (missing or broken structure files). The missing 59 test entries may bias our test metrics
+    upward — results should not be directly compared to the paper's Table 9 numbers without this caveat.
+  </p>
+
+  <!-- ── EGNN Results ── -->
+  <h2>TargetDiff EGNN — Binding Affinity Results</h2>
+  <p class="note" style="margin-bottom:12px">
+    EGNN 6-layer · 256 hidden · knn=48 · cutoff=10Å · DDP 3×GPU · 3 seeds (2021/2022/2023) · mean ± std
+  </p>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Split</th>
+        <th>Subset</th>
+        <th>n</th>
+        <th>RMSE</th>
+        <th>MAE</th>
+        <th>R&sup2;</th>
+        <th>Pearson</th>
+        <th>Spearman</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr class="section-row"><td colspan="8">LP-PDBBind (EDS-filtered, refined only) · train 2,328 / val 515 / test 1,136 · 2026-06-16</td></tr>
+      <tr style="font-weight:600;color:#1a3a7c">
+        <td>LP-PDBBind</td><td>All</td><td>1,136</td>
+        <td>1.460 &plusmn; 0.007</td><td>1.180 &plusmn; 0.009</td><td>0.293 &plusmn; 0.007</td>
+        <td>0.558 &plusmn; 0.011</td><td>0.536 &plusmn; 0.029</td>
+      </tr>
+      <tr>
+        <td></td><td>Ki</td><td>602</td>
+        <td>1.488 &plusmn; 0.022</td><td>1.211 &plusmn; 0.028</td><td>0.225 &plusmn; 0.022</td>
+        <td>0.528 &plusmn; 0.032</td><td>0.482 &plusmn; 0.043</td>
+      </tr>
+      <tr>
+        <td></td><td>Kd</td><td>534</td>
+        <td>1.429 &plusmn; 0.011</td><td>1.145 &plusmn; 0.015</td><td>0.284 &plusmn; 0.011</td>
+        <td>0.540 &plusmn; 0.015</td><td>0.519 &plusmn; 0.011</td>
+      </tr>
+
+      <tr class="section-row"><td colspan="8">EquiBind Timesplit · train 15,138 / val 820 / test 304 (paper: 363) · 2026-06-18</td></tr>
+      <tr style="font-weight:600;color:#1a3a7c">
+        <td>Timesplit</td><td>All</td><td>304</td>
+        <td>1.384 &plusmn; 0.030</td><td>1.093 &plusmn; 0.027</td><td>0.446 &plusmn; 0.024</td>
+        <td>0.695 &plusmn; 0.025</td><td>0.650 &plusmn; 0.042</td>
+      </tr>
+      <tr>
+        <td></td><td>Ki</td><td>58</td>
+        <td>1.281 &plusmn; 0.146</td><td>0.996 &plusmn; 0.104</td><td>0.617 &plusmn; 0.089</td>
+        <td>0.825 &plusmn; 0.017</td><td>0.796 &plusmn; 0.028</td>
+      </tr>
+      <tr>
+        <td></td><td>Kd</td><td>148</td>
+        <td>1.363 &plusmn; 0.099</td><td>1.079 &plusmn; 0.068</td><td>0.177 &plusmn; 0.120</td>
+        <td>0.496 &plusmn; 0.090</td><td>0.463 &plusmn; 0.086</td>
+      </tr>
+      <tr>
+        <td></td><td>IC50</td><td>98</td>
+        <td>1.466 &plusmn; 0.085</td><td>1.173 &plusmn; 0.114</td><td>0.124 &plusmn; 0.103</td>
+        <td>0.521 &plusmn; 0.065</td><td>0.527 &plusmn; 0.057</td>
+      </tr>
+      <tr class="section-row"><td colspan="8">Paper Table 9 reference (EGNN baseline, n=363)</td></tr>
+      <tr style="color:#888">
+        <td>Timesplit (paper)</td><td>All</td><td>363</td>
+        <td>1.445</td><td>1.141</td><td>—</td><td>0.648</td><td>0.598</td>
+      </tr>
+    </tbody>
+  </table>
+  <p class="note" style="margin-top:10px">
+    Timesplit our n=304 vs paper n=363 — 59 missing structures may inflate our metrics slightly.
+    LP-PDBBind measurement types (Ki/Kd) are inferred from index; IC50 absent from refined set index.
+  </p>
+
+  <div class="split-grid" style="margin-top:16px">
+    <div class="card">
+      <div class="card-title">Error Metrics — RMSE &amp; MAE <span style="font-weight:400;opacity:0.7;font-size:11px">(lower is better)</span></div>
+      <div class="chart-wrap" style="height:230px"><canvas id="chartEgnnErr"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Correlation — R² · Pearson · Spearman <span style="font-weight:400;opacity:0.7;font-size:11px">(higher is better)</span></div>
+      <div class="chart-wrap" style="height:230px"><canvas id="chartEgnnCorr"></canvas></div>
+    </div>
+  </div>
+
+  <div class="footer">Generated 2026-06-18 · VoxBind X-ray PoC project</div>
+</div>
+
+<script>
+const bins = [0,0.5,1,1.5,2,2.5,3,3.5,4,4.5,5,5.5,6,6.5,7,7.5,8,8.5,9,9.5,10,10.5,11,11.5,12,12.5,13,13.5,14,14.5,15,15.5];
+const labels = bins.map(b => b % 2 === 0 ? b.toFixed(0) : '');
+
+const lpTrain = [2,3,17,46,153,208,431,542,795,943,1152,1043,1157,1029,1044,869,783,460,365,175,111,76,54,24,15,3,7,2,1,0,3,0];
+const lpVal   = [1,0,4,8,8,11,34,55,87,126,158,168,264,246,293,309,277,171,109,45,30,9,5,3,1,0,0,0,0,0,0,0];
+const lpTest  = [0,3,8,10,47,73,132,141,236,274,329,367,513,519,621,540,458,265,185,64,42,12,12,6,1,0,1,1,0,0,0,0];
+
+const tsTrain = [4,4,35,70,189,256,515,642,933,1097,1326,1266,1539,1437,1535,1356,1156,705,530,220,131,77,59,24,15,2,8,3,1,0,3,0];
+const tsVal   = [0,1,1,0,16,16,30,33,46,69,67,65,82,72,87,66,74,39,29,11,10,2,4,0,0,0,0,0,0,0,0,0];
+const tsTest  = [0,1,1,0,0,2,7,8,20,32,38,23,29,21,27,28,22,14,8,11,8,2,2,0,0,0,0,0,0,0,0,0];
+
+// Normalize to % for visual comparison
+function norm(arr) {
+  const s = arr.reduce((a,b)=>a+b,0);
+  return arr.map(v => s > 0 ? (v/s*100) : 0);
+}
+
+const opts = (datasets) => ({
+  type: 'bar',
+  data: { labels, datasets },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { position: 'top', labels: { font: { size: 11 }, boxWidth: 12, padding: 8 } } },
+    scales: {
+      x: { grid: { display: false }, ticks: { font: { size: 10 } } },
+      y: { grid: { color: '#eef0f5' }, ticks: { font: { size: 10 }, callback: v => v.toFixed(0)+'%' },
+           title: { display: true, text: '% of split', font: { size: 10 } } }
+    }
+  }
+});
+
+new Chart(document.getElementById('chartLP'), opts([
+  { label: 'Train', data: norm(lpTrain), backgroundColor: 'rgba(59,111,201,0.7)', borderWidth: 0 },
+  { label: 'Val',   data: norm(lpVal),   backgroundColor: 'rgba(107,163,201,0.7)', borderWidth: 0 },
+  { label: 'Test',  data: norm(lpTest),  backgroundColor: 'rgba(155,193,224,0.7)', borderWidth: 0 },
+]));
+
+new Chart(document.getElementById('chartTS'), opts([
+  { label: 'Train', data: norm(tsTrain), backgroundColor: 'rgba(124,74,30,0.7)', borderWidth: 0 },
+  { label: 'Val',   data: norm(tsVal),   backgroundColor: 'rgba(180,120,70,0.7)', borderWidth: 0 },
+  { label: 'Test',  data: norm(tsTest),  backgroundColor: 'rgba(220,170,110,0.7)', borderWidth: 0 },
+]));
+
+// ── EGNN Results Bar Charts ──
+// Groups: LP All / LP Ki / LP Kd / [gap] / TS All / TS Ki / TS Kd / TS IC50 / [gap] / Paper
+const egnnLabels = ['LP All','LP Ki','LP Kd','','TS All','TS Ki','TS Kd','TS IC50','','Paper'];
+
+const egnnRmse    = [1.460, 1.488, 1.429, null, 1.384, 1.281, 1.363, 1.466, null, 1.445];
+const egnnRmseE   = [0.007, 0.022, 0.011, null, 0.030, 0.146, 0.099, 0.085, null, null];
+const egnnMae     = [1.180, 1.211, 1.145, null, 1.093, 0.996, 1.079, 1.173, null, 1.141];
+const egnnMaeE    = [0.009, 0.028, 0.015, null, 0.027, 0.104, 0.068, 0.114, null, null];
+const egnnR2      = [0.293, 0.225, 0.284, null, 0.446, 0.617, 0.177, 0.124, null, null];
+const egnnR2E     = [0.007, 0.022, 0.011, null, 0.024, 0.089, 0.120, 0.103, null, null];
+const egnnPearson = [0.558, 0.528, 0.540, null, 0.695, 0.825, 0.496, 0.521, null, 0.648];
+const egnnPeaE    = [0.011, 0.032, 0.015, null, 0.025, 0.017, 0.090, 0.065, null, null];
+const egnnSpear   = [0.536, 0.482, 0.519, null, 0.650, 0.796, 0.463, 0.527, null, 0.598];
+const egnnSpeE    = [0.029, 0.043, 0.011, null, 0.042, 0.028, 0.086, 0.057, null, null];
+
+// Custom plugin: draw ±std error bars on top of bars
+const errBarPlugin = {
+  id: 'errBar',
+  afterDatasetsDraw(chart) {
+    const { ctx } = chart;
+    chart.data.datasets.forEach((ds, di) => {
+      if (!ds._errors) return;
+      const meta = chart.getDatasetMeta(di);
+      if (meta.hidden) return;
+      meta.data.forEach((bar, i) => {
+        const e = ds._errors[i];
+        if (e == null || ds.data[i] == null) return;
+        const x = bar.x;
+        const yHi = chart.scales.y.getPixelForValue(ds.data[i] + e);
+        const yLo = chart.scales.y.getPixelForValue(ds.data[i] - e);
+        ctx.save();
+        ctx.strokeStyle = 'rgba(20,20,20,0.55)';
+        ctx.lineWidth = 1.5;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(x, yHi); ctx.lineTo(x, yLo);
+        ctx.moveTo(x - 3, yHi); ctx.lineTo(x + 3, yHi);
+        ctx.moveTo(x - 3, yLo); ctx.lineTo(x + 3, yLo);
+        ctx.stroke();
+        ctx.restore();
+      });
+    });
+  }
+};
+
+function makeEgnnChart(id, datasets, yMin, yMax, yLabel) {
+  new Chart(document.getElementById(id), {
+    type: 'bar',
+    data: { labels: egnnLabels, datasets },
+    plugins: [errBarPlugin],
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'top', labels: { font: { size: 11 }, boxWidth: 12, padding: 6 } },
+        tooltip: {
+          callbacks: {
+            label(ctx) {
+              if (ctx.parsed.y == null) return null;
+              const v = ctx.parsed.y.toFixed(3);
+              const e = ctx.dataset._errors?.[ctx.dataIndex];
+              return `${ctx.dataset.label}: ${v}${e != null ? ' ± ' + e.toFixed(3) : ''}`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          grid: { display: false },
+          ticks: { font: { size: 9 }, maxRotation: 0 }
+        },
+        y: {
+          min: yMin, max: yMax,
+          grid: { color: '#eef0f5' },
+          ticks: { font: { size: 10 } },
+          title: { display: true, text: yLabel, font: { size: 10 } }
+        }
+      }
+    }
+  });
+}
+
+makeEgnnChart('chartEgnnErr', [
+  { label: 'RMSE', data: egnnRmse, backgroundColor: 'rgba(59,111,201,0.82)', borderWidth: 0, _errors: egnnRmseE },
+  { label: 'MAE',  data: egnnMae,  backgroundColor: 'rgba(107,163,201,0.82)', borderWidth: 0, _errors: egnnMaeE },
+], 0, 1.75, 'pKa units');
+
+makeEgnnChart('chartEgnnCorr', [
+  { label: 'R²',      data: egnnR2,      backgroundColor: 'rgba(60,155,100,0.82)',  borderWidth: 0, _errors: egnnR2E },
+  { label: 'Pearson',  data: egnnPearson, backgroundColor: 'rgba(201,100,50,0.82)',  borderWidth: 0, _errors: egnnPeaE },
+  { label: 'Spearman', data: egnnSpear,   backgroundColor: 'rgba(201,160,50,0.82)',  borderWidth: 0, _errors: egnnSpeE },
+], 0, 1.0, 'correlation / R²');
+</script>
+</body>
+</html>
