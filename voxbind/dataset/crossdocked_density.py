@@ -181,6 +181,7 @@ class DatasetCrossDockedDensity(DatasetCrossDockedXray):
         subset_xray_only: bool = True,
         subset_val_n: Optional[int] = None,
         return_gradmag: bool = False,
+        gradmag_as_density: bool = False,
         data_file: str = "data_train.pt",
         small: bool = False,
         cache_size: int = 32,
@@ -197,6 +198,10 @@ class DatasetCrossDockedDensity(DatasetCrossDockedXray):
             verbose=False, subset_n=None, subset_xray_only=False, subset_val_n=subset_val_n,
             return_gradmag=return_gradmag, gradmag_crops_dir="", data_file=data_file,
         )
+
+        # gradmag-only OTF: settable via dset.gradmag_as_density (config flag) in addition to the
+        # VOXBIND_OTF_GRADMAG_AS_DENSITY env var; either feeds ‖∇ρ‖ into the density slot.
+        self.gradmag_as_density = bool(gradmag_as_density)
 
         rd = Path(resample_dir)
         recipe = json.loads((rd / "resample.json").read_text())
@@ -343,11 +348,12 @@ class DatasetCrossDockedDensity(DatasetCrossDockedXray):
         else:
             xray_available = torch.tensor(True)
 
-        # gradmag-only OTF (env VOXBIND_OTF_GRADMAG_AS_DENSITY=1): replace the single density
-        # channel with on-the-fly ‖∇ρ‖ (per-sample z-scored), so input_mode=density trains a
-        # gradmag-only encoder on the resampled-at-augmented-pose density. ‖∇·‖ is rotation-
-        # invariant, so this matches the frozen gradmag-only crop under the same aug.
-        if os.environ.get("VOXBIND_OTF_GRADMAG_AS_DENSITY", "0") == "1" and bool(xray_available):
+        # gradmag-only OTF (dset.gradmag_as_density=true OR env VOXBIND_OTF_GRADMAG_AS_DENSITY=1):
+        # replace the single density channel with on-the-fly ‖∇ρ‖ (per-sample z-scored), so
+        # input_mode=density trains a gradmag-only encoder on the resampled-at-augmented-pose
+        # density. ‖∇·‖ is rotation-invariant, so this matches the frozen gradmag-only crop.
+        if (self.gradmag_as_density
+                or os.environ.get("VOXBIND_OTF_GRADMAG_AS_DENSITY", "0") == "1") and bool(xray_available):
             g = gradient_magnitude3d(xray_density.view(1, 1, _GRID_DIM, _GRID_DIM, _GRID_DIM))
             xray_density = per_sample_zscore(g).view(_GRID_DIM, _GRID_DIM, _GRID_DIM)
 

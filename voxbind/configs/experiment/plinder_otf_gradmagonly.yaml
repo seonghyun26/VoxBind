@@ -1,0 +1,23 @@
+# @package _global_
+# Experiment preset: PLINDER OTF, GRADMAG-ONLY (1ch) — the single density channel is replaced by
+# on-the-fly ‖∇ρ‖ (per-sample z-scored) via dset.gradmag_as_density. Same backbone/pretext as
+# plinder_otf_densityonly; only the channel CONTENT differs (edge/surface map vs density values).
+# Reproduces 260619_plinder_gradmagonly_otf (was the VOXBIND_OTF_GRADMAG_AS_DENSITY=1 env run).
+defaults:
+  - override /dset: plinder_otf
+  - override /model: density_vit_mae_40m
+  - override /mae: uniform
+dset:
+  gradmag_as_density: true        # feed ‖∇ρ‖ into the single density channel (OTF)
+mae:
+  mask_strategy: uniform
+  density_channel_weight: 1.0
+exp_name: 260619_plinder_gradmagonly_otf_vit_mae_40m_pretrain
+wandb_tags:
+  - pretrain
+  - gradmagonly
+  - 40m
+  - plinder
+  - otf
+  - density_ablation
+  - uniform

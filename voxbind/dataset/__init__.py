@@ -37,6 +37,9 @@ def _make_dataset(cfg, split: str, aug: bool):
                 subset_xray_only=cfg.dset.get("subset_xray_only", False),
                 subset_val_n=cfg.dset.get("subset_val_n", None),
                 return_gradmag=bool(cfg.get("with_gradmag", False)),
+                # gradmag-only OTF: feed ‖∇ρ‖ into the single density channel (config flag;
+                # also honored via the VOXBIND_OTF_GRADMAG_AS_DENSITY env var).
+                gradmag_as_density=cfg.dset.get("gradmag_as_density", False),
                 data_file=cfg.dset.get("data_file", "data_train.pt"),
                 small=cfg.debug,
                 cache_size=cfg.dset.get("cache_size", 32),

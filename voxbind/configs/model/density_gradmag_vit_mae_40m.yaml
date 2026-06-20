@@ -1,0 +1,21 @@
+model_name: density_vit_mae_40m   # logging-only; same backbone as the 1-channel density encoder
+# 2-channel density+gradmag ViT-MAE (NO atom input) — the D+G-only OTF ablation.
+# Same ~42.6M backbone (D=512, L=12, H=8, p=8) as density_vit_mae_40m, but the patch embed
+# accepts 2 input channels (resampled density + on-the-fly ‖∇ρ‖) and ‖∇ρ‖ is reconstructed
+# (mae.gradmag_reconstruct). The 11-ch atom-structure aux head (n_struct_channels=11) predicts
+# the atoms from the density+gradmag input — the cross-modal "where are the atoms" pretext,
+# exactly as the 1-channel density encoder.
+#
+# Input composition lives WITH the model (P1b/#2): n_in_channels MUST equal
+# atoms(input_mode=density → 0) + has_density(1) + with_gradmag(1) = 2 (asserted at build).
+input_mode: density
+with_gradmag: true
+n_in_channels: 2
+n_channels: 32          # backbone width; encoder spatial out has C/2 = 16 channels
+patch_size: 8           # at G=64 → 8³=512 tokens
+dim: 512                # transformer hidden width (matches density 40M)
+depth: 12               # transformer blocks (matches density 40M)
+heads: 8                # attention heads (matches density 40M)
+mlp_ratio: 4
+dropout: 0.1
+n_struct_channels: 11   # 7 ligand + 4 pocket — aux atom-structure prediction head

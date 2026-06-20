@@ -17,6 +17,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 VOX = Path(__file__).resolve().parents[2] / "voxbind"   # notebook/html/ -> VoxBind/ -> voxbind
 PDB = VOX / "dataset" / "data" / "pdbbind"
 LOG = VOX / "log"
+HTML_DIR = Path(__file__).resolve().parent              # notebook/html/ (serves experiment_queue.html)
 
 
 def esc(x): return html.escape(str(x))
@@ -584,18 +585,38 @@ supervised baseline. <span class="mut">(Numbers live on the per-encoder table at
 
 
 class H(BaseHTTPRequestHandler):
+    def _send(self, body, ctype):
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Access-Control-Allow-Origin", "*")   # let the queue page fetch CSVs cross-origin too
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_GET(self):
-        if self.path not in ("/", "/index.html", "/experiment_status.html"):
+        path = self.path.split("?")[0]
+
+        # ── same-origin CSV access for the experiment_queue.html live loader ──
+        if path.startswith("/csv/"):
+            name = os.path.basename(path[len("/csv/"):])
+            if not re.fullmatch(r"[A-Za-z0-9_.\-]+\.csv", name) or not (PDB / name).exists():
+                self.send_error(404); return
+            self._send((PDB / name).read_bytes(), "text/csv; charset=utf-8"); return
+
+        # ── the hand-maintained Running/Queued/Done queue page (Done values fetched live from CSVs) ──
+        if path in ("/queue", "/experiment_queue.html"):
+            f = HTML_DIR / "experiment_queue.html"
+            if not f.exists():
+                self.send_error(404); return
+            self._send(f.read_bytes(), "text/html; charset=utf-8"); return
+
+        if path not in ("/", "/index.html", "/experiment_status.html"):
             self.send_error(404); return
         try:
             body = render().encode("utf-8")
         except Exception as e:
             body = f"<pre>render error: {html.escape(repr(e))}</pre>".encode()
-        self.send_response(200)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
+        self._send(body, "text/html; charset=utf-8")
 
     def log_message(self, *a):
         pass
@@ -606,5 +627,6 @@ if __name__ == "__main__":
     ap.add_argument("--port", type=int, default=8732)
     ap.add_argument("--host", default="0.0.0.0")
     a = ap.parse_args()
+    # IPv4 0.0.0.0 — same binding as the working :8731 dashboard, so VS Code port-forwarding reaches it.
     print(f"serving experiment status on http://{a.host}:{a.port}/  (Ctrl-C to stop)")
     ThreadingHTTPServer((a.host, a.port), H).serve_forever()

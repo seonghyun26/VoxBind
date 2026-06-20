@@ -36,7 +36,7 @@ CUDA_VISIBLE_DEVICES=$GPUS $PY/torchrun --standalone --nproc_per_node=4 \
   dset.data_dir="$DATA" dset.crops_dir="" dset.resample_dir="$DATA/xray_resample_plinder" \
   dset.data_file=data_train_plinder.pt dset.normalize=false \
   dset.subset_xray_only=true dset.subset_n=17430 dset.subset_val_n=100 \
-  ++input_mode=density ++with_gradmag=true ++model.n_in_channels=2 ++mae.gradmag_reconstruct=true \
+  ++model.input_mode=density ++model.with_gradmag=true ++model.n_in_channels=2 ++mae.gradmag_reconstruct=true \
   num_workers=8 bsz=32 accum_steps=1 num_epochs=100 \
   "wandb_tags=[pretrain,dg_only,40m,plinder,otf,density_ablation,uniform]" \
   exp_name=$EXP output_dir="$VOX/exps/$EXP" >> "$LOG" 2>&1

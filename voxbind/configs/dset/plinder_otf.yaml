@@ -11,6 +11,10 @@ resample_dir: ${oc.env:VOXBIND_DATA_ROOT,dataset/data}/xray_resample_plinder
 ligand_radius: -1
 pocket_radius: -1
 use_xray: true
+# gradmag-only OTF: when true, ‖∇ρ‖ (per-sample z-scored) is fed into the single density channel
+# instead of the density values. Default false; the plinder_otf_gradmagonly experiment sets it true.
+# (Also honored via the VOXBIND_OTF_GRADMAG_AS_DENSITY env var for back-compat.)
+gradmag_as_density: false
 cache_size: 32
 normalize: false               # density pre-normalized in the resample recipe
 subset_n: 17430                # PLINDER corpus size

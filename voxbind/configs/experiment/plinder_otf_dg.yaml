@@ -1,0 +1,23 @@
+# @package _global_
+# Experiment preset: PLINDER OTF, DENSITY+GRADMAG-ONLY (2ch, NO coords) — the D+G ablation.
+# Uses the 2-channel density_gradmag model; both density and ‖∇ρ‖ are reconstructed. Same OTF
+# data as plinder_otf_p100. Reproduces 260619_plinder_dg_otf (config_train_density_vit_mae_40m_xray
+# + ++with_gradmag=true ++model.n_in_channels=2 ++mae.gradmag_reconstruct=true).
+defaults:
+  - override /dset: plinder_otf
+  - override /model: density_gradmag_vit_mae_40m
+  - override /mae: uniform
+mae:
+  mask_strategy: uniform          # density runs used the code default (uniform), not _base's atom_biased
+  density_channel_weight: 1.0     # full-weight density recon (code default; _base sets 0.1)
+  gradmag_channel_weight: 1.0     # full-weight gradmag recon (code default; _base sets 0.1)
+  gradmag_reconstruct: true
+exp_name: 260619_plinder_dg_otf_vit_mae_40m_pretrain
+wandb_tags:
+  - pretrain
+  - dg_only
+  - 40m
+  - plinder
+  - otf
+  - density_ablation
+  - uniform

@@ -16,6 +16,12 @@ model_name: density_vit_mae_40m
 #
 # Encoder shape must match VoxBind.density_encoder downstream (same n_channels)
 # so the encoder slice loads drop-in via density_pretrained_path.
+#
+# Input composition lives WITH the model (P1b/#2): n_in_channels MUST equal
+# atoms(input_mode=density → 0) + has_density(1) + with_gradmag(0) = 1 (asserted at build).
+input_mode: density
+with_gradmag: false
+n_in_channels: 1
 n_channels: 32          # backbone width; encoder spatial out has C/2 = 16 channels
 patch_size: 8           # at G=64 → 8³=512 tokens (unchanged from 4.5M variant)
 dim: 512                # transformer hidden width (×2.67 vs 192)

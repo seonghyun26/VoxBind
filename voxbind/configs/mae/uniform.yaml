@@ -1,0 +1,7 @@
+# Objective: fully-uniform channel weighting — channel_weighting=uniform weights every atom-type
+# reconstruction channel equally (no inverse-frequency reweighting). The matched-loss control for
+# invfreq; on PLINDER invfreq > uniform, on CrossDocked v7 they tie. Same _base pretext otherwise.
+defaults:
+  - _base
+  - _self_
+channel_weighting: uniform

@@ -1,0 +1,24 @@
+# @package _global_
+# Experiment preset: PLINDER on-the-fly resample, DENSITY-ONLY (1ch) ViT-MAE — the single-channel
+# density ablation (no atoms, no gradmag). Same OTF data as plinder_otf_p100; only the model differs.
+# Reproduces 260619_plinder_densityonly_otf (run via config_train_density_vit_mae_40m_xray + resample).
+# mae=uniform is moot for a single density channel (channel_weighting only weights atom-type recon
+# channels, none here); the mae overrides below restore the density pretext that the old monolith got
+# from CODE DEFAULTS (uniform masking, full-weight density recon) but that mae/_base overrides for the
+# atomblob path (atom_biased masking, density_channel_weight 0.1).
+defaults:
+  - override /dset: plinder_otf
+  - override /model: density_vit_mae_40m
+  - override /mae: uniform
+mae:
+  mask_strategy: uniform          # density runs used the code default (uniform), not _base's atom_biased
+  density_channel_weight: 1.0     # full-weight density reconstruction (code default; _base sets 0.1)
+exp_name: 260619_plinder_densityonly_otf_vit_mae_40m_pretrain
+wandb_tags:
+  - pretrain
+  - densityonly
+  - 40m
+  - plinder
+  - otf
+  - density_ablation
+  - uniform

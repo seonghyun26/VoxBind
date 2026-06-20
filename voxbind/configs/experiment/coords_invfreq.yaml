@@ -10,6 +10,12 @@ dset:
   normalize: true
 mae:
   density_source: synthetic    # no real x-ray density channel for coords-only
+# Pin the ORIGINAL run's precision: fp32-eager. The base standardizes amp(bf16)+compile ON (260611,
+# result-neutral) but this preset predates them — keep them OFF to reproduce its exact numerics.
+amp:
+  enabled: false
+compile:
+  enabled: false
 exp_name: 260606_atomblob_vit_mae_40m_invfreq_pretrain
 wandb_tags:
   - pretrain

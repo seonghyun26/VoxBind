@@ -297,8 +297,18 @@ def infer_feature_spec(condition: str, cfg, atom_source_arg: str = "auto") -> Fe
     channel layout and ligand radius. This prevents v5 ligvdW encoders from being
     fed uniform-0.5 ligand blobs just because the label lacks "gradmag".
     """
-    input_mode = str(cfg.get("input_mode", "") or _fallback_input_mode(condition))
-    with_gradmag = bool(cfg.get("with_gradmag", condition.endswith("gradmag")))
+    input_mode = (
+        cfg.get("input_mode", None)
+        or OmegaConf.select(cfg, "model.input_mode", default=None)
+        or _fallback_input_mode(condition)
+    )
+    input_mode = str(input_mode)
+    with_gradmag_cfg = cfg.get("with_gradmag", None)
+    if with_gradmag_cfg is None:
+        with_gradmag_cfg = OmegaConf.select(cfg, "model.with_gradmag", default=None)
+    with_gradmag = bool(
+        condition.endswith("gradmag") if with_gradmag_cfg is None else with_gradmag_cfg
+    )
     ligand_radius = float(OmegaConf.select(cfg, "dset.ligand_radius", default=0.5))
     expected = _expected_channels(input_mode, with_gradmag)
     needs_density = input_mode in ("density", "atomblob_density", "atomblob_merged_density") \

@@ -1126,6 +1126,9 @@ def main(cfg: DictConfig) -> None:
     device = torch.device(f"cuda:{local_rank}")
 
     start_epoch = 0
+    # P1b/#2: normalize before create_exp_dir() writes cfg.yaml so downstream
+    # tools that still consume the legacy top-level keys read the right layout.
+    _reconcile_input_keys(cfg)
     create_exp_dir(cfg, write=is_main)
     if world_size > 1:
         dist.barrier()
@@ -1150,8 +1153,7 @@ def main(cfg: DictConfig) -> None:
         cfg.resume_epoch = resume_epoch_override
         cfg.num_epochs = num_epochs_override
 
-    # P1b/#2: input_mode/with_gradmag canonically live under cfg.model; mirror the legacy top-level
-    # location both ways. Runs AFTER the resume reload above so pre-P1b resumes are normalized too.
+    # P1b/#2: run again after resume reload so pre-P1b resumes are normalized too.
     _reconcile_input_keys(cfg)
 
     if is_main:
