@@ -42,7 +42,7 @@ from pathlib import Path
 import pandas as pd
 
 # ── Config ───────────────────────────────────────────────────────────────────
-DEFAULT_PDBBIND_DIR = Path(__file__).parent / "data" / "pdbbind"
+DEFAULT_PDBBIND_DIR = Path(__file__).parent / "data" / "pdbbind" / "results"  # per-run probe CSVs live here
 CONSOLIDATED_NAME = "probe_results_consolidated.csv"
 
 # Provenance lifted from the filename + the per-run metrics emitted by the probe.

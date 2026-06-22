@@ -93,7 +93,7 @@ RUNS = [
 
 
 def load_metrics(csv_name, cond):
-    p = PDB / csv_name
+    p = PDB / "results" / csv_name
     if not p.exists():
         return None
     try:
@@ -280,7 +280,7 @@ def load_table(csv_name):
 
     Returns [{condition, n_train, metrics:{col:(mean,std,n)}, details}], best test ρ first.
     """
-    p = PDB / csv_name
+    p = PDB / "results" / csv_name
     if not p.exists():
         return []
     try:
@@ -602,8 +602,8 @@ def render(view):
         return _shell(view, h1, sub, intro, _curated_body(), CURATED_FOOTER)
     h1 = f"PDBbind affinity probe &mdash; <code>{esc(view)}</code>"
     sub = f"VoxBind · frozen-encoder probe → pK · values read live from CSV · loaded {now} · auto-refresh 60s"
-    src = (f"dataset/data/pdbbind/probe_results_{view}.csv" if view in SUMMARY_CSV
-           else "dataset/data/pdbbind/probe_results_e99_v5_*.csv")
+    src = (f"dataset/data/pdbbind/results/probe_results_{view}.csv" if view in SUMMARY_CSV
+           else "dataset/data/pdbbind/results/probe_results_e99_v5_*.csv")
     intro = (f"<b>{esc(view)} density.</b> {esc(VER_BLURB.get(view, ''))} "
              f"3-seed mean ± std, read live from <code>{esc(src)}</code>.")
     return _shell(view, h1, sub, intro, _generic_body(view), GENERIC_FOOTER)

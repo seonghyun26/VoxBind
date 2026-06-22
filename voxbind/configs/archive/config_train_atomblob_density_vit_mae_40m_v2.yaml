@@ -8,7 +8,7 @@ defaults:
 # Vanilla 12-ch atomblob_density (7 lig + 4 poc + 1 density) ViT-MAE on v2
 # density crops. NO weighted recipe — matches the original 260526 baseline's
 # pretext (uniform block mask, equal channel weights). Only delta vs 260526:
-#   dset.crops_dir → xray_crops_aligned_v2 (pocket-pool z-score; no per-crop clip)
+#   dset.crops_dir → pretrain/xray_crops_aligned_v2 (pocket-pool z-score; no per-crop clip)
 #   dset.normalize → false (crops are already pool-z'd)
 #
 # Tests whether the v2 density distribution alone (without the weighted-MAE
@@ -36,7 +36,7 @@ wd: 5e-2
 input_mode: atomblob_density
 
 dset:
-  crops_dir: /home/shpark/prj-denovo/VoxBind/voxbind/dataset/data/xray_crops_aligned_v2
+  crops_dir: /home/shpark/prj-denovo/VoxBind/voxbind/dataset/data/pretrain/xray_crops_aligned_v2
   normalize: false
   subset_xray_only: true
   subset_n: 78428

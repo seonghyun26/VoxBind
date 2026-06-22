@@ -18,7 +18,7 @@
 #   --out NAME        result sub-dir → save_dir=exps/EXP/samples/NAME, out_dir=NAME
 #                     (default res_<split>)
 #   --gpu G           single GPU id                     (default 7)
-#   --data VER        v1 xray_crops_aligned [default] | vN xray_crops_aligned_vN
+#   --data VER        v1 pretrain/xray_crops_aligned [default] | vN pretrain/xray_crops_aligned_vN
 #                     (N≥2 → normalize=false; match the model's training version)
 #   --subset N        dset.subset_n                     (default 10000)
 #   --no-density      dset.use_xray=false  (for no-density / reproduction models)
@@ -82,13 +82,13 @@ done
 [[ -n "$EXP" ]] || die "--exp EXP is required"
 [[ -z "$OUT" ]] && OUT="res_${SPLIT}"
 
-# Data version: v1 = xray_crops_aligned (normalize default true); vN (N≥2) =
-# pre-normalised xray_crops_aligned_vN → normalize=false. Sample with the SAME
+# Data version: v1 = pretrain/xray_crops_aligned (normalize default true); vN (N≥2) =
+# pre-normalised pretrain/xray_crops_aligned_vN → normalize=false. Sample with the SAME
 # version the model was trained on. Generic so v4, v5, … need no edit.
 if [[ "$DATA_VER" == v1 ]]; then
-    CROPS=$DATA/xray_crops_aligned;          NORMALIZE=""
+    CROPS=$DATA/pretrain/xray_crops_aligned;          NORMALIZE=""
 elif [[ "$DATA_VER" =~ ^v[0-9]+$ ]]; then
-    CROPS=$DATA/xray_crops_aligned_$DATA_VER; NORMALIZE=false
+    CROPS=$DATA/pretrain/xray_crops_aligned_$DATA_VER; NORMALIZE=false
 else
     die "unknown --data '$DATA_VER' (expected v1, v2, v3, …)"
 fi

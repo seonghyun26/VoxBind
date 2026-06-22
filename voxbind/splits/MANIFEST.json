@@ -1,0 +1,57 @@
+{
+  "note": "Frozen, version-controlled splits. Source of truth is the CSV; MANIFEST.json pins counts+sha256. Regenerate via make_splits.py.",
+  "schemes": {
+    "lp_edrscc_v1": {
+      "file": "lp_edrscc_v1.csv",
+      "counts": {
+        "train": 5817,
+        "val": 1498,
+        "test": 2813,
+        "total": 10128
+      },
+      "sha256": "1239cb0f5dab7758ba3d48cfe4be7a11401bc79a7c27657ee3a7d167936e0cee",
+      "description": "LP-PDBBind new_split \u2229 ED-available \u2229 (lig & poc RSCC \u2265 0.8), non-covalent",
+      "partition": "LP_PDBBind 'new_split' column (sequence-identity clustered)",
+      "generalization": "novel-target (sequence-dedup train/test)",
+      "inputs": {
+        "ed_rscc_split": "ed_rscc_split.csv",
+        "lp_pdbbind": "LP_PDBBind.csv",
+        "rscc_threshold": 0.8
+      }
+    },
+    "time_v1": {
+      "file": "time_v1.csv",
+      "counts": {
+        "train": 8308,
+        "val": 934,
+        "test": 1182,
+        "total": 10424
+      },
+      "sha256": "d793a64498994ddebd52e7f892ce3ef4384cc82da03265f83c208b460c4a427c",
+      "description": "temporal holdout: train \u22642016, val 2017, test \u22652018; quality bar = non-cov \u2227 lig&poc RSCC \u2265 0.8",
+      "partition": "deposition year (train<2017 / val==2017 / test>=2018)",
+      "generalization": "temporal (NOT sequence-dedup \u2014 recent test target may match a train one)",
+      "inputs": {
+        "ed_rscc_split": "ed_rscc_split.csv",
+        "lp_pdbbind": "LP_PDBBind.csv",
+        "rscc_threshold": 0.8
+      }
+    },
+    "misato_md_v1": {
+      "file": "misato_md_v1.csv",
+      "counts": {
+        "train": 13765,
+        "val": 1595,
+        "test": 1612,
+        "total": 16972
+      },
+      "sha256": "ee3ac003bb54590ebc821e0b23d25e1608801623f8ca2fd28e6f1cb097fbf5b4",
+      "description": "mirror of MISATO official 8:1:1 MD split (train/val/test_MD.txt), lowercased",
+      "partition": "MISATO official MD split",
+      "generalization": "MISATO MD/QM targets",
+      "inputs": {
+        "misato_splits": "data/misato/misato_splits/{train,val,test}_MD.txt"
+      }
+    }
+  }
+}

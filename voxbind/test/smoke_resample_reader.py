@@ -1,6 +1,6 @@
 """smoke_resample_reader.py — does the resample-manifest actually drive a train-time reader?
 
-Consumes ONLY the artifacts produced by `00b --mode resample` (dataset/data/xray_resample_v5/):
+Consumes ONLY the artifacts produced by `00b --mode resample` (dataset/data/pretrain/xray_resample_v5/):
   {split}_manifest.npz  (pdb_id, centroid, Kabsch R/t, ok)  +  resample.json (norm recipe)  +  the CCP4 maps.
 Builds a minimal train-time Dataset that, per sample, samples the RAW map at the AUGMENTED pose
     cart = (centroid + R_aug.T·(o − t_aug)) @ R_kabschᵀ + t_kabsch
@@ -39,7 +39,7 @@ _spec = importlib.util.spec_from_file_location("p00b", os.path.join(REPO, "voxbi
 m00b = importlib.util.module_from_spec(_spec); _spec.loader.exec_module(m00b)
 
 D = os.path.join(REPO, "voxbind/dataset/data")
-RDIR = os.path.join(D, "xray_resample_v5")
+RDIR = os.path.join(D, "pretrain/xray_resample_v5")
 G, RES, DELTA, SPLIT = 64, 0.25, 1.0, "test"
 _OFFS = (np.arange(G) - G * 0.5) * RES
 
@@ -126,7 +126,7 @@ def main():
     checked = 0
     for k in range(len(ds)):
         i = ds.idxs[k]
-        cf = os.path.join(D, f"xray_crops_aligned_v5/{SPLIT}/{i:06d}.npy")
+        cf = os.path.join(D, f"pretrain/xray_crops_aligned_v5/{SPLIT}/{i:06d}.npy")
         if not os.path.exists(cf):
             continue
         # aug-OFF vs precomputed v5 crop

@@ -5,13 +5,13 @@ same frame-corrected (Kabsch-aligned) 64³ × 0.25 Å crop at the ligand centroi
 they differ only in the normalisation applied to the voxel values — that is the
 `--version` if-branch:
 
-    v1  xray_crops_aligned      per-MAP z-score, ±3σ clip applied at LOAD time
+    v1  pretrain/xray_crops_aligned      per-MAP z-score, ±3σ clip applied at LOAD time
                                 (dset.normalize=true). The aligned crop itself.
-    v2  xray_crops_aligned_v2   pocket-pool z-score        x' = (x − μ)   / σ
-    v3  xray_crops_aligned_v3   pocket-pool symmetric      x' =  x        / max_abs   → [−1, +1]
-    v4  xray_crops_aligned_v4   pocket-pool clip+z-score   x' = (clip(x) − μ_c) / σ_c
-    v5  xray_crops_aligned_v5   pocket-pool arcsinh+z      x' = (arcsinh(x/s) − μ_a) / σ_a
-    v6  xray_crops_aligned_v6   v5 arcsinh+z, but availability restricted to LIGAND-MATCHED
+    v2  pretrain/xray_crops_aligned_v2   pocket-pool z-score        x' = (x − μ)   / σ
+    v3  pretrain/xray_crops_aligned_v3   pocket-pool symmetric      x' =  x        / max_abs   → [−1, +1]
+    v4  pretrain/xray_crops_aligned_v4   pocket-pool clip+z-score   x' = (clip(x) − μ_c) / σ_c
+    v5  pretrain/xray_crops_aligned_v5   pocket-pool arcsinh+z      x' = (arcsinh(x/s) − μ_a) / σ_a
+    v6  pretrain/xray_crops_aligned_v6   v5 arcsinh+z, but availability restricted to LIGAND-MATCHED
                                 poses (--native_filter). The receptor's 2Fo-Fc map only
                                 matches the modeled ligand when that ligand is the receptor's
                                 own crystal ligand; v6 keeps only those (default tt_min: native
@@ -26,7 +26,7 @@ This file consolidates the former 00d (align + v1), 00e (v2/v3) and 00f (v4).
 Pipeline (per split)
 --------------------
   1. ALIGN   per-PDB residue-matched Kabsch CrossDocked-frame → crystal-frame.
-             Cached as xray_crops_aligned/{split}_transforms.npz; reused on
+             Cached as pretrain/xray_crops_aligned/{split}_transforms.npz; reused on
              subsequent runs unless --force_realign. Reads {pdb}.ccp4 + {pdb}.pdb
              produced by dataset/00a_density_download.py (no downloading here).
   2. CROP    per-PDB, using the transforms: v1 → z-scored crop written directly;
@@ -54,7 +54,7 @@ Outputs (per requested version dir)
     {split}/{idx:06d}.npy        float16 (64,64,64)
     {split}_available.npy        bool (N,)  True where a trustworthy crop exists
     stats.json                   normalisation constants (v2/v3/v4)
-  and, in xray_crops_aligned/ (always — the alignment artifacts):
+  and, in pretrain/xray_crops_aligned/ (always — the alignment artifacts):
     {split}_transforms.npz       R,t,rmsd,rot_deg,density,n_match,ok per sample
     {split}_stats.csv            human-readable per-sample alignment log
 """
@@ -93,12 +93,12 @@ RESOLUTION = 0.25
 # version → output directory name (relative to --out_root). v1 is the aligned
 # dir that also holds the shared transforms/stats artifacts.
 DIR_NAME = {
-    "v1": "xray_crops_aligned",
-    "v2": "xray_crops_aligned_v2",
-    "v3": "xray_crops_aligned_v3",
-    "v4": "xray_crops_aligned_v4",
-    "v5": "xray_crops_aligned_v5",
-    "v6": "xray_crops_aligned_v6",
+    "v1": "pretrain/xray_crops_aligned",
+    "v2": "pretrain/xray_crops_aligned_v2",
+    "v3": "pretrain/xray_crops_aligned_v3",
+    "v4": "pretrain/xray_crops_aligned_v4",
+    "v5": "pretrain/xray_crops_aligned_v5",
+    "v6": "pretrain/xray_crops_aligned_v6",
 }
 
 # Versions stored pre-normalised from a pooled raw-crop pass (load with
@@ -613,7 +613,7 @@ def parse_args():
     p.add_argument("--pdb_dir", default=str(VOXDATA / "pdb"))
     p.add_argument("--pocket_dir", default=str(VOXDATA / "crossdocked_pocket10"))
     p.add_argument("--out_root", default=str(VOXDATA),
-                   help="Parent dir where xray_crops_aligned[/ _vN] are written")
+                   help="Parent dir where pretrain/xray_crops_aligned[/ _vN] are written")
     p.add_argument("--splits", nargs="+", default=["train", "test"],
                    choices=["train", "val", "test"])
     p.add_argument("--max_len", type=int, default=30,
@@ -657,7 +657,7 @@ def parse_args():
     p.add_argument("--resample_norm_version", default="v5", choices=["v2", "v3", "v4", "v5", "v6"],
                    help="resample mode: which precomputed version's stats.json supplies the "
                         "normalization recipe baked into the manifest (default v5 = canonical scale).")
-    p.add_argument("--resample_out", default="xray_resample_v5",
+    p.add_argument("--resample_out", default="pretrain/xray_resample_v5",
                    help="resample mode: output dir name (under --out_root) for manifests + recipe.")
     return p.parse_args()
 
@@ -837,7 +837,7 @@ def main():
     # gradmag source. ‖∇·‖ is rotation-invariant → still aligned under aug.
     gmag_dirs = {}
     if args.save_gradmag and raw_versions:
-        from voxbind.models.density_mae import gradient_magnitude3d, per_sample_zscore
+        from voxbind.models.mae_ops import gradient_magnitude3d, per_sample_zscore
         import torch
         gmag_dirs = {v: out_root / (DIR_NAME[v] + "_gradmag") for v in raw_versions}
         for v in raw_versions:

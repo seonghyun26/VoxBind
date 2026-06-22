@@ -1,5 +1,5 @@
 defaults:
-  - dset: crossdocked_xray     # real 2Fo-Fc crops in xray_crops_aligned/
+  - dset: crossdocked_xray     # real 2Fo-Fc crops in pretrain/xray_crops_aligned/
   - model: atomblob_density_vit_mae_40m
   - vox: default
   - override hydra/job_logging: custom

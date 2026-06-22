@@ -34,7 +34,7 @@ accum_steps: 2
 lr: 1e-4
 wd: 5e-2
 
-# ── Input-mode selector (read by train_density_vit_mae.py) ──────────────────
+# ── Input-mode selector (read by train_density.py) ──────────────────
 input_mode: atomblob
 
 # ── Dataset overrides ────────────────────────────────────────────────────────

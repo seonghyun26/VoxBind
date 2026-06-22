@@ -51,7 +51,7 @@ input_mode: atomblob_density
 with_gradmag: false                # density only → 12 channels
 
 dset:
-  crops_dir: /home1/irteam/VoxBind/voxbind/dataset/data/xray_crops_aligned_v5
+  crops_dir: /home1/irteam/VoxBind/voxbind/dataset/data/pretrain/xray_crops_aligned_v5
   normalize: false
   ligand_radius: -1
   subset_xray_only: true

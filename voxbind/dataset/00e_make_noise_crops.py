@@ -27,8 +27,8 @@ Usage (v5 — original behaviour, all defaults):
 
 Usage (PLINDER density pool, gradmag derived from the noise):
   python dataset/00e_make_noise_crops.py all \
-      --crops_dir dataset/data/xray_crops_aligned_plinder \
-      --out_dir   dataset/data/xray_crops_aligned_plinder_noise \
+      --crops_dir dataset/data/pretrain/xray_crops_aligned_plinder \
+      --out_dir   dataset/data/pretrain/xray_crops_aligned_plinder_noise \
       --probe_out_dir dataset/data/pdbbind/voxels_v5_plinder_noise \
       --gradmag_mode from_noise
 """
@@ -46,7 +46,7 @@ import numpy as np
 import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))   # repo root → `import voxbind`
-from voxbind.models.density_mae import gradient_magnitude3d, per_sample_zscore
+from voxbind.models.mae_ops import gradient_magnitude3d, per_sample_zscore
 
 HERE = Path(__file__).resolve().parent
 DATA = HERE / "data"
@@ -208,9 +208,9 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0],
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("stage", nargs="?", default="all", choices=["pools", "train", "probe", "all"])
-    ap.add_argument("--crops_dir", default=str(DATA / "xray_crops_aligned_v5"),
+    ap.add_argument("--crops_dir", default=str(DATA / "pretrain/xray_crops_aligned_v5"),
                     help="real density crops to pool from + mirror (train/{idx}.npy layout)")
-    ap.add_argument("--out_dir", default=str(DATA / "xray_crops_aligned_v5_noise"),
+    ap.add_argument("--out_dir", default=str(DATA / "pretrain/xray_crops_aligned_v5_noise"),
                     help="output noise dir (density/ + gradmag/ subdirs)")
     ap.add_argument("--probe_vox_dir", default=str(DATA / "pdbbind" / "voxels_v5"),
                     help="PDBbind probe voxels to mirror shapes from (has density/ + stats.json)")

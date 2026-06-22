@@ -477,7 +477,7 @@ class DensityViTMAE(nn.Module):
 
     Forward returns `(out_pretext, out_structure_or_None)`. `out_pretext` is the
     masked-voxel reconstruction in mae mode and per-patch RTD logits in electra
-    mode — interpretation lives in `train_density_vit_mae.py::compute_losses`.
+    mode — interpretation lives in `train_density.py::compute_losses`.
     """
 
     def __init__(

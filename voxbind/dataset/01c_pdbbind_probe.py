@@ -110,7 +110,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # dataset/ — for sibling import
 
 from voxbind.models.density_vit import DensityViT
-from voxbind.models.density_mae import gradient_magnitude3d, per_sample_zscore
+from voxbind.models.mae_ops import gradient_magnitude3d, per_sample_zscore
 # Each probe run self-consolidates into one table (see consolidate_probe_results).
 # Guarded so a missing/broken aggregator never blocks the probe itself.
 try:
@@ -124,7 +124,8 @@ except Exception:  # pragma: no cover
 PDBBIND_DIR = Path(__file__).parent / "data" / "pdbbind"
 FEAT_DIR    = PDBBIND_DIR / "features"
 LP_CSV      = PDBBIND_DIR / "raw" / "LP_PDBBind.csv"
-RESULTS_DIR = PDBBIND_DIR
+RESULTS_DIR = PDBBIND_DIR / "results"          # per-run probe/finetune CSVs (own subfolder)
+RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 # Per-complex protein-ligand H-bond counts (HBGSA cache, npz field `n`); used as an
 # alternative regression target via `probe --target hbonds`.
 HBOND_CACHE_DIR = Path(__file__).resolve().parents[2] / "hbgsa_baseline" / "cache" / "hbonds"
@@ -767,7 +768,7 @@ def load_voxels_for(
             g = torch.from_numpy(np.load(gradmag_dir / f"{pid}.npy").astype(np.float32)).unsqueeze(0)
         else:
             # ‖∇ρ‖ is derived from the already-normalised density crop exactly as
-            # train_density_vit_mae.py does for xray source, then appended last.
+            # train_density.py does for xray source, then appended last.
             g = per_sample_zscore(gradient_magnitude3d(dens_t.unsqueeze(0))).squeeze(0)
         x = torch.cat([x, g], dim=0)
 
@@ -1141,6 +1142,25 @@ def target_source(target: str):
     return "LP_PDBBind"
 
 
+# ── Frozen, version-controlled splits (voxbind/splits) ───────────────────────────
+# Map a --split flag to a committed manifest scheme. load_split() hash-verifies the
+# pinned membership, so every server uses the IDENTICAL train/val/test set regardless
+# of which crops/RSCC happen to have materialized locally.
+FROZEN_SPLIT_SCHEMES = {
+    "lp_edrscc": "lp_edrscc_v1",   # canonical affinity split (sequence-dedup, ED + lig&poc RSCC≥0.8)
+    "time":      "time_v1",        # temporal holdout (train ≤2016 / val 2017 / test ≥2018)
+    "misato":    "misato_md_v1",   # MISATO official 8:1:1 MD split (committed mirror)
+}
+
+
+def load_frozen_split_map(split_flag: str) -> tuple[dict[str, str], str]:
+    """(pid -> 'train'/'val'/'test', scheme_name) from the frozen manifest for `split_flag`."""
+    from voxbind.splits import load_split
+    scheme = FROZEN_SPLIT_SCHEMES[split_flag]
+    sp = load_split(scheme)                       # hash/count-verified; raises loudly on drift
+    return {p: s for s in ("train", "val", "test") for p in sp[s]}, scheme
+
+
 def build_dataset(
     features: dict[str, torch.Tensor],
     lp_df: pd.DataFrame,
@@ -1157,16 +1177,26 @@ def build_dataset(
     filters — complexes absent from the map are dropped (they have no label).
     """
     if split_map is not None:
-        if target_map is None:
-            raise ValueError("split_map (--split misato) requires a non-pK --target")
+        # A frozen manifest (or MISATO) decides membership; y comes from target_map if
+        # given, else LP pK (default affinity target — works for any frozen scheme).
+        ymap = (target_map if target_map is not None
+                else {p: v for p, v in zip(lp_df["pdb_id"], lp_df["pK"]) if pd.notna(v)})
+        from voxbind.splits import check_local_availability
+        usable = {p for p in features if p in ymap}        # locally present AND labeled
         dim = len(next(iter(features.values()))) if features else 512
         split_data = {}
         for split in ("train", "val", "test"):
-            pids = [p for p in features if split_map.get(p) == split and p in target_map]
+            want = [p for p, s in split_map.items() if s == split]
+            # Loud-warn policy: report (don't silently drop) any frozen pid missing here.
+            avail = check_local_availability(want, usable, label=split,
+                                             warn=lambda m: print("    " + m))
+            pids = avail["used"]
             X = (np.stack([features[p].numpy() for p in pids]).astype(np.float32)
                  if pids else np.empty((0, dim), np.float32))
-            y = np.asarray([target_map[p] for p in pids], dtype=np.float32)
-            split_data[split] = {"X": X, "y": y, "pid": pids}
+            y = np.asarray([ymap[p] for p in pids], dtype=np.float32)
+            split_data[split] = {"X": X, "y": y, "pid": pids,
+                                  "content_hash": avail["content_hash"],   # stamps effective set
+                                  "n_frozen": avail["n_expected"]}
         return split_data
 
     df = lp_df.copy()
@@ -1440,10 +1470,13 @@ def train_one(
 def run_probe(args: argparse.Namespace) -> None:
     suffix = feature_suffix(args.voxel_version, tag=args.feature_tag)
     target_map = load_target_map(args.target)            # None for pK (LP_PDBBind default)
-    split_map = load_misato_split() if getattr(args, "split", "lp") == "misato" else None
+    split_flag = getattr(args, "split", "lp")
+    split_map, split_scheme = (None, None)
+    if split_flag in FROZEN_SPLIT_SCHEMES:
+        split_map, split_scheme = load_frozen_split_map(split_flag)
     tag_parts = ([] if args.target == "pK" else [args.target])
     if split_map is not None:
-        tag_parts.append("misatosplit")
+        tag_parts.append(f"{split_flag}split")          # misatosplit / lp_edrsccsplit / timesplit
     if args.head == "softmax":                           # head/loss variant token, orthogonal to target
         tag_parts.append("softmax")
     if args.tag:
@@ -1466,7 +1499,9 @@ def run_probe(args: argparse.Namespace) -> None:
     print(f"  intersect     : {not args.no_intersect}")
     print(f"  drop_covalent : {not args.no_covalent_filter}")
     print(f"  cl1_only      : {args.cl1_only}{'  (-> _filtered)' if args.cl1_only else ''}")
-    print(f"  split         : {getattr(args, 'split', 'lp')}{'  (MISATO 8:1:1)' if getattr(args, 'split', 'lp') == 'misato' else '  (LP_PDBBind)'}")
+    print(f"  split         : {split_flag}"
+          + (f"  (frozen → {split_scheme}, hash-verified)" if split_scheme
+             else "  (LP_PDBBind, recomputed locally)"))
     print(f"  tag           : {args.tag}")
     print(f"  feature_tag   : {args.feature_tag}")
     print(f"  exp_dir       : {args.exp_dir}")
@@ -1544,6 +1579,10 @@ def run_probe(args: argparse.Namespace) -> None:
                 head=args.head, soft_sigma=args.soft_sigma,
             )
             row = {"condition": cond, "seed": seed, **m}
+            if split_scheme is not None:                  # cross-server reproducibility stamp
+                row["split_scheme"]    = split_scheme
+                row["split_test_hash"] = data["test"].get("content_hash", "")
+                row["n_test_eff"]      = len(data["test"]["pid"])
             rows.append(row)
             print(f"  seed={seed}  ep_stop={m['epoch_stopped']:3d}  "
                   f"val_ρ={m['best_val_spearman']:.4f}  "
@@ -1699,42 +1738,61 @@ def make_encoder_factory(exp_dir: Path, epoch: int):
 
 def split_exists_filter(splits: dict, atom_dir: Path, dens_dir: Path,
                         needs_atoms: bool, needs_density: bool) -> dict:
-    """Drop pids whose voxel files are missing so both arms share one pid pool."""
+    """Drop pids whose voxel files are missing so both arms share one pid pool.
+
+    Loud-warn policy: report (don't silently shrink) any pid dropped for a missing
+    local voxel file, with the effective-set content hash, so two servers can tell
+    whether they actually fine-tuned on the identical complexes.
+    """
+    from voxbind.splits import content_hash
     out = {}
     for split, sdf in splits.items():
         keep = [pid for pid in sdf["pdb_id"]
                 if (not needs_atoms or (atom_dir / f"{pid}.npy").exists())
                 and (not needs_density or (dens_dir / f"{pid}.npy").exists())]
+        dropped = len(sdf) - len(keep)
+        if dropped:
+            print(f"    [split:{split}] WARNING: {dropped}/{len(sdf)} pids missing voxel files "
+                  f"locally → using {len(keep)} (effective N). "
+                  f"used.content_hash={content_hash(keep)[:12]}")
         out[split] = sdf[sdf["pdb_id"].isin(keep)].reset_index(drop=True)
     return out
 
 
 def build_splits(condition: str, *, drop_covalent: bool, cl1_only: bool,
                  atom_dir: Path, dens_dir: Path, avail_csv: Path,
-                 spec: FeatureSpec) -> dict:
-    """Train/val/test pdb_id+pK frames for one condition (LP_PDBBind new_split).
+                 spec: FeatureSpec, split_map: Optional[dict[str, str]] = None) -> dict:
+    """Train/val/test pdb_id+pK frames for one condition.
 
-    Single-condition pool: density-using conditions need has_atoms & has_density;
-    atom-only need has_atoms. Mirrors `probe`'s pool/filters so a single-condition
-    `probe` and this `finetune` see the identical complexes.
+    Default (split_map=None): legacy LP_PDBBind new_split recomputed from this server's
+    availability.csv pool (density conditions need has_atoms & has_density; atom-only
+    need has_atoms) — mirrors single-condition `probe`, but CAN drift across servers.
+
+    When `split_map` is given (a frozen scheme, pid -> split), membership comes from the
+    committed manifest instead; pK is joined from LP and label-less pids dropped. Either
+    way split_exists_filter loud-warns any pid whose voxel files are missing locally.
     """
-    avail = pd.read_csv(avail_csv)
-    if spec.needs_density:
-        pool = avail[avail["has_atoms"] & avail["has_density"]]
-    else:
-        pool = avail[avail["has_atoms"]]
-    pid_set = set(pool["pdb_id"])
-
     df = load_lp_index(LP_CSV)
-    if drop_covalent:
-        df = df[~df["covalent"].astype(bool)]
-    if cl1_only:
-        df = df[df["CL1"].astype(bool)]
-    df = df[df["pdb_id"].isin(pid_set)]
-    df = df[df["new_split"].isin(["train", "val", "test"])].dropna(subset=["pK"])
-
-    splits = {s: df[df["new_split"] == s][["pdb_id", "pK"]].reset_index(drop=True)
-              for s in ("train", "val", "test")}
+    if split_map is not None:
+        pk_map = {p: v for p, v in zip(df["pdb_id"], df["pK"]) if pd.notna(v)}
+        splits = {}
+        for s in ("train", "val", "test"):
+            pids = sorted(p for p, sp in split_map.items() if sp == s and p in pk_map)
+            splits[s] = pd.DataFrame({"pdb_id": pids, "pK": [pk_map[p] for p in pids]})
+    else:
+        avail = pd.read_csv(avail_csv)
+        pool = (avail[avail["has_atoms"] & avail["has_density"]] if spec.needs_density
+                else avail[avail["has_atoms"]])
+        pid_set = set(pool["pdb_id"])
+        d = df
+        if drop_covalent:
+            d = d[~d["covalent"].astype(bool)]
+        if cl1_only:
+            d = d[d["CL1"].astype(bool)]
+        d = d[d["pdb_id"].isin(pid_set)]
+        d = d[d["new_split"].isin(["train", "val", "test"])].dropna(subset=["pK"])
+        splits = {s: d[d["new_split"] == s][["pdb_id", "pK"]].reset_index(drop=True)
+                  for s in ("train", "val", "test")}
     return split_exists_filter(splits, atom_dir, dens_dir,
                                needs_atoms=spec.needs_atoms,
                                needs_density=spec.needs_density)
@@ -2070,11 +2128,18 @@ def run_finetune(args: argparse.Namespace) -> None:
             f"but cfg.model.n_in_channels={n_in}"
         )
 
+    ft_split_flag = getattr(args, "split", "lp")
+    ft_split_map, ft_scheme = (None, None)
+    if ft_split_flag in FROZEN_SPLIT_SCHEMES:
+        ft_split_map, ft_scheme = load_frozen_split_map(ft_split_flag)
+    print(f"  split          : {ft_split_flag}"
+          + (f"  (frozen → {ft_scheme}, hash-verified)" if ft_scheme
+             else "  (LP_PDBBind, recomputed locally)"))
     splits = build_splits(args.condition,
                           drop_covalent=not args.no_covalent_filter,
                           cl1_only=args.cl1_only, atom_dir=atom_dir,
                           dens_dir=dens_dir, avail_csv=avail_csv,
-                          spec=spec)
+                          spec=spec, split_map=ft_split_map)
     if args.max_complexes:
         splits = {s: sdf.head(args.max_complexes) for s, sdf in splits.items()}
         print(f"  [smoke] capped each split to {args.max_complexes} complexes")
@@ -2260,9 +2325,12 @@ def build_parser() -> argparse.ArgumentParser:
                          "resolution-robust). A non-pK target adds a _<target> token to the CSV name "
                          "and needs its cache built (dataset/extract_bfactors.py for B-factors); "
                          "complexes lacking a label are dropped.")
-    pr.add_argument("--split", choices=["lp", "misato"], default="lp",
-                    help="Split source: lp (LP_PDBBind new_split, default) or misato (official MISATO "
-                         "8:1:1 MD split). misato adds a _misatosplit CSV token; non-pK target only.")
+    pr.add_argument("--split", choices=["lp", "lp_edrscc", "time", "misato"], default="lp",
+                    help="Split source. lp = LP_PDBBind new_split recomputed locally (legacy; can drift "
+                         "across servers). FROZEN, hash-verified manifests in voxbind/splits/ (identical "
+                         "on every server): lp_edrscc (canonical ED+RSCC affinity split 5817/1498/2813), "
+                         "time (temporal holdout 8308/934/1182), misato (official 8:1:1 MD split). Frozen "
+                         "schemes add a _<flag>split CSV token + split_test_hash/n_test_eff stamp.")
     pr.add_argument("--head",          choices=["scalar", "softmax"], default="scalar",
                     help="Probe head/objective: scalar (1-D output, MSE; default) or softmax "
                          "(K-class output over integer counts 0..max, soft-label cross-entropy with "
@@ -2359,6 +2427,10 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Keep covalent complexes (default: drop)")
     pt.add_argument("--cl1_only", action="store_true",
                     help="Restrict to LP_PDBBind CL1=True (cleanest subset); adds _filtered to the CSV name")
+    pt.add_argument("--split", choices=["lp", "lp_edrscc", "time", "misato"], default="lp",
+                    help="Split source (see `probe --split`). Frozen schemes (lp_edrscc/time/misato) load "
+                         "the hash-verified manifest in voxbind/splits/ so both arms AND every server use "
+                         "the identical pids; lp = legacy local recompute. Pair with --tag to name the CSV.")
     pt.add_argument("--tag", default=None,
                     help="Optional run label appended after the version/_filtered token (see `probe --tag`)")
     pt.add_argument("--max_complexes", type=int, default=0,

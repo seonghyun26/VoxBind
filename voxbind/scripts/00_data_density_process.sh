@@ -15,10 +15,10 @@
 #   WORKERS     parallel workers (download threads / crop processes)  (default: 16)
 #   SPLITS      splits to process                                     (default: "train test")
 #   VERSION     crop version(s) for the crops step                    (default: "v3")
-#                 v1 → xray_crops_aligned (load-time ±3σ z-score)
-#                 v2 → xray_crops_aligned_v2 (pool z-score)
-#                 v3 → xray_crops_aligned_v3 (pool max-abs → [−1,1])
-#                 v4 → xray_crops_aligned_v4 (pool clip + z-score)
+#                 v1 → pretrain/xray_crops_aligned (load-time ±3σ z-score)
+#                 v2 → pretrain/xray_crops_aligned_v2 (pool z-score)
+#                 v3 → pretrain/xray_crops_aligned_v3 (pool max-abs → [−1,1])
+#                 v4 → pretrain/xray_crops_aligned_v4 (pool clip + z-score)
 #               Space-separate to build several at once, e.g. VERSION="v2 v3 v4".
 #   EDS_CACHE   optional PDBe EDS cache JSON to restrict MAP downloads to
 #               confirmed-EDS PDB IDs (default: ../notebook/data/check_xray_cache.json
@@ -33,8 +33,8 @@
 # Outputs:
 #   preprocess  →  dataset/data/data_train.pt, dataset/data/data_test.pt
 #   download    →  dataset/data/ccp4/{pdb}.ccp4 , dataset/data/pdb/{pdb}.pdb
-#   crops       →  dataset/data/xray_crops_aligned[_vN]/{train,test}/{:06d}.npy
-#                  dataset/data/xray_crops_aligned[_vN]/{train,test}_available.npy
+#   crops       →  dataset/data/pretrain/xray_crops_aligned[_vN]/{train,test}/{:06d}.npy
+#                  dataset/data/pretrain/xray_crops_aligned[_vN]/{train,test}_available.npy
 
 set -e
 

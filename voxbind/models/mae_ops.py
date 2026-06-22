@@ -1,0 +1,223 @@
+"""mae_ops.py — shared voxel/density ops for the density-MAE pretexts.
+
+Pure functions used across pre-training (train_density.py) and the dataset
+density pipeline (crossdocked_*, 00b/00e/00f, the probe): synthetic-density
+synthesis, 3D block masking, per-sample z-scoring, gradient magnitude, and the
+ELECTRA-style corruption ops. No model state — just tensor transforms.
+
+(Extracted from the former density_mae.py, whose DensityMAE CNN model — superseded
+by the ViT encoder in density_vit.py — was removed along with its deleted trainer.)
+"""
+
+from typing import Tuple
+
+import torch
+import torch.nn.functional as F
+
+
+# ── Synthetic-density helpers ─────────────────────────────────────────────────
+
+def gaussian_blur3d(x: torch.Tensor, sigma_vox: float) -> torch.Tensor:
+    """Separable 3D Gaussian blur. sigma_vox is in voxel units (1 vox = 0.25 Å)."""
+    half = max(1, int(3.0 * sigma_vox + 0.5))
+    coords = torch.arange(-half, half + 1, dtype=x.dtype, device=x.device)
+    g = torch.exp(-0.5 * (coords / sigma_vox) ** 2)
+    g = g / g.sum()
+    kx = g.view(1, 1, -1, 1, 1)
+    ky = g.view(1, 1, 1, -1, 1)
+    kz = g.view(1, 1, 1, 1, -1)
+    x = F.conv3d(x, kx, padding=(half, 0, 0))
+    x = F.conv3d(x, ky, padding=(0, half, 0))
+    x = F.conv3d(x, kz, padding=(0, 0, half))
+    return x
+
+
+def gradient_magnitude3d(x: torch.Tensor, spacing: float = 1.0) -> torch.Tensor:
+    """Per-voxel gradient magnitude ‖∇x‖ via central finite differences.
+
+    An edge / iso-surface detector for a density field: large where the density
+    changes fastest (atom-blob shells, 2Fo-Fc iso-surfaces), complementing the
+    raw density magnitude. Replicate padding preserves the G³ shape and avoids
+    spurious large gradients at the boundary faces.
+
+    `spacing` (voxel size) only rescales the output globally, so when the result
+    is subsequently per-sample z-scored it is irrelevant (default 1.0 = voxel
+    units, matching the rest of the density pipeline).
+
+    Args
+    ----
+    x : (B, 1, G, G, G) tensor (CPU or CUDA).
+
+    Returns
+    -------
+    (B, 1, G, G, G) non-negative tensor, same dtype/device as `x`.
+    """
+    xp = F.pad(x, (1, 1, 1, 1, 1, 1), mode="replicate")
+    gx = (xp[:, :, 2:, 1:-1, 1:-1] - xp[:, :, :-2, 1:-1, 1:-1]) / (2.0 * spacing)
+    gy = (xp[:, :, 1:-1, 2:, 1:-1] - xp[:, :, 1:-1, :-2, 1:-1]) / (2.0 * spacing)
+    gz = (xp[:, :, 1:-1, 1:-1, 2:] - xp[:, :, 1:-1, 1:-1, :-2]) / (2.0 * spacing)
+    return torch.sqrt(gx * gx + gy * gy + gz * gz + 1e-12)
+
+
+def make_block_mask(
+    bsz: int, grid_dim: int, block_size: int, ratio: float,
+    device: torch.device,
+) -> torch.Tensor:
+    """Sample a (B, 1, G, G, G) bool mask where masked voxels = True.
+
+    Mask is generated at (G/block)³ resolution then upsampled by repetition,
+    so masked regions are cubes of `block_size`³ voxels.
+    """
+    assert grid_dim % block_size == 0, f"grid_dim {grid_dim} % block_size {block_size} != 0"
+    gb = grid_dim // block_size
+    blocks = torch.rand(bsz, 1, gb, gb, gb, device=device) < ratio   # (B,1,gb,gb,gb)
+    mask = blocks.repeat_interleave(block_size, dim=2)\
+                 .repeat_interleave(block_size, dim=3)\
+                 .repeat_interleave(block_size, dim=4)
+    return mask  # (B, 1, G, G, G) bool
+
+
+def make_atom_biased_block_mask(
+    atoms_sum: torch.Tensor,
+    block_size: int,
+    ratio: float,
+    tau: float = 1.0,
+    generator: torch.Generator = None,
+) -> torch.Tensor:
+    """Sample a (B, 1, G, G, G) bool mask biased toward atom-occupied blocks.
+
+    `atoms_sum` is (B, 1, G, G, G) — sum of all atom-voxel channels. For each
+    sample we score each block by its atom-mass via avg_pool3d, add Gaussian
+    noise scaled by `tau · std(scores)`, and take the top floor(ratio · gb³)
+    blocks. Mask cardinality is exact per sample.
+
+      tau → 0   : deterministic top-K (every most-atom-occupied block masked first)
+      tau → ∞   : equivalent to uniform random masking (noise dominates)
+      tau = 1   : moderate bias — atom-occupied blocks dominate but training
+                  still sees some empty-space variety.
+    """
+    B, _, G, _, _ = atoms_sum.shape
+    assert G % block_size == 0, f"grid_dim {G} % block_size {block_size} != 0"
+    gb = G // block_size
+    n_blocks = gb ** 3
+    n_mask = int(round(ratio * n_blocks))
+    # Per-block atom mass: avg_pool3d gives mean; × block³ = sum over the block.
+    score = F.avg_pool3d(atoms_sum, block_size) * (block_size ** 3)  # (B, 1, gb, gb, gb)
+    score = score.flatten(2)                                        # (B, 1, gb³)
+    std = score.std(dim=2, keepdim=True).clamp(min=1e-6)
+    if generator is not None:
+        noise = torch.randn(score.shape, device=score.device, generator=generator)
+    else:
+        noise = torch.randn_like(score)
+    priority = score + noise * std * tau
+    _, top_idx = priority.topk(n_mask, dim=2)
+    blocks_flat = torch.zeros_like(score, dtype=torch.bool)
+    blocks_flat.scatter_(2, top_idx, True)
+    blocks = blocks_flat.view(B, 1, gb, gb, gb)
+    mask = blocks.repeat_interleave(block_size, dim=2)\
+                 .repeat_interleave(block_size, dim=3)\
+                 .repeat_interleave(block_size, dim=4)
+    return mask  # (B, 1, G, G, G) bool
+
+
+def per_sample_zscore(x: torch.Tensor, eps: float = 1e-6) -> torch.Tensor:
+    """Z-score each (C, G, G, G) volume independently along spatial dims."""
+    mu = x.mean(dim=(2, 3, 4), keepdim=True)
+    std = x.std(dim=(2, 3, 4), keepdim=True).clamp(min=eps)
+    return (x - mu) / std
+
+
+def synth_density(
+    voxels_lig: torch.Tensor,
+    voxels_poc: torch.Tensor,
+    sigma_blur_vox_range: Tuple[float, float],
+    sigma_noise: float,
+) -> torch.Tensor:
+    """Build a synthetic 2Fo-Fc-like volume from voxelized ligand+pocket atoms.
+
+    Steps: sum-over-channels → random-σ Gaussian blur → per-sample z-score →
+    additive Gaussian noise. Returns (B, 1, G, G, G).
+    """
+    atoms = voxels_lig.sum(dim=1, keepdim=True) + voxels_poc.sum(dim=1, keepdim=True)
+    sigma_lo, sigma_hi = sigma_blur_vox_range
+    sigma = float(torch.empty(1).uniform_(sigma_lo, sigma_hi).item())
+    d = gaussian_blur3d(atoms, sigma)
+    d = per_sample_zscore(d)
+    if sigma_noise > 0:
+        d = d + torch.randn_like(d) * sigma_noise
+    return d
+
+
+# ── ELECTRA-style corruption ops ──────────────────────────────────────────────
+# Each op takes the clean z-scored density and the (B,1,G,G,G) bool corruption
+# mask, and returns a (B,1,G,G,G) density with masked voxels replaced by the
+# op's "fake" content (and clean voxels untouched). Used by
+# `train_density.py` when `mae.pretext_style == 'electra'`.
+
+def corrupt_swap(d_clean: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+    """Replace masked blocks with same-region content from another sample.
+
+    Cyclically rolls the batch by 1 so each sample's corrupted regions come
+    from a different sample's clean density. Cheap and distribution-matched.
+    Edge case: B == 1 → no-op (returns d_clean unchanged).
+    """
+    if d_clean.shape[0] <= 1:
+        return d_clean
+    d_other = torch.roll(d_clean, shifts=1, dims=0)
+    return torch.where(mask, d_other, d_clean)
+
+
+def corrupt_reblur(
+    atoms_sum: torch.Tensor,
+    d_clean: torch.Tensor,
+    mask: torch.Tensor,
+    sigma_alt_vox: float,
+) -> torch.Tensor:
+    """Replace masked blocks with the same atoms re-blurred at a different σ.
+
+    Captures resolution-mismatch failure modes (e.g. distinguishing real EM
+    density at the modeled resolution vs. an over-smoothed or under-smoothed
+    alternative). Computes a fresh per-sample z-scored volume at `sigma_alt_vox`,
+    then composites into the mask.
+    """
+    d_alt = gaussian_blur3d(atoms_sum, sigma_alt_vox)
+    d_alt = per_sample_zscore(d_alt)
+    return torch.where(mask, d_alt, d_clean)
+
+
+def corrupt_noise(d_clean: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+    """Replace masked blocks with N(0, 1) noise (matched to z-scored scale)."""
+    noise = torch.randn_like(d_clean)
+    return torch.where(mask, noise, d_clean)
+
+
+def corrupt_generator(
+    d_clean: torch.Tensor, mask: torch.Tensor, generator_net,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """Run a learned generator on the partially-masked density.
+
+    The generator sees `d_clean * (~mask)` (zero-masked input) and produces a
+    full (B,1,G,G,G) density `d_gen`. Returns:
+      d_corrupted : (B,1,G,G,G) — d_clean with masked positions replaced by
+                    d_gen.detach() (so disc-side gradient does NOT flow into gen).
+      d_gen       : (B,1,G,G,G) — the raw generator output WITH grad, for the
+                    generator's MLM-style MSE loss on masked positions.
+    """
+    d_in_masked = d_clean * (~mask).to(d_clean.dtype)
+    d_gen = generator_net(d_in_masked)
+    d_corrupted = torch.where(mask, d_gen.detach(), d_clean)
+    return d_corrupted, d_gen
+
+
+def voxel_mask_to_patch_target(
+    mask: torch.Tensor, patch_size: int,
+) -> torch.Tensor:
+    """Pool a (B,1,G,G,G) bool voxel-level mask to (B,1,G_p,G_p,G_p) float.
+
+    Output is 1.0 if any voxel in the patch is corrupted (max-pool), else 0.0.
+    When block_size == patch_size and the mask is block-aligned, every patch is
+    either fully corrupted or fully clean — but using max_pool keeps things
+    safe if the two ever diverge.
+    """
+    m = mask.to(dtype=torch.float32)
+    return F.max_pool3d(m, kernel_size=patch_size, stride=patch_size)

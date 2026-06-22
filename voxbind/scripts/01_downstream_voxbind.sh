@@ -21,7 +21,7 @@
 #
 # Data / schedule:
 #   --subset N        dset.subset_n           (default 10000)
-#   --data VER        v1 xray_crops_aligned [default] | vN xray_crops_aligned_vN
+#   --data VER        v1 pretrain/xray_crops_aligned [default] | vN pretrain/xray_crops_aligned_vN
 #                     (N≥2 → normalize=false; e.g. v2, v3, v4)
 #   --epochs N        num_epochs              (default 100)
 #   --bsz N           per-rank batch size     (default 4)
@@ -108,12 +108,12 @@ NPROC=$(awk -F, '{print NF}' <<< "$CUDA_LIST")
 [[ "$NPROC" -ge 1 ]] || die "could not parse --gpus '$GPUS'"
 
 # ── Data version → crops_dir / normalize ──────────────────────────────────────
-# v1 = xray_crops_aligned (normalize default true); vN (N≥2) = pre-normalised
-# xray_crops_aligned_vN → normalize=false. Generic so v4, v5, … need no edit.
+# v1 = pretrain/xray_crops_aligned (normalize default true); vN (N≥2) = pre-normalised
+# pretrain/xray_crops_aligned_vN → normalize=false. Generic so v4, v5, … need no edit.
 if [[ "$DATA_VER" == v1 ]]; then
-    CROPS=$DATA/xray_crops_aligned;          NORMALIZE="";    DV_TAG=""
+    CROPS=$DATA/pretrain/xray_crops_aligned;          NORMALIZE="";    DV_TAG=""
 elif [[ "$DATA_VER" =~ ^v[0-9]+$ ]]; then
-    CROPS=$DATA/xray_crops_aligned_$DATA_VER; NORMALIZE=false; DV_TAG=$DATA_VER
+    CROPS=$DATA/pretrain/xray_crops_aligned_$DATA_VER; NORMALIZE=false; DV_TAG=$DATA_VER
 else
     die "unknown --data '$DATA_VER' (expected v1, v2, v3, …)"
 fi

@@ -1,5 +1,5 @@
 defaults:
-  - dset: crossdocked_xray     # real 2Fo-Fc crops in xray_crops_aligned/
+  - dset: crossdocked_xray     # real 2Fo-Fc crops in pretrain/xray_crops_aligned/
   - model: density_vit_mae_40m # ~42.6M ViT (D=512, L=12, H=8) - first scale-up
   - vox: default
   - override hydra/job_logging: custom
@@ -7,7 +7,7 @@ defaults:
 
 # Real-density variant of config_train_density_vit_mae_40m.yaml:
 # swaps the synthetic Gaussian-blur pretext input for real x-ray density
-# crops (xray_crops_aligned/), and bumps the encoder to the 40M ViT variant.
+# crops (pretrain/xray_crops_aligned/), and bumps the encoder to the 40M ViT variant.
 # Same MAE pretext (block-mask zero + masked-voxel MSE + 11-ch atom-structure aux).
 
 debug: False
@@ -55,7 +55,7 @@ mae:
   sigma_blur_a_hi: 0.80
   # Additive noise on top of d_clean. Real density already carries experimental
   # noise; we set this to 0 to keep the pretext signal closest to what the
-  # encoder will see downstream (xray_crops_aligned/ + locally z-scored).
+  # encoder will see downstream (pretrain/xray_crops_aligned/ + locally z-scored).
   sigma_noise: 0.0
   # Block masking (input space - encoder always sees full G³, masked voxels zeroed)
   block_size: 8                  # 2 Å cubes at 0.25 Å/vox

@@ -7,7 +7,7 @@ stage produces and writes a missing-cause funnel JSON next to it + prints a summ
 
 Causes
 ------
-crossdocked (from 00b align, in xray_crops_aligned/{split}_stats.csv):
+crossdocked (from 00b align, in pretrain/xray_crops_aligned/{split}_stats.csv):
     no_eds_map · no_deposited_pdb · deposited_parse_failed/deposited_empty · map_load_failed ·
     pocket10_parse_failed · too_few_matched_atoms · weak_density · high_rmsd
     (v6/v7 additionally DROP non-native poses via native_filter — a deliberate selection,
@@ -42,7 +42,7 @@ def _funnel(dataset, split, n_total, n_avail, by_cause):
 
 
 def _audit_crossdocked(splits):
-    aligned = DATA / "xray_crops_aligned"
+    aligned = DATA / "pretrain/xray_crops_aligned"
     out = {}
     for split in (splits or ["train", "test"]):
         csvp = aligned / f"{split}_stats.csv"

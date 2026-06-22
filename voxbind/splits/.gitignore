@@ -1,0 +1,6 @@
+# The repo-wide .gitignore drops *.csv and *.json everywhere. Split manifests in
+# THIS directory are source-of-truth artifacts and must be tracked, so re-include
+# them. (No parent dir is excluded — only file patterns — so negation is valid.)
+!*.csv
+!MANIFEST.json
+!.gitignore

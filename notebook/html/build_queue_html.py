@@ -70,8 +70,16 @@ DONE = [
          desc="1-channel density encoder under OTF resample (no atoms, no gradmag)."),
     dict(label="OTF gradmag-only (1ch)", cond="density_gradmag", csv="probe_results_e99_v5_plinder_gradmagonly_otf.csv",
          desc="1-channel gradient-magnitude encoder under OTF resample."),
-    dict(label="OTF D+G-only (2ch)", cond="atomblob_density_gradmag", csv="probe_results_e99_v5_plinder_dg_otf.csv",
+    dict(label="OTF D+G-only (2ch)", cond="density_gradmag", csv="probe_results_e99_v5_plinder_dg_otf.csv",
          desc="2-channel density+gradmag (no coords) under OTF resample."),
+    dict(label="OTF coords-only (seed 0)", cond="atomblob_ligvdw", csv="probe_results_e99_v5_plinder_coordsonly_otf_seed0.csv",
+         desc="11-channel coords-only OTF, seed 0 — matched atoms-only baseline for the OTF C+D+G."),
+    dict(label="OTF C+D+G — reference (seed 42)", cond="atomblob_density_gradmag", csv="probe_results_e99_v5_plinder_otf_cdg_reference.csv",
+         desc="Fresh C+D+G OTF baseline under the current code — the autoresearch start point (trial 7)."),
+
+    G("Affinity — Channel-ViT autoresearch (base Channel-ViT OTF 0.621, open-ended)"),
+    dict(label="CV-AR R1 — mask_ratio=0.75", cond="atomblob_density_gradmag", csv="probe_results_e99_v5_plinder_otf_cvar01_mask075.csv",
+         desc="Round 1: higher MAE mask ratio 0.75 vs base 0.60 (classic MAE sweet spot)."),
 
     G("Affinity — architecture ablation"),
     dict(label="Channel-ViT (frozen C+D+G)", cond="atomblob_density_gradmag", csv="probe_results_e99_v5_plinder_channelvit.csv",
@@ -128,7 +136,7 @@ DONE = [
 
 
 def stats(csv_name, cond):
-    p = PDB / csv_name
+    p = PDB / "results" / csv_name
     if not csv_name or not p.exists():
         return None
     try:
@@ -158,26 +166,35 @@ def cell(pair):
 
 
 def load_status():
-    run, q = [], []
+    """Returns (running, queued, trial_by_csv). `trial` is the global 1..N experiment counter;
+    trial_by_csv maps result_csv -> trial so the curated Done table can show the same number."""
+    run, q, trial_by_csv = [], [], {}
     if not STATUS.exists():
-        return run, q
+        return run, q, trial_by_csv
     for r in csvmod.DictReader(open(STATUS, encoding="utf-8")):
         sec = (r.get("section") or "").strip().lower()
+        try:
+            trial = int(r.get("trial") or 0)
+        except ValueError:
+            trial = 0
         try:
             order = int(r.get("order") or 0)
         except ValueError:
             order = 0
-        rec = dict(order=order, exp=(r.get("exp_name") or "").strip(), gpu=(r.get("gpu") or "").strip(),
-                   what=(r.get("what") or "").strip(), csv=(r.get("result_csv") or "").strip(),
-                   cond=(r.get("cond") or "").strip(), gate=(r.get("gate") or "").strip(),
-                   note=(r.get("note") or "").strip())
+        csvn = (r.get("result_csv") or "").strip()
+        if csvn and trial:
+            trial_by_csv[csvn] = trial
+        rec = dict(trial=trial, order=order, exp=(r.get("exp_name") or "").strip(),
+                   gpu=(r.get("gpu") or "").strip(), what=(r.get("what") or "").strip(),
+                   csv=csvn, cond=(r.get("cond") or "").strip(),
+                   gate=(r.get("gate") or "").strip(), note=(r.get("note") or "").strip())
         if sec == "running":
             run.append(rec)
         elif sec == "queued":
             q.append(rec)
-    run.sort(key=lambda x: x["order"])
-    q.sort(key=lambda x: x["order"])
-    return run, q
+    run.sort(key=lambda x: x["trial"])
+    q.sort(key=lambda x: x["trial"])
+    return run, q, trial_by_csv
 
 
 def landed(rec):
@@ -223,24 +240,26 @@ code{background:#f0f2f5;padding:1px 5px;border-radius:4px;font-size:12px;font-fa
 
 
 def build():
-    run, q = load_status()
+    run, q, trial_by_csv = load_status()
     ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    tnum = lambda t: f'<span class="num">{t}</span>' if t else '<span class="mut">—</span>'
 
     # Running
     if run:
         rr = ""
         for r in run:
-            rr += (f'<tr><td><span class="pill run">training</span><br><span class="exp">{esc(r["exp"])}</span></td>'
+            rr += (f'<tr><td>{tnum(r["trial"])}</td>'
+                   f'<td><span class="pill run">training</span><br><span class="exp">{esc(r["exp"])}</span></td>'
                    f'<td class="small" style="white-space:normal">{r["what"]}</td><td>GPU {esc(r["gpu"])}</td>'
                    f'<td class="small"><code>{esc(r["csv"])}</code><div class="small mut">{landed(r)}</div></td></tr>')
     else:
-        rr = '<tr><td colspan="4"><div class="empty">Nothing training right now.</div></td></tr>'
+        rr = '<tr><td colspan="5"><div class="empty">Nothing training right now.</div></td></tr>'
 
     # Queued
     if q:
         qq = ""
-        for i, r in enumerate(q, 1):
-            qq += (f'<tr><td>{i}</td><td><span class="pill queue">chained</span><br><span class="exp">{esc(r["exp"])}</span></td>'
+        for r in q:
+            qq += (f'<tr><td>{tnum(r["trial"])}</td><td><span class="pill queue">chained</span><br><span class="exp">{esc(r["exp"])}</span></td>'
                    f'<td class="small" style="white-space:normal">{r["what"]}</td>'
                    f'<td class="small">{esc(r["gate"])}</td></tr>')
     else:
@@ -250,7 +269,7 @@ def build():
     dd, ndone = "", 0
     for d in DONE:
         if "grp" in d:
-            dd += f'<tr class="grp"><td colspan="5">{esc(d["grp"])}</td></tr>'
+            dd += f'<tr class="grp"><td colspan="6">{esc(d["grp"])}</td></tr>'
             continue
         ndone += 1
         s = stats(d["csv"], d["cond"])
@@ -260,7 +279,8 @@ def build():
         vcell = cell(s["bv"]) if s else '<span class="mut">—</span>'
         rcell = cell(s["rm"]) if s else '<span class="mut">—</span>'
         cls = ' class="best"' if d.get("best") else ""
-        dd += (f'<tr{cls}><td style="white-space:normal"><b>{d["label"]}</b>{tag}</td>'
+        trial = trial_by_csv.get(d["csv"], "")
+        dd += (f'<tr{cls}><td>{tnum(trial)}</td><td style="white-space:normal"><b>{d["label"]}</b>{tag}</td>'
                f'<td class="small" style="white-space:normal">{d["desc"]}</td>'
                f'<td>{tcell}{ninfo}</td><td>{vcell}</td><td>{rcell}</td></tr>')
 
@@ -276,18 +296,18 @@ Built {ts}. Affinity = LP-PDBBind <code>new_split</code>, canonical 839 test spl
 
 <section class="sec"><h2 class="sec-head"><span class="dot run"></span> Running
 <span class="count">— {len(run)} training{'' if len(run)==1 else 's'}</span></h2>
-<div class="wrap"><table><thead><tr><th style="width:30%">Experiment</th><th>What it does</th>
-<th style="width:9%">GPU</th><th style="width:24%">Result CSV</th></tr></thead><tbody>{rr}</tbody></table></div></section>
+<div class="wrap"><table><thead><tr><th style="width:5%">Trial</th><th style="width:27%">Experiment</th><th>What it does</th>
+<th style="width:9%">GPU</th><th style="width:22%">Result CSV</th></tr></thead><tbody>{rr}</tbody></table></div></section>
 
 <section class="sec"><h2 class="sec-head"><span class="dot queue"></span> Queued
 <span class="count">— {len(q)} armed</span></h2>
-<div class="wrap"><table><thead><tr><th style="width:4%">#</th><th style="width:28%">Experiment</th>
+<div class="wrap"><table><thead><tr><th style="width:5%">Trial</th><th style="width:28%">Experiment</th>
 <th>What it does</th><th style="width:26%">Fires when</th></tr></thead><tbody>{qq}</tbody></table></div></section>
 
 <section class="sec"><h2 class="sec-head"><span class="dot done"></span> Done
 <span class="count">— {ndone} experiments</span></h2>
-<div class="wrap"><table><thead><tr><th style="width:21%">Experiment</th><th style="width:40%">What it does</th>
-<th style="width:13%">test&nbsp;ρ</th><th style="width:13%">val&nbsp;ρ</th><th style="width:13%">RMSE</th></tr></thead>
+<div class="wrap"><table><thead><tr><th style="width:5%">Trial</th><th style="width:19%">Experiment</th><th style="width:38%">What it does</th>
+<th style="width:13%">test&nbsp;ρ</th><th style="width:12%">val&nbsp;ρ</th><th style="width:12%">RMSE</th></tr></thead>
 <tbody>{dd}</tbody></table></div>
 <div class="legend"><span>test/val&nbsp;ρ = Spearman, mean&nbsp;±&nbsp;std over seeds</span>
 <span>n = test molecules</span></div></section>
@@ -297,6 +317,6 @@ Built {ts}. Affinity = LP-PDBBind <code>new_split</code>, canonical 839 test spl
 if __name__ == "__main__":
     html_out = build()
     OUT.write_text(html_out, encoding="utf-8")
-    run, q = load_status()
+    run, q, _ = load_status()
     print(f"wrote {OUT.name}: {len(run)} running, {len(q)} queued, "
           f"{sum(1 for d in DONE if 'grp' not in d)} done rows | {len(html_out):,} bytes (static, no JS)")

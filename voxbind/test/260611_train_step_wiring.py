@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Integration smoke for the throughput-knob wiring in train_density_vit_mae.py.
+"""Integration smoke for the throughput-knob wiring in train_density.py.
 
 The full debug launch is blocked on this box by a crops/preprocessing alignment
 check in the dataloader (data-vintage mismatch, unrelated to these knobs), so we
@@ -19,7 +19,7 @@ from omegaconf import OmegaConf
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO))
 
-from voxbind.train_density_vit_mae import train_epoch
+from voxbind.train_density import train_epoch
 from voxbind.models.density_vit import DensityViTMAE
 from voxbind.models.adamw import AdamW as CustomAdamW
 from voxbind.models.ema import ModelEma

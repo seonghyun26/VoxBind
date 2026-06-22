@@ -23,7 +23,7 @@ from omegaconf import OmegaConf
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO))
 
-from voxbind.train_density_vit_mae import maybe_compile_model   # the exact compile path
+from voxbind.train_density import maybe_compile_model   # the exact compile path
 from voxbind.models.density_vit import DensityViTMAE
 from voxbind.models.ema import ModelEma
 

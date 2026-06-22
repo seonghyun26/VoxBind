@@ -51,7 +51,7 @@ import torch
 from torch.utils.data import Dataset
 
 from voxbind.constants import ELEMENTS_HASH_CROSSDOCKED, RADIUS_PER_ATOM
-from voxbind.models.density_mae import gradient_magnitude3d, per_sample_zscore
+from voxbind.models.mae_ops import gradient_magnitude3d, per_sample_zscore
 from voxbind.utils.dataset_utils import (
     filter_atoms_by_distance, pad, recenter_structures,
     random_rot_matrix,

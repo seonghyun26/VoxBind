@@ -61,7 +61,7 @@ def _canon(d):
     if not bool(model.get("with_gradmag", False)):
         for k in ("gradmag_channel_weight", "gradmag_noise", "gradmag_reconstruct"):
             mae.pop(k, None)
-    # density warmup of 0 epochs == off == the code default (train_density_vit_mae.py:1365), which is
+    # density warmup of 0 epochs == off == the code default (train_density.py:1365), which is
     # what terse old configs that omitted the key got. Inert when 0 → don't flag the standardized 0.
     if mae.get("density_weight_warmup_epochs") == 0:
         mae.pop("density_weight_warmup_epochs", None)

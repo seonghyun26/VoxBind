@@ -34,7 +34,7 @@ input_mode: atomblob_merged_density
 with_gradmag: true
 
 dset:
-  crops_dir: /home/shpark/prj-denovo/VoxBind/voxbind/dataset/data/xray_crops_aligned_v4
+  crops_dir: /home/shpark/prj-denovo/VoxBind/voxbind/dataset/data/pretrain/xray_crops_aligned_v4
   normalize: false
   subset_xray_only: true
   subset_n: 78428

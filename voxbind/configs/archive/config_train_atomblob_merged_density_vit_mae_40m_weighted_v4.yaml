@@ -6,7 +6,7 @@ defaults:
   - _self_
 
 # V4 clone of config_train_atomblob_merged_density_vit_mae_40m_weighted_v3.yaml.
-# Only delta vs v3: dset.crops_dir points to xray_crops_aligned_v4 (pocket-pool
+# Only delta vs v3: dset.crops_dir points to pretrain/xray_crops_aligned_v4 (pocket-pool
 # clip + z-score density crops; preserves atom signal scale that v3 collapsed
 # to ~0.01 by max-abs scaling). Same recipe otherwise.
 
@@ -31,7 +31,7 @@ wd: 5e-2
 input_mode: atomblob_merged_density
 
 dset:
-  crops_dir: /home/shpark/prj-denovo/VoxBind/voxbind/dataset/data/xray_crops_aligned_v4
+  crops_dir: /home/shpark/prj-denovo/VoxBind/voxbind/dataset/data/pretrain/xray_crops_aligned_v4
   normalize: false
   subset_xray_only: true
   subset_n: 78428

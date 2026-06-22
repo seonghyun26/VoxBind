@@ -8,7 +8,7 @@ pretraining of the C+D+G encoder on a larger ligand-MATCHED density corpus.
 Two halves, one unified CrossDocked-style dataset:
 
   CrossDocked v6 (5,270 train): the tt_min ligand-matched crops already in
-      xray_crops_aligned_v6/ — reused verbatim (same v6 arcsinh+z norm).
+      pretrain/xray_crops_aligned_v6/ — reused verbatim (same v6 arcsinh+z norm).
 
   PDBbind-2020 train (new_split==train & EDS density, ~2,704): real holo crystals,
       inherently matched. Parsed into CrossDocked-schema (pocket, ligand) tuples via
@@ -25,10 +25,10 @@ included → no leakage into the affinity probe (which tests on PDBbind test).
 
 Outputs (under --out_root, default dataset/data):
   data_train_v7.pt                 combined (pocket, ligand) tuples [pre-shuffle]
-  xray_crops_aligned_v7/
+  pretrain/xray_crops_aligned_v7/
     train/{idx:06d}.npy            float16 (64,64,64) density, v6 arcsinh+z, ligand-centroid
     train_available.npy            bool (N,)  ALL True (every v7 sample is matched)
-    test/ , test_available.npy     copied verbatim from xray_crops_aligned_v6 (CrossDocked test)
+    test/ , test_available.npy     copied verbatim from pretrain/xray_crops_aligned_v6 (CrossDocked test)
     stats.json
 
 Crop positions mirror DatasetCrossDockedXray's load order EXACTLY
@@ -90,7 +90,7 @@ def replicate_crossdocked_train_order(data_dir: Path):
 
 def crossdocked_v6_pairs(data_dir: Path, v6_dir: Path):
     """[(tuple, ('cd', j)), ...] for every v6-available CrossDocked train sample,
-    where j indexes xray_crops_aligned_v6/train/{j:06d}.npy."""
+    where j indexes pretrain/xray_crops_aligned_v6/train/{j:06d}.npy."""
     order = replicate_crossdocked_train_order(data_dir)
     avail = np.load(str(v6_dir / "train_available.npy"))
     if len(avail) != len(order):
@@ -183,8 +183,8 @@ def main():
 
     data_dir = Path(args.data_dir)
     out_root = Path(args.out_root)
-    v6_dir = out_root / "xray_crops_aligned_v6"
-    v7_dir = out_root / "xray_crops_aligned_v7"
+    v6_dir = out_root / "pretrain/xray_crops_aligned_v6"
+    v7_dir = out_root / "pretrain/xray_crops_aligned_v7"
     stage_dir = v7_dir / ".pdb_stage"
 
     # v6 normalization (reused for the PDBbind half so both are one value scale).

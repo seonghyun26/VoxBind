@@ -9,7 +9,7 @@ defaults:
 # density distribution (pocket-pool z-score, no per-crop ±3σ clip).
 #
 # Only delta vs config_train_atomblob_merged_density_vit_mae_40m_weighted.yaml:
-#   - dset.crops_dir  → xray_crops_aligned_v2  (pre-normalised by 00b_density_preprocess.py --version v2)
+#   - dset.crops_dir  → pretrain/xray_crops_aligned_v2  (pre-normalised by 00b_density_preprocess.py --version v2)
 #   - dset.normalize  → false                  (crops are already pool-z; no normalize_crop)
 #
 # Tests the heavy-atom-magnitude hypothesis: does the v1 normalize_crop's ±3σ
@@ -38,7 +38,7 @@ wd: 5e-2
 input_mode: atomblob_merged_density
 
 dset:
-  crops_dir: /home/shpark/prj-denovo/VoxBind/voxbind/dataset/data/xray_crops_aligned_v2
+  crops_dir: /home/shpark/prj-denovo/VoxBind/voxbind/dataset/data/pretrain/xray_crops_aligned_v2
   normalize: false
   subset_xray_only: true
   subset_n: 78428

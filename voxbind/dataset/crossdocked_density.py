@@ -25,7 +25,7 @@ Usage
 -----
     from voxbind.dataset.crossdocked_density import DatasetCrossDockedDensity
     dset = DatasetCrossDockedDensity(
-        resample_dir="dataset/data/xray_resample_v5",   # output of s3 --resample
+        resample_dir="dataset/data/pretrain/xray_resample_v5",   # output of s3 --resample
         data_dir="dataset/data", split="train",
         data_file="data_train.pt", subset_n=78428, return_gradmag=True,
     )
@@ -46,7 +46,7 @@ from voxbind.dataset.crossdocked_xray import (
     _GRID_DIM,
     _RESOLUTION,
 )
-from voxbind.models.density_mae import gradient_magnitude3d, per_sample_zscore
+from voxbind.models.mae_ops import gradient_magnitude3d, per_sample_zscore
 from voxbind.utils.dataset_utils import (
     filter_atoms_by_distance,
     pad,

@@ -45,7 +45,7 @@ with_gradmag: true                 # + gradmag trailing channel → 13 total
 
 # ── Dataset ──────────────────────────────────────────────────────────────────
 dset:
-  crops_dir: /home1/irteam/VoxBind/voxbind/dataset/data/xray_crops_aligned_v4
+  crops_dir: /home1/irteam/VoxBind/voxbind/dataset/data/pretrain/xray_crops_aligned_v4
   normalize: false                 # v4 crops are pre-normalized on disk
   ligand_radius: -1                # element-wise vdW radii for ligand atoms (pocket already -1)
   subset_xray_only: true

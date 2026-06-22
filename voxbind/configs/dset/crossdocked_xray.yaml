@@ -8,7 +8,7 @@ data_file: data_train.pt     # train/val source tuples; override (e.g. data_trai
 #   ccp4_dir   : raw CCP4 maps for on-the-fly loading (slower, no preprocessing — produces UN-aligned
 #                crops since the runtime path does not load per-sample transforms)
 # crops_dir takes priority when the split sub-directory exists.
-crops_dir: dataset/data/xray_crops_aligned   # frame-corrected crops (dataset/00b_density_preprocess.py)
+crops_dir: dataset/data/pretrain/xray_crops_aligned   # frame-corrected crops (dataset/00b_density_preprocess.py)
 ccp4_dir:  dataset/data/ccp4                 # fallback: output of dataset/00a_density_download.py
 
 # OPT-IN on-the-fly RESAMPLE (overrides crops_dir when set): density is cropped from the FULL map at the

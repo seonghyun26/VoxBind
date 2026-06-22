@@ -13,7 +13,7 @@ on-the-fly gradmag the full model derives post-augmentation.
 Outputs (float16, mirror the real layout so each is a drop-in density source).
 Co-located INSIDE the v5 dataset version (same source crops), matching the
 nesting 00e uses for the noise control:
-  xray_crops_aligned_v5/gradmag/train/{idx:06d}.npy    (1ch 64^3 = ‖∇ρ‖)
+  pretrain/xray_crops_aligned_v5/gradmag/train/{idx:06d}.npy    (1ch 64^3 = ‖∇ρ‖)
   pdbbind/voxels_v5/gradmag/density/{pid}.npy          (probe: gradmag-as-density)
 
 Usage:  python dataset/00f_make_gradmag_crops.py [train|probe|all]
@@ -22,11 +22,11 @@ import argparse, glob, time
 from pathlib import Path
 import numpy as np
 import torch
-from voxbind.models.density_mae import gradient_magnitude3d, per_sample_zscore
+from voxbind.models.mae_ops import gradient_magnitude3d, per_sample_zscore
 
 HERE  = Path(__file__).resolve().parent
 DATA  = HERE / "data"
-CROPS = DATA / "xray_crops_aligned_v5"          # default v5 train crops
+CROPS = DATA / "pretrain/xray_crops_aligned_v5"          # default v5 train crops
 PVOX  = DATA / "pdbbind" / "voxels_v5"          # default PDBbind probe voxels (corpus-independent)
 GRID  = 64
 
