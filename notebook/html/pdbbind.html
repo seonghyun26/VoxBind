@@ -80,6 +80,7 @@
 
     /* Chart canvas */
     .chart-wrap { margin-top: 16px; height: 140px; }
+    .chart-wrap.tall { height: 180px; }
 
     /* Similarity badge */
     .ks-badge {
@@ -314,53 +315,148 @@
     </div>
   </div>
 
-  <p style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:#6070a0;margin:14px 0 8px">LP-PDBBind Split — with EDS filter</p>
-  <table>
-    <thead>
-      <tr>
-        <th>Category</th>
-        <th>Train</th>
-        <th>Val</th>
-        <th>Test</th>
-        <th>Total (EDS)</th>
-        <th>EDS%</th>
-      </tr>
-    </thead>
-    <tbody>
-      <tr>
-        <td>general</td>
-        <td>7,732</td><td>1,686</td><td>3,136</td><td>12,554</td>
-        <td><span class="ks-badge ks-green">90.9%</span></td>
-      </tr>
-      <tr>
-        <td>refined</td>
-        <td>2,230</td><td>485</td><td>1,045</td><td>3,760</td>
-        <td><span class="ks-badge ks-yellow">78.4%</span></td>
-      </tr>
-      <tr>
-        <td>core</td>
-        <td>98</td><td>30</td><td>92</td><td>220</td>
-        <td><span class="ks-badge ks-yellow">79.0%</span></td>
-      </tr>
-      <tr style="font-weight:600">
-        <td>All</td>
-        <td>10,060</td><td>2,201</td><td>4,273</td><td>16,534</td>
-        <td>87.9%</td>
-      </tr>
-      <tr style="background:#e8eeff">
-        <td><strong>refined only ← our use</strong></td>
-        <td>2,328</td><td>515</td><td>1,136</td><td>3,979</td>
-        <td>—</td>
-      </tr>
-    </tbody>
-  </table>
+  <div class="card" style="margin-top:0">
+    <div class="card-title" style="background:#2a5c3a">LP-PDBBind Split + EDS Filter</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+      <div>
+        <div class="count-row">
+          <span class="count-label">Train</span>
+          <div class="count-bar-wrap">
+            <div class="count-bar train" style="width:66.5%">10,060</div>
+          </div>
+          <span class="count-n">10,060</span>
+        </div>
+        <div class="count-row">
+          <span class="count-label">Val</span>
+          <div class="count-bar-wrap">
+            <div class="count-bar val" style="width:14.5%">2,201</div>
+          </div>
+          <span class="count-n">2,201</span>
+        </div>
+        <div class="count-row">
+          <span class="count-label">Test</span>
+          <div class="count-bar-wrap">
+            <div class="count-bar test" style="width:28.2%">4,273</div>
+          </div>
+          <span class="count-n">4,273</span>
+        </div>
+        <div class="stat-grid">
+          <div class="stat-box">
+            <div class="label">Total (EDS)</div>
+            <div class="value">16,534</div>
+            <div class="sub">of 18,795</div>
+          </div>
+          <div class="stat-box">
+            <div class="label">EDS coverage</div>
+            <div class="value">87.9%</div>
+            <div class="sub">overall</div>
+          </div>
+          <div class="stat-box">
+            <div class="label">Our use</div>
+            <div class="value">refined</div>
+            <div class="sub">2,328/515/1,136</div>
+          </div>
+        </div>
+        <div class="kind-row">
+          <span class="kind-pill kind-ki">Ki</span>
+          <span class="kind-pill kind-kd">Kd</span>
+          <span class="kind-pill kind-ic50">IC50</span>
+        </div>
+      </div>
+      <div>
+        <table style="box-shadow:none;border:1px solid #eef0f5;font-size:12px">
+          <thead><tr style="background:#2a5c3a">
+            <th style="padding:7px 10px">Category</th>
+            <th style="padding:7px 10px">Train</th>
+            <th style="padding:7px 10px">Val</th>
+            <th style="padding:7px 10px">Test</th>
+            <th style="padding:7px 10px">EDS%</th>
+          </tr></thead>
+          <tbody>
+            <tr><td style="padding:7px 10px">general</td><td>7,732</td><td>1,686</td><td>3,136</td><td><span class="ks-badge ks-green">90.9%</span></td></tr>
+            <tr><td style="padding:7px 10px">refined</td><td>2,230</td><td>485</td><td>1,045</td><td><span class="ks-badge ks-yellow">78.4%</span></td></tr>
+            <tr><td style="padding:7px 10px">core</td><td>98</td><td>30</td><td>92</td><td><span class="ks-badge ks-yellow">79.0%</span></td></tr>
+            <tr style="font-weight:600;background:#f0f3f9"><td style="padding:7px 10px">All</td><td>10,060</td><td>2,201</td><td>4,273</td><td>87.9%</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <div class="card-title orange">EquiBind Timesplit + EDS Filter</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+      <div>
+        <div class="count-row">
+          <span class="count-label">Train</span>
+          <div class="count-bar-wrap">
+            <div class="count-bar train" style="width:90.6%">13,710</div>
+          </div>
+          <span class="count-n">13,710</span>
+        </div>
+        <div class="count-row">
+          <span class="count-label">Val</span>
+          <div class="count-bar-wrap">
+            <div class="count-bar val" style="width:5.0%"></div>
+          </div>
+          <span class="count-n">761</span>
+        </div>
+        <div class="count-row">
+          <span class="count-label">Test</span>
+          <div class="count-bar-wrap">
+            <div class="count-bar test" style="width:2.0%"></div>
+          </div>
+          <span class="count-n">302</span>
+        </div>
+        <div class="stat-grid">
+          <div class="stat-box">
+            <div class="label">Total (EDS)</div>
+            <div class="value">14,773</div>
+            <div class="sub">of 16,262</div>
+          </div>
+          <div class="stat-box">
+            <div class="label">EDS coverage</div>
+            <div class="value">90.8%</div>
+            <div class="sub">overall</div>
+          </div>
+          <div class="stat-box">
+            <div class="label">Test EDS</div>
+            <div class="value">99.3%</div>
+            <div class="sub">302 / 304</div>
+          </div>
+        </div>
+        <div class="kind-row">
+          <span class="kind-pill kind-ki">Ki</span>
+          <span class="kind-pill kind-kd">Kd</span>
+          <span class="kind-pill kind-ic50">IC50</span>
+        </div>
+      </div>
+      <div>
+        <table style="box-shadow:none;border:1px solid #eef0f5;font-size:12px">
+          <thead><tr style="background:#7c4a1e">
+            <th style="padding:7px 10px">Type</th>
+            <th style="padding:7px 10px">Train (EDS)</th>
+            <th style="padding:7px 10px">Val (EDS)</th>
+            <th style="padding:7px 10px">Test (EDS)</th>
+          </tr></thead>
+          <tbody>
+            <tr><td style="padding:7px 10px"><span class="kind-pill kind-ki">Ki</span></td><td>3,456 / 4,019</td><td>201 / 222</td><td>56 / 58</td></tr>
+            <tr><td style="padding:7px 10px"><span class="kind-pill kind-kd">Kd</span></td><td>5,046 / 5,564</td><td>282 / 307</td><td>148 / 148</td></tr>
+            <tr><td style="padding:7px 10px"><span class="kind-pill kind-ic50">IC50</span></td><td>5,208 / 5,555</td><td>278 / 291</td><td>98 / 98</td></tr>
+            <tr style="font-weight:600;background:#f0f3f9"><td style="padding:7px 10px">All</td><td>13,710 / 15,138</td><td>761 / 820</td><td>302 / 304</td></tr>
+          </tbody>
+        </table>
+        <p style="font-size:11px;color:#aaa;margin-top:8px">EDS (eds) / total per type</p>
+      </div>
+    </div>
+  </div>
 
   <!-- ── Affinity Distributions ── -->
   <h2>Binding Affinity (pKa) Distribution</h2>
   <div class="split-grid">
     <div class="card">
       <div class="card-title">LP-PDBBind — pKa Distribution</div>
-      <div class="chart-wrap"><canvas id="chartLP"></canvas></div>
+      <div class="chart-wrap tall"><canvas id="chartLP"></canvas></div>
       <div class="stat-grid" style="margin-top:12px">
         <div class="stat-box">
           <div class="label">Train mean±std</div>
@@ -378,7 +474,7 @@
     </div>
     <div class="card">
       <div class="card-title orange">Timesplit — pKa Distribution</div>
-      <div class="chart-wrap"><canvas id="chartTS"></canvas></div>
+      <div class="chart-wrap tall"><canvas id="chartTS"></canvas></div>
       <div class="stat-grid" style="margin-top:12px">
         <div class="stat-box">
           <div class="label">Train mean±std</div>
@@ -396,132 +492,106 @@
     </div>
   </div>
 
-  <!-- ── Similarity Metrics ── -->
-  <h2>Train–Test Similarity</h2>
+  <!-- ── CL Quality Filter Table ── -->
+  <h2 style="margin-top:28px">LP-PDBBind Data Quality Filters (CL columns)</h2>
+  <p class="note" style="margin-bottom:12px">
+    CL columns are <strong>data quality filters</strong>, not similarity-leakage flags.
+    <strong>True = passes the filter</strong> (higher quality); False = excluded at that level.
+    The three filters are cumulative (CL3 ⊆ CL2 ⊆ CL1):
+    <br>• <strong>CL1</strong>: QED &gt; 0.2 · only common elements (≥ 1‰) · protein–ligand heavy-atom distance 1.75–4 Å (no clashes) — applies to all categories
+    <br>• <strong>CL2</strong>: CL1 + binding affinity is exact K<sub>d</sub> or K<sub>i</sub> (IC50 excluded) — applies to all categories
+    <br>• <strong>CL3</strong>: CL1 + CL2 + entry is in the refined or core subset — general entries are always CL3=False by definition
+  </p>
   <table>
     <thead>
       <tr>
-        <th>Metric</th>
-        <th>LP-PDBBind</th>
-        <th>Timesplit</th>
-        <th>Interpretation</th>
-      </tr>
-    </thead>
-    <tbody>
-      <tr class="section-row"><td colspan="4">PDB ID Overlap</td></tr>
-      <tr>
-        <td>Train ∩ Test</td>
-        <td>0 / 11,513</td>
-        <td>0 / 15,138</td>
-        <td>No leakage — disjoint by design</td>
-      </tr>
-      <tr>
-        <td>Train ∩ Val</td>
-        <td>0 / 11,513</td>
-        <td>0 / 15,138</td>
-        <td>No leakage — disjoint by design</td>
-      </tr>
-      <tr>
-        <td>Val ∩ Test</td>
-        <td>0 / 2,422</td>
-        <td>0 / 820</td>
-        <td>No leakage — disjoint by design</td>
-      </tr>
-      <tr class="section-row"><td colspan="4">pKa Distribution (Train vs Test)</td></tr>
-      <tr>
-        <td>KS statistic D</td>
-        <td>0.131</td>
-        <td>0.062</td>
-        <td>Lower = more similar distributions</td>
-      </tr>
-      <tr>
-        <td>KS p-value</td>
-        <td><span class="ks-badge" style="background:#fde8e8;color:#8b0000">p &lt; 0.001</span></td>
-        <td><span class="ks-badge ks-yellow">p = 0.19</span></td>
-        <td>LP test set has significantly higher pKa than train</td>
-      </tr>
-      <tr>
-        <td>Mean Δ (train − test)</td>
-        <td>−0.37</td>
-        <td>−0.17</td>
-        <td>Both splits: test is higher-affinity than train</td>
-      </tr>
-      <tr class="section-row"><td colspan="4">Measurement Type Distribution (Test)</td></tr>
-      <tr>
-        <td>Ki fraction</td>
-        <td>28.3% (1,374/4,860)</td>
-        <td>19.1% (58/304)</td>
-        <td>—</td>
-      </tr>
-      <tr>
-        <td>Kd fraction</td>
-        <td>26.2% (1,273/4,860)</td>
-        <td>48.7% (148/304)</td>
-        <td>—</td>
-      </tr>
-      <tr>
-        <td>IC50 fraction</td>
-        <td>45.5% (2,213/4,860)</td>
-        <td>32.2% (98/304)</td>
-        <td>—</td>
-      </tr>
-    </tbody>
-  </table>
-
-  <!-- ── Key Differences ── -->
-  <h2>Key Differences</h2>
-  <table>
-    <thead>
-      <tr>
-        <th>Property</th>
-        <th>LP-PDBBind Split</th>
-        <th>EquiBind Timesplit</th>
+        <th>CL1</th><th>CL2</th><th>CL3</th>
+        <th>Train</th><th>Val</th><th>Test</th><th>Unassigned</th><th>Total</th>
+        <th>Quality level</th>
       </tr>
     </thead>
     <tbody>
       <tr>
-        <td>Split criterion</td>
-        <td>Random stratified</td>
-        <td>Time-based (test = post-2019)</td>
+        <td><code>F</code></td><td><code>F</code></td><td><code>F</code></td>
+        <td>3,961</td><td>453</td><td>574</td><td>131</td><td>5,119</td>
+        <td>Fails all quality filters</td>
       </tr>
       <tr>
-        <td>Source data</td>
-        <td>PDBBind general + refined + core</td>
-        <td>PDBBind general + refined (combined)</td>
+        <td><code>T</code></td><td><code>F</code></td><td><code>F</code></td>
+        <td>3,148</td><td>988</td><td>2,107</td><td>94</td><td>6,337</td>
+        <td>Passes CL1 only (IC50 or general set)</td>
       </tr>
       <tr>
-        <td>Covalent binders</td>
-        <td>Excluded</td>
-        <td>Included</td>
+        <td><code>T</code></td><td><code>T</code></td><td><code>F</code></td>
+        <td>2,124</td><td>424</td><td>831</td><td>204</td><td>3,583</td>
+        <td>Passes CL1+CL2 (K<sub>d</sub>/K<sub>i</sub>; general set)</td>
       </tr>
-      <tr>
-        <td>Measurement types</td>
-        <td>Ki / Kd / IC50 (from index)</td>
-        <td>Ki / Kd / IC50 labeled</td>
+      <tr style="background:#f0faf4">
+        <td><code>T</code></td><td><code>T</code></td><td><code>T</code></td>
+        <td>2,278</td><td>557</td><td>1,348</td><td>219</td><td>4,402</td>
+        <td>Best quality: K<sub>d</sub>/K<sub>i</sub>, refined/core only</td>
       </tr>
-      <tr>
-        <td>Paper reference</td>
-        <td>LP-PDBBind (VoxBind / EDS project)</td>
-        <td>EquiBind (arxiv:2202.05146) → TargetDiff Table 9</td>
-      </tr>
-      <tr>
-        <td>Test set size (full split)</td>
-        <td>4,860 <span style="color:#aaa;font-size:11px">(our use: 1,136)</span></td>
-        <td>304 <span style="color:#aaa;font-size:11px">(paper: 363)</span></td>
-      </tr>
-      <tr>
-        <td>Train/Test ratio</td>
-        <td>2.37× <span style="color:#aaa;font-size:11px">(our use: 2.05×)</span></td>
-        <td>49.8×</td>
+      <tr style="color:#aaa; font-size:12px">
+        <td><code>T</code></td><td><code>F</code></td><td><code>T</code></td>
+        <td>2</td><td>—</td><td>—</td><td>—</td><td>2</td>
+        <td>Data inconsistency (2 entries)</td>
       </tr>
     </tbody>
   </table>
+  <p class="note" style="margin-top:10px">
+    Our EDS-filtered subset (refined category, EDS available) spans all CL levels — we do not apply the CL quality filters.
+  </p>
 
   <p class="note" style="margin-top:16px">
     <strong>Note on Timesplit coverage:</strong> The paper's original timesplit has 363 test / 968 val entries.
     Our version has 304 / 820 because 3,181 entries in the combined index failed to parse during LMDB
     processing (missing or broken structure files). The missing 59 test entries may bias our test metrics
     upward — results should not be directly compared to the paper's Table 9 numbers without this caveat.
+  </p>
+
+  <!-- ── Train-Test Similarity ── -->
+  <h2 style="margin-top:28px">Train–Test Nearest-Neighbour Similarity</h2>
+  <p class="note" style="margin-bottom:12px">
+    Per-test-entry max similarity to any training entry.
+    Protein: SequenceMatcher ratio (proxy for Needleman-Wunsch identity).
+    Ligand: Dice on Morgan fingerprints (radius=2, 2048 bits).
+    Protein train sample = 1,000 (random). A pair is flagged if protein &gt; 0.50 <em>and</em> ligand &gt; 0.99 simultaneously.
+  </p>
+  <table>
+    <thead>
+      <tr>
+        <th>Split</th>
+        <th>n test</th>
+        <th>Protein NN mean</th>
+        <th>Protein NN median</th>
+        <th>Protein NN max</th>
+        <th>Ligand NN mean</th>
+        <th>Ligand NN median</th>
+        <th>Ligand NN max</th>
+        <th>Pairs above both thresholds</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr class="highlight">
+        <td>LP-PDBBind</td>
+        <td>4,860</td>
+        <td>0.495</td><td>0.335</td><td>1.000</td>
+        <td>0.571</td><td>0.532</td><td>1.000</td>
+        <td><span class="ks-badge ks-green">0</span></td>
+      </tr>
+      <tr>
+        <td>Timesplit</td>
+        <td>304</td>
+        <td>0.625</td><td>0.599</td><td>1.000</td>
+        <td>0.737</td><td>0.754</td><td>1.000</td>
+        <td><span class="ks-badge" style="background:#fde8e8;color:#8b0000">22 / 304 (7.2%)</span></td>
+      </tr>
+    </tbody>
+  </table>
+  <p class="note" style="margin-top:10px">
+    LP-PDBBind's explicit Needleman-Wunsch + Dice filtering eliminates all leaky pairs.
+    The timesplit (temporal cut only) leaves 22 test entries with a close training neighbor above both thresholds.
+    Higher median protein similarity in the timesplit (0.60 vs 0.34) reflects the absence of sequence-based deduplication.
   </p>
 
   <!-- ── EGNN Results ── -->
@@ -609,18 +679,17 @@
 </div>
 
 <script>
-const bins = [0,0.5,1,1.5,2,2.5,3,3.5,4,4.5,5,5.5,6,6.5,7,7.5,8,8.5,9,9.5,10,10.5,11,11.5,12,12.5,13,13.5,14,14.5,15,15.5];
-const labels = bins.map(b => b % 2 === 0 ? b.toFixed(0) : '');
+const bins = [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15];
+const labels = bins.map(b => b % 2 === 0 ? String(b) : '');
 
-const lpTrain = [2,3,17,46,153,208,431,542,795,943,1152,1043,1157,1029,1044,869,783,460,365,175,111,76,54,24,15,3,7,2,1,0,3,0];
-const lpVal   = [1,0,4,8,8,11,34,55,87,126,158,168,264,246,293,309,277,171,109,45,30,9,5,3,1,0,0,0,0,0,0,0];
-const lpTest  = [0,3,8,10,47,73,132,141,236,274,329,367,513,519,621,540,458,265,185,64,42,12,12,6,1,0,1,1,0,0,0,0];
+const lpTrain = [5,63,361,973,1738,2195,2186,1913,1243,540,187,78,18,9,1,3];
+const lpVal   = [1,12,19,89,213,326,510,602,448,154,39,8,1,0,0,0];
+const lpTest  = [3,18,120,273,510,696,1032,1161,723,249,54,18,1,2,0,0];
 
-const tsTrain = [4,4,35,70,189,256,515,642,933,1097,1326,1266,1539,1437,1535,1356,1156,705,530,220,131,77,59,24,15,2,8,3,1,0,3,0];
-const tsVal   = [0,1,1,0,16,16,30,33,46,69,67,65,82,72,87,66,74,39,29,11,10,2,4,0,0,0,0,0,0,0,0,0];
-const tsTest  = [0,1,1,0,0,2,7,8,20,32,38,23,29,21,27,28,22,14,8,11,8,2,2,0,0,0,0,0,0,0,0,0];
+const tsTrain = [8,105,445,1157,2030,2592,2976,2891,1861,750,208,83,17,11,1,3];
+const tsVal   = [1,1,32,63,115,132,154,153,113,40,12,4,0,0,0,0];
+const tsTest  = [1,1,2,15,52,61,50,55,36,19,10,2,0,0,0,0];
 
-// Normalize to % for visual comparison
 function norm(arr) {
   const s = arr.reduce((a,b)=>a+b,0);
   return arr.map(v => s > 0 ? (v/s*100) : 0);
@@ -641,15 +710,15 @@ const opts = (datasets) => ({
 });
 
 new Chart(document.getElementById('chartLP'), opts([
-  { label: 'Train', data: norm(lpTrain), backgroundColor: 'rgba(59,111,201,0.7)', borderWidth: 0 },
-  { label: 'Val',   data: norm(lpVal),   backgroundColor: 'rgba(107,163,201,0.7)', borderWidth: 0 },
-  { label: 'Test',  data: norm(lpTest),  backgroundColor: 'rgba(155,193,224,0.7)', borderWidth: 0 },
+  { label: 'Train', data: norm(lpTrain), backgroundColor: 'rgba(59,111,201,0.75)', borderWidth: 0 },
+  { label: 'Val',   data: norm(lpVal),   backgroundColor: 'rgba(30,140,90,0.75)',  borderWidth: 0 },
+  { label: 'Test',  data: norm(lpTest),  backgroundColor: 'rgba(200,80,50,0.75)',  borderWidth: 0 },
 ]));
 
 new Chart(document.getElementById('chartTS'), opts([
-  { label: 'Train', data: norm(tsTrain), backgroundColor: 'rgba(124,74,30,0.7)', borderWidth: 0 },
-  { label: 'Val',   data: norm(tsVal),   backgroundColor: 'rgba(180,120,70,0.7)', borderWidth: 0 },
-  { label: 'Test',  data: norm(tsTest),  backgroundColor: 'rgba(220,170,110,0.7)', borderWidth: 0 },
+  { label: 'Train', data: norm(tsTrain), backgroundColor: 'rgba(124,74,30,0.75)',  borderWidth: 0 },
+  { label: 'Val',   data: norm(tsVal),   backgroundColor: 'rgba(30,140,90,0.75)',  borderWidth: 0 },
+  { label: 'Test',  data: norm(tsTest),  backgroundColor: 'rgba(200,80,50,0.75)',  borderWidth: 0 },
 ]));
 
 // ── EGNN Results Bar Charts ──
