@@ -1,0 +1,115 @@
+defaults:
+  - dset: crossdocked_xray
+  - model: atomblob_density_vit_mae_40m
+  - vox: default
+  - override hydra/job_logging: custom
+  - _self_
+
+# (c2) C+D+G — ChannelViT (grouped patch-embed) ViT-MAE.
+# ── PHASE-2 architecture arm of the matched coords-vs-C+D+G study (260622).
+#    Same DensityViTMAE / mae pretext as the plain-ViT C+D+G config
+#    (…_invfreq_plinder_otf_mask050) EXCEPT patch_embed_mode=channel_group with
+#    per-group tokens+attention over channel_groups [7,4,1,1] (7 lig + 4 poc + 1
+#    density + 1 gradmag). IDENTICAL PLINDER OTF dset block → identical 17,430/100
+#    samples; UNIFORM 50% block masking; inv_freq. Comparable head-to-head vs the
+#    plain-ViT (fused) and ChA-MAEViT C+D+G arms. bsz 8 × accum 4 → eff batch 128
+#    (matches the fused arm's 32×1×4-GPU); channel_group needs the smaller per-step batch.
+
+debug: False
+wandb: True
+wandb_tags: [pretrain, atomblob_density_gradmag, 40m, invfreq, plinder, otf, ligvdw, clip30, mask050, uniform, cdg, channelvit, archcompare]
+num_workers: 16
+prefetch_factor: 8
+resume: null
+resume_epoch: null
+exp_dir: exps
+exp_name: 260622_plinder_otf_cdg_channelvit_mask050_pretrain
+output_dir: null
+
+seed: 42
+num_epochs: 100
+aug: True
+bsz: 8
+accum_steps: 4
+lr: 1e-4
+wd: 5e-2
+
+amp:
+  enabled: true
+  dtype: bf16
+channels_last: false
+optimizer:
+  fused: false
+ema:
+  foreach: false
+compile:
+  enabled: true
+  backend: inductor
+  mode: default
+  fullgraph: false
+  dynamic: false
+
+input_mode: atomblob_density
+with_gradmag: true                 # + gradmag → 13 channels
+
+dset:
+  data_dir: ${oc.env:VOXBIND_DATA_ROOT,dataset/data}
+  crops_dir: ""
+  resample_dir: ${oc.env:VOXBIND_DATA_ROOT,dataset/data}/pretrain/xray_resample_plinder
+  data_file: data_train_plinder.pt
+  normalize: false
+  ligand_radius: -1
+  subset_xray_only: true
+  subset_n: 17430                  # IDENTICAL samples to the plain-ViT C+D+G arm
+  subset_val_n: 100
+  use_xray: true
+
+model:
+  n_in_channels: 13
+  head_style: patch_mlp
+  head_hidden_dim: 67
+  head_depth: 2
+  patch_embed_mode: channel_group  # ← ChannelViT: per-group tokens + attention
+  channel_groups: [7, 4, 1, 1]     # lig atoms / poc atoms / density / gradmag (sum = 13)
+
+mae:
+  pretext_style: mae
+  density_source: xray
+  sigma_blur_a_lo: 0.30
+  sigma_blur_a_hi: 0.80
+  sigma_noise: 0.0
+  block_size: 8
+  mask_ratio: 0.50                 # ← 50% masked
+  mask_strategy: uniform           # ← random (uniform) block masking
+  mask_atom_tau: 1.0
+  channel_weighting: inv_freq
+  channel_weight_clip_ratio: 30.0
+  density_channel_weight: 0.1
+  gradmag_channel_weight: 0.1
+  gradmag_reconstruct: true
+  gradmag_noise: false
+  atom_pos_weight: 10.0
+  atom_pos_thresh: 0.05
+  lambda_dens: 1.0
+  lambda_str: 1.0
+  struct_pos_weight: 100.0
+  struct_pos_thresh: 0.05
+  ema_decay: 0.999
+  grad_clip: 1.0
+  val_every: 1
+  ckpt_every: 50
+
+hydra:
+  run:
+    dir: ./${exp_dir}/${exp_name}
+  job:
+    config:
+      override_dirname:
+        kv_sep: ""
+        item_sep: "_"
+        exclude_keys: [
+            "exp_dir", "lr", vox.grid_dim, "wd", "resume", "resume_epoch", "wandb",
+            "num_workers", "exp_name", "output_dir", "out_dir",
+            "bsz", "accum_steps", "seed", "num_epochs", "aug", "pocket_radius",
+            "grid_dim", "debug"
+]

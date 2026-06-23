@@ -10,7 +10,7 @@
 #
 # Usage:  bash run_otf_channelvit_ar_edrscc_one.sh <EXP_NAME> <TAG> "<extra hydra overrides>"
 set -u
-VOX=/home/shpark/prj-denovo/VoxBind/voxbind
+VOX="${VOXBIND_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 PY=/home/shpark/.conda/envs/voxbind/bin
 DATA=$VOX/dataset/data
 ALLOW=$DATA/pdbbind/ed_rscc_pids.txt
@@ -48,7 +48,7 @@ else
   echo "[$(ts)] [CVAR-ed:$TAG] TRAIN $EXP  overrides='$OVERRIDES'  cg_token='$CG'" | tee -a "$LOG"
   CUDA_VISIBLE_DEVICES=$GPUS PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True $PY/torchrun --standalone --nproc_per_node=4 \
     train_density.py --config-name=config_train_atomblob_density_gradmag_vit_mae_40m_invfreq \
-    dset.data_dir="$DATA" dset.crops_dir="" dset.resample_dir="$DATA/xray_resample_plinder" \
+    dset.data_dir="$DATA" dset.crops_dir="" dset.resample_dir="$DATA/pretrain/xray_resample_plinder" \
     dset.data_file=data_train_plinder.pt dset.subset_n=17430 dset.subset_val_n=100 dset.subset_xray_only=true \
     model.patch_embed_mode=channel_group "$CG" \
     seed=42 num_workers=8 num_epochs=100 bsz=8 accum_steps=4 \

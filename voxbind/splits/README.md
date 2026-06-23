@@ -36,6 +36,7 @@ manifests so they commit with a plain `git add`.
 | scheme | train / val / test | partition | what it measures |
 |---|---|---|---|
 | `lp_edrscc_v1` | 5817 / 1498 / 2813 | LP-PDBBind `new_split` ∩ ED ∩ lig&poc RSCC≥0.8, non-cov | **novel-target** (sequence-dedup) |
+| `lp_edrscc_v2` | 3850 / 817 / 1320 | `lp_edrscc_v1` ∩ (Kd **or** Ki) — IC50 dropped | **novel-target**, Kd/Ki-only target (**canonical**) |
 | `time_v1` | 8308 / 934 / 1182 | deposition year: train ≤2016 / val 2017 / test ≥2018 (same RSCC bar) | **temporal** generalization |
 | `misato_md_v1` | 13765 / 1595 / 1612 | mirror of MISATO official 8:1:1 MD split | MISATO QM/MD targets |
 

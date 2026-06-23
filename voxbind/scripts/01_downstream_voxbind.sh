@@ -49,7 +49,7 @@
 #   29 = --density --encoder vit --encoder-ckpt <electra> --gpus 1-5 --epochs 200 ...
 set -u
 
-VOX=/home/shpark/prj-denovo/VoxBind/voxbind
+VOX="${VOXBIND_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 PY=/home/shpark/.conda/envs/voxbind/bin
 DATA=$VOX/dataset/data
 LOG=$VOX/log

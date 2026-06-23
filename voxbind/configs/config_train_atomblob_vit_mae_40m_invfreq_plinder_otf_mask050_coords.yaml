@@ -1,0 +1,113 @@
+defaults:
+  - dset: crossdocked_xray
+  - model: atomblob_density_vit_mae_40m
+  - vox: default
+  - override hydra/job_logging: custom
+  - _self_
+
+# (b) Atom-blob (SEPARATE lig+poc) COORDS-ONLY — PLAIN ViT-MAE.
+# ── PLINDER OTF coords-only arm of the matched coords-vs-C+D+G pair (260622).
+#    Plain ViT, UNIFORM 50% block masking. IDENTICAL dataset/recipe to the C+D+G
+#    config (…_invfreq_plinder_otf_mask050) — the ONLY difference is the input
+#    modality: input_mode=atomblob (11 ch: 7 lig + 4 poc vdW), with_gradmag=false.
+#    The dset block is byte-for-byte the same (same data_train_plinder.pt + resample
+#    manifest + subset_n=17430 + subset_val_n=100 + subset_xray_only=true), so BOTH
+#    arms train on the IDENTICAL 17,430/100 samples. Density is still resampled by the
+#    loader but never enters the model (prefetcher need_density=False for atomblob) —
+#    this guarantees the two arms differ ONLY in modality, with zero code change.
+
+debug: False
+wandb: True
+wandb_tags: [pretrain, atomblob, 40m, invfreq, plinder, otf, ligvdw, mask050, uniform, coords, matchedpair]
+num_workers: 16
+prefetch_factor: 8
+resume: null
+resume_epoch: null
+exp_dir: exps
+exp_name: 260622_plinder_otf_coords_mask050_pretrain
+output_dir: null
+
+seed: 42
+num_epochs: 100
+aug: True
+bsz: 32
+accum_steps: 1
+lr: 1e-4
+wd: 5e-2
+
+# ── Throughput knobs — amp + compile ON by default (260611; verified same results). ────
+amp:
+  enabled: true
+  dtype: bf16
+channels_last: false
+optimizer:
+  fused: false
+ema:
+  foreach: false
+compile:
+  enabled: true
+  backend: inductor
+  mode: default
+  fullgraph: false
+  dynamic: false
+
+input_mode: atomblob               # ← coords-only (no density / gradmag in the model)
+with_gradmag: false
+
+dset:
+  data_dir: ${oc.env:VOXBIND_DATA_ROOT,dataset/data}
+  crops_dir: ""                    # off: no frozen crops (resample_dir takes priority)
+  resample_dir: ${oc.env:VOXBIND_DATA_ROOT,dataset/data}/pretrain/xray_resample_plinder   # OTF resample-aug
+  data_file: data_train_plinder.pt # PLINDER ligand-matched corpus (17,530 tuples; pre-shuffled seed 1234)
+  normalize: false                 # OTF path applies its own arcsinh+z (v5) recipe (resample.json)
+  ligand_radius: -1                # element-wise vdW radii (lig + poc)
+  subset_xray_only: true
+  subset_n: 17430                  # FULL train pool = 17,530 − 100 val  (IDENTICAL to the C+D+G arm)
+  subset_val_n: 100
+  use_xray: true
+
+model:
+  n_in_channels: 11                # 7 lig + 4 poc atom-type channels only
+  head_style: patch_mlp            # per-patch 2-layer MLP recon head
+  head_hidden_dim: 67
+  head_depth: 2
+
+mae:
+  pretext_style: mae
+  density_source: xray             # ignored for atomblob (need_density=False); kept for parity
+  sigma_blur_a_lo: 0.30
+  sigma_blur_a_hi: 0.80
+  sigma_noise: 0.0
+  block_size: 8
+  mask_ratio: 0.50                 # ← 50% masked
+  mask_strategy: uniform           # ← random (uniform) block masking
+  mask_atom_tau: 1.0
+  channel_weighting: inv_freq      # balances the 11 atom-type channels in the recon loss
+  channel_weight_clip_ratio: 30.0
+  gradmag_reconstruct: true        # no-op (with_gradmag=false)
+  gradmag_noise: false
+  atom_pos_weight: 10.0
+  atom_pos_thresh: 0.05
+  lambda_dens: 1.0
+  lambda_str: 1.0
+  struct_pos_weight: 100.0
+  struct_pos_thresh: 0.05
+  ema_decay: 0.999
+  grad_clip: 1.0
+  val_every: 1
+  ckpt_every: 50
+
+hydra:
+  run:
+    dir: ./${exp_dir}/${exp_name}
+  job:
+    config:
+      override_dirname:
+        kv_sep: ""
+        item_sep: "_"
+        exclude_keys: [
+            "exp_dir", "lr", vox.grid_dim, "wd", "resume", "resume_epoch", "wandb",
+            "num_workers", "exp_name", "output_dir", "out_dir",
+            "bsz", "accum_steps", "seed", "num_epochs", "aug", "pocket_radius",
+            "grid_dim", "debug"
+]

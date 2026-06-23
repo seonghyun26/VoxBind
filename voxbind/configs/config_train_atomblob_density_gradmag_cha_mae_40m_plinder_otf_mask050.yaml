@@ -1,0 +1,96 @@
+defaults:
+  - dset: crossdocked_xray
+  - model: atomblob_density_gradmag_cha_mae_40m
+  - vox: default
+  - override hydra/job_logging: custom
+  - _self_
+
+# (c3) C+D+G — ChA-MAEViT (token-drop multi-channel MAE; arXiv:2503.19331).
+# ── PHASE-2 architecture arm of the matched coords-vs-C+D+G study (260622).
+#    DensityChaMAE: grouped encoder [7,4,1,1] + memory tokens + channel-aware
+#    transformer decoder; DCP (dynamic channel-patch) token-drop masking lives
+#    INSIDE the model (the MAEPrefetcher block-mask is ignored). IDENTICAL PLINDER
+#    OTF dset block → identical 17,430/100 samples as the ViT / ChannelViT arms.
+#    patch_mask_ratio=0.50 (the "50% masked" knob for the DCP patch mode).
+#    compile OFF: the channel-aware decoder's torch.fft Fourier loss graph-breaks.
+
+debug: False
+wandb: True
+wandb_tags: [pretrain, atomblob_density_gradmag, 40m, plinder, otf, ligvdw, mask050, cdg, cha_mae, channelvit, memory_tokens, dcp, archcompare]
+num_workers: 16
+prefetch_factor: 8
+resume: null
+resume_epoch: null
+exp_dir: exps
+exp_name: 260622_plinder_otf_cdg_chamae_mask050_pretrain
+output_dir: null
+
+seed: 42
+num_epochs: 100
+aug: True
+bsz: 8           # 32 OOM'd@e1; 16 ran but at 96% mem (23.6/24GB) w/ variable DCP alloc — too tight.
+accum_steps: 4   # 8 leaves ~8GB headroom. eff batch = 8 x 4 x 4 GPU = 128 (matches ViT/ChannelViT).
+lr: 1e-4
+wd: 5e-2
+
+amp:
+  enabled: true
+  dtype: bf16
+channels_last: false
+optimizer:
+  fused: false
+ema:
+  foreach: false
+compile:
+  enabled: false                   # ChA decoder uses torch.fft (Fourier loss) → graph-breaks under compile
+  backend: inductor
+  mode: default
+  fullgraph: false
+  dynamic: false
+
+input_mode: atomblob_density
+with_gradmag: true                 # + gradmag → 13 channels
+
+dset:
+  data_dir: ${oc.env:VOXBIND_DATA_ROOT,dataset/data}
+  crops_dir: ""
+  resample_dir: ${oc.env:VOXBIND_DATA_ROOT,dataset/data}/pretrain/xray_resample_plinder
+  data_file: data_train_plinder.pt
+  normalize: false
+  ligand_radius: -1
+  subset_xray_only: true
+  subset_n: 17430                  # IDENTICAL samples to the ViT / ChannelViT arms
+  subset_val_n: 100
+  use_xray: true
+
+model:
+  patch_mask_ratio: 0.50           # ← DCP patch-mode mask ratio ("50% masked")
+
+mae:
+  density_source: xray
+  sigma_blur_a_lo: 0.30
+  sigma_blur_a_hi: 0.80
+  sigma_noise: 0.0
+  block_size: 8                    # MAEPrefetcher API (ChA ignores its block-mask output)
+  mask_ratio: 0.50                 #   ″  (kept = patch_mask_ratio for clarity)
+  mask_strategy: uniform           #   ″
+  gradmag_reconstruct: true
+  ema_decay: 0.999
+  grad_clip: 1.0
+  val_every: 1
+  ckpt_every: 50
+
+hydra:
+  run:
+    dir: ./${exp_dir}/${exp_name}
+  job:
+    config:
+      override_dirname:
+        kv_sep: ""
+        item_sep: "_"
+        exclude_keys: [
+            "exp_dir", "lr", vox.grid_dim, "wd", "resume", "resume_epoch", "wandb",
+            "num_workers", "exp_name", "output_dir", "out_dir",
+            "bsz", "accum_steps", "seed", "num_epochs", "aug", "pocket_radius",
+            "grid_dim", "debug"
+]

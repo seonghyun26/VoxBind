@@ -1147,9 +1147,12 @@ def target_source(target: str):
 # pinned membership, so every server uses the IDENTICAL train/val/test set regardless
 # of which crops/RSCC happen to have materialized locally.
 FROZEN_SPLIT_SCHEMES = {
-    "lp_edrscc": "lp_edrscc_v1",   # canonical affinity split (sequence-dedup, ED + lig&poc RSCC≥0.8)
-    "time":      "time_v1",        # temporal holdout (train ≤2016 / val 2017 / test ≥2018)
-    "misato":    "misato_md_v1",   # MISATO official 8:1:1 MD split (committed mirror)
+    # canonical affinity split — Kd/Ki-only (IC50 dropped 260623), ED + lig&poc RSCC≥0.8, sequence-dedup
+    "lp_edrscc":    "lp_edrscc_v2",
+    "lp_edrscc_v1": "lp_edrscc_v1",   # legacy: IC50-inclusive (5817/1498/2813)
+    "lp_edrscc_v2": "lp_edrscc_v2",   # explicit alias for the canonical (3850/817/1320)
+    "time":         "time_v1",        # temporal holdout (train ≤2016 / val 2017 / test ≥2018)
+    "misato":       "misato_md_v1",   # MISATO official 8:1:1 MD split (committed mirror)
 }
 
 
@@ -1545,6 +1548,17 @@ def run_probe(args: argparse.Namespace) -> None:
         all_feats[cond] = bundle["features"]
         print(f"  loaded {cond:24s}: {len(all_feats[cond]):,} feats (dim={bundle['feature_dim']})")
 
+    # --require_density: drop pids lacking a v5 density crop from EVERY condition, so an
+    # atom-only condition (coords) is evaluated on the SAME has_atoms&has_density complexes
+    # as C+D+G — a fair matched comparison (mainly affects the raw `lp` split).
+    if getattr(args, "require_density", False):
+        _av = pd.read_csv(PDBBIND_DIR / "voxels_v5" / "availability.csv")
+        _dens = {str(p).lower() for p in _av.loc[_av["has_density"].astype(bool), "pdb_id"]}
+        for _c in list(all_feats):
+            _kept = {p: v for p, v in all_feats[_c].items() if str(p).lower() in _dens}
+            print(f"  [require_density] {_c}: {len(all_feats[_c]):,} -> {len(_kept):,} (has_density only)")
+            all_feats[_c] = _kept
+
     if args.no_intersect:
         shared = None
     else:
@@ -1568,6 +1582,19 @@ def run_probe(args: argparse.Namespace) -> None:
         print(f"  split sizes   : train={len(data['train']['pid']):,}  "
               f"val={len(data['val']['pid']):,}  test={len(data['test']['pid']):,}")
         print(f"  input dim     : {data['train']['X'].shape[1]}")
+
+        # --test_affinity: score the SAME combined-trained model on a Kd-only/Ki-only TEST
+        # subset (train/val untouched). mtype from LP 'kd/ki' column (Kd|Ki|IC50).
+        if args.test_affinity != "all":
+            _mt = (lp_df["kd/ki"].astype(str)
+                   .str.extract(r"(?i)^\s*(Kd|Ki|IC50)", expand=False).str.lower())
+            _keep = {str(p).lower() for p, m in zip(lp_df["pdb_id"], _mt)
+                     if m == args.test_affinity.lower()}
+            te = data["test"]
+            idx = [i for i, p in enumerate(te["pid"]) if str(p).lower() in _keep]
+            te["X"], te["y"] = te["X"][idx], te["y"][idx]
+            te["pid"] = [te["pid"][i] for i in idx]
+            print(f"  [test_affinity={args.test_affinity}] test → {len(idx)} pids")
 
         for seed in range(args.seeds):
             m = train_one(
@@ -2325,10 +2352,11 @@ def build_parser() -> argparse.ArgumentParser:
                          "resolution-robust). A non-pK target adds a _<target> token to the CSV name "
                          "and needs its cache built (dataset/extract_bfactors.py for B-factors); "
                          "complexes lacking a label are dropped.")
-    pr.add_argument("--split", choices=["lp", "lp_edrscc", "time", "misato"], default="lp",
+    pr.add_argument("--split", choices=["lp", "lp_edrscc", "lp_edrscc_v1", "lp_edrscc_v2", "time", "misato"], default="lp",
                     help="Split source. lp = LP_PDBBind new_split recomputed locally (legacy; can drift "
                          "across servers). FROZEN, hash-verified manifests in voxbind/splits/ (identical "
-                         "on every server): lp_edrscc (canonical ED+RSCC affinity split 5817/1498/2813), "
+                         "on every server): lp_edrscc (canonical = Kd/Ki-only v2, 3850/817/1320; "
+                         "lp_edrscc_v1 = legacy IC50-inclusive 5817/1498/2813), "
                          "time (temporal holdout 8308/934/1182), misato (official 8:1:1 MD split). Frozen "
                          "schemes add a _<flag>split CSV token + split_test_hash/n_test_eff stamp.")
     pr.add_argument("--head",          choices=["scalar", "softmax"], default="scalar",
@@ -2350,6 +2378,14 @@ def build_parser() -> argparse.ArgumentParser:
     pr.add_argument("--patience",      type=int,   default=30)
     pr.add_argument("--no_intersect",  action="store_true",
                     help="Let each condition use its own pdb_id pool")
+    pr.add_argument("--require_density", action="store_true",
+                    help="Restrict EVERY condition's eval pool to has_density complexes "
+                         "(voxels_v5/availability.csv), so an atom-only condition (coords) is scored on "
+                         "the SAME has_atoms&has_density set as C+D+G — fair matched comparison.")
+    pr.add_argument("--test_affinity", choices=["all", "Kd", "Ki"], default="all",
+                    help="Stratify the TEST set by affinity measurement type (Kd|Ki from LP 'kd/ki'); "
+                         "train/val untouched, so it's the SAME combined-trained, val-selected model scored "
+                         "on the Kd-only or Ki-only test subset. 'all' = no filter (default).")
     pr.add_argument("--no_covalent_filter", action="store_true",
                     help="Keep covalent complexes (default: drop)")
     pr.add_argument("--cl1_only",      action="store_true",
@@ -2427,7 +2463,7 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Keep covalent complexes (default: drop)")
     pt.add_argument("--cl1_only", action="store_true",
                     help="Restrict to LP_PDBBind CL1=True (cleanest subset); adds _filtered to the CSV name")
-    pt.add_argument("--split", choices=["lp", "lp_edrscc", "time", "misato"], default="lp",
+    pt.add_argument("--split", choices=["lp", "lp_edrscc", "lp_edrscc_v1", "lp_edrscc_v2", "time", "misato"], default="lp",
                     help="Split source (see `probe --split`). Frozen schemes (lp_edrscc/time/misato) load "
                          "the hash-verified manifest in voxbind/splits/ so both arms AND every server use "
                          "the identical pids; lp = legacy local recompute. Pair with --tag to name the CSV.")

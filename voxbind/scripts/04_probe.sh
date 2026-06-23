@@ -29,7 +29,7 @@
 #   default: affinity
 #
 # Options:
-#   --split S        lp_edrscc (default; canonical 5817/1498/2813) | lp | time | misato
+#   --split S        lp_edrscc (default; canonical Kd/Ki-only v2 3850/817/1320) | lp_edrscc_v1 | lp | time | misato
 #                    MISATO targets need --split misato; warned otherwise.
 #   --epoch N        encoder checkpoint epoch              (default 99)
 #   --voxel VER      v1 | v2 | v3 | v4 | v5                (default v5)

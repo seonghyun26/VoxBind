@@ -41,7 +41,7 @@ input_mode: atomblob
 with_gradmag: false
 
 dset:
-  crops_dir: /home1/irteam/VoxBind/voxbind/dataset/data/pretrain/xray_crops_aligned_v5   # only for the availability mask (subset match)
+  crops_dir: ${oc.env:VOXBIND_DATA_ROOT,dataset/data}/pretrain/xray_crops_aligned_v5   # only for the availability mask (subset match)
   ligand_radius: -1
   subset_xray_only: true
   subset_n: 78428

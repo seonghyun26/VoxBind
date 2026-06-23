@@ -7,7 +7,7 @@ data_dir: ${oc.env:VOXBIND_DATA_ROOT,dataset/data}
 data_file: data_train_plinder.pt
 crops_dir: ''                  # OTF resample path → no frozen crops
 ccp4_dir: ${oc.env:VOXBIND_DATA_ROOT,dataset/data}/ccp4
-resample_dir: ${oc.env:VOXBIND_DATA_ROOT,dataset/data}/xray_resample_plinder
+resample_dir: ${oc.env:VOXBIND_DATA_ROOT,dataset/data}/pretrain/xray_resample_plinder
 ligand_radius: -1
 pocket_radius: -1
 use_xray: true

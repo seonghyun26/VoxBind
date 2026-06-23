@@ -43,7 +43,7 @@
 #        --targets 200 --range 0:200 --out res_electra_fulltest --gpu 6 --dock
 set -u
 
-VOX=/home/shpark/prj-denovo/VoxBind/voxbind
+VOX="${VOXBIND_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 PY=/home/shpark/.conda/envs/voxbind/bin/python
 DATA=$VOX/dataset/data
 LOG=$VOX/log
