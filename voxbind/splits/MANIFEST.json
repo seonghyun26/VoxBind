@@ -52,6 +52,28 @@
       "inputs": {
         "misato_splits": "data/misato/misato_splits/{train,val,test}_MD.txt"
       }
+    },
+    "lp_edrscc_v2": {
+      "file": "lp_edrscc_v2.csv",
+      "counts": {
+        "train": 3850,
+        "val": 817,
+        "test": 1320,
+        "total": 5987
+      },
+      "sha256": "55122339061d3d6d77f3a649da1130be7a2d5b571417656eb5f502879245129e",
+      "description": "lp_edrscc_v1 \u2229 (Kd or Ki) \u2014 IC50 dropped; ED-available \u2229 (lig & poc RSCC \u2265 0.8), non-covalent",
+      "partition": "LP_PDBBind 'new_split' column (sequence-identity clustered)",
+      "generalization": "novel-target (sequence-dedup); Kd/Ki-only affinity labels (no assay-dependent IC50)",
+      "inputs": {
+        "ed_rscc_split": "ed_rscc_split.csv",
+        "lp_pdbbind": "LP_PDBBind.csv",
+        "rscc_threshold": 0.8,
+        "measurement_types": [
+          "Kd",
+          "Ki"
+        ]
+      }
     }
   }
 }

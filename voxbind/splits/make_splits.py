@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -64,7 +65,11 @@ def _load_quality_frame() -> pd.DataFrame:
     lp = pd.read_csv(LP_CSV).rename(columns={"Unnamed: 0": "pid"})
     lp["pid"] = lp["pid"].astype(str).str.lower()
     lp["year"] = pd.to_datetime(lp["date"], errors="coerce").dt.year
-    q = q.merge(lp[["pid", "year"]], on="pid", how="left")
+    # affinity measurement type — the 'kd/ki' column actually holds Kd / Ki / IC50
+    lp["mtype"] = (lp["kd/ki"].astype(str)
+                   .str.extract(r"^\s*(Kd|Ki|IC50)", expand=False, flags=re.IGNORECASE)
+                   .str.lower())
+    q = q.merge(lp[["pid", "year", "mtype"]], on="pid", how="left")
     return q
 
 
@@ -77,6 +82,28 @@ def build_lp_edrscc(q: pd.DataFrame) -> tuple[list, dict]:
         "partition": "LP_PDBBind 'new_split' column (sequence-identity clustered)",
         "generalization": "novel-target (sequence-dedup train/test)",
         "inputs": {"ed_rscc_split": ED_RSCC.name, "lp_pdbbind": LP_CSV.name, "rscc_threshold": RSCC_THRESHOLD},
+    }
+    return pairs, prov
+
+
+def build_lp_edrscc_v2(q: pd.DataFrame) -> tuple[list, dict]:
+    """lp_edrscc ∩ affinity measured as Kd or Ki (drop assay-dependent IC50).
+
+    IC50 varies with substrate/enzyme concentration and mechanism, so pIC50 is not
+    directly comparable to the thermodynamic pKd/pKi. Restricting to Kd/Ki gives a
+    cleaner regression target. Identical ED + (lig & poc RSCC ≥ 0.8) + non-covalent
+    quality bar and the same sequence-clustered new_split partition as v1 — just the
+    Kd/Ki subset (≈ 3850 / 817 / 1320).
+    """
+    sub = q[q["new_split"].astype(str).str.lower().isin(SPLIT_NAMES)
+            & q["mtype"].isin(["kd", "ki"])]
+    pairs = [(p, s.lower()) for p, s in zip(sub["pid"], sub["new_split"].astype(str))]
+    prov = {
+        "description": "lp_edrscc_v1 ∩ (Kd or Ki) — IC50 dropped; ED-available ∩ (lig & poc RSCC ≥ 0.8), non-covalent",
+        "partition": "LP_PDBBind 'new_split' column (sequence-identity clustered)",
+        "generalization": "novel-target (sequence-dedup); Kd/Ki-only affinity labels (no assay-dependent IC50)",
+        "inputs": {"ed_rscc_split": ED_RSCC.name, "lp_pdbbind": LP_CSV.name,
+                   "rscc_threshold": RSCC_THRESHOLD, "measurement_types": ["Kd", "Ki"]},
     }
     return pairs, prov
 
@@ -145,7 +172,7 @@ def _write_manifest_csv(pairs, path: Path) -> None:
 def main() -> int:
     ap = argparse.ArgumentParser(description="Regenerate frozen PDBbind split manifests.")
     ap.add_argument("--scheme", default="all",
-                    choices=["all", "lp_edrscc_v1", "time_v1", "misato_md_v1"])
+                    choices=["all", "lp_edrscc_v1", "lp_edrscc_v2", "time_v1", "misato_md_v1"])
     ap.add_argument("--test_from", type=int, default=2018, help="time_v1: first test year (>=)")
     ap.add_argument("--val_year", type=int, default=2017, help="time_v1: validation year")
     args = ap.parse_args()
@@ -157,15 +184,18 @@ def main() -> int:
                         "MANIFEST.json pins counts+sha256. Regenerate via make_splits.py.")
     manifest.setdefault("schemes", {})
 
-    want = ["lp_edrscc_v1", "time_v1", "misato_md_v1"] if args.scheme == "all" else [args.scheme]
+    want = ["lp_edrscc_v1", "lp_edrscc_v2", "time_v1", "misato_md_v1"] if args.scheme == "all" else [args.scheme]
 
     # the quality frame is only needed for the pdbbind-derived schemes
-    q = _load_quality_frame() if any(s in want for s in ("lp_edrscc_v1", "time_v1")) else None
+    q = _load_quality_frame() if any(s in want for s in ("lp_edrscc_v1", "lp_edrscc_v2", "time_v1")) else None
 
     for scheme in want:
         if scheme == "lp_edrscc_v1":
             pairs, prov = build_lp_edrscc(q)
             fname = "lp_edrscc_v1.csv"
+        elif scheme == "lp_edrscc_v2":
+            pairs, prov = build_lp_edrscc_v2(q)
+            fname = "lp_edrscc_v2.csv"
         elif scheme == "time_v1":
             pairs, prov = build_time(q, args.test_from, args.val_year)
             fname = "time_v1.csv"
