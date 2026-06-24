@@ -16,6 +16,7 @@ thead th{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:
 .lbl{font-weight:600}
 .num{font-weight:660}.pm{color:#5b6678;font-weight:500;font-size:12px}
 .pos{color:#1d5a3a;font-weight:700}.neg{color:#b4413a;font-weight:700}.mut{color:#5b6678}.small{font-size:12.5px}
+.ctrl{font-size:11px;font-weight:600;color:#b4413a;background:#fde9e7;padding:1px 6px;border-radius:4px;margin-left:5px;vertical-align:middle}
 .note{font-size:12.5px;color:#5b6678;line-height:1.65}
 </style></head><body><div class="page">
 <header><div class="date">VoxBind · PLINDER 4-case campaign · H200</div>
@@ -23,7 +24,8 @@ thead th{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:
 <div class="sub">3 inputs × 2 archs, gradmag-only dropped → <b>4 cases</b>: {density-only, density+gradmag} × {ViT, ChannelViT}.
 Encoders pretrained 100 ep on the coverage-gated PLINDER <code>_v2clean</code> set (17,407 crops, pdbbind-only
 leakage exclusion). Frozen 512-D mean-pooled features → 2-layer MLP affinity probe on
-<b>lp_edrscc_v2</b> (Kd/Ki-only, 3850/817/1320, 3 seeds). 6/4 cases probed.</div></header>
+<b>lp_edrscc_v2</b> (Kd/Ki-only, 3850/817/1320, 3 seeds). 6 cases probed, plus a <b>noise-density control</b>
+(density+gradmag with matched random-noise channels, ViT).</div></header>
 
 <div class="card"><h2>test ρ (Spearman) — input × architecture</h2>
 
@@ -31,12 +33,13 @@ leakage exclusion). Frozen 512-D mean-pooled features → 2-layer MLP affinity p
 <tr><td class="lbl">density-only</td><td><span class="num">0.345</span> <span class="pm">±0.012</span></td><td><span class="num">0.276</span> <span class="pm">±0.008</span></td></tr>
 <tr><td class="lbl">density + gradmag</td><td><span class="num">0.332</span> <span class="pm">±0.004</span></td><td><span class="num">0.310</span> <span class="pm">±0.012</span></td></tr>
 <tr><td class="lbl">coords + density</td><td><span class="num">0.595</span> <span class="pm">±0.004</span> ★</td><td><span class="num">0.576</span> <span class="pm">±0.008</span></td></tr>
+<tr><td class="lbl">density + gradmag <span class="ctrl">noise</span></td><td><span class="num">0.218</span> <span class="pm">±0.030</span></td><td class="mut">—</td></tr>
 </tbody></table>
 <div class="note" style="margin-top:10px">★ = best so far. Higher is better.</div></div>
 
 <div class="card"><h2>Per-encoder detail</h2>
 <table><thead><tr><th>Input</th><th>Arch</th><th>test ρ</th><th>test r</th><th>test RMSE</th><th>status</th></tr></thead>
-<tbody><tr><td class="lbl">density-only</td><td>ViT</td><td><span class="num">0.345</span> <span class="pm">±0.012</span></td><td><span class="num">0.339</span> <span class="pm">±0.017</span></td><td>1.718</td><td class="small"><span class="pos">done</span> (3 seeds)</td></tr><tr><td class="lbl">density-only</td><td>ChannelViT</td><td><span class="num">0.276</span> <span class="pm">±0.008</span></td><td><span class="num">0.251</span> <span class="pm">±0.008</span></td><td>1.761</td><td class="small"><span class="pos">done</span> (3 seeds)</td></tr><tr><td class="lbl">density+gradmag</td><td>ViT</td><td><span class="num">0.332</span> <span class="pm">±0.004</span></td><td><span class="num">0.319</span> <span class="pm">±0.004</span></td><td>1.767</td><td class="small"><span class="pos">done</span> (3 seeds)</td></tr><tr><td class="lbl">density+gradmag</td><td>ChannelViT</td><td><span class="num">0.310</span> <span class="pm">±0.012</span></td><td><span class="num">0.286</span> <span class="pm">±0.012</span></td><td>1.737</td><td class="small"><span class="pos">done</span> (3 seeds)</td></tr><tr><td class="lbl">coords+density</td><td>ViT</td><td><span class="num">0.595</span> <span class="pm">±0.004</span></td><td><span class="num">0.617</span> <span class="pm">±0.004</span></td><td>1.446</td><td class="small"><span class="pos">done</span> (3 seeds)</td></tr><tr><td class="lbl">coords+density</td><td>ChannelViT</td><td><span class="num">0.576</span> <span class="pm">±0.008</span></td><td><span class="num">0.597</span> <span class="pm">±0.009</span></td><td>1.550</td><td class="small"><span class="pos">done</span> (3 seeds)</td></tr></tbody></table></div>
+<tbody><tr><td class="lbl">density-only</td><td>ViT</td><td><span class="num">0.345</span> <span class="pm">±0.012</span></td><td><span class="num">0.339</span> <span class="pm">±0.017</span></td><td>1.718</td><td class="small"><span class="pos">done</span> (3 seeds)</td></tr><tr><td class="lbl">density-only</td><td>ChannelViT</td><td><span class="num">0.276</span> <span class="pm">±0.008</span></td><td><span class="num">0.251</span> <span class="pm">±0.008</span></td><td>1.761</td><td class="small"><span class="pos">done</span> (3 seeds)</td></tr><tr><td class="lbl">density+gradmag</td><td>ViT</td><td><span class="num">0.332</span> <span class="pm">±0.004</span></td><td><span class="num">0.319</span> <span class="pm">±0.004</span></td><td>1.767</td><td class="small"><span class="pos">done</span> (3 seeds)</td></tr><tr><td class="lbl">density+gradmag</td><td>ChannelViT</td><td><span class="num">0.310</span> <span class="pm">±0.012</span></td><td><span class="num">0.286</span> <span class="pm">±0.012</span></td><td>1.737</td><td class="small"><span class="pos">done</span> (3 seeds)</td></tr><tr><td class="lbl">coords+density</td><td>ViT</td><td><span class="num">0.595</span> <span class="pm">±0.004</span></td><td><span class="num">0.617</span> <span class="pm">±0.004</span></td><td>1.446</td><td class="small"><span class="pos">done</span> (3 seeds)</td></tr><tr><td class="lbl">coords+density</td><td>ChannelViT</td><td><span class="num">0.576</span> <span class="pm">±0.008</span></td><td><span class="num">0.597</span> <span class="pm">±0.009</span></td><td>1.550</td><td class="small"><span class="pos">done</span> (3 seeds)</td></tr><tr><td class="lbl">density+gradmag <span class="ctrl">noise</span></td><td>ViT</td><td><span class="num">0.218</span> <span class="pm">±0.030</span></td><td><span class="num">0.211</span> <span class="pm">±0.024</span></td><td>1.816</td><td class="small"><span class="pos">done</span> (3 seeds)</td></tr></tbody></table></div>
 
 <div class="card"><h2>Reading it</h2>
 <div class="note">
@@ -47,6 +50,12 @@ affinity signal. The point of this grid is the <b>relative</b> effect of (a) add
 <b>So far (ViT):</b> density-only 0.345 vs density+gradmag
 0.332 — adding gradmag did not help (slightly lower).
 ChannelViT rows fill in as runs 3–4 finish.<br><br>
+<b>Noise-density control (ViT):</b> swapping the real density+gradmag for matched random-noise channels
+collapses test ρ to <b>0.218</b> ±0.030 — below <i>every</i> real encoder (vs <b>0.332</b> real density+gradmag,
+and <b>0.595</b> coords+density). The 0.218 is the floor the frozen probe + atom-structure aux head recover from
+pure noise, so the <b>+0.114&nbsp;ρ</b> gap of real over noise density+gradmag is genuine density signal, not probe
+leakage. (This is the <b>D+G</b> noise control, no coords — distinct from the meeting Table 1's still-pending
+<b>C+D+G</b> noisy-density row.)<br><br>
 <b>Caveat:</b> the v1 baselines elsewhere (260625/autoresearch) are on a different split (5817/1498/2813, all
 measurement types); these are <b>lp_edrscc_v2</b> (Kd/Ki-only, ~5,987) — not directly comparable.
 </div></div>
