@@ -21,7 +21,8 @@ import torch
 from scipy.stats import pearsonr, spearmanr
 from torch.utils.data import DataLoader
 
-from config import (CONV_CHANNELS, CONV_DILATIONS, CONVS_PER_BLOCK, RESULTS_DIR)
+from config import (CONV_CHANNELS, CONV_DILATIONS, CONVS_PER_BLOCK,
+                    DEFAULT_SPLIT_CSV, RESULTS_DIR)
 from dataset import HBGSADataset, collate
 from featurize import build_smiles_vocab
 from manifest import build_manifest
@@ -141,7 +142,10 @@ def main():
     ap = argparse.ArgumentParser(description="Train/eval HBGSA on LP-PDBbind new_split")
     ap.add_argument("--tag", required=True, help="run tag for the results CSV")
     ap.add_argument("--seeds", default="0", help="comma-separated seeds")
-    ap.add_argument("--no_cl1", action="store_true", help="disable the default CL1-clean filter")
+    ap.add_argument("--split_csv", default=str(DEFAULT_SPLIT_CSV),
+                    help="frozen pid,split manifest (membership + train/val/test)")
+    ap.add_argument("--cl1_only", action="store_true",
+                    help="further restrict to the LP_PDBBind CL1-clean subset")
     ap.add_argument("--restrict_ids", default="", help="file of pdb_ids to restrict manifest to (matched split)")
     ap.add_argument("--keep_covalent", action="store_true")
     ap.add_argument("--epochs", type=int, default=150)
@@ -171,7 +175,8 @@ def main():
 
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
     print(f"=== HBGSA train/eval  (device={device})  tag={args.tag} ===")
-    manifest = build_manifest(cl1_only=not args.no_cl1, drop_covalent=not args.keep_covalent)
+    manifest = build_manifest(split_csv=Path(args.split_csv), cl1_only=args.cl1_only,
+                              drop_covalent=not args.keep_covalent)
     if args.restrict_ids:
         keep = {l.strip().lower() for l in Path(args.restrict_ids).read_text().split()}
         n0 = len(manifest)

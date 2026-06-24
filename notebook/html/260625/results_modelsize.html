@@ -1,0 +1,119 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Channel-ViT model-size probe — LP-EDRSCC v2</title>
+<style>
+  :root { --ink:#1a1a1a; --muted:#666; --line:#e3e3e3; --bg:#fafafa; --card:#fff;
+          --good:#1d6b3a; --good-bg:#eaf5ee; --warn:#8a6d00; --bad:#9a2828; }
+  * { box-sizing:border-box; }
+  body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+         color:var(--ink); background:var(--bg); margin:0; line-height:1.55; }
+  .wrap { max-width:1180px; margin:0 auto; padding:36px 28px 80px; }
+  h1 { font-size:26px; margin:0 0 4px; letter-spacing:-.02em; }
+  h2 { font-size:18px; margin:40px 0 12px; padding-bottom:6px; border-bottom:2px solid var(--line); }
+  .sub { color:var(--muted); font-size:14px; margin-bottom:8px; }
+  .sub span { margin-right:16px; }
+  .tldr { background:#fff8e6; border:1px solid #f0d98a; border-radius:10px; padding:16px 20px; margin:22px 0; font-size:14.5px; }
+  .tldr b { color:var(--warn); }
+  .tldr .up { color:var(--good); font-weight:700; }
+  .tldr .down { color:var(--bad); font-weight:700; }
+  table { width:100%; border-collapse:collapse; background:var(--card); font-size:13.5px;
+           border:1px solid var(--line); border-radius:8px; overflow:hidden; margin-top:8px; }
+  th,td { text-align:left; padding:9px 12px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { background:#f2f3f5; font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:#555; }
+  td:not(:nth-child(1)):not(:nth-child(2)) { font-variant-numeric:tabular-nums; }
+  tr:last-child td { border-bottom:none; }
+  tr.grp td { border-top:2px solid #cfd4da; }
+  .m { font-weight:600; }
+  td.best { background:var(--good-bg); }
+  td.best .m { color:var(--good); }
+  td.bad .m { color:var(--bad); font-weight:600; }
+  .pill { display:inline-block; font-size:11px; font-weight:600; padding:2px 8px; border-radius:999px; vertical-align:middle; margin-left:8px; }
+  .pill.done { background:#eef1f6; color:#555; }
+  .pill.win  { background:#eaf5ee; color:var(--good); }
+  .mono { font-family:"SF Mono",Menlo,Consolas,monospace; font-size:12.5px;
+          background:#f0f2f5; padding:1px 5px; border-radius:4px; }
+  .note { color:var(--muted); font-size:12.5px; line-height:1.6; }
+  .note ul { margin:6px 0 0; padding-left:20px; }
+  .note li { margin-bottom:4px; }
+  .note b { color:var(--ink); }
+</style></head>
+<body><div class="wrap">
+
+  <h1>VoxBind Channel-ViT frozen probe — model-size scaling</h1>
+  <div class="sub">
+    <span>&#x1F4C5; 2026-06-24</span>
+    <span>&#x1F9EA; PDBBind v2020 &middot; <span class="mono">lp_edrscc_v2</span></span>
+    <span>&#x1F4CA; test n=1,320 &middot; 3 seeds &middot; mean &plusmn; std</span>
+    <span>&#x2699; voxbind env &middot; RTX&nbsp;PRO&nbsp;6000 (GPU&nbsp;0/1)</span>
+  </div>
+
+  <div class="tldr">
+    <b>TL;DR.</b> Two PLINDER-pretrained <b>Channel-ViT</b> encoders (C+D+G, OTF, seed&nbsp;0), <b>frozen</b> and linear-probed
+    for affinity on the full <span class="mono">lp_edrscc_v2</span> split. Scaling the encoder <b>4.7&times;</b>
+    (<span class="mono">0.4M</span> &rarr; <span class="mono">4M</span> tier; 1.19M &rarr; 5.63M params) <b>clearly helps</b>:
+    test Spearman <span class="up">0.615</span> vs 0.577 (&Delta;&nbsp;+0.039, ~10&times; the per-seed&nbsp;&sigma;),
+    Pearson <span class="up">0.631</span> vs 0.599, RMSE <span class="up">1.386</span> vs 1.440. The 4M probe
+    even <b>edges past the external supervised references</b> on this split (HBGSA&nbsp;3.06M r=0.565, EGNN+TargetDiff r=0.597).
+    <b>Note the reversal:</b> on the earlier ~50%-coverage subset (test&nbsp;n=646) the two tiers <i>tied</i>
+    (&rho; 0.563 vs 0.562) — an artifact of partial local data. Completing the split to <b>100% (5,986/5,987)</b>
+    restored the scaling signal. Both rows are final (3 seeds, identical test hash).
+  </div>
+
+  <h2>1 &middot; Results — 0.4M vs 4M frozen probe</h2>
+  <div class="sub">
+    Frozen mean-pooled encoder tokens &rarr; 2-layer MLP, trained on pK; test metrics at each seed's best-val checkpoint
+    (selection on val Spearman), mean&nbsp;&plusmn;&nbsp;std over 3 seeds. Greener cell = better.
+    Spearman / Pearson higher is better; RMSE / MAE lower is better.
+  </div>
+  <table>
+    <thead><tr>
+      <th>Encoder</th><th>Arch (dim&times;depth)</th><th>Enc. params</th>
+      <th>test &rho; &uarr;</th><th>test r &uarr;</th><th>RMSE &darr;</th><th>MAE &darr;</th><th>val &rho;</th>
+    </tr></thead>
+    <tbody>
+      <tr class="grp">
+        <td><b>4M</b> <span class="pill win">winner</span></td><td>192 &times; 6</td><td>5.63M</td>
+        <td class="best"><span class="m">0.615 &plusmn; 0.004</span></td>
+        <td class="best"><span class="m">0.631 &plusmn; 0.004</span></td>
+        <td class="best"><span class="m">1.386 &plusmn; 0.008</span></td>
+        <td class="best"><span class="m">1.093 &plusmn; 0.008</span></td>
+        <td class="best"><span class="m">0.518 &plusmn; 0.002</span></td></tr>
+      <tr>
+        <td><b>0.4M</b> <span class="pill done">baseline</span></td><td>64 &times; 4</td><td>1.19M</td>
+        <td>0.577 &plusmn; 0.002</td>
+        <td>0.599 &plusmn; 0.003</td>
+        <td>1.440 &plusmn; 0.014</td>
+        <td>1.140 &plusmn; 0.010</td>
+        <td>0.478 &plusmn; 0.000</td></tr>
+    </tbody>
+  </table>
+  <div class="note" style="margin-top:8px;">
+    On the same split, the external <b>supervised</b> references are HBGSA&nbsp;3.06M r=0.565, plain EGNN r=0.539,
+    EGNN+TargetDiff r=0.597 (see <span class="mono">results_hbgsa.html</span> / <span class="mono">results_targetdiff.html</span>).
+    The <b>frozen</b> 4M Channel-ViT probe (r=0.631) tops all of them and the 0.4M (r=0.599) matches EGNN+TargetDiff —
+    encouraging for self-supervised density pretraining. The 4M also early-stops sooner (epochs 143&ndash;198 vs 196&ndash;199),
+    consistent with a stronger feature space.
+  </div>
+
+  <h2>2 &middot; Setup &amp; notes</h2>
+  <div class="note">
+    <ul>
+      <li><b>Encoders</b> &mdash; <span class="mono">260624_channelvit_{04m,4m}_plinder_otf_s0_pretrain</span>, e99 EMA weights.
+        Channel-ViT (<span class="mono">patch_embed_mode=channel_group</span>, groups [7,4,1,1], patch 8, 13 input channels =
+        7 lig + 4 poc + density + ‖&nabla;&rho;‖), pretrained on PLINDER OTF with the C+D+G density-MAE objective.
+        <b>0.4M</b> = dim&nbsp;64 &times; depth&nbsp;4 (1,191,808 params); <b>4M</b> = dim&nbsp;192 &times; depth&nbsp;6 (5,628,416 params).
+        The "0.4M/4M" tags are config-tier nicknames; the figures above are the measured frozen-encoder param counts.</li>
+      <li><b>Probe</b> &mdash; <span class="mono">scripts/04_probe.sh --condition atomblob_density_gradmag --atom_source ligvdw
+        --voxel v5 --split lp_edrscc --seeds 3</span>. Features extracted once per encoder over the 6,451-complex local pool
+        (0 errors), then a frozen 2-layer MLP regresses pK. The encoder is LayerNorm-only + mean-pooled, so batching is
+        result-neutral.</li>
+      <li><b>Split</b> &mdash; frozen, hash-verified <span class="mono">voxbind/splits/lp_edrscc_v2.csv</span>: LP-PDBBind
+        new_split &cap; ED-available &cap; (lig &amp; poc RSCC&nbsp;&ge;&nbsp;0.8), non-covalent, Kd/Ki-only.
+        Label = pK (&minus;log Kd/Ki). Novel-target (sequence-clustered) partition.</li>
+      <li><b>Takeaway</b> &mdash; at this pretraining budget, encoder capacity is <b>not yet saturated</b>: the jump from
+        1.19M &rarr; 5.63M buys a real, seed-stable gain in affinity transfer (and beats the supervised baselines).
+        Next: probe an even larger tier and/or more pretraining to find where the frozen-probe curve plateaus.</li>
+    </ul>
+  </div>
+
+</div></body></html>

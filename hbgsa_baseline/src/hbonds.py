@@ -143,6 +143,8 @@ def build_cache(manifest, *, shard: int = 0, nshards: int = 1, overwrite: bool =
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description="Build per-complex H-bond graph cache (PyMOL)")
+    from config import DEFAULT_SPLIT_CSV
+    ap.add_argument("--split_csv", default=str(DEFAULT_SPLIT_CSV))
     ap.add_argument("--shard", type=int, default=0)
     ap.add_argument("--nshards", type=int, default=1)
     ap.add_argument("--cl1_only", action="store_true")
@@ -151,7 +153,11 @@ if __name__ == "__main__":
     ap.add_argument("--smoke", type=int, default=0, help="only process first N complexes (test)")
     args = ap.parse_args()
 
-    m = build_manifest(cl1_only=args.cl1_only, drop_covalent=not args.keep_covalent, verbose=(args.shard == 0))
+    # require_smiles=False: the H-bond cache only needs structures, so cover every
+    # split pid regardless of SMILES resolvability (keeps this env RDKit-free).
+    m = build_manifest(split_csv=Path(args.split_csv), cl1_only=args.cl1_only,
+                       drop_covalent=not args.keep_covalent, require_smiles=False,
+                       verbose=(args.shard == 0))
     if args.smoke:
         m = m.head(args.smoke)
     build_cache(m, shard=args.shard, nshards=args.nshards, overwrite=args.overwrite)
