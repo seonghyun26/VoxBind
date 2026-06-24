@@ -126,6 +126,9 @@ FEAT_DIR    = PDBBIND_DIR / "features"
 LP_CSV      = PDBBIND_DIR / "raw" / "LP_PDBBind.csv"
 RESULTS_DIR = PDBBIND_DIR / "results"          # per-run probe/finetune CSVs (own subfolder)
 RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+# Focused meeting-doc folder — default sink for single-seed scatter CSVs (pred vs true pK),
+# i.e. they land next to 260625_meeting.html / autoresearch.html. Override with --scatter_dir.
+MEETING_DIR = Path(__file__).resolve().parents[2] / "notebook" / "html" / "260625"
 # Per-complex protein-ligand H-bond counts (HBGSA cache, npz field `n`); used as an
 # alternative regression target via `probe --target hbonds`.
 HBOND_CACHE_DIR = Path(__file__).resolve().parents[2] / "hbgsa_baseline" / "cache" / "hbonds"
@@ -155,6 +158,13 @@ EXPS = {
     # SEPARATE-channel (non-merged) gradmag/ligvdw encoder (260604): 11 atoms + density
     # + ‖∇ρ‖ (13-ch), element-wise vdW radii, v1 density.
     "atomblob_density_gradmag": Path("exps") / "260604_atomblob_density_vit_mae_40m_weighted_v1_gradmag_ligvdw_pretrain",
+    # ROLE-SPLIT (roleblob): 2 ROLE channels [ligand-occupancy, pocket-occupancy] +
+    # density + gradmag (4-ch), element-wise vdW radii (atom_source=ligvdw, both lig &
+    # poc). Built from the ligvdw atom precompute by summing the per-element channels
+    # (identical to a single-channel voxelization). input_mode/with_gradmag come from
+    # the encoder cfg.yaml (roleblob_density / true), so the label is just a result tag.
+    "roleblob_density_gradmag":            Path("exps") / "260623_plinder_otf_roleblob_cdg_vit_mask050_pretrain",
+    "roleblob_density_gradmag_channelvit": Path("exps") / "260623_plinder_otf_roleblob_cdg_channelvit_mask050_pretrain",
 }
 
 # Conditions whose encoder was retrained on the v2/v3 density distributions;
@@ -276,6 +286,8 @@ def _fallback_input_mode(condition: str) -> str:
         return "atomblob_density"
     if condition == "atomblob_merged_density_gradmag":
         return "atomblob_merged_density"
+    if condition in ("roleblob_density_gradmag", "roleblob_density_gradmag_channelvit"):
+        return "roleblob_density"
     return condition
 
 
@@ -286,6 +298,8 @@ def _expected_channels(input_mode: str, with_gradmag: bool) -> int:
         n = 11 + (1 if input_mode.endswith("_density") else 0)
     elif input_mode in ("atomblob_merged", "atomblob_merged_density"):
         n = 7 + (1 if input_mode.endswith("_density") else 0)
+    elif input_mode in ("roleblob", "roleblob_density"):
+        n = 2 + (1 if input_mode.endswith("_density") else 0)   # [ligand, pocket] (+density)
     else:
         raise ValueError(f"unsupported input_mode={input_mode!r}")
     return n + (1 if with_gradmag else 0)
@@ -729,8 +743,9 @@ def load_voxels_for(
     """Build the (n_in_channels, G, G, G) tensor for one complex."""
     input_mode = input_mode or _fallback_input_mode(condition)
     needs_atoms = input_mode != "density"
-    needs_density = input_mode in ("density", "atomblob_density", "atomblob_merged_density") \
-        or with_gradmag
+    needs_density = input_mode in (
+        "density", "atomblob_density", "atomblob_merged_density", "roleblob_density",
+    ) or with_gradmag
 
     atoms_t = None
     if needs_atoms:
@@ -758,6 +773,17 @@ def load_voxels_for(
         merged = atoms_t[:7].clone()
         merged[:4] += atoms_t[7:11]
         x = torch.cat([merged, dens_t], dim=0)                # (8, G, G, G)
+    elif input_mode in ("roleblob", "roleblob_density"):
+        # Role-split: collapse the 7 ligand-element + 4 pocket-element channels into
+        # 2 ROLE channels [ligand-occupancy, pocket-occupancy] by summation — exactly a
+        # single-channel voxelization of each role (each atom's blob is channel-agnostic;
+        # verified to float epsilon). Requires the ligvdw precompute (vdW-radius blobs) so
+        # blob SIZE carries atom identity — atom_source resolves to ligvdw when
+        # dset.ligand_radius<=0 (see infer_feature_spec). Order [ligand, pocket] matches
+        # train_common._build_role_atoms.
+        role = torch.cat([atoms_t[:7].sum(0, keepdim=True),
+                          atoms_t[7:11].sum(0, keepdim=True)], dim=0)   # (2, G, G, G)
+        x = role if input_mode == "roleblob" else torch.cat([role, dens_t], dim=0)
     else:
         raise ValueError(f"unknown input_mode={input_mode!r} for condition={condition!r}")
 
@@ -1458,6 +1484,11 @@ def train_one(
         "test_mae":          float(np.abs(pred_te - yte_np).mean()),
         "epoch_stopped":     int(best_epoch),
     }
+    # per-sample test predictions (popped by run_probe before the metrics DataFrame is built;
+    # feeds the optional single-seed scatter CSV). Regression preds = predict(Xte), aligned
+    # with data["test"]["pid"].
+    out["_pred_te"] = np.asarray(pred_te, dtype=float)
+    out["_yte"]     = np.asarray(yte_np, dtype=float)
     if do_clf:
         # argmax classification metrics from the macro-F1-selected model (counts as classes)
         model.load_state_dict(best_state_clf or best_state)
@@ -1605,12 +1636,25 @@ def run_probe(args: argparse.Namespace) -> None:
                 hidden=args.hidden, dropout=args.dropout,
                 head=args.head, soft_sigma=args.soft_sigma,
             )
+            _pred_te = m.pop("_pred_te", None)    # per-sample preds (kept out of the metrics DataFrame)
+            _yte     = m.pop("_yte", None)
             row = {"condition": cond, "seed": seed, **m}
             if split_scheme is not None:                  # cross-server reproducibility stamp
                 row["split_scheme"]    = split_scheme
                 row["split_test_hash"] = data["test"].get("content_hash", "")
                 row["n_test_eff"]      = len(data["test"]["pid"])
             rows.append(row)
+            # single-seed scatter CSV (pred vs true pK) → focused meeting folder by default.
+            if (not args.no_scatter) and _pred_te is not None and seed == args.scatter_seed:
+                sdir = Path(args.scatter_dir); sdir.mkdir(parents=True, exist_ok=True)
+                lbl    = args.tag or args.feature_tag or cond
+                scheme = split_scheme or split_flag
+                sname  = f"scatter_e{args.epoch}_{args.voxel_version}_{scheme}_{lbl}_seed{seed}.csv"
+                sdf = pd.DataFrame({"pid": list(data["test"]["pid"]),
+                                    "y_true": _yte, "y_pred": _pred_te})
+                sdf.insert(0, "condition", cond); sdf.insert(1, "seed", seed)
+                sdf.to_csv(sdir / sname, index=False)
+                print(f"  [scatter] {sdir / sname}  ({len(sdf)} pts, seed {seed})")
             print(f"  seed={seed}  ep_stop={m['epoch_stopped']:3d}  "
                   f"val_ρ={m['best_val_spearman']:.4f}  "
                   f"val_r={m['val_pearson']:.4f}  "
@@ -2408,6 +2452,14 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Override results CSV path")
     pr.add_argument("--no_write_csv",  action="store_true",
                     help="Print seed/summary metrics but do not write a results CSV.")
+    pr.add_argument("--scatter_dir",   default=str(MEETING_DIR),
+                    help="Directory for the per-sample SINGLE-SEED scatter CSV (pid,y_true,y_pred). "
+                         "Defaults under the focused meeting doc (notebook/html/260625/), next to "
+                         "260625_meeting.html. Use --no_scatter to skip.")
+    pr.add_argument("--scatter_seed",  type=int, default=0,
+                    help="Which seed's held-out test predictions to dump for the scatter CSV (default 0).")
+    pr.add_argument("--no_scatter",    action="store_true",
+                    help="Do not write the single-seed scatter CSV.")
     pr.set_defaults(func=run_probe)
 
     pt = sub.add_parser(

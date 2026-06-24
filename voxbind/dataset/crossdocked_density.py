@@ -276,7 +276,13 @@ class DatasetCrossDockedDensity(DatasetCrossDockedXray):
 
         # ── Ligand / pocket (identical to crossdocked_xray) ──────────────────────
         mask = ligand_["atoms_channel"] < 7
-        if self.ligand_radius > 0:
+        if "radius" in ligand_:
+            # Phase-2 diverse build: per-atom vdW radius is precomputed + stored in the
+            # tuple (atoms_channel collapsed to 0 → single role channel) so EVERY heavy
+            # atom — incl. elements outside the 7-ch vocab — voxelizes at its own vdW
+            # diameter. Overrides the element-hash LUT. (channel 0 < 7 → mask keeps all.)
+            lig_radius = ligand_["radius"][mask].to(torch.float32)
+        elif self.ligand_radius > 0:
             lig_radius = torch.full_like(
                 ligand_["atoms_channel"][mask], self.ligand_radius, dtype=torch.float32)
         else:
@@ -291,7 +297,12 @@ class DatasetCrossDockedDensity(DatasetCrossDockedXray):
 
         mask = pocket_["atoms_channel"] < 4
         poc_ch = pocket_["atoms_channel"][mask]
-        if self.pocket_radius > 0:
+        if "radius" in pocket_:
+            # Phase-2 diverse build (see ligand note): per-atom vdW radius stored in the
+            # tuple → diverse pocket atoms (P, Se, metals at catalytic sites) voxelize at
+            # their own diameter. (channel 0 < 4 → mask keeps all.)
+            radius = pocket_["radius"][mask].to(torch.float32)
+        elif self.pocket_radius > 0:
             radius = torch.full_like(poc_ch, self.pocket_radius, dtype=torch.float32)
         else:
             radius = self.pocket_radius_lut[poc_ch.long()]

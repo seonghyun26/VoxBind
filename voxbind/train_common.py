@@ -152,6 +152,8 @@ _VALID_INPUT_MODES = (
     "atomblob_density",
     "atomblob_merged",            # 7 atom ch: pocket C/O/N/S folded into ligand C/O/N/S
     "atomblob_merged_density",    # 8 ch: merged-7 atoms + 1 density
+    "roleblob",                   # 2 atom ch: [ligand-occupancy, pocket-occupancy], vdW-radius blobs
+    "roleblob_density",           # 3 ch: role-2 atoms + 1 density
 )
 
 
@@ -167,6 +169,26 @@ def _build_merged_atoms(v_lig: torch.Tensor, v_poc: torch.Tensor) -> torch.Tenso
     v_merged = v_lig.clone()
     v_merged[:, :4] = v_merged[:, :4] + v_poc
     return v_merged                                                 # (B, 7, G³)
+
+
+def _build_role_atoms(v_lig: torch.Tensor, v_poc: torch.Tensor) -> torch.Tensor:
+    """Collapse per-element atom channels into 2 ROLE channels: [ligand, pocket].
+
+    Summing a role's per-element channels is *exactly* equal to voxelizing all of
+    that role's atoms into a single channel — each atom's Gaussian blob depends
+    only on its coords + radius, not on which channel it lands in (verified to
+    float epsilon). With element-wise vdW radii (ligand_radius=-1 / pocket_radius=-1)
+    every atom contributes a blob sized by its own van-der-Waals diameter, so the
+    occupancy channel encodes atom identity via blob SIZE instead of a one-hot
+    element channel — letting the encoder ingest diverse atoms without a fixed
+    element vocabulary. Channel order is [ligand, pocket] to match the atomblob
+    convention (v_lig before v_poc). Kept lig/poc separable (not pre-merged) so a
+    future generative path can role-collapse the pocket while keeping per-element
+    ligand output for vox2mol.
+    """
+    return torch.cat(
+        [v_lig.sum(dim=1, keepdim=True), v_poc.sum(dim=1, keepdim=True)], dim=1
+    )                                                               # (B, 2, G³)
 
 
 def _channel_layout(
@@ -192,10 +214,14 @@ def _channel_layout(
         n_atom = 11
     elif input_mode in ("atomblob_merged", "atomblob_merged_density"):
         n_atom = 7
+    elif input_mode in ("roleblob", "roleblob_density"):
+        n_atom = 2                                    # [ligand-occupancy, pocket-occupancy]
     else:
         raise RuntimeError(f"unexpected input_mode={input_mode!r}")
 
-    has_density = input_mode in ("density", "atomblob_density", "atomblob_merged_density")
+    has_density = input_mode in (
+        "density", "atomblob_density", "atomblob_merged_density", "roleblob_density",
+    )
     n_density = 1 if has_density else 0
     if with_gradmag and not has_density:
         raise ValueError(

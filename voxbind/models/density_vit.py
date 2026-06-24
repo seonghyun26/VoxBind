@@ -88,6 +88,17 @@ class RoPE3D(nn.Module):
         self.register_buffer("cos", ang.cos(), persistent=False)
         self.register_buffer("sin", ang.sin(), persistent=False)
 
+    def _cos_sin(self, N: int, dtype):
+        """cos/sin tables for N query/key tokens. fused: N == g_p³ → one copy.
+        channel_group: N == nG·g_p³ → tile the per-patch table nG times so every
+        group's patch reuses the same spatial rotation (group identity is carried by
+        group_embed, not RoPE). Bit-exact to the old `self.cos[:N]` when N == g_p³."""
+        P = self.cos.shape[0]
+        if N != P and P > 0 and N % P == 0:
+            reps = N // P
+            return self.cos.repeat(reps, 1).to(dtype), self.sin.repeat(reps, 1).to(dtype)
+        return self.cos[:N].to(dtype), self.sin[:N].to(dtype)
+
     def rotate(self, x: torch.Tensor) -> torch.Tensor:
         """Rotate the first rope_dim dims of q/k (B,H,N,head_dim) by the per-token 3D
         angles (interleaved pairs); the trailing head_dim-rope_dim dims pass through."""
@@ -96,8 +107,7 @@ class RoPE3D(nn.Module):
         x_rot, x_pass = x[..., :rd], x[..., rd:]
         xr = x_rot.reshape(B, H, N, rd // 2, 2)
         x0, x1 = xr[..., 0], xr[..., 1]                        # (B, H, N, rd/2)
-        cos = self.cos[:N].to(x.dtype)                         # (N, rd/2) → broadcast over B,H
-        sin = self.sin[:N].to(x.dtype)
+        cos, sin = self._cos_sin(N, x.dtype)                   # (N, rd/2) → broadcast over B,H
         r0 = x0 * cos - x1 * sin
         r1 = x0 * sin + x1 * cos
         x_rot = torch.stack((r0, r1), dim=-1).reshape(B, H, N, rd)
@@ -115,8 +125,7 @@ class RoPE3D(nn.Module):
         x_rot, x_pass = x[..., :rd], x[..., rd:]
         x0 = x_rot[..., 0::2]                                  # (..., rd/2) even lanes
         x1 = x_rot[..., 1::2]                                  # (..., rd/2) odd lanes
-        cos = self.cos.to(x.dtype)                            # (N, rd/2) → broadcasts over leading dims
-        sin = self.sin.to(x.dtype)
+        cos, sin = self._cos_sin(x.shape[-2], x.dtype)        # (N, rd/2) → broadcasts over leading dims
         r0 = x0 * cos - x1 * sin
         r1 = x0 * sin + x1 * cos
         out = torch.stack((r0, r1), dim=-1).flatten(-2)       # interleave back → (..., rd)
@@ -267,10 +276,10 @@ class DensityViT(nn.Module):
             assert channel_groups is not None and sum(channel_groups) == n_in_channels, (
                 f"channel_groups={channel_groups} must sum to n_in_channels={n_in_channels}"
             )
-            assert pos_encoding == "learnable", (
-                "patch_embed_mode='channel_group' supports pos_encoding='learnable' only "
-                "(RoPE over group-tiled tokens not wired yet)"
-            )
+            # pos_encoding='rope3d' IS supported here: the (group, patch) token axis is
+            # group-tiled, so RoPE3D tiles its per-patch table nG times (see _cos_sin) —
+            # every group's patch reuses the same spatial rotation; group identity is
+            # carried by group_embed, not by position. (learnable PE also fine.)
             self.channel_groups = tuple(int(c) for c in channel_groups)
             self.n_groups = len(self.channel_groups)
             self.patch_embed = None

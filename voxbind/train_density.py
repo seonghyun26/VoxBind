@@ -62,7 +62,7 @@ from voxbind.models.mae_ops import (
 from voxbind.models.density_cha_mae import DensityChaMAE
 from voxbind.models.density_vit import DensityViTMAE
 from voxbind.train_common import (  # shared pretext-independent engine (extracted)
-    AsyncCheckpointSaver, _amp_setup, _build_merged_atoms, _channel_layout,
+    AsyncCheckpointSaver, _amp_setup, _build_merged_atoms, _build_role_atoms, _channel_layout,
     _ch_freq_cache_path, _cleanup_ddp, _compile_options, _reconcile_input_keys,
     _setup_ddp, _unwrap, _val_cache_path, _CH_FREQ_DEFAULT_N_SAMPLES,
     _CH_FREQ_POS_THRESH, _VALID_INPUT_MODES, log_metrics, maybe_compile_model,
@@ -205,6 +205,7 @@ class MAEPrefetcher:
                 # xray path, no blur on the synthetic path.
                 need_density = self.input_mode in (
                     "density", "atomblob_density", "atomblob_merged_density",
+                    "roleblob_density",
                 )
                 # atom-biased mask needs the all-channel atom sum even in atomblob mode
                 need_atoms_sum = need_density or self.mask_strategy == "atom_biased"
@@ -249,6 +250,11 @@ class MAEPrefetcher:
                 elif self.input_mode == "atomblob_merged_density":
                     v_merged = _build_merged_atoms(v_lig, v_poc)
                     x_clean = torch.cat([v_merged, d_clean], dim=1)         # (B, 8, G³)
+                elif self.input_mode == "roleblob":
+                    x_clean = _build_role_atoms(v_lig, v_poc)               # (B, 2, G³)
+                elif self.input_mode == "roleblob_density":
+                    x_clean = torch.cat(
+                        [_build_role_atoms(v_lig, v_poc), d_clean], dim=1)  # (B, 3, G³)
                 else:
                     raise RuntimeError(f"unexpected input_mode={self.input_mode!r}")
 
@@ -259,7 +265,7 @@ class MAEPrefetcher:
                 # Noise is a density-domain augmentation applied to the density
                 # channel BY INDEX (gradmag may trail it). Atom-only modes skip it;
                 # gradmag is noised only when gradmag_noise is set.
-                atom_only = self.input_mode in ("atomblob", "atomblob_merged")
+                atom_only = self.input_mode in ("atomblob", "atomblob_merged", "roleblob")
                 if self.sigma_noise > 0 and not atom_only:
                     def _randn_channel():
                         shape = (x_clean.shape[0], 1, *x_clean.shape[2:])
@@ -520,6 +526,7 @@ def val_epoch(cfg, model, val_cache, device, ch_weight=None) -> dict:
     layout = _channel_layout(input_mode, with_gradmag, gradmag_reconstruct)
     need_density = input_mode in (
         "density", "atomblob_density", "atomblob_merged_density",
+        "roleblob_density",
     )
     need_atoms_sum = need_density or mask_strategy == "atom_biased"
 
@@ -577,13 +584,17 @@ def val_epoch(cfg, model, val_cache, device, ch_weight=None) -> dict:
             elif input_mode == "atomblob_merged_density":
                 v_merged = _build_merged_atoms(v_lig, v_poc)
                 x_clean = torch.cat([v_merged, d_clean], dim=1)
+            elif input_mode == "roleblob":
+                x_clean = _build_role_atoms(v_lig, v_poc)
+            elif input_mode == "roleblob_density":
+                x_clean = torch.cat([_build_role_atoms(v_lig, v_poc), d_clean], dim=1)
             else:
                 raise RuntimeError(f"unexpected input_mode={input_mode!r}")
 
             if with_gradmag:
                 x_clean = torch.cat([x_clean, g_clean], dim=1)
 
-            atom_only = input_mode in ("atomblob", "atomblob_merged")
+            atom_only = input_mode in ("atomblob", "atomblob_merged", "roleblob")
             if sigma_noise > 0 and not atom_only:
                 x_noisy = x_clean.clone()
                 d_idx = layout["density_idx"]
@@ -890,7 +901,9 @@ def _assemble_x_clean(cfg, val_cache, start, bsz, device, input_mode, with_gradm
     v_lig = val_cache["voxels_lig"][start:start + bsz].to(device, non_blocking=True)
     v_poc = val_cache["voxels_poc"][start:start + bsz].to(device, non_blocking=True)
     density_source = str(cfg.mae.get("density_source", "synthetic"))
-    need_density = input_mode in ("density", "atomblob_density", "atomblob_merged_density")
+    need_density = input_mode in (
+        "density", "atomblob_density", "atomblob_merged_density", "roleblob_density",
+    )
     d_clean = None
     if need_density:
         if density_source == "xray":
@@ -917,6 +930,10 @@ def _assemble_x_clean(cfg, val_cache, start, bsz, device, input_mode, with_gradm
         x = _build_merged_atoms(v_lig, v_poc)
     elif input_mode == "atomblob_merged_density":
         x = torch.cat([_build_merged_atoms(v_lig, v_poc), d_clean], dim=1)
+    elif input_mode == "roleblob":
+        x = _build_role_atoms(v_lig, v_poc)
+    elif input_mode == "roleblob_density":
+        x = torch.cat([_build_role_atoms(v_lig, v_poc), d_clean], dim=1)
     else:
         raise RuntimeError(f"unexpected input_mode={input_mode!r}")
     if with_gradmag:
@@ -1201,7 +1218,10 @@ def run(cfg: DictConfig, method: str) -> None:
         density_channel_weight = float(cfg.mae.get("density_channel_weight", 1.0))
         needs_atom_weights = ch_weighting in ("inv_sqrt_freq", "inv_freq")
         _atomblob_modes = ("atomblob", "atomblob_density", "atomblob_merged", "atomblob_merged_density")
-        _density_modes = ("atomblob_density", "atomblob_merged_density")
+        # roleblob_density carries a density channel → density_channel_weight must apply.
+        # (roleblob atom channels use uniform weighting; inv_freq on 2 role channels is
+        # intentionally not in _atomblob_modes so it raises rather than mis-counting 7/11.)
+        _density_modes = ("atomblob_density", "atomblob_merged_density", "roleblob_density")
         _merged_modes  = ("atomblob_merged", "atomblob_merged_density")
         needs_dens_downweight = (
             input_mode in _density_modes and density_channel_weight != 1.0
