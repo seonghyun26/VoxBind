@@ -1,264 +1,305 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>VoxBind Baseline Results</title>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      background: #f4f6f9;
-      color: #2c3040;
-      padding: 40px 24px;
-    }
-    .container { max-width: 720px; margin: 0 auto; }
-    h1 {
-      font-size: 22px; font-weight: 700; margin-bottom: 4px;
-      color: #1a1e2e;
-    }
-    .subtitle {
-      font-size: 13px; color: #666; margin-bottom: 28px;
-    }
-    .subtitle span { margin-right: 16px; }
-    table {
-      width: 100%; border-collapse: collapse;
-      background: #fff;
-      border-radius: 10px;
-      overflow: hidden;
-      box-shadow: 0 2px 12px rgba(0,0,0,0.08);
-    }
-    thead tr { background: #2c3a5c; color: #fff; }
-    thead th {
-      padding: 13px 18px; text-align: left;
-      font-size: 12px; font-weight: 600;
-      letter-spacing: 0.05em; text-transform: uppercase;
-    }
-    thead th:not(:first-child) { text-align: right; }
-    tbody tr { border-bottom: 1px solid #eef0f5; }
-    tbody tr:last-child { border-bottom: none; }
-    tbody tr:hover { background: #f7f9fc; }
-    tbody td {
-      padding: 12px 18px; font-size: 14px;
-    }
-    tbody td:not(:first-child) { text-align: right; font-variant-numeric: tabular-nums; }
-    .section-header td {
-      background: #f0f3f9;
-      font-size: 11px; font-weight: 700;
-      letter-spacing: 0.08em; text-transform: uppercase;
-      color: #6070a0; padding: 7px 18px;
-    }
-    .highlight td { font-weight: 600; color: #1a3a7c; }
-    .footer {
-      margin-top: 16px; font-size: 12px; color: #888;
-      display: flex; justify-content: space-between;
-    }
-  </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TargetDiff EGNN baselines — LP-EDRSCC v2</title>
+<style>
+  :root {
+    --ink:#1c2433; --ink-soft:#5b6678; --line:#e3e7ee; --line-strong:#aeb6c4;
+    --bg:#f5f6f8; --card:#ffffff; --accent:#2f6f4f; --best-bg:#eaf5ee;
+    --tbd:#b07a17; --tbd-bg:#fcf3e0;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    font-size:16px; line-height:1.55; -webkit-font-smoothing:antialiased; }
+  .page { max-width:1400px; margin:0 auto; padding:48px 24px 96px; }
+
+  header.doc { border-bottom:2px solid var(--ink); padding-bottom:18px; margin-bottom:40px; }
+  header.doc .date { font-size:13px; letter-spacing:.12em; text-transform:uppercase;
+    color:var(--ink-soft); margin-bottom:6px; }
+  header.doc h1 { font-size:28px; font-weight:650; margin:0; letter-spacing:-0.01em; }
+  header.doc .meta { margin-top:10px; font-size:13px; color:var(--ink-soft); }
+  header.doc .meta span { margin-right:18px; }
+
+  .doc-section { margin-bottom:64px; }
+  .section-head { font-size:22px; font-weight:660; letter-spacing:-0.01em; color:var(--ink);
+    margin:0 0 18px; padding-bottom:12px; border-bottom:2px solid var(--line-strong);
+    display:flex; align-items:center; gap:14px; }
+  .section-head .sec-num { display:inline-flex; align-items:center; justify-content:center;
+    width:30px; height:30px; border-radius:8px; background:var(--accent); color:#fff;
+    font-size:15px; font-weight:700; flex:0 0 auto; }
+  .section-intro { font-size:13.5px; color:var(--ink-soft); margin:0 0 26px; max-width:1080px; line-height:1.6; }
+
+  section.block { margin-bottom:42px; }
+  .table-title { font-size:19px; font-weight:620; margin:0 0 4px; }
+  .table-title .tag { display:inline-block; font-size:11px; font-weight:600; letter-spacing:.04em;
+    padding:2px 9px; border-radius:999px; margin-left:9px; vertical-align:middle; }
+  .tag.supervised { background:#eef1f6; color:#5b6678; }
+  .tag.inprog { background:var(--tbd-bg); color:var(--tbd); }
+  .tag.pending { background:#eef1f6; color:#8a93a3; }
+  .table-sub { font-size:13.5px; color:var(--ink-soft); margin:0 0 18px; max-width:1080px; }
+  .table-sub code, .notes code { background:#f0f2f5; padding:1px 5px; border-radius:4px; font-size:12.5px; }
+
+  .table-wrap { overflow-x:auto; border:1px solid var(--line); border-radius:12px; background:var(--card);
+    box-shadow:0 1px 2px rgba(20,30,50,.04),0 8px 24px rgba(20,30,50,.05); }
+  table.results { border-collapse:collapse; width:100%; font-variant-numeric:tabular-nums; }
+  table.results th, table.results td { padding:11px 12px; text-align:center; white-space:nowrap; }
+  table.results thead th { font-weight:600; color:var(--ink); background:#fafbfc; border-bottom:1px solid var(--line);
+    font-size:12.5px; }
+  table.results thead th.sub { font-size:11px; font-weight:500; color:var(--ink-soft); }
+  .col-key { text-align:left !important; font-weight:600; background:#fafbfc;
+    border-right:2px solid var(--line-strong); min-width:150px; }
+  table.results tbody tr { border-top:1px solid var(--line); }
+  table.results tbody tr:hover { background:#fbfcfd; }
+  tr.highlight td { background:var(--best-bg); }
+  tr.highlight td.col-key { color:#1d5a3a; }
+  .metric .sd { color:#9aa3b2; font-size:10.5px; font-weight:400; }
+  .tbd { color:var(--tbd); font-weight:600; font-size:13px; }
+  .muted { color:var(--ink-soft); }
+
+  .notes { margin-top:18px; font-size:13px; color:var(--ink-soft); line-height:1.6; max-width:1080px; }
+  .notes b { color:var(--ink); font-weight:600; }
+  .notes ul { margin:6px 0 0; padding-left:20px; }
+  .notes li { margin-bottom:4px; }
+  .placeholder { border:1.5px dashed var(--line-strong); border-radius:12px; padding:26px; text-align:center;
+    color:var(--ink-soft); font-size:13.5px;
+    background:repeating-linear-gradient(45deg,#fff,#fff 12px,#fafbfc 12px,#fafbfc 24px); }
+  .footer { margin-top:14px; font-size:12px; color:#9aa3b2; display:flex; justify-content:space-between; gap:16px; }
+</style>
 </head>
 <body>
-<div class="container">
-  <h1>VoxBind Baseline — CrossDocked Test Set</h1>
-  <div class="subtitle">
-    <span>&#x1F4C5; 2026-06-15</span>
-    <span>&#x1F9EA; exp: reproduction (epoch 86)</span>
-    <span>&#x1F4CA; 100 pockets &times; 100 samples</span>
-    <span>Vina exhaustiveness=16</span>
+<div class="page">
+
+  <header class="doc">
+    <div class="date">2026 · 06 · 23 — Baseline results</div>
+    <h1>TargetDiff affinity baselines on LP-EDRSCC v2</h1>
+    <div class="meta">
+      <span>&#x1F9EA; PDBBind v2020 &middot; <code>lp_edrscc_v2</code></span>
+      <span>&#x1F4CA; EGNN &amp; EGNN&nbsp;+&nbsp;TargetDiff &middot; 3 seeds (0/1/2)</span>
+      <span>&#x2699; voxbind env &middot; PyTorch 2.10.0+cu128 &middot; RTX&nbsp;PRO&nbsp;6000</span>
+    </div>
+  </header>
+
+  <!-- ============================================================ -->
+  <!-- SECTION 1 — DATASET                                          -->
+  <!-- ============================================================ -->
+  <div class="doc-section">
+    <h2 class="section-head"><span class="sec-num">1</span> Dataset &mdash; <code>lp_edrscc_v2</code></h2>
+    <p class="section-intro">
+      Frozen, version-controlled split (<code>voxbind/splits/lp_edrscc_v2.csv</code>; <code>verify.py</code> PASS,
+      sha256 pinned <code>55122339&hellip;</code>). Defined as
+      <b>LP-PDBBind <code>new_split</code> &cap; ED-available &cap; (ligand &amp; pocket RSCC&nbsp;&ge;&nbsp;0.8),
+      non-covalent, Kd/Ki only</b> &mdash; i.e. <code>lp_edrscc_v1</code> with all <b>IC50 dropped</b>
+      (4,141 assay-dependent measurements removed). Partition is the LP-PDBBind sequence-identity clustering
+      &rarr; <b>novel-target</b> generalization (zero PDB overlap across train/val/test). Label = pK (&minus;log Kd/Ki).
+    </p>
+
+  <section class="block">
+    <p class="table-title">Table 1 &nbsp;&middot;&nbsp; Per-split data points</p>
+    <p class="table-sub">
+      Affinity / metadata joined from <code>LP_PDBBind.csv</code>. PDBbind set = general / refined / core membership.
+    </p>
+    <div class="table-wrap">
+      <table class="results">
+        <thead>
+          <tr>
+            <th class="col-key">Split</th>
+            <th>n</th>
+            <th>pK&nbsp;mean&nbsp;&plusmn;&nbsp;std</th>
+            <th>min&nbsp;/&nbsp;med&nbsp;/&nbsp;max</th>
+            <th>Kd&nbsp;/&nbsp;Ki</th>
+            <th>Resolution&nbsp;&Aring;</th>
+            <th>Year</th>
+            <th>PDBbind set (gen/ref/core)</th>
+            <th>Families</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="col-key">train</td>
+            <td>3,850</td>
+            <td>6.20 <span class="sd">&plusmn; 2.09</span></td>
+            <td>0.40 / 6.06 / 15.00</td>
+            <td>2373 / 1477</td>
+            <td>2.03 <span class="sd">(0.84&ndash;4.10)</span></td>
+            <td>1987&ndash;2019</td>
+            <td>1914 / 1846 / 90</td>
+            <td>13</td>
+          </tr>
+          <tr>
+            <td class="col-key">val</td>
+            <td>817</td>
+            <td>6.80 <span class="sd">&plusmn; 1.74</span></td>
+            <td>1.00 / 6.78 / 11.70</td>
+            <td>515 / 302</td>
+            <td>2.09 <span class="sd">(0.75&ndash;3.20)</span></td>
+            <td>1995&ndash;2019</td>
+            <td>381 / 404 / 32</td>
+            <td>12</td>
+          </tr>
+          <tr>
+            <td class="col-key">test</td>
+            <td>1,320</td>
+            <td>6.50 <span class="sd">&plusmn; 1.77</span></td>
+            <td>0.82 / 6.62 / 12.00</td>
+            <td>695 / 625</td>
+            <td>2.01 <span class="sd">(0.79&ndash;4.10)</span></td>
+            <td>1997&ndash;2019</td>
+            <td>541 / 692 / 87</td>
+            <td>13</td>
+          </tr>
+          <tr class="highlight">
+            <td class="col-key">ALL</td>
+            <td>5,987</td>
+            <td>6.35 <span class="sd">&plusmn; 1.99</span></td>
+            <td>0.40 / 6.34 / 15.00</td>
+            <td>3583 / 2404</td>
+            <td>2.04 <span class="sd">(0.75&ndash;4.10)</span></td>
+            <td>1987&ndash;2019</td>
+            <td>2836 / 2942 / 209</td>
+            <td>13</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="notes">
+      <b>Integrity &amp; provenance.</b> 100% of pids match their LP-PDBBind <code>new_split</code> label; 0 covalent; 0 IC50.
+      <b>Processing.</b> The general set was on disk; the missing <b>refined + core</b> complexes were extracted from
+      <code>pbpp-2020.zip</code> &rarr; <b>100% pid coverage</b>. Ligands whose <code>.sdf</code> failed RDKit kekulization
+      fell back to <code>.mol2</code> (<b>1,006 recovered</b>). Net: <b>5,981 / 5,987 complexes processed</b> (6 unrecoverable)
+      &rarr; the model actually trains on <b>train 3,845 / val 817 / test 1,319</b>.
+      Effective-set content hashes: train <code>446565b0&hellip;</code> &middot; val <code>cb09086a&hellip;</code> &middot; test <code>d38a3c7f&hellip;</code>.
+    </div>
+  </section>
   </div>
 
-  <table>
-    <thead>
-      <tr>
-        <th>Metric</th>
-        <th>Mean ± Std</th>
-        <th>Median</th>
-      </tr>
-    </thead>
-    <tbody>
-      <tr class="section-header"><td colspan="3">Chemical Quality</td></tr>
-      <tr>
-        <td>Validity</td>
-        <td>0.9985</td>
-        <td>—</td>
-      </tr>
-      <tr>
-        <td>Uniqueness</td>
-        <td>1.0000</td>
-        <td>—</td>
-      </tr>
-      <tr>
-        <td>Diversity</td>
-        <td>0.7299</td>
-        <td>—</td>
-      </tr>
-      <tr>
-        <td>QED</td>
-        <td>0.5259</td>
-        <td>—</td>
-      </tr>
-      <tr>
-        <td>SA</td>
-        <td>0.6408</td>
-        <td>—</td>
-      </tr>
-      <tr>
-        <td>Lipinski</td>
-        <td>4.577</td>
-        <td>—</td>
-      </tr>
+  <!-- ============================================================ -->
+  <!-- SECTION 2 — RESULTS                                          -->
+  <!-- ============================================================ -->
+  <div class="doc-section">
+    <h2 class="section-head"><span class="sec-num">2</span> EGNN &amp; EGNN&nbsp;+&nbsp;TargetDiff &mdash; binding-affinity regression</h2>
+    <p class="section-intro">
+      Two affinity-prediction baselines from the TargetDiff paper (ICLR&nbsp;2023), trained/evaluated on
+      <code>lp_edrscc_v2</code> (test n=1,319). <b>EGNN</b> = the plain supervised EGNN trained from scratch
+      (<code>configs/prop/pdbbind_edrscc_v2_egnn.yml</code>; 6-layer, 256 hidden, knn=48, cutoff=10&nbsp;&Aring;; 2.547&nbsp;M params).
+      <b>EGNN&nbsp;+&nbsp;TargetDiff</b> = the same head on the pretrained TargetDiff diffusion-encoder features
+      (<code>egnn_enc</code>, <code>enc_feature_type=final_h</code>). Metrics are mean&nbsp;&plusmn;&nbsp;std over 3 seeds (0/1/2).
+    </p>
 
-      <tr class="section-header"><td colspan="3">Vina Docking (kcal/mol, lower = better)</td></tr>
-      <tr>
-        <td>Vina score_only</td>
-        <td>-5.512 &plusmn; 9.085</td>
-        <td>-6.559</td>
-      </tr>
-      <tr>
-        <td>Vina minimize</td>
-        <td>-6.976 &plusmn; 4.382</td>
-        <td>-7.114</td>
-      </tr>
-      <tr class="highlight">
-        <td>Vina dock</td>
-        <td>-8.012 &plusmn; 2.421</td>
-        <td>-8.012</td>
-      </tr>
-    </tbody>
-  </table>
+  <section class="block">
+    <p class="table-title">Table 2 &nbsp;&middot;&nbsp; EGNN (from scratch)
+      <span class="tag supervised">3 seeds &middot; done</span></p>
+    <p class="table-sub">
+      Plain supervised EGNN, <code>configs/prop/pdbbind_edrscc_v2_egnn.yml</code> (6-layer, 256 hidden, knn=48, cutoff=10&nbsp;&Aring;, 2.547&nbsp;M params).
+      Seeds 0/1/2 on GPU 0/1/2, 200 epochs; test metrics at each seed's best-val checkpoint, mean&nbsp;&plusmn;&nbsp;std.
+    </p>
+    <div class="table-wrap">
+      <table class="results">
+        <thead>
+          <tr>
+            <th class="col-key">Subset</th>
+            <th>n</th>
+            <th>RMSE</th>
+            <th>MAE</th>
+            <th>R&sup2;</th>
+            <th>Pearson</th>
+            <th>Spearman</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="highlight">
+            <td class="col-key">All</td>
+            <td>1,319</td>
+            <td>1.531 <span class="sd">&plusmn; 0.012</span></td>
+            <td>1.193 <span class="sd">&plusmn; 0.012</span></td>
+            <td>0.251 <span class="sd">&plusmn; 0.012</span></td>
+            <td>0.539 <span class="sd">&plusmn; 0.012</span></td>
+            <td>0.533 <span class="sd">&plusmn; 0.016</span></td>
+          </tr>
+          <tr>
+            <td class="col-key">Kd</td>
+            <td>695</td>
+            <td>1.493 <span class="sd">&plusmn; 0.023</span></td>
+            <td>1.194 <span class="sd">&plusmn; 0.013</span></td>
+            <td>0.286 <span class="sd">&plusmn; 0.022</span></td>
+            <td>0.553 <span class="sd">&plusmn; 0.014</span></td>
+            <td>0.536 <span class="sd">&plusmn; 0.008</span></td>
+          </tr>
+          <tr>
+            <td class="col-key">Ki</td>
+            <td>624</td>
+            <td>1.572 <span class="sd">&plusmn; 0.027</span></td>
+            <td>1.192 <span class="sd">&plusmn; 0.016</span></td>
+            <td>0.105 <span class="sd">&plusmn; 0.031</span></td>
+            <td>0.445 <span class="sd">&plusmn; 0.021</span></td>
+            <td>0.464 <span class="sd">&plusmn; 0.029</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
 
-  <div class="footer">
-    <span>9,976 / 10,000 molecules docked successfully</span>
-    <span>VoxBind &sigma;=0.9 &middot; WJS sampling</span>
+  <section class="block">
+    <p class="table-title">Table 3 &nbsp;&middot;&nbsp; EGNN&nbsp;+&nbsp;TargetDiff (pretrained features)
+      <span class="tag pending">not yet run</span></p>
+    <p class="table-sub">
+      Requires the pretrained TargetDiff embeddings for the <code>lp_edrscc_v2</code> complexes
+      (<code>enc_feature_type=final_h</code>, <code>emb_path</code>) &mdash; to be generated, then trained with the same 3 seeds.
+    </p>
+    <div class="table-wrap">
+      <table class="results">
+        <thead>
+          <tr>
+            <th class="col-key">Subset</th>
+            <th>n</th>
+            <th>RMSE</th>
+            <th>MAE</th>
+            <th>R&sup2;</th>
+            <th>Pearson</th>
+            <th>Spearman</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="highlight">
+            <td class="col-key">All</td>
+            <td>1,319</td>
+            <td class="tbd">TBD</td>
+            <td class="tbd">TBD</td>
+            <td class="tbd">TBD</td>
+            <td class="tbd">TBD</td>
+            <td class="tbd">TBD</td>
+          </tr>
+          <tr>
+            <td class="col-key">Kd</td>
+            <td>695</td>
+            <td class="tbd">TBD</td><td class="tbd">TBD</td><td class="tbd">TBD</td><td class="tbd">TBD</td><td class="tbd">TBD</td>
+          </tr>
+          <tr>
+            <td class="col-key">Ki</td>
+            <td>625</td>
+            <td class="tbd">TBD</td><td class="tbd">TBD</td><td class="tbd">TBD</td><td class="tbd">TBD</td><td class="tbd">TBD</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="notes">
+      <b>Status (2026-06-23).</b>
+      <ul>
+        <li><b>EGNN</b> &mdash; <b>complete.</b> 3 seeds (0/1/2), 200 epochs on <code>lp_edrscc_v2</code>; test metrics at best-val
+          checkpoint (Table&nbsp;2). Best-val 2.057&nbsp;/&nbsp;2.229&nbsp;/&nbsp;2.166 at epoch 14&nbsp;/&nbsp;22&nbsp;/&nbsp;27.</li>
+        <li><b>EGNN&nbsp;+&nbsp;TargetDiff</b> &mdash; pending. Plan: train the TargetDiff <b>diffusion</b> model from scratch on
+          CrossDocked (one GPU, paper budget) &rarr; dump <code>final_h</code> features for the v2 complexes &rarr; train the
+          EGNN head &rarr; evaluate downstream.</li>
+        <li><b>Reference (plain LP-PDBBind split, test n=1,136):</b> the same EGNN gave All Pearson
+          0.518&nbsp;&plusmn;&nbsp;0.029, Spearman 0.492&nbsp;&plusmn;&nbsp;0.028, RMSE 1.518&nbsp;&plusmn;&nbsp;0.025 &mdash; for orientation only,
+          not the v2 set.</li>
+      </ul>
+    </div>
+  </section>
   </div>
 
-  <h1 style="margin-top: 48px;">TargetDiff EGNN — Binding Affinity</h1>
-  <div class="subtitle">
-    <span>&#x1F4C5; 2026-06-16</span>
-    <span>&#x1F9EA; PDBBind v2020 &middot; LP-PDBBind split (EDS-available, drop covalent)</span>
-    <span>&#x1F4CA; train 2328 / val 515 / test 1136 &middot; 3 seeds (2021/2022/2023) &middot; mean &plusmn; std</span>
-  </div>
-
-  <table>
-    <thead>
-      <tr>
-        <th>Subset</th>
-        <th>n</th>
-        <th>RMSE</th>
-        <th>MAE</th>
-        <th>R&sup2;</th>
-        <th>Pearson</th>
-        <th>Spearman</th>
-      </tr>
-    </thead>
-    <tbody>
-      <tr class="highlight">
-        <td>All</td>
-        <td>1136</td>
-        <td>1.460 &plusmn; 0.007</td>
-        <td>1.180 &plusmn; 0.009</td>
-        <td>0.293 &plusmn; 0.007</td>
-        <td>0.558 &plusmn; 0.011</td>
-        <td>0.536 &plusmn; 0.029</td>
-      </tr>
-      <tr>
-        <td>Ki</td>
-        <td>602</td>
-        <td>1.488 &plusmn; 0.022</td>
-        <td>1.211 &plusmn; 0.028</td>
-        <td>0.225 &plusmn; 0.022</td>
-        <td>0.528 &plusmn; 0.032</td>
-        <td>0.482 &plusmn; 0.043</td>
-      </tr>
-      <tr>
-        <td>Kd</td>
-        <td>534</td>
-        <td>1.429 &plusmn; 0.011</td>
-        <td>1.145 &plusmn; 0.015</td>
-        <td>0.284 &plusmn; 0.011</td>
-        <td>0.540 &plusmn; 0.015</td>
-        <td>0.519 &plusmn; 0.011</td>
-      </tr>
-    </tbody>
-  </table>
-
-  <div class="footer">
-    <span>EGNN 6-layer &middot; 256 hidden &middot; knn=48 &middot; cutoff=10Å</span>
-    <span>voxbind env (PyTorch 2.10.0+cu128)</span>
-  </div>
-
-  <h1 style="margin-top: 48px;">TargetDiff EGNN — Binding Affinity (Timesplit)</h1>
-  <div class="subtitle">
-    <span>&#x1F4C5; 2026-06-18</span>
-    <span>&#x1F9EA; PDBBind v2020 &middot; EquiBind timesplit (arxiv:2202.05146) &middot; test = post-2019 structures</span>
-    <span>&#x1F4CA; train 15,138 / val 820 / test 304 &middot; 3 seeds (2021/2022/2023) &middot; mean &plusmn; std</span>
-  </div>
-
-  <table>
-    <thead>
-      <tr>
-        <th>Subset</th>
-        <th>n</th>
-        <th>RMSE</th>
-        <th>MAE</th>
-        <th>R&sup2;</th>
-        <th>Pearson</th>
-        <th>Spearman</th>
-      </tr>
-    </thead>
-    <tbody>
-      <tr class="section-header"><td colspan="7">Our results (test n=304; paper has 363 — 59 structures missing)</td></tr>
-      <tr class="highlight">
-        <td>All</td>
-        <td>304</td>
-        <td>1.384 &plusmn; 0.030</td>
-        <td>1.093 &plusmn; 0.027</td>
-        <td>0.446 &plusmn; 0.024</td>
-        <td>0.695 &plusmn; 0.025</td>
-        <td>0.650 &plusmn; 0.042</td>
-      </tr>
-      <tr>
-        <td>Ki</td>
-        <td>58</td>
-        <td>1.281 &plusmn; 0.146</td>
-        <td>0.996 &plusmn; 0.104</td>
-        <td>0.617 &plusmn; 0.089</td>
-        <td>0.825 &plusmn; 0.017</td>
-        <td>0.796 &plusmn; 0.028</td>
-      </tr>
-      <tr>
-        <td>Kd</td>
-        <td>148</td>
-        <td>1.363 &plusmn; 0.099</td>
-        <td>1.079 &plusmn; 0.068</td>
-        <td>0.177 &plusmn; 0.120</td>
-        <td>0.496 &plusmn; 0.090</td>
-        <td>0.463 &plusmn; 0.086</td>
-      </tr>
-      <tr>
-        <td>IC50</td>
-        <td>98</td>
-        <td>1.466 &plusmn; 0.085</td>
-        <td>1.173 &plusmn; 0.114</td>
-        <td>0.124 &plusmn; 0.103</td>
-        <td>0.521 &plusmn; 0.065</td>
-        <td>0.527 &plusmn; 0.057</td>
-      </tr>
-      <tr class="section-header"><td colspan="7">Paper Table 9 reference (EGNN baseline, n=363)</td></tr>
-      <tr>
-        <td>All</td>
-        <td>363</td>
-        <td>1.445</td>
-        <td>1.141</td>
-        <td>—</td>
-        <td>0.648</td>
-        <td>0.598</td>
-      </tr>
-    </tbody>
-  </table>
-
-  <div class="footer">
-    <span>EGNN 6-layer &middot; 256 hidden &middot; knn=48 &middot; cutoff=10Å &middot; DDP 3×GPU</span>
-    <span>Note: our test n=304 vs paper n=363; 59 missing structures may inflate metrics</span>
-  </div>
 </div>
 </body>
 </html>

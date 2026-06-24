@@ -50,7 +50,7 @@
     supervised EGNN with pretrained TargetDiff diffusion features (<span class="mono">final_h</span>) improves
     binding-affinity regression: test <b>Pearson 0.539 &rarr; <span class="up">0.597</span></b>
     (<span class="up">+0.058</span>), RMSE 1.531&rarr;1.447, R&sup2; 0.251&rarr;0.330 — consistent across Kd and Ki.
-    EGNN numbers are final; EGNN+TargetDiff are <b>preliminary</b> (runs at ~epoch&nbsp;51/200).
+    Both EGNN and EGNN+TargetDiff are <b>final</b> (3 seeds &times; 200 epochs, best-val selection).
   </div>
 
   <h2>1 &middot; Dataset — <span class="mono">lp_edrscc_v2</span></h2>
@@ -90,7 +90,7 @@
         <td>EGNN <span class="pill done">final</span></td><td>1,319</td>
         <td>1.531 &plusmn; 0.012</td><td>1.193 &plusmn; 0.012</td><td>0.251 &plusmn; 0.012</td><td>0.539 &plusmn; 0.012</td><td>0.533 &plusmn; 0.016</td></tr>
       <tr>
-        <td>EGNN + TargetDiff <span class="pill prelim">prelim</span></td><td>1,319</td>
+        <td>EGNN + TargetDiff <span class="pill done">final</span></td><td>1,319</td>
         <td class="best"><span class="m">1.447 &plusmn; 0.016</span></td><td class="best"><span class="m">1.136 &plusmn; 0.020</span></td>
         <td class="best"><span class="m">0.330 &plusmn; 0.015</span></td><td class="best"><span class="m">0.597 &plusmn; 0.009</span></td><td class="best"><span class="m">0.579 &plusmn; 0.019</span></td></tr>
 
@@ -122,9 +122,8 @@
         The diffusion model was trained from scratch on CrossDocked (4-GPU DDP, global batch 32, converged best-val
         ckpt at iter 106k); <span class="mono">final_h</span> was dumped via <span class="mono">fetch_embedding</span>
         for all 5,981 v2 complexes (per-complex atom alignment verified).</li>
-      <li><b>Preliminary status</b> — EGNN+TargetDiff runs are at ~epoch 51/200; metrics shown are at the current
-        best-val checkpoints (epochs 6 / 15 / 9). Final numbers (≈ unchanged unless a new best-val is hit) will be
-        updated at completion.</li>
+      <li><b>Status: complete</b> — 3 seeds &times; 200 epochs; metrics at each seed's best-val checkpoint
+        (epochs 6 / 15 / 9). Best-val plateaued early, so these are the final numbers (unchanged from the in-flight values).</li>
       <li><b>Takeaway</b> — TargetDiff diffusion features give a consistent <b>+0.05–0.06 Pearson</b> / lower RMSE over the
         plain EGNN across All / Kd / Ki, matching the paper's finding that unsupervised generative representations aid
         supervised affinity prediction.</li>
