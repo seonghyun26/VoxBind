@@ -1,0 +1,134 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TargetDiff Affinity Baselines — LP-EDRSCC v2</title>
+<style>
+  :root { --ink:#1a1a1a; --muted:#666; --line:#e3e3e3; --bg:#fafafa; --card:#fff;
+          --good:#1d6b3a; --good-bg:#eaf5ee; --warn:#8a6d00; }
+  * { box-sizing:border-box; }
+  body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+         color:var(--ink); background:var(--bg); margin:0; line-height:1.55; }
+  .wrap { max-width:1180px; margin:0 auto; padding:36px 28px 80px; }
+  h1 { font-size:26px; margin:0 0 4px; letter-spacing:-.02em; }
+  h2 { font-size:18px; margin:40px 0 12px; padding-bottom:6px; border-bottom:2px solid var(--line); }
+  .sub { color:var(--muted); font-size:14px; margin-bottom:8px; }
+  .sub span { margin-right:16px; }
+  .tldr { background:#fff8e6; border:1px solid #f0d98a; border-radius:10px; padding:16px 20px; margin:22px 0; font-size:14.5px; }
+  .tldr b { color:var(--warn); }
+  .tldr .up { color:var(--good); font-weight:700; }
+  table { width:100%; border-collapse:collapse; background:var(--card); font-size:13.5px;
+           border:1px solid var(--line); border-radius:8px; overflow:hidden; margin-top:8px; }
+  th,td { text-align:left; padding:9px 12px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { background:#f2f3f5; font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:#555; }
+  td:not(:nth-child(1)):not(:nth-child(2)) { font-variant-numeric:tabular-nums; }
+  tr:last-child td { border-bottom:none; }
+  tr.grp td { border-top:2px solid #cfd4da; }
+  .m { font-weight:600; }
+  td.best { background:var(--good-bg); }
+  td.best .m { color:var(--good); }
+  .pill { display:inline-block; font-size:11px; font-weight:600; padding:2px 8px; border-radius:999px; vertical-align:middle; margin-left:8px; }
+  .pill.done { background:#eef1f6; color:#555; }
+  .pill.prelim { background:#fcf3e0; color:var(--warn); }
+  .mono { font-family:"SF Mono",Menlo,Consolas,monospace; font-size:12.5px;
+          background:#f0f2f5; padding:1px 5px; border-radius:4px; }
+  .note { color:var(--muted); font-size:12.5px; line-height:1.6; }
+  .note ul { margin:6px 0 0; padding-left:20px; }
+  .note li { margin-bottom:4px; }
+  .note b { color:var(--ink); }
+</style></head>
+<body><div class="wrap">
+
+  <h1>TargetDiff affinity baselines — LP-EDRSCC v2</h1>
+  <div class="sub">
+    <span>&#x1F4C5; 2026-06-24</span>
+    <span>&#x1F9EA; PDBBind v2020 &middot; <span class="mono">lp_edrscc_v2</span></span>
+    <span>&#x1F4CA; test n=1,319 &middot; 3 seeds &middot; mean &plusmn; std</span>
+    <span>&#x2699; voxbind env &middot; RTX&nbsp;PRO&nbsp;6000</span>
+  </div>
+
+  <div class="tldr">
+    <b>TL;DR.</b> On the Kd/Ki-only, RSCC-filtered <span class="mono">lp_edrscc_v2</span> split, augmenting the
+    supervised EGNN with pretrained TargetDiff diffusion features (<span class="mono">final_h</span>) improves
+    binding-affinity regression: test <b>Pearson 0.539 &rarr; <span class="up">0.597</span></b>
+    (<span class="up">+0.058</span>), RMSE 1.531&rarr;1.447, R&sup2; 0.251&rarr;0.330 — consistent across Kd and Ki.
+    EGNN numbers are final; EGNN+TargetDiff are <b>preliminary</b> (runs at ~epoch&nbsp;51/200).
+  </div>
+
+  <h2>1 &middot; Dataset — <span class="mono">lp_edrscc_v2</span></h2>
+  <div class="sub">
+    LP-PDBBind <span class="mono">new_split</span> &cap; ED-available &cap; (lig &amp; poc RSCC&nbsp;&ge;&nbsp;0.8),
+    non-covalent, <b>Kd/Ki only</b> (IC50 dropped). Novel-target (sequence-clustered) partition. Label = pK (&minus;log Kd/Ki).
+  </div>
+  <table>
+    <thead><tr>
+      <th>Split</th><th>n</th><th>pK mean &plusmn; std</th><th>min / med / max</th>
+      <th>Kd / Ki</th><th>Resolution &Aring;</th><th>PDBbind set (gen/ref/core)</th>
+    </tr></thead>
+    <tbody>
+      <tr><td>train</td><td>3,850</td><td>6.20 &plusmn; 2.09</td><td>0.40 / 6.06 / 15.00</td><td>2373 / 1477</td><td>2.03</td><td>1914 / 1846 / 90</td></tr>
+      <tr><td>val</td><td>817</td><td>6.80 &plusmn; 1.74</td><td>1.00 / 6.78 / 11.70</td><td>515 / 302</td><td>2.09</td><td>381 / 404 / 32</td></tr>
+      <tr><td>test</td><td>1,320</td><td>6.50 &plusmn; 1.77</td><td>0.82 / 6.62 / 12.00</td><td>695 / 625</td><td>2.01</td><td>541 / 692 / 87</td></tr>
+      <tr class="grp"><td class="m">ALL</td><td class="m">5,987</td><td>6.35 &plusmn; 1.99</td><td>0.40 / 6.34 / 15.00</td><td>3583 / 2404</td><td>~2.0</td><td>2836 / 2942 / 209</td></tr>
+    </tbody>
+  </table>
+  <div class="note" style="margin-top:8px;">
+    Frozen, hash-verified split (<span class="mono">voxbind/splits/lp_edrscc_v2.csv</span>). After extracting the missing
+    refined set and an mol2-fallback for RDKit kekulize failures, <b>5,981 / 5,987</b> complexes processed
+    (train 3,845 / val 817 / test 1,319). 0 covalent, 0 IC50.
+  </div>
+
+  <h2>2 &middot; Results — EGNN vs EGNN + TargetDiff</h2>
+  <div class="sub">
+    Test metrics at each seed's best-val checkpoint, mean&nbsp;&plusmn;&nbsp;std over 3 seeds.
+    Greener cell = better. Pearson / Spearman / R&sup2; higher is better; RMSE / MAE lower is better.
+  </div>
+  <table>
+    <thead><tr>
+      <th>Subset</th><th>Model</th><th>n</th><th>RMSE &darr;</th><th>MAE &darr;</th><th>R&sup2; &uarr;</th><th>Pearson &uarr;</th><th>Spearman &uarr;</th>
+    </tr></thead>
+    <tbody>
+      <tr class="grp"><td rowspan="2"><b>All</b></td>
+        <td>EGNN <span class="pill done">final</span></td><td>1,319</td>
+        <td>1.531 &plusmn; 0.012</td><td>1.193 &plusmn; 0.012</td><td>0.251 &plusmn; 0.012</td><td>0.539 &plusmn; 0.012</td><td>0.533 &plusmn; 0.016</td></tr>
+      <tr>
+        <td>EGNN + TargetDiff <span class="pill prelim">prelim</span></td><td>1,319</td>
+        <td class="best"><span class="m">1.447 &plusmn; 0.016</span></td><td class="best"><span class="m">1.136 &plusmn; 0.020</span></td>
+        <td class="best"><span class="m">0.330 &plusmn; 0.015</span></td><td class="best"><span class="m">0.597 &plusmn; 0.009</span></td><td class="best"><span class="m">0.579 &plusmn; 0.019</span></td></tr>
+
+      <tr class="grp"><td rowspan="2"><b>Kd</b></td>
+        <td>EGNN</td><td>695</td>
+        <td>1.493 &plusmn; 0.023</td><td>1.194 &plusmn; 0.013</td><td>0.286 &plusmn; 0.022</td><td>0.553 &plusmn; 0.014</td><td>0.536 &plusmn; 0.008</td></tr>
+      <tr>
+        <td>EGNN + TargetDiff</td><td>695</td>
+        <td class="best"><span class="m">1.406 &plusmn; 0.024</span></td><td class="best"><span class="m">1.108 &plusmn; 0.026</span></td>
+        <td class="best"><span class="m">0.368 &plusmn; 0.022</span></td><td class="best"><span class="m">0.612 &plusmn; 0.017</span></td><td class="best"><span class="m">0.591 &plusmn; 0.025</span></td></tr>
+
+      <tr class="grp"><td rowspan="2"><b>Ki</b></td>
+        <td>EGNN</td><td>624</td>
+        <td>1.572 &plusmn; 0.027</td><td class="best"><span class="m">1.192 &plusmn; 0.016</span></td><td>0.105 &plusmn; 0.031</td><td>0.445 &plusmn; 0.021</td><td>0.464 &plusmn; 0.029</td></tr>
+      <tr>
+        <td>EGNN + TargetDiff</td><td>624</td>
+        <td class="best"><span class="m">1.493 &plusmn; 0.021</span></td><td>1.168 &plusmn; 0.015</td>
+        <td class="best"><span class="m">0.192 &plusmn; 0.023</span></td><td class="best"><span class="m">0.514 &plusmn; 0.017</span></td><td class="best"><span class="m">0.509 &plusmn; 0.018</span></td></tr>
+    </tbody>
+  </table>
+
+  <h2>3 &middot; Setup &amp; notes</h2>
+  <div class="note">
+    <ul>
+      <li><b>EGNN</b> — paper's supervised EGNN from scratch (<span class="mono">configs/prop/pdbbind_edrscc_v2_egnn.yml</span>;
+        6-layer, 256 hidden, knn=48, cutoff=10&nbsp;&Aring;; 2.55&nbsp;M params). 200 epochs, best-val selection. <b>Final.</b></li>
+      <li><b>EGNN + TargetDiff</b> — same head on pretrained TargetDiff diffusion features
+        (<span class="mono">enc_feature_type=final_h</span>, 128-dim per protein+ligand atom).
+        The diffusion model was trained from scratch on CrossDocked (4-GPU DDP, global batch 32, converged best-val
+        ckpt at iter 106k); <span class="mono">final_h</span> was dumped via <span class="mono">fetch_embedding</span>
+        for all 5,981 v2 complexes (per-complex atom alignment verified).</li>
+      <li><b>Preliminary status</b> — EGNN+TargetDiff runs are at ~epoch 51/200; metrics shown are at the current
+        best-val checkpoints (epochs 6 / 15 / 9). Final numbers (≈ unchanged unless a new best-val is hit) will be
+        updated at completion.</li>
+      <li><b>Takeaway</b> — TargetDiff diffusion features give a consistent <b>+0.05–0.06 Pearson</b> / lower RMSE over the
+        plain EGNN across All / Kd / Ki, matching the paper's finding that unsupervised generative representations aid
+        supervised affinity prediction.</li>
+    </ul>
+  </div>
+
+</div></body></html>

@@ -1,0 +1,156 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HBGSA Affinity Baseline — LP-EDRSCC v2</title>
+<style>
+  :root { --ink:#1a1a1a; --muted:#666; --line:#e3e3e3; --bg:#fafafa; --card:#fff;
+          --good:#1d6b3a; --good-bg:#eaf5ee; --warn:#8a6d00; --bad:#9a2828; }
+  * { box-sizing:border-box; }
+  body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+         color:var(--ink); background:var(--bg); margin:0; line-height:1.55; }
+  .wrap { max-width:1180px; margin:0 auto; padding:36px 28px 80px; }
+  h1 { font-size:26px; margin:0 0 4px; letter-spacing:-.02em; }
+  h2 { font-size:18px; margin:40px 0 12px; padding-bottom:6px; border-bottom:2px solid var(--line); }
+  .sub { color:var(--muted); font-size:14px; margin-bottom:8px; }
+  .sub span { margin-right:16px; }
+  .tldr { background:#fff8e6; border:1px solid #f0d98a; border-radius:10px; padding:16px 20px; margin:22px 0; font-size:14.5px; }
+  .tldr b { color:var(--warn); }
+  .tldr .up { color:var(--good); font-weight:700; }
+  .tldr .down { color:var(--bad); font-weight:700; }
+  table { width:100%; border-collapse:collapse; background:var(--card); font-size:13.5px;
+           border:1px solid var(--line); border-radius:8px; overflow:hidden; margin-top:8px; }
+  th,td { text-align:left; padding:9px 12px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { background:#f2f3f5; font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:#555; }
+  td:not(:nth-child(1)):not(:nth-child(2)) { font-variant-numeric:tabular-nums; }
+  tr:last-child td { border-bottom:none; }
+  tr.grp td { border-top:2px solid #cfd4da; }
+  .m { font-weight:600; }
+  td.best { background:var(--good-bg); }
+  td.best .m { color:var(--good); }
+  td.bad .m { color:var(--bad); font-weight:600; }
+  .pill { display:inline-block; font-size:11px; font-weight:600; padding:2px 8px; border-radius:999px; vertical-align:middle; margin-left:8px; }
+  .pill.done { background:#eef1f6; color:#555; }
+  .pill.win  { background:#eaf5ee; color:var(--good); }
+  .mono { font-family:"SF Mono",Menlo,Consolas,monospace; font-size:12.5px;
+          background:#f0f2f5; padding:1px 5px; border-radius:4px; }
+  .note { color:var(--muted); font-size:12.5px; line-height:1.6; }
+  .note ul { margin:6px 0 0; padding-left:20px; }
+  .note li { margin-bottom:4px; }
+  .note b { color:var(--ink); }
+</style></head>
+<body><div class="wrap">
+
+  <h1>HBGSA affinity baseline — LP-EDRSCC v2</h1>
+  <div class="sub">
+    <span>&#x1F4C5; 2026-06-24</span>
+    <span>&#x1F9EA; PDBBind v2020 &middot; <span class="mono">lp_edrscc_v2</span></span>
+    <span>&#x1F4CA; test n=1,320 &middot; 3 seeds &middot; mean &plusmn; std</span>
+    <span>&#x2699; voxbind + hbgsa_pymol env &middot; RTX&nbsp;PRO&nbsp;6000 (GPU&nbsp;3)</span>
+  </div>
+
+  <div class="tldr">
+    <b>TL;DR.</b> HBGSA is an <b>external, fully-supervised</b> reference (4 branches: H-bond graph + protein-seq
+    + pocket + SMILES) — not a frozen probe. On the Kd/Ki-only, RSCC-filtered <span class="mono">lp_edrscc_v2</span>
+    split the <b>paper-faithful 3.06M</b> model clearly beats the <b>40M scale-up</b>: test
+    Pearson <span class="up">0.565</span> vs 0.425, RMSE <span class="up">1.568</span> vs 2.247,
+    R&sup2; <span class="up">0.214</span> vs <span class="down">&minus;0.649</span>. The 40M still ranks above
+    chance (&rho;&nbsp;0.42) but its regression is <b>mis-calibrated</b> — <b>negative R&sup2;</b> (worse than
+    predicting the mean) and seed-unstable RMSE (&plusmn;0.34) — a textbook over-parameterization symptom on only
+    3,850 training complexes. <b>Bigger &ne; better here.</b> Both rows are final (3 seeds, full early-stopped training).
+  </div>
+
+  <h2>1 &middot; Dataset — <span class="mono">lp_edrscc_v2</span></h2>
+  <div class="sub">
+    LP-PDBBind <span class="mono">new_split</span> &cap; ED-available &cap; (lig &amp; poc RSCC&nbsp;&ge;&nbsp;0.8),
+    non-covalent, <b>Kd/Ki only</b> (IC50 dropped). Novel-target (sequence-clustered) partition. Label = pK (&minus;log Kd/Ki).
+  </div>
+  <table>
+    <thead><tr>
+      <th>Split</th><th>n</th><th>pK mean &plusmn; std</th><th>min / med / max</th>
+      <th>Kd / Ki</th><th>Resolution &Aring;</th><th>PDBbind set (gen/ref/core)</th>
+    </tr></thead>
+    <tbody>
+      <tr><td>train</td><td>3,850</td><td>6.20 &plusmn; 2.09</td><td>0.40 / 6.06 / 15.00</td><td>2373 / 1477</td><td>2.03</td><td>1914 / 1846 / 90</td></tr>
+      <tr><td>val</td><td>817</td><td>6.80 &plusmn; 1.74</td><td>1.00 / 6.78 / 11.70</td><td>515 / 302</td><td>2.09</td><td>381 / 404 / 32</td></tr>
+      <tr><td>test</td><td>1,320</td><td>6.50 &plusmn; 1.77</td><td>0.82 / 6.62 / 12.00</td><td>695 / 625</td><td>2.01</td><td>541 / 692 / 87</td></tr>
+      <tr class="grp"><td class="m">ALL</td><td class="m">5,987</td><td>6.35 &plusmn; 1.99</td><td>0.40 / 6.34 / 15.00</td><td>3583 / 2404</td><td>~2.0</td><td>2836 / 2942 / 209</td></tr>
+    </tbody>
+  </table>
+  <div class="note" style="margin-top:8px;">
+    Frozen, hash-verified split (<span class="mono">voxbind/splits/lp_edrscc_v2.csv</span>). HBGSA needs raw structures
+    + an H-bond graph cache: structures resolved across the targetdiff PDBbind-v2020 tree (refined <span class="mono">pbpp-2020</span>
+    + general), and a robust RDKit SMILES recovery (relaxed-sanitize &rarr; mol2) recovers all 123 LP-null ligands, so
+    <b>5,987 / 5,987</b> complexes process with <b>0 drops</b> (test n=1,320). H-bond cache: 0 extraction errors,
+    <b>440 (7.3%)</b> complexes with no detected H-bond (handled by a zero-node fallback).
+  </div>
+
+  <h2>2 &middot; Results — HBGSA 3.06M vs 40M scale-up</h2>
+  <div class="sub">
+    Test metrics at each seed's best-val checkpoint (selection on val Spearman), mean&nbsp;&plusmn;&nbsp;std over 3 seeds.
+    Greener cell = better. R&sup2; / Pearson / Spearman higher is better; RMSE / MAE lower is better.
+  </div>
+  <table>
+    <thead><tr>
+      <th>Subset</th><th>Model</th><th>n</th><th>RMSE &darr;</th><th>MAE &darr;</th><th>R&sup2; &uarr;</th><th>Pearson &uarr;</th><th>Spearman &uarr;</th>
+    </tr></thead>
+    <tbody>
+      <tr class="grp"><td rowspan="2"><b>All</b></td>
+        <td>HBGSA 3.06M <span class="pill win">winner</span></td><td>1,320</td>
+        <td class="best"><span class="m">1.568 &plusmn; 0.066</span></td><td class="best"><span class="m">1.251 &plusmn; 0.059</span></td>
+        <td class="best"><span class="m">0.214 &plusmn; 0.067</span></td><td class="best"><span class="m">0.565 &plusmn; 0.007</span></td><td class="best"><span class="m">0.546 &plusmn; 0.003</span></td></tr>
+      <tr>
+        <td>HBGSA 40M <span class="pill done">39.6M</span></td><td>1,320</td>
+        <td>2.247 &plusmn; 0.343</td><td>1.776 &plusmn; 0.270</td>
+        <td class="bad"><span class="m">&minus;0.649 &plusmn; 0.468</span></td><td>0.425 &plusmn; 0.019</td><td>0.415 &plusmn; 0.012</td></tr>
+
+      <tr class="grp"><td rowspan="2"><b>Kd</b></td>
+        <td>HBGSA 3.06M</td><td>695</td>
+        <td class="best"><span class="m">1.573 &plusmn; 0.071</span></td><td class="best"><span class="m">1.252 &plusmn; 0.057</span></td>
+        <td class="best"><span class="m">0.207 &plusmn; 0.073</span></td><td class="best"><span class="m">0.546 &plusmn; 0.021</span></td><td class="best"><span class="m">0.541 &plusmn; 0.009</span></td></tr>
+      <tr>
+        <td>HBGSA 40M</td><td>695</td>
+        <td>2.298 &plusmn; 0.351</td><td>1.836 &plusmn; 0.285</td>
+        <td class="bad"><span class="m">&minus;0.730 &plusmn; 0.492</span></td><td>0.375 &plusmn; 0.008</td><td>0.365 &plusmn; 0.012</td></tr>
+
+      <tr class="grp"><td rowspan="2"><b>Ki</b></td>
+        <td>HBGSA 3.06M</td><td>625</td>
+        <td class="best"><span class="m">1.562 &plusmn; 0.066</span></td><td class="best"><span class="m">1.250 &plusmn; 0.064</span></td>
+        <td class="best"><span class="m">0.115 &plusmn; 0.075</span></td><td class="best"><span class="m">0.525 &plusmn; 0.014</span></td><td class="best"><span class="m">0.500 &plusmn; 0.024</span></td></tr>
+      <tr>
+        <td>HBGSA 40M</td><td>625</td>
+        <td>2.189 &plusmn; 0.333</td><td>1.710 &plusmn; 0.254</td>
+        <td class="bad"><span class="m">&minus;0.774 &plusmn; 0.502</span></td><td>0.413 &plusmn; 0.041</td><td>0.407 &plusmn; 0.036</td></tr>
+    </tbody>
+  </table>
+  <div class="note" style="margin-top:8px;">
+    On the same split, plain <b>EGNN scores Pearson 0.539</b> and <b>EGNN + TargetDiff features 0.597</b>
+    (see <span class="mono">results_targetdiff.html</span>) — so the paper-faithful <b>HBGSA 3.06M (0.565)</b> sits
+    between the two, a reasonable external supervised reference. The 40M's <b>positive ρ but negative R&sup2;</b>
+    means it preserves rank order while badly missing the absolute pK scale.
+  </div>
+
+  <h2>3 &middot; Setup &amp; notes</h2>
+  <div class="note">
+    <ul>
+      <li><b>Model</b> — from-scratch reimplementation of HBGSA (Hydrogen-Bond Graph + Self-Attention, arXiv 2604.23115).
+        Four branches, each &rarr; embedding, concatenated &rarr; FC head: <b>H-bond graph</b> (PyMOL-extracted protein&ndash;ligand
+        H-bonds as nodes, dynamic-KNN, 2&times; GCNConv), <b>protein sequence</b> &amp; <b>SMILES</b> (multi-scale dilated-conv
+        residual tower + 1D self-attention), and <b>binding pocket</b> (1D conv over <span class="mono">{pdb}_pocket.pdb</span> residues).</li>
+      <li><b>3.06M</b> — paper-faithful default dims (emb/d_model 128, conv_channels 213; <b>3,064,907</b> params).
+        <b>40M</b> — width-scaled (emb/d_model 512, gcn/pocket/head 512, conv_channels 736; <b>39.6M</b> params).
+        <span class="mono">hbgsa_baseline/run_edrscc_v2.sh</span>.</li>
+      <li><b>Training</b> — fully supervised on pK, end-to-end. Hybrid loss <span class="mono">SmoothL1 + 50&middot;(1&minus;Pearson)</span>,
+        AdamW lr 1e-3, batch 64, &le;150 epochs, early-stop on val Spearman (patience 20), target standardized on train
+        (de-standardized before metrics &rarr; RMSE/MAE in pK units). 3 seeds {0,1,2}.</li>
+      <li><b>Pipeline</b> — labels from <span class="mono">raw/LP_PDBBind.csv</span> (pK = <span class="mono">value</span>),
+        membership + split from the frozen <span class="mono">lp_edrscc_v2.csv</span>. Caches built once (5,987 each):
+        H-bond graphs via PyMOL in a minimal <span class="mono">hbgsa_pymol</span> conda env; pocket-seqs via Biopython.
+        Training runs in the <span class="mono">voxbind</span> env (torch 2.10+cu128) — the only env whose torch supports
+        these Blackwell sm_120 GPUs.</li>
+      <li><b>Takeaway</b> — the affinity signal here is bounded by the <b>3,850-complex</b> training set; the paper-size
+        3.06M model is the right capacity, and naively scaling to 40M <b>hurts</b> (mis-calibration, instability) without
+        small-data regularization (lower LR + warmup, stronger weight-decay/dropout, longer schedule). A tuned 40M sweep
+        is the obvious next step if the scale-up is worth pursuing.</li>
+    </ul>
+  </div>
+
+</div></body></html>
