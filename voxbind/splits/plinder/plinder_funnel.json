@@ -1,0 +1,81 @@
+{
+  "args": {
+    "max_res": 2.5,
+    "min_rscc": 0.8,
+    "min_heavy": 6,
+    "max_heavy": 50,
+    "single_ligand": true,
+    "allow_covalent": false,
+    "plinder_splits": [
+      "train"
+    ],
+    "dedup": "pdb",
+    "n": 0,
+    "seed": 42,
+    "out": "/home/shpark/prj-denovo/VoxBind/voxbind/dataset/data/plinder/plinder_selected.csv"
+  },
+  "funnel": [
+    {
+      "stage": "all",
+      "ligand_instances": 1357906,
+      "unique_pdb": 143800
+    },
+    {
+      "stage": "X-ray",
+      "ligand_instances": 1046290,
+      "unique_pdb": 128915
+    },
+    {
+      "stage": "resolution<=2.5",
+      "ligand_instances": 674947,
+      "unique_pdb": 102738
+    },
+    {
+      "stage": "proper & !ion/artifact/cofactor",
+      "ligand_instances": 208377,
+      "unique_pdb": 67948
+    },
+    {
+      "stage": "!invalid & rdkit_loadable",
+      "ligand_instances": 201095,
+      "unique_pdb": 67053
+    },
+    {
+      "stage": "6<=heavy<=50",
+      "ligand_instances": 182266,
+      "unique_pdb": 61331
+    },
+    {
+      "stage": "unresolved_heavy==0",
+      "ligand_instances": 153013,
+      "unique_pdb": 57603
+    },
+    {
+      "stage": "rscc>=0.8",
+      "ligand_instances": 117990,
+      "unique_pdb": 47042
+    },
+    {
+      "stage": "!covalent",
+      "ligand_instances": 107991,
+      "unique_pdb": 43713
+    },
+    {
+      "stage": "single proper ligand",
+      "ligand_instances": 81685,
+      "unique_pdb": 35963
+    },
+    {
+      "stage": "plinder split in ['train']",
+      "ligand_instances": 53277,
+      "unique_pdb": 24348
+    },
+    {
+      "stage": "exclude downstream-test",
+      "ligand_instances": 40467,
+      "unique_pdb": 17721
+    }
+  ],
+  "n_selected": 17721,
+  "n_unique_pdb": 17721
+}

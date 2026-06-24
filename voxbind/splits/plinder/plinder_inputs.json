@@ -1,0 +1,43 @@
+{
+  "name": "plinder_v1",
+  "description": "Frozen PLINDER ligand-matched density pretraining selection (cross-server stable).",
+  "plinder_bucket": "gs://plinder/2024-06/v2",
+  "selection_csv": "plinder_selected.csv",
+  "selection_sha256": "b7e60072f066a1d3417927d2af2a540f17312421771c9da5f885a70905856408",
+  "n_selected": 17721,
+  "filters": {
+    "min_rscc": 0.8,
+    "max_res": 2.5,
+    "min_heavy": 6,
+    "max_heavy": 50,
+    "single_ligand": true,
+    "allow_covalent": false,
+    "plinder_splits": [
+      "train"
+    ],
+    "dedup": "pdb",
+    "pocket_radius": 10.0
+  },
+  "build": {
+    "shuffle_seed": 1234,
+    "val_tail": 100,
+    "max_len": 30,
+    "norm_version": "v6_arcsinh_z",
+    "frame": "deposited (transform=None)"
+  },
+  "leakage_holdout": {
+    "pdbbind_index_csv": {
+      "path": "dataset/data/pdbbind/index.csv",
+      "sha256": "cec303f95411b6acfc22fc6fbd58b89118b84f2625547d8bed7dc6fff79303e9"
+    },
+    "misato_pool_pids": {
+      "path": "dataset/data/misato/pool_pids.txt",
+      "sha256": "a76bf32fd8f0b90b4c626ff0ba650e3ee0ae54c9085e1ad408141d079b9d2d72"
+    },
+    "crossdocked_test_pt": {
+      "path": "dataset/data/data_test.pt",
+      "sha256": "24579bc2725b0b80b3a0e65fef649baab9e34fbb3f79ce92c0c4a5b1a9c2d2e8"
+    }
+  },
+  "note": "Consumed by 03b/03c via voxbind.splits.frozen_plinder_selection(). Re-pin only via `03a_plinder_select.py --freeze` (deliberate, version-bumped)."
+}

@@ -79,6 +79,11 @@ def load_module(path: Path, name: str):
 # to the PDBbind path). We reuse them so PLINDER atoms hash to the same channels.
 PDBB = load_module(Path(__file__).parent / "01b_pdbbind_preprocess.py", "pdbb01b")
 
+# Phase-2 diverse (role-split) build: per-atom vdW radius for ANY heavy element +
+# the noble-gas/dummy artifact exclusion, so the single role channel can ingest
+# diverse atoms (identity encoded by blob SIZE, not a one-hot element vocab).
+from voxbind.constants import is_diverse_role_atom, vdw_radius
+
 # 00a provides the resumable thread-pool downloader (reused by --stream mode so we
 # never hold all raw maps at once: download a batch → crop → delete the .ccp4).
 DL = load_module(Path(__file__).parent.parent / "00a_density_download.py", "dl00a_for03c")
@@ -101,13 +106,21 @@ def _is_protein_res(res) -> bool:
 
 
 def parse_cif_system(cif_path: Path, ligand_asym_id: str, ccd_codes: str,
-                     pocket_radius: float = 10.0):
+                     pocket_radius: float = 10.0, diverse: bool = False):
     """Locate PLINDER's ligand instance in the deposited mmCIF + its pocket.
 
-    Returns (lig_xyz, lig_ch, poc_xyz, poc_ch, lig_unsup, poc_unsup) in the
-    deposited frame, or None if the ligand/pocket can't be resolved. Element →
-    channel mapping reuses 01b (ligand C/O/N/S/F/Cl/P → 0..6, pocket C/O/N/S →
-    0..3); H + out-of-vocab atoms are dropped (masked), complex kept.
+    Returns (lig_xyz, lig_ch, poc_xyz, poc_ch, lig_unsup, poc_unsup, lig_rad,
+    poc_rad) in the deposited frame, or None if the ligand/pocket can't be
+    resolved.
+
+    diverse=False (default, per-element build): element→channel via 01b (ligand
+    C/O/N/S/F/Cl/P → 0..6, pocket C/O/N/S → 0..3); H + out-of-vocab atoms dropped
+    (masked), complex kept; lig_rad/poc_rad are None.
+
+    diverse=True (Phase-2 role build): keep EVERY heavy atom that is_diverse_role_atom
+    (drops H + noble-gas/dummy artifacts), assign channel 0 (single role channel)
+    and a per-atom vdW radius (lig_rad/poc_rad). The role channel then encodes any
+    element by blob SIZE, with no fixed vocabulary.
     """
     st = gemmi.read_structure(str(cif_path))
     st.setup_entities()                      # populate subchains (label_asym_id)
@@ -134,7 +147,7 @@ def parse_cif_system(cif_path: Path, ligand_asym_id: str, ccd_codes: str,
     if not lig_residues:
         return None
 
-    lig_xyz, lig_ch, lig_heavy, lig_all_heavy = [], [], set(), []
+    lig_xyz, lig_ch, lig_rad, lig_heavy, lig_all_heavy = [], [], [], set(), []
     for res in lig_residues:
         for a in res:
             el = PDBB._normalise_element(a.element.name)
@@ -142,15 +155,21 @@ def parse_cif_system(cif_path: Path, ligand_asym_id: str, ccd_codes: str,
                 continue
             lig_heavy.add(el)
             lig_all_heavy.append([a.pos.x, a.pos.y, a.pos.z])  # full extent (incl. unsupported)
-            ch = PDBB._channel_of(el, PDBB.N_LIG_CH)
-            if ch is None:
-                continue
-            lig_xyz.append([a.pos.x, a.pos.y, a.pos.z]); lig_ch.append(ch)
-    if not lig_xyz or not lig_all_heavy:     # no supported ligand atoms
+            if diverse:
+                if not is_diverse_role_atom(el):     # drop noble-gas / dummy artifacts
+                    continue
+                lig_xyz.append([a.pos.x, a.pos.y, a.pos.z])
+                lig_ch.append(0); lig_rad.append(vdw_radius(el))   # single role channel
+            else:
+                ch = PDBB._channel_of(el, PDBB.N_LIG_CH)
+                if ch is None:
+                    continue
+                lig_xyz.append([a.pos.x, a.pos.y, a.pos.z]); lig_ch.append(ch)
+    if not lig_xyz or not lig_all_heavy:     # no usable ligand atoms
         return None
 
     # ── pocket: protein heavy atoms within pocket_radius of any ligand heavy atom ──
-    prot = []  # (ch, x, y, z)
+    prot = []  # (ch, x, y, z, rad)   rad used in diverse mode only (0.0 otherwise)
     poc_heavy = set()
     for chain in model:
         for res in chain:
@@ -160,25 +179,36 @@ def parse_cif_system(cif_path: Path, ligand_asym_id: str, ccd_codes: str,
                 el = PDBB._normalise_element(a.element.name)
                 if not PDBB._is_heavy_element(el):
                     continue
-                ch = PDBB._channel_of(el, PDBB.N_POC_CH)
-                if ch is None:
-                    continue
-                prot.append((ch, a.pos.x, a.pos.y, a.pos.z)); poc_heavy.add(el)
+                if diverse:
+                    if not is_diverse_role_atom(el):
+                        continue
+                    ch, rad = 0, vdw_radius(el)
+                else:
+                    ch = PDBB._channel_of(el, PDBB.N_POC_CH)
+                    if ch is None:
+                        continue
+                    rad = 0.0
+                prot.append((ch, a.pos.x, a.pos.y, a.pos.z, rad)); poc_heavy.add(el)
     if not prot:
         return None
-    P = np.array([[x, y, z] for _, x, y, z in prot], dtype=np.float64)
+    P = np.array([[x, y, z] for _, x, y, z, _ in prot], dtype=np.float64)
     d, _ = cKDTree(np.array(lig_all_heavy, dtype=np.float64)).query(P, k=1)
-    poc_xyz = [[x, y, z] for (_, x, y, z), dist in zip(prot, d) if dist <= pocket_radius]
-    poc_ch = [ch for (ch, *_), dist in zip(prot, d) if dist <= pocket_radius]
+    keep = [row for row, dist in zip(prot, d) if dist <= pocket_radius]
+    poc_xyz = [[x, y, z] for _, x, y, z, _ in keep]
+    poc_ch = [ch for ch, *_ in keep]
+    poc_rad = [r for *_, r in keep]
     if not poc_xyz:
         return None
 
+    lig_rad_t = torch.tensor(lig_rad, dtype=torch.float32) if diverse else None
+    poc_rad_t = torch.tensor(poc_rad, dtype=torch.float32) if diverse else None
     return (torch.tensor(lig_xyz, dtype=torch.float32),
             torch.tensor(lig_ch, dtype=torch.long),
             torch.tensor(poc_xyz, dtype=torch.float32),
             torch.tensor(poc_ch, dtype=torch.long),
             PDBB._unsupported_heavy(lig_heavy, PDBB.LIGAND_SUPPORTED_HEAVY),
-            PDBB._unsupported_heavy(poc_heavy, PDBB.POCKET_SUPPORTED_HEAVY))
+            PDBB._unsupported_heavy(poc_heavy, PDBB.POCKET_SUPPORTED_HEAVY),
+            lig_rad_t, poc_rad_t)
 
 
 def _process_case(r, cif: Path, ccp4: Path, stage_dir: Path, norm, pocket_radius: float):
@@ -190,7 +220,7 @@ def _process_case(r, cif: Path, ccp4: Path, stage_dir: Path, norm, pocket_radius
     parsed = parse_cif_system(cif, r.ligand_asym_id, r.ligand_ccd_code, pocket_radius)
     if parsed is None:
         return None, "parse_failed"
-    lig_xyz, lig_ch, poc_xyz, poc_ch, _lu, _pu = parsed
+    lig_xyz, lig_ch, poc_xyz, poc_ch, _lu, _pu, _lr, _pr = parsed   # _lr/_pr None (non-diverse)
 
     # Crop center = SUPPORTED-atom ligand centroid (matches the dataset's
     # __getitem__ recentering on ligand["coords"] after the <7 mask; 00h-identical).
@@ -347,10 +377,138 @@ def run_resample_manifest(args, out_root: Path):
           f"dset.subset_n={max(n - VAL_SZ, 0)} dset.subset_val_n={VAL_SZ} dset.subset_xray_only=true")
 
 
+def run_diverse_build(args, out_root: Path):
+    """DIVERSE mode (Phase-2 role-split): re-parse the SAME PLINDER selection keeping
+    EVERY heavy atom (role channel 0 + per-atom vdW radius; noble-gas/dummy artifacts
+    excluded) → data_train_plinder_diverse.pt + an aligned resample manifest.
+
+    No frozen crops + no density work: the role encoder uses the OTF resampler, which
+    reads the full deposited-frame maps (R=I, t=0) at train time. Mirrors the
+    precompute → resample laydown (shuffle(1234) → drop VAL_SZ → max_len filter) so
+    manifest row i aligns with DatasetCrossDockedDensity index i. atoms_channel is 0 for
+    every atom, so the existing <7/<4 mask + role-channel sum admit all elements; the
+    dataset reads the stored per-atom radius (see crossdocked_density.__getitem__).
+    """
+    cif_dir = PLINDER / "cif"
+    sel = pd.read_csv(args.selection)
+    if args.limit:
+        sel = sel.head(args.limit)
+    print("=== build PLINDER DIVERSE role-split tuples (Phase 2; atoms-only, OTF density) ===")
+    print(f"  selection : {args.selection}  ({len(sel)} rows)")
+    print(f"  cifs      : {cif_dir}")
+
+    tuples, skipped = [], {}
+    for r in tqdm(list(sel.itertuples(index=False)), desc="diverse", unit="cplx"):
+        pid = str(r.entry_pdb_id).lower()
+        key = f"{pid}_{r.ligand_asym_id}"
+        cif = cif_dir / f"{pid}.cif"
+        if not cif.exists():
+            skipped[key] = "missing_cif"; continue
+        try:
+            parsed = parse_cif_system(cif, r.ligand_asym_id, r.ligand_ccd_code,
+                                      args.pocket_radius, diverse=True)
+        except Exception as e:
+            skipped[key] = f"error:{type(e).__name__}"; continue
+        if parsed is None:
+            skipped[key] = "parse_failed"; continue
+        lig_xyz, lig_ch, poc_xyz, poc_ch, _lu, _pu, lig_rad, poc_rad = parsed
+        max_len = round(float((lig_xyz.max(0).values - lig_xyz.min(0).values).max()), 2)
+        pocket_ = {"id": f"plinder/{key}", "coords": poc_xyz.to(torch.float32),
+                   "atoms_channel": poc_ch.to(torch.uint8), "radius": poc_rad.to(torch.float32)}
+        ligand_ = {"id": f"plinder/{key}", "coords": lig_xyz.to(torch.float32),
+                   "atoms_channel": lig_ch.to(torch.uint8), "radius": lig_rad.to(torch.float32),
+                   "max_len": max_len}
+        tuples.append((pocket_, ligand_))
+    print(f"  built {len(tuples)} tuples  (skipped {len(skipped)})")
+    if skipped:
+        for reason, n in Counter(skipped.values()).most_common():
+            print(f"     skip {reason:20s} {n}")
+    if not tuples:
+        print("  [abort] no tuples built."); return
+
+    pt = out_root / "data_train_plinder_diverse.pt"
+    out_root.mkdir(parents=True, exist_ok=True)
+    torch.save(tuples, str(pt))
+    print(f"  {pt.name} : {len(tuples)} tuples")
+
+    # Reuse the EXISTING PLINDER resample.json normalization so the diverse density is
+    # normalized byte-identically to the per-element run (the v6 stats.json may be gone).
+    src_recipe = out_root / "xray_resample_plinder" / "resample.json"
+    if src_recipe.exists():
+        norm_block = json.loads(src_recipe.read_text())["normalization"]
+    else:
+        v6 = json.loads(Path(args.v6_stats).read_text())
+        norm_block = dict(scheme="pocket-pool arcsinh soft-squash + z-score (v6 stats, PLINDER)",
+                          formula="x' = (arcsinh(x / s) - mu_a) / sigma_a",
+                          arcsinh_scale=float(v6["arcsinh_scale"]),
+                          mu_a=float(v6["mu_a"]), sigma_a=float(v6["sigma_a"]))
+
+    # Aligned manifest (mirror run_resample_manifest laydown) for the diverse tuples.
+    order = list(tuples)
+    random.Random(1234).shuffle(order)
+    order = order[: len(order) - VAL_SZ]
+    order = [t for t in order if t[1]["max_len"] <= MAX_LEN]
+    n = len(order)
+    pdb_ids = [str(p["id"]).split("/")[-1].split("_")[0].lower() for p, _l in order]
+    centroids = (np.stack([l["coords"].to(torch.float32).mean(dim=0).numpy() for _p, l in order]).astype(np.float32)
+                 if n else np.zeros((0, 3), np.float32))
+    out_dir = out_root / "xray_resample_plinder_diverse"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    np.savez(out_dir / "train_manifest.npz",
+             pdb_id=np.array(pdb_ids),
+             centroid=centroids,
+             R=np.broadcast_to(np.eye(3, dtype=np.float32), (n, 3, 3)).copy(),
+             t=np.zeros((n, 3), dtype=np.float32),
+             ok=np.ones(n, dtype=bool))
+    np.save(str(out_dir / "train_available.npy"), np.ones(n, dtype=bool))
+    (out_dir / "resample.json").write_text(json.dumps(dict(
+        kind="resample_manifest", grid_dim=GRID_DIM, resolution=RESOLUTION,
+        ccp4_dir=str((PLINDER / "ccp4").resolve()), ccp4_ext=".ccp4",
+        frame="deposited (transform=None): R=I, t=0",
+        norm_version="v6",
+        normalization=norm_block,
+        train_time_note="DIVERSE role-split tuples (data_train_plinder_diverse.pt): per-atom "
+                        "vdW radius stored, atoms_channel=0 → single role channel admits all elements.",
+    ), indent=2))
+    print(f"  manifest  : {n} train positions → {out_dir / 'train_manifest.npz'}")
+    print(f"  launch: dset.resample_dir={out_dir} dset.data_file=data_train_plinder_diverse.pt "
+          f"dset.subset_n={max(n - VAL_SZ, 0)} dset.subset_val_n={VAL_SZ} dset.subset_xray_only=true "
+          f"dset.ligand_radius=-1 dset.pocket_radius=-1")
+
+
+def _resolve_selection(cli):
+    """Prefer the committed FROZEN selection (splits/plinder/) — cross-server stable; verify its
+    sha256 vs plinder_inputs.json and fail loudly on drift. Fall back to the LOCAL (unfrozen)
+    selection with a warning, or honour an explicit --selection override."""
+    if cli:
+        return Path(cli)
+    fz_dir = VOX_ROOT / "splits" / "plinder"
+    fz_csv = fz_dir / "plinder_selected.csv"
+    if fz_csv.exists():
+        inp = fz_dir / "plinder_inputs.json"
+        if inp.exists():
+            import hashlib
+            meta = json.loads(inp.read_text()); want = meta.get("selection_sha256")
+            got = hashlib.sha256(fz_csv.read_bytes()).hexdigest()
+            if want and got != want:
+                raise SystemExit(
+                    f"[selection] FROZEN selection hash MISMATCH: {fz_csv}\n"
+                    f"  expected {want}\n  got      {got}\n"
+                    f"  re-pin deliberately via 03a_plinder_select.py --rederive --freeze")
+        print(f"  [selection] FROZEN committed (hash-verified): {fz_csv}")
+        return fz_csv
+    local = PLINDER / "plinder_selected.csv"
+    print(f"  [selection] WARNING: no frozen selection in splits/plinder/ — using LOCAL {local} "
+          f"(NOT cross-server stable; run 03a --freeze to pin)")
+    return local
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0],
                                  formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    ap.add_argument("--selection", default=str(PLINDER / "plinder_selected.csv"))
+    ap.add_argument("--selection", default=None,
+                    help="Selection CSV. Default: the committed frozen selection "
+                         "(splits/plinder/plinder_selected.csv), hash-verified; else local fallback.")
     ap.add_argument("--out_root", default=str(VOXDATA))
     ap.add_argument("--v6_stats", default=str(VOXDATA / "xray_crops_aligned_v6" / "stats.json"),
                     help="density normalization stats to reuse (shared scale with v6/v7)")
@@ -363,12 +521,13 @@ def main():
     ap.add_argument("--workers", type=int, default=16, help="download threads (stream mode)")
     ap.add_argument("--min_free_gb", type=float, default=120.0, help="abort streaming if free disk drops below this")
     ap.add_argument("--keep_maps", action="store_true", help="stream mode: do NOT delete raw .ccp4 after cropping")
-    ap.add_argument("--mode", choices=["precompute", "resample"], default="precompute",
+    ap.add_argument("--mode", choices=["precompute", "resample", "diverse"], default="precompute",
                     help="precompute = write frozen normalized crops (default). resample = write ONLY a train "
                          "manifest (pdb_id, centroid, R=I, t=0, ok) + resample.json recipe, so density is cropped "
                          "from the full map at the AUGMENTED pose at train time (DatasetCrossDockedDensity). Reuses "
                          "data_train_plinder.pt; needs the plinder/ccp4 maps RETAINED — re-acquire via `s2 --dataset plinder`.")
     args = ap.parse_args()
+    args.selection = _resolve_selection(args.selection)   # frozen-first (cross-server stable)
 
     out_root = Path(args.out_root)
     cif_dir = PLINDER / "cif"
@@ -378,6 +537,10 @@ def main():
 
     if args.mode == "resample":
         run_resample_manifest(args, out_root)
+        return
+
+    if args.mode == "diverse":
+        run_diverse_build(args, out_root)
         return
 
     sel = pd.read_csv(args.selection)

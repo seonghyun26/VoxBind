@@ -193,6 +193,51 @@ def select(df: pd.DataFrame, args, excl: set):
 
 # ── CLI ────────────────────────────────────────────────────────────────────────
 
+def _freeze_to_splits(sel_csv: Path, funnel_json: Path, args) -> None:
+    """Re-pin the committed frozen selection (voxbind/splits/plinder/) from a fresh 03a build:
+    copy the selection CSV + funnel and (re)write plinder_inputs.json with the new sha256 +
+    leakage-file hashes. Consumed by 03b/03c via voxbind.splits.frozen_plinder_selection()."""
+    import hashlib
+    import shutil
+    dst = Path(__file__).resolve().parents[2] / "splits" / "plinder"
+    dst.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(sel_csv, dst / "plinder_selected.csv")
+    if funnel_json.exists():
+        shutil.copy2(funnel_json, dst / "plinder_funnel.json")
+
+    def _sha(p):
+        return hashlib.sha256(Path(p).read_bytes()).hexdigest() if Path(p).exists() else None
+
+    n = sum(1 for _ in open(dst / "plinder_selected.csv")) - 1
+    inputs = {
+        "name": "plinder_v1",
+        "description": "Frozen PLINDER ligand-matched density pretraining selection (cross-server stable).",
+        "plinder_bucket": GCS,
+        "selection_csv": "plinder_selected.csv",
+        "selection_sha256": _sha(dst / "plinder_selected.csv"),
+        "n_selected": n,
+        "filters": {k: getattr(args, k, None) for k in
+                    ("min_rscc", "max_res", "min_heavy", "max_heavy",
+                     "single_ligand", "allow_covalent", "plinder_splits", "dedup")},
+        "build": {"shuffle_seed": 1234, "val_tail": 100, "max_len": 30,
+                  "norm_version": "v6_arcsinh_z", "frame": "deposited (transform=None)",
+                  "pocket_radius": 10.0},
+        "leakage_holdout": {
+            "pdbbind_index_csv":   {"path": "dataset/data/pdbbind/index.csv",    "sha256": _sha(VOXDATA / "pdbbind" / "index.csv")},
+            "misato_pool_pids":    {"path": "dataset/data/misato/pool_pids.txt", "sha256": _sha(VOXDATA / "misato" / "pool_pids.txt")},
+            "crossdocked_test_pt": {"path": "dataset/data/data_test.pt",         "sha256": _sha(VOXDATA / "data_test.pt")},
+        },
+        "note": "Re-pinned via 03a --freeze. Consumed by 03b/03c via voxbind.splits.frozen_plinder_selection().",
+    }
+    (dst / "plinder_inputs.json").write_text(json.dumps(inputs, indent=2))
+    gi = dst / ".gitignore"
+    if not gi.exists():
+        gi.write_text("# repo-wide .gitignore drops *.csv/*.json; re-include the frozen selection here.\n"
+                      "!*.csv\n!*.json\n!*.md\n!.gitignore\n")
+    print(f"[freeze] re-pinned committed selection -> {dst}  "
+          f"(sha {inputs['selection_sha256'][:12]}…, n={n})")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--max_res", type=float, default=2.5, help="max resolution (A)")
@@ -209,6 +254,13 @@ def main():
     ap.add_argument("--n", type=int, default=0, help="subsample N rows (0 = keep all); for the pilot")
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--out", default=str(PLINDER / "plinder_selected.csv"))
+    ap.add_argument("--rederive", action="store_true",
+                    help="explicit acknowledgement that you are RE-deriving the selection from the "
+                         "(mutable) annotation table; pair with --freeze to re-pin the committed copy.")
+    ap.add_argument("--freeze", action="store_true",
+                    help="after building, RE-PIN the committed frozen selection in splits/plinder/ "
+                         "(copy CSV + funnel, recompute sha256 + leakage hashes in plinder_inputs.json). "
+                         "This is the deliberate, version-bumped re-pin step.")
     args = ap.parse_args()
 
     print("[1] ensure parquet inputs")
@@ -246,6 +298,9 @@ def main():
     (PLINDER / "plinder_funnel.json").write_text(json.dumps(
         {"args": vars(args), "funnel": funnel,
          "n_selected": int(len(sel)), "n_unique_pdb": int(sel.entry_pdb_id.nunique())}, indent=2))
+
+    if args.freeze:
+        _freeze_to_splits(out, PLINDER / "plinder_funnel.json", args)
 
     print(f"\n[done] wrote {len(sel)} rows -> {out}")
     print(f"       unique pdb ids: {sel.entry_pdb_id.nunique()}")

@@ -186,3 +186,41 @@ def check_local_availability(expected, present, *, label: str = "", warn=print) 
         "frac_present": (len(used) / n_exp) if n_exp else 0.0,
         "content_hash": ch,
     }
+
+
+# ── frozen PLINDER pretraining selection (cross-server stable) ────────────────
+PLINDER_DIR = SPLITS_DIR / "plinder"
+
+
+def frozen_plinder_selection(*, verify: bool = True, warn=print):
+    """Path to the committed frozen PLINDER selection CSV, or ``None`` if not present.
+
+    The selection (which ligand-instances make up the density pretraining corpus) is
+    pinned in ``splits/plinder/plinder_selected.csv`` with its sha256 in
+    ``plinder_inputs.json`` — so every server builds from the *same* list instead of
+    re-deriving it from the (mutable) PLINDER annotation table. With ``verify`` the
+    sha256 is checked and a drifted/edited CSV fails LOUDLY (mirrors ``load_split``).
+    Re-pin deliberately via ``03a_plinder_select.py --rederive --freeze``.
+    """
+    csv = PLINDER_DIR / "plinder_selected.csv"
+    inputs = PLINDER_DIR / "plinder_inputs.json"
+    if not csv.exists():
+        return None
+    if verify and inputs.exists():
+        meta = json.loads(inputs.read_text())
+        want = meta.get("selection_sha256")
+        got = hashlib.sha256(csv.read_bytes()).hexdigest()
+        if want and got != want:
+            raise ValueError(
+                f"[plinder] frozen selection hash MISMATCH — {csv} has drifted from the "
+                f"pinned definition ({meta.get('name', '?')}).\n"
+                f"  expected {want}\n  got      {got}\n"
+                f"  If intentional, re-run 03a_plinder_select.py --rederive --freeze to re-pin."
+            )
+    return csv
+
+
+def plinder_inputs() -> dict:
+    """The pinned-inputs manifest (bucket / filters / build params / leakage hashes), or {}."""
+    p = PLINDER_DIR / "plinder_inputs.json"
+    return json.loads(p.read_text()) if p.exists() else {}

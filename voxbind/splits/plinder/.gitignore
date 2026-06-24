@@ -1,0 +1,6 @@
+# repo-wide .gitignore drops *.csv/*.json everywhere; the frozen PLINDER selection
+# in THIS dir is source-of-truth and must be tracked.
+!*.csv
+!*.json
+!*.md
+!.gitignore
