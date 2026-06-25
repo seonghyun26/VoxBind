@@ -1,0 +1,126 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VoxBind — frozen Channel-ViT conditioning (scene_vit)</title>
+<style>
+  :root { --ink:#1a1a1a; --muted:#666; --line:#e3e3e3; --bg:#fafafa; --card:#fff;
+          --good:#1d6b3a; --good-bg:#eaf5ee; --warn:#8a6d00; --code:#f0f2f5; }
+  * { box-sizing:border-box; }
+  body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+         color:var(--ink); background:var(--bg); margin:0; line-height:1.55; }
+  .wrap { max-width:1060px; margin:0 auto; padding:36px 28px 80px; }
+  h1 { font-size:24px; margin:0 0 4px; letter-spacing:-.02em; }
+  h2 { font-size:17px; margin:34px 0 10px; padding-bottom:6px; border-bottom:2px solid var(--line); }
+  .sub { color:var(--muted); font-size:14px; margin-bottom:8px; }
+  .sub span { margin-right:16px; }
+  .tldr { background:#fff8e6; border:1px solid #f0d98a; border-radius:10px; padding:14px 18px; margin:20px 0; font-size:14.5px; }
+  .tldr b { color:var(--warn); }
+  code, pre { font-family:"SF Mono",Menlo,Consolas,monospace; }
+  .mono { font-family:"SF Mono",Menlo,Consolas,monospace; font-size:12.5px;
+          background:var(--code); padding:1px 5px; border-radius:4px; }
+  pre { background:#1e2127; color:#e6e6e6; border-radius:8px; padding:14px 16px; overflow:auto;
+        font-size:12.5px; line-height:1.5; }
+  pre .c { color:#7f8a9b; }  pre .k { color:#c792ea; }  pre .f { color:#86c1ff; }  pre b { color:#ffcb6b; font-weight:600; }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:8px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:12px 14px; font-size:13px; }
+  .card h3 { margin:0 0 6px; font-size:13px; text-transform:uppercase; letter-spacing:.04em; color:#555; }
+  .note { color:var(--muted); font-size:12.5px; line-height:1.6; }
+  .note ul { margin:6px 0 0; padding-left:20px; } .note li { margin-bottom:5px; }
+  .note b, .card b { color:var(--ink); }
+  table { width:100%; border-collapse:collapse; background:var(--card); font-size:13px;
+          border:1px solid var(--line); border-radius:8px; overflow:hidden; margin-top:8px; }
+  th,td { text-align:left; padding:8px 11px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { background:#f2f3f5; font-size:11.5px; text-transform:uppercase; letter-spacing:.04em; color:#555; }
+  tr:last-child td { border-bottom:none; }
+  .ok { color:var(--good); font-weight:600; }
+</style></head>
+<body><div class="wrap">
+
+  <h1>VoxBind — conditioning on a frozen Channel-ViT (<span class="mono">scene_vit</span>)</h1>
+  <div class="sub">
+    <span>&#x1F4C5; 2026-07-01</span>
+    <span>&#x1F9E9; encoder: <span class="mono">exps/260623_ar_cvit_c1_g742</span> (45.7M, groups [7,4,2])</span>
+    <span>&#x2705; smoke-tested, original path unchanged</span>
+  </div>
+
+  <div class="tldr">
+    <b>What changed.</b> Added a new <span class="mono">density_encoder_type: scene_vit</span> to VoxBind. It loads a
+    <b>pretrained full-scene Channel-ViT</b> (atomblob + density + gradmag, 13ch / groups [7,4,2]), <b>freezes</b> it,
+    and uses its <span class="mono">(B,16,64³)</span> latent to <b>replace the pocket+density conditioning</b>. The noisy
+    ligand still flows through the trainable <span class="mono">ligand_encoder</span>; the U-Net + fusion train on top of
+    the frozen latent. The original VoxBind path is byte-identical when the flag is off.
+  </div>
+
+  <h2>1 &middot; The conditioning path</h2>
+  <div class="grid">
+    <div class="card"><h3>Original (unchanged)</h3>
+<pre><span class="c"># pocket+density are separate branches</span>
+x = ligand_encoder(y)
+  + pocket_encoder(pocket)
+<span class="k">if</span> with_density:
+  x += density_proj(cat[x, density_encoder(density)])
+x = unet(x); x = final_ligand(x)</pre>
+    </div>
+    <div class="card"><h3>scene_vit (new)</h3>
+<pre><span class="c"># one FROZEN ViT encodes the whole scene</span>
+x = ligand_encoder(y)              <span class="c"># trainable</span>
+scene = cat[<b>0</b>·lig, pocket, density+gradmag] <span class="c"># 13ch</span>
+x += density_proj(cat[x, <b>frozen_vit</b>(scene)])
+x = unet(x); x = final_ligand(x)   <span class="c"># trained on top</span></pre>
+    </div>
+  </div>
+  <div class="note" style="margin-top:8px;">
+    The ligand channels into the frozen encoder are <b>zeroed</b> — the ligand is the generation target and is unavailable
+    at sampling time, so the encoder conditions only on pocket + density. Because the pretrained encoder already carries
+    its <span class="mono">decoder_proj</span> at <span class="mono">c_out = n_channels/2 = 16</span>, the whole module
+    loads <b>strict</b> and the existing zero-init <span class="mono">density_proj</span> fusion is reused as-is.
+  </div>
+
+  <h2>2 &middot; Three design points</h2>
+  <table>
+    <thead><tr><th>Point</th><th>Implementation</th></tr></thead>
+    <tbody>
+      <tr><td><b>1. Un-hardcode channel dim</b></td>
+        <td>The density branch width was fixed at 1&ndash;2ch. <span class="mono">scene_vit</span> builds
+          <span class="mono">DensityViT(n_in=13, channel_groups=(7,4,2), c_out=16)</span> from <span class="mono">n_ligand+n_pocket+n_density</span>.</td></tr>
+      <tr><td><b>2. Zero the ligand</b></td>
+        <td><span class="mono">cat([torch.zeros_like(ligand), pocket, density])</span> in <span class="mono">forward</span>
+          (always; <span class="mono">density=None</span> &rarr; null conditioning for CFG). Channel-group patch embed makes the
+          ligand group a clean constant.</td></tr>
+      <tr><td><b>3. Freeze encoder, train on top</b></td>
+        <td>Reuses <span class="mono">density_pretrained_path</span> + <span class="mono">density_freeze</span>
+          (<span class="mono">models/__init__.py</span>): strict-load &rarr; <span class="mono">requires_grad=False</span> &rarr; dropout off.
+          <span class="mono">ligand_encoder</span> / <span class="mono">density_proj</span> / U-Net stay trainable.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>3 &middot; How to run</h2>
+<pre>cd voxbind
+CUDA_VISIBLE_DEVICES=0,1,2,3 python train.py \
+  model=voxbind_scene_vit_g742 with_gradmag=true \
+  <span class="c"># dataset must yield xray_density + xray_gradmag (with_density path)</span></pre>
+  <div class="note" style="margin-top:6px;">
+    Config <span class="mono">configs/model/voxbind_scene_vit_g742.yaml</span> pins the encoder dims (dim 512 / depth 12 /
+    heads 8 / patch 8 / groups [7,4,2]) to the checkpoint — they <b>must</b> match or the strict load fails.
+    Requires top-level <span class="mono">with_gradmag=true</span> and an X-ray (density-bearing) dataset.
+  </div>
+
+  <h2>4 &middot; Verification &amp; files</h2>
+  <div class="note">
+    <ul>
+      <li><span class="ok">Smoke test passed</span> (synthetic batch, GPU): original <span class="mono">forward &rarr; (2,7,64³)</span>
+        with <span class="mono">pocket_encoder</span> intact; scene_vit loads the encoder <b>strict</b>
+        (<b>45.71M frozen</b>, matches the checkpoint), <span class="mono">forward(density)</span> and
+        <span class="mono">forward(None)</span> &rarr; <span class="mono">(2,7,64³)</span>, and backward puts
+        <b>0 grad on the frozen encoder</b>, &gt;0 on <span class="mono">ligand_encoder</span>.</li>
+      <li>The clean strict-load also <b>validates the group assignment</b>: groups 7/4/2 are distinct sizes, so
+        ligand&rarr;g0, pocket&rarr;g1, density+gradmag&rarr;g2 must line up.</li>
+      <li><b>Files:</b> <span class="mono">models/voxbind.py</span> (scene_vit branch + forward + docstring),
+        <span class="mono">configs/model/voxbind_scene_vit_g742.yaml</span> (new). No change to
+        <span class="mono">models/__init__.py</span> (existing loader/freeze covers it) or the dataloader
+        (<span class="mono">train.py</span>/<span class="mono">sampling_utils.py</span> already pass density+gradmag).</li>
+      <li><b>Open question / assumption:</b> ligand-zeroing is always-on (vs stochastic CFG dropout); intra-group channel
+        order is the canonical voxbind order (C/O/N/S/&hellip;), shared with pretraining. Revisit if generation underperforms.</li>
+    </ul>
+  </div>
+
+</div></body></html>

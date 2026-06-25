@@ -190,22 +190,42 @@ def check_local_availability(expected, present, *, label: str = "", warn=print) 
 
 # ── frozen PLINDER pretraining selection (cross-server stable) ────────────────
 PLINDER_DIR = SPLITS_DIR / "plinder"
+DEFAULT_PLINDER_VERSION = "v2"   # active corpus; v1 stays loadable for reproducibility
 
 
-def frozen_plinder_selection(*, verify: bool = True, warn=print):
+def frozen_plinder_dir(version: str = None, *, warn=print):
+    """Resolve the directory holding a frozen PLINDER selection for ``version``.
+
+    Layout is versioned: ``splits/plinder/<version>/`` (e.g. ``v1/``, ``v2/``). Falls back to
+    ``v1/`` then to the legacy FLAT ``splits/plinder/`` (pre-versioning) so old checkouts keep
+    working. Returns ``None`` if no selection CSV is found anywhere.
+    """
+    version = version or DEFAULT_PLINDER_VERSION
+    want = PLINDER_DIR / version
+    for d in (want, PLINDER_DIR / "v1", PLINDER_DIR):
+        if (d / "plinder_selected.csv").exists():
+            if d != want:
+                warn(f"[plinder] version {version!r} not found under {PLINDER_DIR} — using {d.name or 'flat'}")
+            return d
+    return None
+
+
+def frozen_plinder_selection(*, version: str = None, verify: bool = True, warn=print):
     """Path to the committed frozen PLINDER selection CSV, or ``None`` if not present.
 
     The selection (which ligand-instances make up the density pretraining corpus) is
-    pinned in ``splits/plinder/plinder_selected.csv`` with its sha256 in
+    pinned in ``splits/plinder/<version>/plinder_selected.csv`` with its sha256 in
     ``plinder_inputs.json`` — so every server builds from the *same* list instead of
     re-deriving it from the (mutable) PLINDER annotation table. With ``verify`` the
     sha256 is checked and a drifted/edited CSV fails LOUDLY (mirrors ``load_split``).
-    Re-pin deliberately via ``03a_plinder_select.py --rederive --freeze``.
+    ``version`` defaults to :data:`DEFAULT_PLINDER_VERSION`; pass ``version='v1'`` to pin the
+    legacy corpus. Re-pin deliberately via ``03a_plinder_select.py --rederive --freeze``.
     """
-    csv = PLINDER_DIR / "plinder_selected.csv"
-    inputs = PLINDER_DIR / "plinder_inputs.json"
-    if not csv.exists():
+    d = frozen_plinder_dir(version, warn=warn)
+    if d is None:
         return None
+    csv = d / "plinder_selected.csv"
+    inputs = d / "plinder_inputs.json"
     if verify and inputs.exists():
         meta = json.loads(inputs.read_text())
         want = meta.get("selection_sha256")
@@ -220,7 +240,10 @@ def frozen_plinder_selection(*, verify: bool = True, warn=print):
     return csv
 
 
-def plinder_inputs() -> dict:
+def plinder_inputs(version: str = None) -> dict:
     """The pinned-inputs manifest (bucket / filters / build params / leakage hashes), or {}."""
-    p = PLINDER_DIR / "plinder_inputs.json"
+    d = frozen_plinder_dir(version, warn=lambda *_: None)
+    if d is None:
+        return {}
+    p = d / "plinder_inputs.json"
     return json.loads(p.read_text()) if p.exists() else {}
