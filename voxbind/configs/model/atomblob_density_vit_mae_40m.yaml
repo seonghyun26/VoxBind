@@ -31,3 +31,5 @@ head_depth: 2           # # of Conv3d layers in each head (>=1); 2 = current
 patch_embed_mode: fused # fused (1 Conv mixes all channels) | channel_group (per-group tokens + attention)
 channel_groups: null    # channel_group only: per-group channel counts (must sum to n_in); e.g. [7,4,1,1]
                         # for 13ch = 7 lig-atom + 4 poc-atom + 1 density + 1 gradmag
+channel_group_dropout: 0.0  # ChannelViT HCS: per-forward prob of dropping each whole group (train-only,
+                            # ≥1 kept). 0.0 = off (no-op). channel_group mode only.

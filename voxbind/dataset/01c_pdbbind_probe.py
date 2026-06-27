@@ -191,6 +191,12 @@ EXPS_OVERRIDE: dict[tuple[str, str], Path] = {
     ("atomblob_density_gradmag", "v5"): Path("exps") / "260606_atomblob_density_gradmag_vit_mae_40m_invfreq_v5_pretrain",
     # density-only (2ch: ρ + ‖∇ρ‖, no atoms) — CrossDocked-v5 pretrain (run #2).
     ("density_gradmag", "v5"): Path("exps") / "260606_density_vit_mae_40m_xray_v5_gradmag_pretrain",
+    # PLINDER-OTF roleblob (role-split) encoders share the atomblob-CDG OTF density
+    # recipe (xray_resample_plinder, normalize:false, density_source:xray) → v5-native,
+    # exactly like the otf_cdg encoders probed at v5. Mark so the v1-native OOD warning
+    # is skipped. Same exp dir as the base EXPS map (override only suppresses the warn).
+    ("roleblob_density_gradmag",            "v5"): Path("exps") / "260623_plinder_otf_roleblob_cdg_vit_mask050_pretrain",
+    ("roleblob_density_gradmag_channelvit", "v5"): Path("exps") / "260623_plinder_otf_roleblob_cdg_channelvit_mask050_pretrain",
 }
 
 
@@ -1123,6 +1129,7 @@ TARGET_LABELS = {
     "bfactor_rel":        "relative pocket B-factor (pocket/protein, resolution-robust)",
     "partial_charges":    "ligand partial-charge magnitude (MISATO QM, mean|q|)",
     "electron_affinity":  "ligand electron affinity (MISATO QM)",
+    "hardness":           "ligand chemical hardness (MISATO QM)",
     "adaptability":       "pocket adaptability (MISATO MD)",
     "rmsf":               "pocket RMSF (MISATO MD)",
     "pose_stability":     "ligand pose RMSD over MD (MISATO MD)",
@@ -1144,6 +1151,8 @@ def load_target_map(target: str) -> Optional[dict[str, float]]:
         return load_misato_target("partial_charge", MISATO_QM_JSON)
     if target == "electron_affinity":
         return load_misato_target("electron_affinity", MISATO_QM_JSON)
+    if target == "hardness":
+        return load_misato_target("hardness", MISATO_QM_JSON)
     if target == "adaptability":
         return load_misato_target("adaptability", MISATO_MD_JSON)
     if target == "rmsf":
@@ -1161,7 +1170,7 @@ def target_source(target: str):
         return HBOND_CACHE_DIR
     if target in ("bfactor", "bfactor_rel"):
         return BFACTOR_CACHE
-    if target in ("partial_charges", "electron_affinity"):
+    if target in ("partial_charges", "electron_affinity", "hardness"):
         return MISATO_QM_JSON
     if target in ("adaptability", "rmsf", "pose_stability", "interaction_energy"):
         return MISATO_MD_JSON
@@ -1904,15 +1913,22 @@ def encode_split_features(encoder, splits, condition, n_in, atom_dir, dens_dir,
 
 
 def encode_split_tokens(encoder, splits, condition, n_in, atom_dir, dens_dir,
-                        device, batch_size, input_mode, with_gradmag, num_workers):
-    """Frozen-encoder patch tokens, cached ONCE → {split: {tokens, y}}.
+                        device, batch_size, input_mode, with_gradmag, num_workers,
+                        token_source: str = "patch"):
+    """Frozen-encoder tokens, cached ONCE → {split: {tokens, y}}.
 
     Unlike `encode_split_features` (which mean-pools to a vector), this keeps the
-    full (N, Np, D) token sequence so a *learnable* pool can train on it across
+    full (N, T, D) token sequence so a *learnable* pool can train on it across
     many epochs and seeds without ever re-reading voxels or re-running the
-    encoder. Stored fp16 on CPU (~1-2 GB for the refined set). Uses the worker
-    DataLoader (shuffle=False, so tokens stay row-aligned with y)."""
+    encoder. Stored fp16 on CPU. Uses the worker DataLoader (shuffle=False, so
+    tokens stay row-aligned with y).
+
+    token_source="patch"  — post-norm patch tokens (B, Np, D); fed to mean/attn pools.
+    token_source="memory" — post-norm memory tokens (B, l, D) of a ChA-MAE encoder;
+                            mean-pooled by the head (memtok pool). Tiny cache (l≈4)."""
     encoder = encoder.to(device).eval()
+    extract = (encoder.forward_features_memory if token_source == "memory"
+               else (lambda xb: forward_tokens(encoder, xb)))
     out = {}
     for split, sdf in splits.items():
         ds = VoxelDataset(sdf["pdb_id"], sdf["pK"].to_numpy(), condition, n_in,
@@ -1925,7 +1941,7 @@ def encode_split_tokens(encoder, splits, condition, n_in, atom_dir, dens_dir,
         with torch.no_grad():
             for xb, yb in tqdm(loader, desc=f"encode {split}", unit="batch", leave=False):
                 xb = xb.to(device, non_blocking=True)
-                toks.append(forward_tokens(encoder, xb).half().cpu())   # (B, Np, D)
+                toks.append(extract(xb).half().cpu())                   # (B, T, D)
                 ys.append(yb)
         out[split] = {"tokens": torch.cat(toks),
                       "y": torch.cat(ys).numpy().astype(np.float32)}
@@ -2146,9 +2162,19 @@ def train_pool(data: dict, *, seed: int, device: str, pool: str, pool_heads: int
 def run_finetune(args: argparse.Namespace) -> None:
     device = args.device
     amp = (not args.no_amp) and str(device).startswith("cuda")
-    exp_dir = resolve_exp(args.condition, args.voxel_version)
+    exp_dir = Path(args.exp_dir) if getattr(args, "exp_dir", None) else \
+        resolve_exp(args.condition, args.voxel_version)
     factory, cfg = make_encoder_factory(exp_dir, args.epoch)
     spec = infer_feature_spec(args.condition, cfg, args.atom_source)
+
+    # memtok pool reads the encoder's learnable memory tokens (ChA-MAE); validate up front.
+    n_mem = int(cfg.model.get("n_memory_tokens", 0))
+    if args.pool == "memtok" and n_mem == 0:
+        raise SystemExit(f"--pool memtok requires a ChA-MAE encoder (n_memory_tokens>0); "
+                         f"{exp_dir.name} has none.")
+    if args.pool == "memtok" and args.ft_scope != "none":
+        raise SystemExit("--pool memtok is only supported with --ft_scope none "
+                         "(frozen encoder, cached memory tokens → mean readout).")
 
     # Distribution-shift warning: density-consuming encoder fed an un-retrained
     # density version (same rationale as run_features).
@@ -2250,21 +2276,26 @@ def run_finetune(args: argparse.Namespace) -> None:
         # would take hours via the re-encode path finishes in minutes. Uses the
         # frozen-arm schedule so pool=mean here ≈ the cached `frozen` baseline.
         print("\n── finetune (frozen encoder, cached tokens → pool+head) ────────")
+        # memtok: cache the encoder's l memory tokens and mean-read them (CLS-like
+        # aggregate). mean/attn: cache the full patch-token sequence and pool it.
+        token_source = "memory" if args.pool == "memtok" else "patch"
+        head_pool    = "mean"   if args.pool == "memtok" else args.pool
         enc = factory()
         tok = encode_split_tokens(enc, splits, args.condition, n_in,
                                   atom_dir, dens_dir, device, args.feat_batch_size,
-                                  spec.input_mode, spec.with_gradmag, args.num_workers)
+                                  spec.input_mode, spec.with_gradmag, args.num_workers,
+                                  token_source=token_source)
         del enc
         if str(device).startswith("cuda"):
             torch.cuda.empty_cache()
         ntok = tok["train"]["tokens"].shape[1]
-        print(f"  cached {ntok}-token reps  "
+        print(f"  cached {ntok}-token reps ({token_source}, pool={args.pool}→{head_pool})  "
               f"(train={tok['train']['tokens'].shape[0]} "
               f"val={tok['val']['tokens'].shape[0]} "
               f"test={tok['test']['tokens'].shape[0]})")
         for seed in range(args.seeds):
             m = train_pool(tok, seed=seed, device=device,
-                           pool=args.pool, pool_heads=args.pool_heads,
+                           pool=head_pool, pool_heads=args.pool_heads,
                            max_epochs=args.frozen_max_epochs, patience=args.frozen_patience,
                            batch_size=args.frozen_batch_size, lr=args.head_lr,
                            weight_decay=args.weight_decay,
@@ -2322,7 +2353,8 @@ def run_finetune(args: argparse.Namespace) -> None:
 
 _CONDITION_CHOICES = ["atomblob", "atomblob_ligvdw", "atomblob_density", "atomblob_weighted",
                       "atomblob_merged_density", "atomblob_merged_density_gradmag",
-                      "atomblob_density_gradmag", "density_gradmag"]
+                      "atomblob_density_gradmag", "density_gradmag",
+                      "roleblob_density_gradmag", "roleblob_density_gradmag_channelvit"]
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -2388,7 +2420,7 @@ def build_parser() -> argparse.ArgumentParser:
                          "to probe. Adds matching suffix to feature paths + output CSV. "
                          "Default v5 = the canonical split (2172/480/839); matches `finetune`.")
     pr.add_argument("--target", choices=["pK", "hbonds", "bfactor", "bfactor_rel",
-                                         "partial_charges", "electron_affinity", "adaptability", "rmsf",
+                                         "partial_charges", "electron_affinity", "hardness", "adaptability", "rmsf",
                                          "pose_stability", "interaction_energy"], default="pK",
                     help="Regression target on the identical LP_PDBBind splits: pK (binding "
                          "affinity, default); hbonds (protein-ligand H-bond count, HBGSA cache); "
@@ -2485,12 +2517,18 @@ def build_parser() -> argparse.ArgumentParser:
     # shared head architecture (identical across arms)
     pt.add_argument("--hidden",  type=int,   default=128)
     pt.add_argument("--dropout", type=float, default=0.1)
-    pt.add_argument("--pool", choices=["mean", "attn"], default="mean",
+    pt.add_argument("--pool", choices=["mean", "attn", "memtok"], default="mean",
                     help="Token→vector pooling for the head. mean = fixed average "
                          "(matches the cached probe); attn = learned-query attention "
-                         "pool over the live token sequence (trains with the head).")
+                         "pool over the live token sequence (trains with the head); "
+                         "memtok = mean of the encoder's learnable memory tokens "
+                         "(ChA-MAE only; needs --ft_scope none).")
     pt.add_argument("--pool_heads", type=int, default=8,
                     help="Heads in the attention pool (only used when --pool attn)")
+    pt.add_argument("--exp_dir", default=None,
+                    help="Override the encoder exp dir (default: resolve from "
+                         "condition+voxel_version via EXPS/EXPS_OVERRIDE). Needed to "
+                         "point at a specific pretrain (e.g. a mask050 ChA-MAE run).")
     # fine-tune scope + optimisation
     pt.add_argument("--ft_scope", choices=["full", "lastk", "none"], default="full",
                     help="full = whole encoder (low LR); lastk = only last --last_k "

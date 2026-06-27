@@ -1017,6 +1017,7 @@ def _build_vit(cfg: DictConfig, device, layout: dict, is_main: bool):
         patch_embed_mode=str(cfg.model.get("patch_embed_mode", "fused")),
         channel_groups=(tuple(int(c) for c in cfg.model.channel_groups)
                         if cfg.model.get("channel_groups", None) else None),
+        channel_group_dropout=float(cfg.model.get("channel_group_dropout", 0.0)),
     ).to(device)
     if is_main:
         n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -1168,6 +1169,9 @@ def run(cfg: DictConfig, method: str) -> None:
 
     model_train = maybe_compile_model(model, cfg, is_main=is_main)
     if world_size > 1:
+        # NB ChannelViT HCS drops whole groups, but `embed_groups` runs every group's
+        # patch-embed conv BEFORE the drop-slice, so every param still gets a (zero)
+        # grad each step → no unused params, find_unused_parameters stays False.
         model_train = torch.nn.parallel.DistributedDataParallel(
             model_train,
             device_ids=[local_rank],
@@ -1413,7 +1417,9 @@ def run(cfg: DictConfig, method: str) -> None:
             }
             ckpt_saver.save(state, save_dir=cfg.output_dir)
             ckpt_every = max(1, int(cfg.mae.ckpt_every))
-            if (epoch % ckpt_every == 0) or (epoch == cfg.num_epochs - 1):
+            # skip the epoch-0 tagged checkpoint (epoch-0 init weights are never used;
+            # the per-epoch "latest" checkpoint.pth.tar above still covers resume).
+            if epoch > 0 and ((epoch % ckpt_every == 0) or (epoch == cfg.num_epochs - 1)):
                 ckpt_saver.save(state, save_dir=cfg.output_dir,
                                 chkp_name=f"checkpoint_e{epoch:04d}.pth.tar")
 

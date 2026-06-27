@@ -1,0 +1,42 @@
+{
+  "name": "plinder_v2",
+  "description": "Frozen PLINDER v2 ligand-matched density pretraining selection (max-coverage; RSCC-gated).",
+  "plinder_bucket": "gs://plinder/2024-06/v2",
+  "selection_csv": "plinder_selected.csv",
+  "selection_sha256": "f5df9deb1f044beef1c355eb0549b40c3bf2b9a58e652b04c08e275a12d30ef0",
+  "n_selected": 113976,
+  "filters": {
+    "min_rscc": 0.8,
+    "max_res": 0,
+    "min_heavy": 6,
+    "max_heavy": 50,
+    "single_ligand": false,
+    "allow_covalent": false,
+    "plinder_splits": [],
+    "dedup": "none",
+    "in_vocab_filter": false
+  },
+  "build": {
+    "shuffle_seed": 1234,
+    "val_tail": 100,
+    "max_len": 30,
+    "norm_version": "v6_arcsinh_z",
+    "pocket_radius": 10.0,
+    "frame": "deposited (transform=None)"
+  },
+  "leakage_holdout": {
+    "pdbbind_index_csv": {
+      "path": "dataset/data/pdbbind/index.csv",
+      "sha256": "cec303f95411b6acfc22fc6fbd58b89118b84f2625547d8bed7dc6fff79303e9"
+    },
+    "misato_pool_pids": {
+      "path": "dataset/data/misato/pool_pids.txt",
+      "sha256": "a76bf32fd8f0b90b4c626ff0ba650e3ee0ae54c9085e1ad408141d079b9d2d72"
+    },
+    "crossdocked_test_pt": {
+      "path": "dataset/data/data_test.pt",
+      "sha256": "24579bc2725b0b80b3a0e65fef649baab9e34fbb3f79ce92c0c4a5b1a9c2d2e8"
+    }
+  },
+  "note": "Built via dataset/plinder/ pipeline. Downloads -> shared data/cif + data/ccp4; crops -> pretrain/xray_crops_aligned_plinder_v2. Re-pin deliberately (version-bumped)."
+}

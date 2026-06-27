@@ -32,20 +32,30 @@ TRIALS = [
     ("ChannelViT g[7,4,2] mask0.75","mask 0.75",       "C+D+G",       "mask_ratio 0.50→0.75",               "knob"),
     ("ChannelViT g[7,4,2] dw1.0","dens-wt 1.0",        "C+D+G",       "density+gradmag recon wt 0.1→1.0",   "knob"),
     ("ChannelViT g[7,4,2] rope3d","rope3d",            "C+D+G",       "pos_encoding=rope3d (group-tiled)",  "knob"),
+    ("ChannelViT g[7,4,2] wd0.1","wd 0.1",             "C+D+G",       "weight decay 0.05→0.10",            "knob"),
+    ("ChannelViT g[7,4,2] hcs0.15","HCS 0.15",         "C+D+G",       "channel-group dropout p=0.15 (HCS)", "knob"),
+    ("ChannelViT g[7,4,2] hcs0.30","HCS 0.30",         "C+D+G",       "channel-group dropout p=0.30 (HCS)", "knob"),
+    ("ChannelViT g[7,4,2] dim768","dim768 2×",         "C+D+G",       "dim 512→768, heads 8→12 (97.9M, 2.1×)", "capacity"),
+    ("ChannelViT g[7,4,2] atombias","atom-bias",       "C+D+G",       "mask_strategy=atom_biased",          "knob"),
+    ("ChannelViT g[7,4,2] mask0.4","mask 0.4",         "C+D+G",       "mask_ratio 0.50→0.40",              "knob"),
+    ("ChannelViT g[7,4,2] block4","block 4",           "C+D+G",       "mask block_size 8→4 (1Å holes)",    "knob"),
 ]
+# Reordered 2026-06-25 by expected impact (▶ NEXT = top). Rationale: every completed
+# scalar/optimizer/PE knob ties-or-hurts (incl. rope3d 0.610, wd0.1 0.624) — only the
+# [7,4,2] grouping beat base. So levers that change the SSL PROBLEM (mask distribution,
+# amount, granularity, recon weighting) rank above pure optimizer knobs and the
+# predictable-negative [13] control.
 PENDING_LABELS = {
-    "260624_ar_cvit_rope":    ("rope3d ▶ NEXT",   "pos_encoding=rope3d (group-tiled; now wired)"),
-    "260624_ar_cvit_lr2e4":   ("lr 2e-4",         "learning rate 1e-4→2e-4"),
-    "260624_ar_cvit_mask04":  ("mask 0.4",        "mask_ratio 0.50→0.40"),
-    "260624_ar_cvit_atombias":("atom-bias",       "mask_strategy=atom_biased"),
-    "260624_ar_cvit_mask03":  ("mask 0.3",        "mask_ratio 0.50→0.30"),
-    "260624_ar_cvit_dw005":   ("dens-wt 0.05",    "density+gradmag recon wt 0.1→0.05"),
-    "260624_ar_cvit_lr5e5":   ("lr 5e-5",         "learning rate 1e-4→5e-5"),
-    "260624_ar_cvit_g13":     ("[13]",            "all channels in one group"),
-    "260624_ar_cvit_dw05":    ("dens-wt 0.5",     "density+gradmag recon wt 0.1→0.5"),
-    "260624_ar_cvit_block4":  ("block 4",         "mask block_size 8→4"),
-    "260624_ar_cvit_wd1e1":   ("wd 0.1",          "weight decay 0.05→0.10"),
-    "260624_ar_cvit_headd3":  ("head-d 3",        "recon head_depth 2→3"),
+    "260624_ar_cvit_atombias":("atom-bias ▶ NEXT", "mask_strategy=atom_biased (mask chemistry-rich voxels)"),
+    "260624_ar_cvit_mask04":  ("mask 0.4",         "mask_ratio 0.50→0.40 (bracket optimum low side)"),
+    "260624_ar_cvit_dw005":   ("dens-wt 0.05",     "density+gradmag recon wt 0.1→0.05 (trend: less is better)"),
+    "260624_ar_cvit_block4":  ("block 4",          "mask block_size 8→4 (finer masking)"),
+    "260624_ar_cvit_mask03":  ("mask 0.3",         "mask_ratio 0.50→0.30 (low-side bracket pair)"),
+    "260624_ar_cvit_lr2e4":   ("lr 2e-4",          "learning rate 1e-4→2e-4 (prior: neutral)"),
+    "260624_ar_cvit_headd3":  ("head-d 3",         "recon head_depth 2→3 (head discarded at probe)"),
+    "260624_ar_cvit_lr5e5":   ("lr 5e-5",          "learning rate 1e-4→5e-5 (may undertrain)"),
+    "260624_ar_cvit_dw05":    ("dens-wt 0.5",      "recon wt 0.1→0.5 (between two worse points)"),
+    "260624_ar_cvit_g13":     ("[13]",             "all channels one group (control; collapses grouping)"),
 }
 
 DATA = {}                                                    # (label, split) → dict(rho,rho_sd,r,r_sd,n)
@@ -60,11 +70,16 @@ def load_csv():
         return out
     for r in csvmod.DictReader(open(CSV, encoding="utf-8")):
         try:
-            out[(r["label"], r["split"])] = dict(
+            d = dict(
                 rho=float(r["test_rho_mean"]), rho_sd=float(r["test_rho_std"]),
                 r=float(r["test_r_mean"]), r_sd=float(r["test_r_std"]), n=int(r["n_test"]))
         except (KeyError, ValueError):
-            pass
+            continue
+        try:                                            # RMSE is optional — never drop ρ/r if absent
+            d["rmse"], d["rmse_sd"] = float(r["test_rmse_mean"]), float(r["test_rmse_std"])
+        except (KeyError, ValueError):
+            d["rmse"], d["rmse_sd"] = None, None
+        out[(r["label"], r["split"])] = d
     return out
 
 
@@ -75,9 +90,33 @@ def g(label, split="lp_edrscc"):
 def cell(d, kind="rho", best=False):
     if not d:
         return '<span class="mut">—</span>'
-    v, sd = (d["rho"], d["rho_sd"]) if kind == "rho" else (d["r"], d["r_sd"])
+    v, sd = {"rho": ("rho", "rho_sd"), "r": ("r", "r_sd"), "rmse": ("rmse", "rmse_sd")}[kind]
+    v, sd = d.get(v), d.get(sd)
+    if v is None:
+        return '<span class="mut">—</span>'
     c = "best" if best else "num"
-    return f'<span class="{c}">{v:.3f}</span><span class="pm"> ±{("%.3f"%sd).lstrip("0")}</span>'
+    return f'<span class="ms"><span class="{c}">{v:.3f}</span><span class="pm"> ±{("%.3f"%sd).lstrip("0")}</span></span>'
+
+
+def mcell(d, kind, base_val, best=False, lower_better=False, is_base=False):
+    """value ±sd  +  small inline Δ vs the [7,4,1,1] base. `lower_better` flips the
+    good/bad coloring (RMSE: a drop is good). base row → 'REF'."""
+    html = cell(d, kind, best)
+    key = {"rho": "rho", "r": "r", "rmse": "rmse"}[kind]
+    v = (d or {}).get(key)
+    if v is None:
+        return html
+    if is_base:
+        return html                                  # base row is highlighted instead of showing REF
+    if base_val is None:
+        return html
+    dv = v - base_val
+    if abs(dv) <= 0.0015:
+        cls = "mut"
+    else:
+        cls = "pos" if ((dv < 0) if lower_better else (dv > 0)) else "neg"
+    dtxt = ("%+.3f" % dv).replace("0.", ".", 1)
+    return f'{html}<span class="dlt {cls}">{dtxt}</span>'
 
 
 # ── Phase 1 + Phase 2 (full-study baselines, both splits) ───────────────────────
@@ -115,8 +154,33 @@ def baseline_tables():
     return p1, p2
 
 
+# ── Phase 4 — atom-type representation (diverse PLINDER role-split) ──────────────
+def phase4_table():
+    """Element-channel atomblob vs role-split, and the gain from keeping ALL atom types
+    (diverse PLINDER-v2). Rows read by label from clean_results.csv (phase-4 + the
+    [7,4,2] reference). atomblob [7,4,2] highlighted as the reference."""
+    rows = [
+        # (label, representation, atom encoding, groups, ref?, running?)
+        ("ChannelViT g[7,4,2]",   "atomblob (element)",        "11 element 1-hot channels",        "[7,4,2]",  True,  False),
+        ("roleblob [1,1,1,1]",    "roleblob",                  "2 role ch · 7/4-vocab summed",     "[1,1,1,1]",False, False),
+        ("roleblob-div [1,1,1,1]","roleblob + diverse atoms",  "2 role ch · ALL atoms (vdW size)", "[1,1,1,1]",False, False),
+        ("roleblob-div [1,1,2]",  "roleblob-diverse + grp D+G","2 role ch · ALL atoms (vdW size)", "[1,1,2]",  False, True),
+    ]
+    body = ""
+    for lbl, rep, enc, grp, ref, running in rows:
+        d = g(lbl)
+        cls = ' class="hl"' if ref else ''
+        tag = ' <span class="tagref">ref</span>' if ref else (' <span class="tagrun">running</span>' if running and not d else '')
+        body += (f'<tr{cls}><td style="white-space:normal"><b>{esc(rep)}</b>{tag}</td>'
+                 f'<td class="small" style="white-space:normal">{esc(enc)}</td>'
+                 f'<td class="small">{esc(grp)}</td>'
+                 f'<td>{cell(d,"rho", ref)}</td><td>{cell(d,"r")}</td><td>{cell(d,"rmse")}</td></tr>')
+    return (f'<table><thead><tr><th>Representation</th><th>Atom encoding</th><th>Groups</th>'
+            f'<th>ρ (lp_edrscc_v2)</th><th>r</th><th>RMSE</th></tr></thead><tbody>{body}</tbody></table>')
+
+
 # ── Phase 3 autoresearch progression chart ──────────────────────────────────────
-def svg_scatter(rows, axis_label):
+def svg_scatter(rows, axis_label, lower_better=False):
     rows = [(i, n, v) for i, n, v in rows if v is not None]
     if not rows:
         return "<p class='mut'>No values yet.</p>"
@@ -124,6 +188,7 @@ def svg_scatter(rows, axis_label):
     vals = [v for _, _, v in rows]
     y0 = math.floor((min(vals) - 0.01) * 100) / 100
     y1 = math.ceil((max(vals) + 0.01) * 100) / 100
+    tick = next((t for t in (0.01, 0.02, 0.05, 0.1, 0.2) if (y1 - y0) / t <= 12), 0.2)
     W, H, padL, padR, padT, padB = 880, 320, 56, 20, 16, 40
     def Y(v): return padT + (1 - (v - y0) / (y1 - y0)) * (H - padT - padB)
     def X(i): return padL + (0.5 if n == 1 else i / (n - 1)) * (W - padL - padR)
@@ -133,13 +198,14 @@ def svg_scatter(rows, axis_label):
         yy = Y(gg)
         p.append(f'<line x1="{padL}" y1="{yy:.1f}" x2="{W-padR}" y2="{yy:.1f}" stroke="#eef1f5"/>')
         p.append(f'<text x="{padL-7}" y="{yy+3:.1f}" font-size="10" fill="#5b6678" text-anchor="end">{gg:.2f}</text>')
-        gg += 0.01
+        gg += tick
     for k, (i, name, _v) in enumerate(rows):
-        p.append(f'<text x="{X(k):.1f}" y="{H-padB+18:.1f}" font-size="9.5" fill="#1c2433" text-anchor="middle">{esc(name)}</text>')
+        p.append(f'<text x="{X(k):.1f}" y="{H-padB+18:.1f}" font-size="10.5" fill="#1c2433" text-anchor="middle">T{k+1}</text>')
     p.append(f'<text x="{(padL+W-padR)/2:.0f}" y="{H-4}" font-size="10.5" fill="#5b6678" text-anchor="middle">trial (campaign order)</text>')
-    pareto, best, front = set(), -1e9, []
+    pareto, best, front = set(), (1e9 if lower_better else -1e9), []
     for k, (i, name, v) in enumerate(rows):
-        if v > best + 1e-9:
+        improved = (v < best - 1e-9) if lower_better else (v > best + 1e-9)
+        if improved:
             best = v; pareto.add(k); front.append((X(k), Y(v)))
     if len(front) > 1:
         d = f'M {front[0][0]:.1f} {front[0][1]:.1f} ' + " ".join(f'L {x:.1f} {y:.1f}' for x, y in front[1:])
@@ -173,26 +239,34 @@ def build():
     global DATA
     DATA = load_csv()
     ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
-    base = (g(BASE_LABEL) or {}).get("rho")
+    base_d = g(BASE_LABEL) or {}
+    base, base_r, base_rmse = base_d.get("rho"), base_d.get("r"), base_d.get("rmse")
     base_txt = f"{base:.3f}" if base is not None else "—"
-    p1, p2 = baseline_tables()
+    _, p2 = baseline_tables()
 
     # Phase-3 sweep
-    sp_rows, pe_rows, trows = [], [], ""
+    sp_rows, pe_rows, rmse_rows, trows = [], [], [], ""
     completed = [(lbl, nm, inp, det) for lbl, nm, inp, det, fam in TRIALS if g(lbl)]
     best_rho = max((g(lbl)["rho"] for lbl, *_ in completed), default=None)
+    best_r = max((g(lbl)["r"] for lbl, *_ in completed), default=None)
+    rmse_vals = [g(lbl)["rmse"] for lbl, *_ in completed if g(lbl).get("rmse") is not None]
+    best_rmse = min(rmse_vals) if rmse_vals else None
     for idx, (lbl, nm, inp, det) in enumerate(completed):
         d = g(lbl)
         sp_rows.append((idx, nm, d["rho"])); pe_rows.append((idx, nm, d["r"]))
-        drho = d["rho"] - base if base is not None else 0.0
-        dcls = "pos" if drho > 0.0015 else ("neg" if drho < -0.0015 else "mut")
-        dtxt = "REF" if lbl == BASE_LABEL else f'{drho:+.3f}'
+        rmse_rows.append((idx, nm, d.get("rmse")))
         star = " ⭐" if d["rho"] == best_rho else ""
-        trows += (f'<tr><td class="num" style="white-space:normal">{esc(nm)}{star}</td>'
+        is_base = lbl == BASE_LABEL
+        rowcls = ' class="ref"' if is_base else ''
+        is_best_rmse = best_rmse is not None and d.get("rmse") == best_rmse
+        trows += (f'<tr{rowcls}><td class="num" style="white-space:normal"><span class="pm">T{idx+1}</span> {esc(nm)}{star}</td>'
                   f'<td style="white-space:normal">{esc(inp)}</td>'
                   f'<td class="small" style="white-space:normal">{esc(det)}</td>'
-                  f'<td>{cell(d,"rho", d["rho"]==best_rho)}</td><td><span class="{dcls}">{dtxt}</span></td><td>{cell(d,"r")}</td></tr>')
+                  f'<td>{mcell(d,"rho",base,best=d["rho"]==best_rho,is_base=is_base)}</td>'
+                  f'<td>{mcell(d,"r",base_r,best=best_r is not None and d.get("r")==best_r,is_base=is_base)}</td>'
+                  f'<td>{mcell(d,"rmse",base_rmse,best=is_best_rmse,lower_better=True,is_base=is_base)}</td></tr>')
     best_txt = f"{best_rho:.3f}" if best_rho is not None else "—"
+    best_rmse_txt = f"{best_rmse:.3f}" if best_rmse is not None else "—"
 
     prows = ""
     for name, what, st in pending_rows():
@@ -224,6 +298,11 @@ td:not(:first-child):not(:nth-child(2)),th:not(:first-child):not(:nth-child(2)){
 .div{{border-left:2px solid #e3e7ee}}
 .num{{font-weight:660}}.pm{{color:#5b6678;font-weight:500;font-size:11.5px}}
 .pos{{color:#1d5a3a;font-weight:700}}.neg{{color:#b4413a;font-weight:700}}.mut td,.mut{{color:#5b6678}}.small{{font-size:12.5px}}
+.dlt{{display:block;font-size:10px;font-weight:700;margin-top:2px}}
+.ms{{white-space:nowrap}}
+tr.ref td{{background:#eef2f7}}
+.tagref{{font-size:10px;font-weight:700;color:#1d4ed8;background:#e8effe;padding:1px 6px;border-radius:999px}}
+.tagrun{{font-size:10px;font-weight:700;color:#b07a17;background:#fcf3e0;padding:1px 6px;border-radius:999px}}
 .best{{font-weight:700;color:#1d5a3a;background:#eaf5ee;border-radius:5px;padding:1px 5px}}
 tr.hl td{{background:#f3f8ff}}
 tr.delta td{{font-size:12.5px;color:#5b6678;background:#fcfdfe;font-style:italic}}
@@ -233,14 +312,9 @@ tr.delta td{{font-size:12.5px;color:#5b6678;background:#fcfdfe;font-style:italic
 <h1>Electron density: input modality, encoder architecture &amp; autoresearch</h1>
 <div class="sub">Frozen-encoder PDBbind affinity probe (pK). All encoders self-supervised on the <b>identical</b>
 PLINDER ligand-matched corpus (17,430/100, on-the-fly density resample-aug, 100 ep, eff-batch 128, uniform 50% mask),
-differing only in input modality (Ph.1) or architecture (Ph.2/3). Metrics = test Spearman ρ / Pearson r, mean ± std
+differing only in encoder architecture (Ph.2) or grouping/knob (Ph.3). Metrics = test Spearman ρ / Pearson r, mean ± std
 over 3 probe seeds. Built {ts} from <code>clean_results.csv</code>. <b>lp_edrscc_v2</b> = Kd/Ki-only, 3850/817/1320;
 <b>lp raw</b> = LP-PDBBind new_split (coords sees a larger pool than C+D+G).</div></header>
-
-<div class="card"><h2>Phase 1 — Input modality (plain ViT)</h2>
-<p class="csub">Does adding electron density + ‖∇ρ‖ to the same plain-ViT encoder help? Same samples, only the channels differ.</p>
-{p1}
-<div class="note" style="margin-top:10px">Density helps: <b>+0.003</b> ρ on the clean Kd/Ki split (0.605→0.608), <b>+0.021</b> on raw lp (0.592→0.613).</div></div>
 
 <div class="card"><h2>Phase 2 — Encoder architecture (C+D+G)</h2>
 <p class="csub">Given the 13-ch C+D+G input, which encoder reads the density channels best?</p>
@@ -255,22 +329,47 @@ over 3 probe seeds. Built {ts} from <code>clean_results.csv</code>. <b>lp_edrscc
 {svg_scatter(pe_rows, 'test r (Pearson)')}
 <div class="legend">{legend}</div></div>
 
+<div class="card"><h2>Phase 3 — test RMSE (pK) by trial</h2>
+<p class="csub">Affinity-error on lp_edrscc_v2 in pK units; <b>lower is better</b>, so gold = best-so-far running <i>minimum</i>. 3 probe seeds. <b>Best so far: RMSE {best_rmse_txt}</b>.</p>
+{svg_scatter(rmse_rows, 'test RMSE (pK)', lower_better=True)}
+<div class="legend">{legend}</div></div>
+
 <div class="card"><h2>Phase 3 — trial table (completed)</h2>
-<table><thead><tr><th>Trial</th><th>Input</th><th>What changed</th><th>test ρ</th><th>Δρ vs base</th><th>test r</th></tr></thead>
+<p class="csub">Small Δ next to each value = vs the <b>[7,4,1,1] base</b> (T2, <span style="background:#eef2f7;padding:0 4px;border-radius:3px">highlighted</span>); <span class="pos">green</span> = better, <span class="neg">red</span> = worse (RMSE: lower is better).</p>
+<table><thead><tr><th>Trial</th><th>Input</th><th>What changed</th><th>test ρ</th><th>test r</th><th>test RMSE</th></tr></thead>
 <tbody>{trows}</tbody></table></div>
 
 <div class="card"><h2>Phase 3 — queued / running</h2>
 <table><thead><tr><th>Trial</th><th>What changes</th><th>status</th></tr></thead>
 <tbody>{prows}</tbody></table>
-<div class="note" style="margin-top:10px">Two 4-GPU workers (GPU 0-3, 4-7) drain the queue autonomously; roleblob (4-channel) holds one set.
-<b>rope3d</b> for the grouped patch-embed is now wired (RoPE table group-tiled) and is running.</div></div>
+<div class="note" style="margin-top:10px"><b>Autoresearch loop (GPU 0-3).</b> Masking-distribution axis now closed — mask 0.4 (0.626) and block 4
+(0.583, worst trial) both hurt; only atom-bias's <i>targeted</i> masking ever helped. Current arm = the
+<b>diverse-atom PLINDER-v2</b> representation (Phase 4): roleblob-diverse [1,1,2] running.</div></div>
+
+<div class="card"><h2>Phase 4 — atom-type representation (diverse PLINDER-v2)</h2>
+<p class="csub">Does keeping <b>all</b> heavy-atom types (metals/Se/halogens that the 7-lig/4-poc element vocab drops) help?
+<b>roleblob</b> = 2 role channels [lig, poc] with element identity carried by vdW blob <i>size</i>; <b>diverse</b> =
+the plinder-v2 build that admits every element. Reference = the element-channel atomblob winner [7,4,2].</p>
+{phase4_table()}
+<div class="note" style="margin-top:10px"><b>Diverse atoms help the role rep</b> (+0.031: 0.554→0.585) — the dropped metals/halogens carry real
+signal. But role-split still trails the element-channel atomblob (0.585 &lt; 0.637): collapsing atoms to role+size
+loses element info the 1-hot channels keep. <b>[1,1,2]</b> (group D+G — the campaign's one structural win) tests
+whether that transfers to the role rep.</div></div>
 
 <div class="card"><h2>Reading it</h2>
 <div class="note">
-<b>Density</b> lifts ChannelViT <b>+0.033</b> over coords (best {best_txt} vs coords-ChannelViT 0.604).
-The winning structure is <b>group density+gradmag together, keep lig/poc separate</b>
-([7,4,2] &gt; [11,2] &gt; [7,4,1,1] &gt; [11,1,1]). Every knob tried so far hurts — raising mask ratio (0.6/0.75) or
-recon weight (0.3 tied, 1.0 worse) only loses ground. Open-ended until stopped.<br><br>
+<b>Density</b> lifts ChannelViT over coords (best {best_txt} vs coords-ChannelViT 0.604). The winning structure is
+<b>group density+gradmag together, keep lig/poc separate</b> ([7,4,2] &gt; [11,2] &gt; [7,4,1,1] &gt; [11,1,1]).<br><br>
+<b>The knob space is essentially flat.</b> Across every trial, only grouping ever moved ρ. <b>atom-bias</b> (mask
+chemistry-rich voxels) is the lone nominal beat at ρ 0.641, but its ±.006 overlaps the [7,4,2] base (0.637) and
+its RMSE is <i>worse</i> (1.385 vs 1.353) — better ranking, worse calibration, i.e. within noise. Mask ratio
+(0.6/0.75), recon weight (0.3 tied, 1.0 worse), rope3d (0.610), wd0.1 (0.624) and HCS channel-group dropout
+(0.637/0.633) all tie-or-hurt.<br><br>
+<b>Capacity is NOT the bottleneck.</b> Doubling the encoder (dim768, 97.9M, 2.1×) <i>regressed</i> to ρ 0.626 (−0.011,
+worst RMSE) — a bigger model just overfits the frozen probe. So the plateau is <b>data scale / probe-ceiling</b>
+bound, not model size or pretext recipe. The masking-distribution axis is now closed too (mask 0.4 / block 4 hurt).<br><br>
+<b>Open thread — atom-type representation (Phase 4).</b> Diverse PLINDER-v2 atoms help the role rep (+0.031) but
+role-split trails the element atomblob; testing whether the D+G-grouping win lifts it.<br><br>
 <b>Reference:</b> TargetDiff EGNN (supervised) scores ρ 0.536 on its own LP-PDBBind split — a different, larger test set, not directly comparable.
 </div></div>
 </div></body></html>"""

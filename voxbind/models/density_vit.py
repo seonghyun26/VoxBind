@@ -239,6 +239,7 @@ class DensityViT(nn.Module):
         patch_embed_mode: str = "fused",   # "fused" (1 Conv mixes all channels) | "channel_group" (ChannelViT)
         channel_groups: Optional[Tuple[int, ...]] = None,  # channel_group: per-group channel counts (sum=n_in)
         n_memory_tokens: int = 0,          # ChA-MAE: l learnable cross-channel memory tokens prepended pre-trunk
+        channel_group_dropout: float = 0.0,  # ChannelViT HCS: per-forward prob of dropping each whole channel-group (train-only)
     ):
         super().__init__()
         assert grid_dim % patch_size == 0, (
@@ -250,6 +251,11 @@ class DensityViT(nn.Module):
         self.c_out = c_out
         self.dim = dim
         self.depth = depth
+        # ChannelViT Hierarchical Channel Sampling (Bao et al. 2023): per-forward,
+        # drop each whole channel-GROUP with this probability (train-only, ≥1 kept).
+        # No-op at eval and for fused mode. Forces attention to fuse variable channel
+        # subsets and turns the MAE into a cross-modal completion task.
+        self.channel_group_dropout = float(channel_group_dropout)
 
         self.g_p = grid_dim // patch_size
         self.n_tokens = self.g_p ** 3
@@ -372,23 +378,42 @@ class DensityViT(nn.Module):
             z = z + self.pos_embed.unsqueeze(1)                             # patch PE, shared over groups
         return z                                                            # (B, nG, N, D)
 
+    def _hcs_drop_groups(self, z: torch.Tensor) -> torch.Tensor:
+        """ChannelViT HCS: per-forward, drop whole channel-groups (Bernoulli, prob
+        `channel_group_dropout`) so the encoder sees a random non-empty subset of the
+        nG groups, shared across the batch. Train-only; eval / p=0 / nG≤1 → identity
+        (bit-exact, so frozen-probe + checkpoints are unchanged). True token-drop
+        (removed from attention), so it needs DDP find_unused_parameters=True — the
+        train loop flips that on when channel_group_dropout>0."""
+        if not self.training or self.channel_group_dropout <= 0.0 or self.n_groups <= 1:
+            return z
+        keep = torch.rand(self.n_groups, device=z.device) >= self.channel_group_dropout
+        if not bool(keep.any()):                      # guard: never drop every group
+            keep[torch.randint(self.n_groups, (1,), device=z.device)] = True
+        return z[:, keep]                             # (B, nG_keep, N, D)
+
     def _tokenize(self, density: torch.Tensor) -> torch.Tensor:
         """(B, C, G,G,G) → (B, T, D) patch tokens. fused: T=N patches. channel_group:
-        T=n_groups·N — one token-set per group, +learnable group embedding, +shared patch PE."""
+        T=n_groups·N — one token-set per group, +learnable group embedding, +shared patch PE.
+        channel_group + HCS (train-only): T=nG_keep·N over a random non-empty group subset."""
         if self.patch_embed_mode == "fused":
             z = self.patch_embed(density).flatten(2).transpose(1, 2)        # (B, N, D)
             if self.pos_embed is not None:
                 z = z + self.pos_embed
             return z
-        return self.embed_groups(density).flatten(1, 2)                     # (B, nG·N, D)
+        z = self._hcs_drop_groups(self.embed_groups(density))              # (B, nG_keep, N, D)
+        return z.flatten(1, 2)                                             # (B, nG_keep·N, D)
 
     def _pool_groups(self, z: torch.Tensor) -> torch.Tensor:
         """channel_group: mean-pool per-group tokens back to one feature/patch
-        (B, nG·N, D) → (B, N, D) so the spatial output interface is unchanged. fused: no-op."""
+        (B, nG·N, D) → (B, N, D) so the spatial output interface is unchanged. fused: no-op.
+        nG is inferred from the token count so HCS (fewer live groups) pools correctly;
+        bit-exact to nG=self.n_groups when no group is dropped (eval / p=0)."""
         if self.patch_embed_mode == "fused":
             return z
         B = z.shape[0]
-        return z.reshape(B, self.n_groups, self.n_tokens, self.dim).mean(dim=1)
+        n_live = z.shape[1] // self.n_tokens
+        return z.reshape(B, n_live, self.n_tokens, self.dim).mean(dim=1)
 
     def _prepend_memory(self, z: torch.Tensor) -> torch.Tensor:
         """Prepend the l learnable memory tokens ahead of the token axis (no-op when
@@ -427,6 +452,21 @@ class DensityViT(nn.Module):
         if self.memory_tokens is not None:
             z = z[:, self.n_memory_tokens:]
         return z
+
+    def forward_features_memory(self, density: torch.Tensor) -> torch.Tensor:
+        """Post-norm MEMORY tokens (B, l, D) — the complement of `forward_features`.
+
+        A ChA-MAE encoder prepends `l` learnable cross-channel memory tokens through the
+        trunk; `forward_features` drops them and returns the patch tokens. This returns
+        the l memory tokens instead, so a probe can read off the CLS-like aggregate the
+        encoder learned rather than mean-pooling the patches. Errors if the encoder was
+        built without memory tokens (n_memory_tokens=0)."""
+        if self.memory_tokens is None:
+            raise ValueError("forward_features_memory requires n_memory_tokens>0 "
+                             "(this encoder has none)")
+        z = self._tokenize(density)
+        z = self.run_trunk(z, prepend_memory=True)
+        return z[:, : self.n_memory_tokens]
 
     @torch.no_grad()
     def group_attention(self, density: torch.Tensor):
@@ -513,6 +553,7 @@ class DensityViTMAE(nn.Module):
         rope_fast: bool = False,       # fused q/k rotate (rope3d only) → forwarded to the DensityViT encoder
         patch_embed_mode: str = "fused",  # "fused" | "channel_group" (ChannelViT) → forwarded to encoder
         channel_groups: Optional[Tuple[int, ...]] = None,  # channel_group: per-group channel counts
+        channel_group_dropout: float = 0.0,  # ChannelViT HCS group-drop prob → forwarded to encoder
     ):
         super().__init__()
         assert pretext_style in ("mae", "electra"), (
@@ -571,6 +612,7 @@ class DensityViTMAE(nn.Module):
             rope_fast=rope_fast,
             patch_embed_mode=patch_embed_mode,
             channel_groups=channel_groups,
+            channel_group_dropout=channel_group_dropout,
         )
 
         if pretext_style == "mae":

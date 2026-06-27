@@ -1,126 +1,606 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8">
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>VoxBind — frozen Channel-ViT conditioning (scene_vit)</title>
+<title>260701 Meeting — Affinity baselines, scaling &amp; PLINDER</title>
 <style>
-  :root { --ink:#1a1a1a; --muted:#666; --line:#e3e3e3; --bg:#fafafa; --card:#fff;
-          --good:#1d6b3a; --good-bg:#eaf5ee; --warn:#8a6d00; --code:#f0f2f5; }
-  * { box-sizing:border-box; }
-  body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-         color:var(--ink); background:var(--bg); margin:0; line-height:1.55; }
-  .wrap { max-width:1060px; margin:0 auto; padding:36px 28px 80px; }
-  h1 { font-size:24px; margin:0 0 4px; letter-spacing:-.02em; }
-  h2 { font-size:17px; margin:34px 0 10px; padding-bottom:6px; border-bottom:2px solid var(--line); }
-  .sub { color:var(--muted); font-size:14px; margin-bottom:8px; }
-  .sub span { margin-right:16px; }
-  .tldr { background:#fff8e6; border:1px solid #f0d98a; border-radius:10px; padding:14px 18px; margin:20px 0; font-size:14.5px; }
-  .tldr b { color:var(--warn); }
-  code, pre { font-family:"SF Mono",Menlo,Consolas,monospace; }
-  .mono { font-family:"SF Mono",Menlo,Consolas,monospace; font-size:12.5px;
-          background:var(--code); padding:1px 5px; border-radius:4px; }
-  pre { background:#1e2127; color:#e6e6e6; border-radius:8px; padding:14px 16px; overflow:auto;
-        font-size:12.5px; line-height:1.5; }
-  pre .c { color:#7f8a9b; }  pre .k { color:#c792ea; }  pre .f { color:#86c1ff; }  pre b { color:#ffcb6b; font-weight:600; }
-  .grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:8px; }
-  .card { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:12px 14px; font-size:13px; }
-  .card h3 { margin:0 0 6px; font-size:13px; text-transform:uppercase; letter-spacing:.04em; color:#555; }
-  .note { color:var(--muted); font-size:12.5px; line-height:1.6; }
-  .note ul { margin:6px 0 0; padding-left:20px; } .note li { margin-bottom:5px; }
-  .note b, .card b { color:var(--ink); }
-  table { width:100%; border-collapse:collapse; background:var(--card); font-size:13px;
-          border:1px solid var(--line); border-radius:8px; overflow:hidden; margin-top:8px; }
-  th,td { text-align:left; padding:8px 11px; border-bottom:1px solid var(--line); vertical-align:top; }
-  th { background:#f2f3f5; font-size:11.5px; text-transform:uppercase; letter-spacing:.04em; color:#555; }
-  tr:last-child td { border-bottom:none; }
-  .ok { color:var(--good); font-weight:600; }
-</style></head>
-<body><div class="wrap">
+  :root {
+    --ink:        #1c2433;
+    --ink-soft:   #5b6678;
+    --line:       #e3e7ee;
+    --line-strong:#aeb6c4;
+    --bg:         #f5f6f8;
+    --card:       #ffffff;
+    --accent:     #2f6f4f;
+    --best-bg:    #eaf5ee;
+    --tbd:        #b07a17;
+    --tbd-bg:     #fcf3e0;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 16px; line-height: 1.55; -webkit-font-smoothing: antialiased;
+  }
+  .page { max-width: 1280px; margin: 0 auto; padding: 48px 24px 96px; }
+  header.doc { border-bottom: 2px solid var(--ink); padding-bottom: 18px; margin-bottom: 40px; }
+  header.doc .date { font-size: 13px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-soft); margin-bottom: 6px; }
+  header.doc h1 { font-size: 28px; font-weight: 650; margin: 0; letter-spacing: -0.01em; }
+  section.block { margin-bottom: 56px; }
+  .table-title { font-size: 19px; font-weight: 620; margin: 0 0 4px; }
+  .table-sub { font-size: 13.5px; color: var(--ink-soft); margin: 0 0 18px; max-width: 1080px; }
+  .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--card);
+    box-shadow: 0 1px 2px rgba(20,30,50,.04), 0 8px 24px rgba(20,30,50,.05); }
+  table.results { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+  table.results th, table.results td { padding: 11px 9px; text-align: center; white-space: nowrap; }
+  table.results thead th { font-weight: 600; color: var(--ink); background: #fafbfc; border-bottom: 1px solid var(--line); }
+  table.results thead tr.grp th { font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-soft); font-weight: 600; padding-top: 13px; padding-bottom: 6px; }
+  table.results thead tr.sub th { font-size: 11px; font-weight: 500; color: var(--ink-soft); letter-spacing: .02em; padding-top: 0; padding-bottom: 11px; }
+  .col-method { text-align: left !important; min-width: 200px; }
+  thead .col-method { vertical-align: middle; }
+  td.col-method { font-weight: 560; }
+  td.col-method .tag { display: inline-block; font-size: 11px; font-weight: 600; letter-spacing: .04em; padding: 2px 8px; border-radius: 999px; margin-left: 7px; vertical-align: middle; }
+  .tag.supervised { background: #eef1f6; color: #5b6678; }
+  .tag.inprog { background: var(--tbd-bg); color: var(--tbd); }
+  .div-major { border-left: 2.5px solid var(--line-strong); }
+  .div-minor { border-left: 1px dashed var(--line-strong); }
+  table.results tbody tr { border-top: 1px solid var(--line); }
+  table.results tbody tr:hover { background: #fbfcfd; }
+  .metric { font-size: 14.5px; }
+  .metric .val { font-weight: 560; }
+  .metric .sd { color: #9aa3b2; font-size: 10.5px; font-weight: 400; }
+  td.best { background: var(--best-bg); }
+  td.best .val { font-weight: 720; color: #1d5a3a; }
+  .tbd { color: var(--tbd); font-weight: 600; font-size: 13px; }
+  .notes { margin-top: 18px; font-size: 13px; color: var(--ink-soft); line-height: 1.6; max-width: 1080px; }
+  .notes b { color: var(--ink); font-weight: 600; }
+  .notes ul { margin: 6px 0 0; padding-left: 20px; }
+  .notes li { margin-bottom: 4px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin-top: 14px; font-size: 12.5px; color: var(--ink-soft); align-items: center; }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .figure-cap { margin-top: 8px; font-size: 12.5px; color: var(--ink-soft); text-align: center; }
+  .notes code, .figure-cap code, .table-sub code { background: #f0f2f5; padding: 1px 5px; border-radius: 4px; font-size: 12.5px; }
+  .doc-section { margin-bottom: 64px; }
+  .section-head { font-size: 22px; font-weight: 660; letter-spacing: -0.01em; color: var(--ink); margin: 0 0 30px; padding-bottom: 12px; border-bottom: 2px solid var(--line-strong); display: flex; align-items: center; gap: 14px; }
+  .section-head .sec-num { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 8px; background: var(--accent); color: #fff; font-size: 15px; font-weight: 700; flex: 0 0 auto; }
+  .section-intro { font-size:13.5px; color:var(--ink-soft); margin:-6px 0 22px; max-width:1080px; line-height:1.6; }
+  table.funnel td, table.funnel th { padding:9px 13px; }
+  table.funnel .stage { text-align:left !important; min-width:340px; font-weight:540; }
+  table.funnel thead .stage { font-weight:600; }
+  table.funnel .stage .sub { display:block; font-size:11.5px; font-weight:400; color:var(--ink-soft); margin-top:1px; }
+  table.funnel td.n { font-variant-numeric:tabular-nums; font-weight:580; min-width:128px; text-align:right; }
+  table.funnel td.u { font-variant-numeric:tabular-nums; color:var(--ink-soft); min-width:104px; text-align:right; }
+  table.funnel tr.keep td { background:var(--best-bg); }
+  table.funnel tr.keep td.n, table.funnel tr.keep .stage { color:#1d5a3a; font-weight:720; }
+  table.funnel tr.head-row td { background:#fafbfc; }
+  .fn-drop { color:#b0573f; font-size:11.5px; font-weight:500; font-variant-numeric:tabular-nums; }
+</style>
+</head>
+<body>
+<div class="page">
 
-  <h1>VoxBind — conditioning on a frozen Channel-ViT (<span class="mono">scene_vit</span>)</h1>
-  <div class="sub">
-    <span>&#x1F4C5; 2026-07-01</span>
-    <span>&#x1F9E9; encoder: <span class="mono">exps/260623_ar_cvit_c1_g742</span> (45.7M, groups [7,4,2])</span>
-    <span>&#x2705; smoke-tested, original path unchanged</span>
-  </div>
+  <header class="doc">
+    <div class="date">2026 · 07 · 01 — Meeting</div>
+    <h1>Affinity probe — baselines, model scaling &amp; the PLINDER corpus</h1>
+  </header>
 
-  <div class="tldr">
-    <b>What changed.</b> Added a new <span class="mono">density_encoder_type: scene_vit</span> to VoxBind. It loads a
-    <b>pretrained full-scene Channel-ViT</b> (atomblob + density + gradmag, 13ch / groups [7,4,2]), <b>freezes</b> it,
-    and uses its <span class="mono">(B,16,64³)</span> latent to <b>replace the pocket+density conditioning</b>. The noisy
-    ligand still flows through the trainable <span class="mono">ligand_encoder</span>; the U-Net + fusion train on top of
-    the frozen latent. The original VoxBind path is byte-identical when the flag is off.
-  </div>
+  <!-- ============================================================ -->
+  <!-- SECTION 1 — BINDING-AFFINITY REGRESSION                      -->
+  <!-- ============================================================ -->
+  <div class="doc-section">
+    <h2 class="section-head"><span class="sec-num">1</span> Binding-affinity regression</h2>
+    <p class="section-intro">
+      Frozen-probe binding-affinity (pK) regression on <b>LP-PDBBind &cap; ED+RSCC</b>, Kd/Ki split
+      (<code>lp_edrscc_v2</code>, 3850&nbsp;/&nbsp;817&nbsp;/&nbsp;1320, 3 seeds). PLINDER-pretrained encoders
+      (<b>C</b> coords-ViT, <b>C+D+G</b> ChannelViT&nbsp;[7,4,2]) vs supervised baselines; <b>Boltz</b> and
+      <b>ESM</b> rows are placeholders.
+    </p>
 
-  <h2>1 &middot; The conditioning path</h2>
-  <div class="grid">
-    <div class="card"><h3>Original (unchanged)</h3>
-<pre><span class="c"># pocket+density are separate branches</span>
-x = ligand_encoder(y)
-  + pocket_encoder(pocket)
-<span class="k">if</span> with_density:
-  x += density_proj(cat[x, density_encoder(density)])
-x = unet(x); x = final_ligand(x)</pre>
+  <section class="block">
+    <p class="table-title">Table 1 &nbsp;&middot;&nbsp; Binding affinity — lp_edrscc_v2 (Kd/Ki)</p>
+    <p class="table-sub">
+      Frozen 2-layer MLP head on the PLINDER-pretrained encoder. <b>C</b> = coords + atom type (plain ViT);
+      <b>C&nbsp;+&nbsp;D&nbsp;+&nbsp;G</b> = + density + gradmag (ChannelViT&nbsp;[7,4,2]). Supervised baselines:
+      <b>HBGSA</b>&nbsp;3.06M, <b>EGNN</b>, <b>EGNN&nbsp;+&nbsp;TargetDiff</b>. <b>Boltz</b> / <b>ESM</b> = TBA.
+      mean&nbsp;&plusmn;&nbsp;std over 3 seeds; <b>best</b> = best per test column.
+    </p>
+    <div class="table-wrap" style="padding:16px 18px 10px;">
+      <svg viewBox="0 0 900 200" width="100%" style="max-width:900px;display:block;margin:0 auto" font-family="-apple-system,Segoe UI,Roboto,sans-serif">
+      <text x="150.0" y="15" font-size="11.5" font-weight="600" fill="#1c2433" text-anchor="middle">Test Pearson r</text>
+      <line x1="40.0" y1="176.0" x2="288.0" y2="176.0" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="35.0" y="179.0" font-size="8.5" fill="#9aa3b2" text-anchor="end">0.50</text>
+      <line x1="40.0" y1="141.0" x2="288.0" y2="141.0" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="35.0" y="144.0" font-size="8.5" fill="#9aa3b2" text-anchor="end">0.55</text>
+      <line x1="40.0" y1="106.0" x2="288.0" y2="106.0" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="35.0" y="109.0" font-size="8.5" fill="#9aa3b2" text-anchor="end">0.60</text>
+      <line x1="40.0" y1="71.0" x2="288.0" y2="71.0" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="35.0" y="74.0" font-size="8.5" fill="#9aa3b2" text-anchor="end">0.65</text>
+      <line x1="40.0" y1="36.0" x2="288.0" y2="36.0" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="35.0" y="39.0" font-size="8.5" fill="#9aa3b2" text-anchor="end">0.70</text>
+      <rect x="51.8" y="83.6" width="26" height="92.4" rx="2" fill="#3498db"/>
+      <line x1="64.8" y1="78.7" x2="64.8" y2="88.5" stroke="#566072" stroke-width="1"/>
+      <line x1="61.8" y1="78.7" x2="67.8" y2="78.7" stroke="#566072" stroke-width="1"/>
+      <line x1="61.8" y1="88.5" x2="67.8" y2="88.5" stroke="#566072" stroke-width="1"/>
+      <text x="64.8" y="74.7" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.632</text>
+      <rect x="101.4" y="66.8" width="26" height="109.2" rx="2" fill="#2ecc71" stroke="#000" stroke-width="2.5"/>
+      <line x1="114.4" y1="62.6" x2="114.4" y2="71.0" stroke="#566072" stroke-width="1"/>
+      <line x1="111.4" y1="62.6" x2="117.4" y2="62.6" stroke="#566072" stroke-width="1"/>
+      <line x1="111.4" y1="71.0" x2="117.4" y2="71.0" stroke="#566072" stroke-width="1"/>
+      <text x="114.4" y="58.6" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.656</text>
+      <rect x="151.0" y="130.5" width="26" height="45.5" rx="2" fill="#9b59b6"/>
+      <line x1="164.0" y1="125.6" x2="164.0" y2="135.4" stroke="#566072" stroke-width="1"/>
+      <line x1="161.0" y1="125.6" x2="167.0" y2="125.6" stroke="#566072" stroke-width="1"/>
+      <line x1="161.0" y1="135.4" x2="167.0" y2="135.4" stroke="#566072" stroke-width="1"/>
+      <text x="164.0" y="121.6" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.565</text>
+      <rect x="200.6" y="148.7" width="26" height="27.3" rx="2" fill="#e67e22"/>
+      <line x1="213.6" y1="140.3" x2="213.6" y2="157.1" stroke="#566072" stroke-width="1"/>
+      <line x1="210.6" y1="140.3" x2="216.6" y2="140.3" stroke="#566072" stroke-width="1"/>
+      <line x1="210.6" y1="157.1" x2="216.6" y2="157.1" stroke="#566072" stroke-width="1"/>
+      <text x="213.6" y="136.3" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.539</text>
+      <rect x="250.2" y="108.1" width="26" height="67.9" rx="2" fill="#e74c3c"/>
+      <line x1="263.2" y1="101.8" x2="263.2" y2="114.4" stroke="#566072" stroke-width="1"/>
+      <line x1="260.2" y1="101.8" x2="266.2" y2="101.8" stroke="#566072" stroke-width="1"/>
+      <line x1="260.2" y1="114.4" x2="266.2" y2="114.4" stroke="#566072" stroke-width="1"/>
+      <text x="263.2" y="97.8" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.597</text>
+      <line x1="40.0" y1="176.0" x2="288.0" y2="176.0" stroke="#aeb6c4" stroke-width="1.5"/>
+      <text x="450.0" y="15" font-size="11.5" font-weight="600" fill="#1c2433" text-anchor="middle">Test Spearman &rho;</text>
+      <line x1="340.0" y1="176.0" x2="588.0" y2="176.0" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="335.0" y="179.0" font-size="8.5" fill="#9aa3b2" text-anchor="end">0.50</text>
+      <line x1="340.0" y1="132.2" x2="588.0" y2="132.2" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="335.0" y="135.2" font-size="8.5" fill="#9aa3b2" text-anchor="end">0.55</text>
+      <line x1="340.0" y1="88.5" x2="588.0" y2="88.5" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="335.0" y="91.5" font-size="8.5" fill="#9aa3b2" text-anchor="end">0.60</text>
+      <line x1="340.0" y1="44.8" x2="588.0" y2="44.8" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="335.0" y="47.8" font-size="8.5" fill="#9aa3b2" text-anchor="end">0.65</text>
+      <rect x="351.8" y="84.1" width="26" height="91.9" rx="2" fill="#3498db"/>
+      <line x1="364.8" y1="82.4" x2="364.8" y2="85.9" stroke="#566072" stroke-width="1"/>
+      <line x1="361.8" y1="82.4" x2="367.8" y2="82.4" stroke="#566072" stroke-width="1"/>
+      <line x1="361.8" y1="85.9" x2="367.8" y2="85.9" stroke="#566072" stroke-width="1"/>
+      <text x="364.8" y="78.4" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.605</text>
+      <rect x="401.4" y="56.1" width="26" height="119.9" rx="2" fill="#2ecc71" stroke="#000" stroke-width="2.5"/>
+      <line x1="414.4" y1="50.9" x2="414.4" y2="61.4" stroke="#566072" stroke-width="1"/>
+      <line x1="411.4" y1="50.9" x2="417.4" y2="50.9" stroke="#566072" stroke-width="1"/>
+      <line x1="411.4" y1="61.4" x2="417.4" y2="61.4" stroke="#566072" stroke-width="1"/>
+      <text x="414.4" y="46.9" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.637</text>
+      <rect x="451.0" y="135.7" width="26" height="40.3" rx="2" fill="#9b59b6"/>
+      <line x1="464.0" y1="133.1" x2="464.0" y2="138.4" stroke="#566072" stroke-width="1"/>
+      <line x1="461.0" y1="133.1" x2="467.0" y2="133.1" stroke="#566072" stroke-width="1"/>
+      <line x1="461.0" y1="138.4" x2="467.0" y2="138.4" stroke="#566072" stroke-width="1"/>
+      <text x="464.0" y="129.1" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.546</text>
+      <rect x="500.6" y="147.1" width="26" height="28.9" rx="2" fill="#e67e22"/>
+      <line x1="513.6" y1="133.1" x2="513.6" y2="161.1" stroke="#566072" stroke-width="1"/>
+      <line x1="510.6" y1="133.1" x2="516.6" y2="133.1" stroke="#566072" stroke-width="1"/>
+      <line x1="510.6" y1="161.1" x2="516.6" y2="161.1" stroke="#566072" stroke-width="1"/>
+      <text x="513.6" y="129.1" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.533</text>
+      <rect x="550.2" y="106.9" width="26" height="69.1" rx="2" fill="#e74c3c"/>
+      <line x1="563.2" y1="90.3" x2="563.2" y2="123.5" stroke="#566072" stroke-width="1"/>
+      <line x1="560.2" y1="90.3" x2="566.2" y2="90.3" stroke="#566072" stroke-width="1"/>
+      <line x1="560.2" y1="123.5" x2="566.2" y2="123.5" stroke="#566072" stroke-width="1"/>
+      <text x="563.2" y="86.3" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.579</text>
+      <line x1="340.0" y1="176.0" x2="588.0" y2="176.0" stroke="#aeb6c4" stroke-width="1.5"/>
+      <text x="750.0" y="15" font-size="11.5" font-weight="600" fill="#1c2433" text-anchor="middle">Test RMSE</text>
+      <line x1="640.0" y1="176.0" x2="888.0" y2="176.0" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="635.0" y="179.0" font-size="8.5" fill="#9aa3b2" text-anchor="end">1.30</text>
+      <line x1="640.0" y1="136.0" x2="888.0" y2="136.0" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="635.0" y="139.0" font-size="8.5" fill="#9aa3b2" text-anchor="end">1.40</text>
+      <line x1="640.0" y1="96.0" x2="888.0" y2="96.0" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="635.0" y="99.0" font-size="8.5" fill="#9aa3b2" text-anchor="end">1.50</text>
+      <line x1="640.0" y1="56.0" x2="888.0" y2="56.0" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="635.0" y="59.0" font-size="8.5" fill="#9aa3b2" text-anchor="end">1.60</text>
+      <rect x="651.8" y="88.4" width="26" height="87.6" rx="2" fill="#3498db"/>
+      <line x1="664.8" y1="41.6" x2="664.8" y2="135.2" stroke="#566072" stroke-width="1"/>
+      <line x1="661.8" y1="41.6" x2="667.8" y2="41.6" stroke="#566072" stroke-width="1"/>
+      <line x1="661.8" y1="135.2" x2="667.8" y2="135.2" stroke="#566072" stroke-width="1"/>
+      <text x="664.8" y="37.6" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">1.519</text>
+      <rect x="701.4" y="154.8" width="26" height="21.2" rx="2" fill="#2ecc71" stroke="#000" stroke-width="2.5"/>
+      <line x1="714.4" y1="142.4" x2="714.4" y2="167.2" stroke="#566072" stroke-width="1"/>
+      <line x1="711.4" y1="142.4" x2="717.4" y2="142.4" stroke="#566072" stroke-width="1"/>
+      <line x1="711.4" y1="167.2" x2="717.4" y2="167.2" stroke="#566072" stroke-width="1"/>
+      <text x="714.4" y="138.4" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">1.353</text>
+      <rect x="751.0" y="68.8" width="26" height="107.2" rx="2" fill="#9b59b6"/>
+      <line x1="764.0" y1="42.4" x2="764.0" y2="95.2" stroke="#566072" stroke-width="1"/>
+      <line x1="761.0" y1="42.4" x2="767.0" y2="42.4" stroke="#566072" stroke-width="1"/>
+      <line x1="761.0" y1="95.2" x2="767.0" y2="95.2" stroke="#566072" stroke-width="1"/>
+      <text x="764.0" y="38.4" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">1.568</text>
+      <rect x="800.6" y="83.6" width="26" height="92.4" rx="2" fill="#e67e22"/>
+      <line x1="813.6" y1="78.8" x2="813.6" y2="88.4" stroke="#566072" stroke-width="1"/>
+      <line x1="810.6" y1="78.8" x2="816.6" y2="78.8" stroke="#566072" stroke-width="1"/>
+      <line x1="810.6" y1="88.4" x2="816.6" y2="88.4" stroke="#566072" stroke-width="1"/>
+      <text x="813.6" y="74.8" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">1.531</text>
+      <rect x="850.2" y="117.2" width="26" height="58.8" rx="2" fill="#e74c3c"/>
+      <line x1="863.2" y1="110.8" x2="863.2" y2="123.6" stroke="#566072" stroke-width="1"/>
+      <line x1="860.2" y1="110.8" x2="866.2" y2="110.8" stroke="#566072" stroke-width="1"/>
+      <line x1="860.2" y1="123.6" x2="866.2" y2="123.6" stroke="#566072" stroke-width="1"/>
+      <text x="863.2" y="106.8" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">1.447</text>
+      <line x1="640.0" y1="176.0" x2="888.0" y2="176.0" stroke="#aeb6c4" stroke-width="1.5"/>
+      <text x="750.0" y="203.0" font-size="9" fill="#b04a2f" text-anchor="middle">&#8595; lower is better</text>
+      </svg>
+      <div class="legend" style="justify-content:center;margin-top:8px;gap:14px;"><span><span style="width:12px;height:12px;border-radius:3px;background:#3498db;display:inline-block"></span> C</span> <span><span style="width:12px;height:12px;border-radius:3px;background:#2ecc71;display:inline-block;border:2px solid #000"></span> C+D+G</span> <span><span style="width:12px;height:12px;border-radius:3px;background:#9b59b6;display:inline-block"></span> HBGSA</span> <span><span style="width:12px;height:12px;border-radius:3px;background:#e67e22;display:inline-block"></span> EGNN</span> <span><span style="width:12px;height:12px;border-radius:3px;background:#e74c3c;display:inline-block"></span> EGNN + TargetDiff</span> <span><span style="display:inline-block;width:0;height:11px;border-left:1px solid #566072;vertical-align:middle"></span> &plusmn;1 std</span></div>
+      <p class="figure-cap">Frozen-probe test metrics &middot; whiskers&nbsp;=&nbsp;&plusmn;1&nbsp;std (3 seeds).</p>
     </div>
-    <div class="card"><h3>scene_vit (new)</h3>
-<pre><span class="c"># one FROZEN ViT encodes the whole scene</span>
-x = ligand_encoder(y)              <span class="c"># trainable</span>
-scene = cat[<b>0</b>·lig, pocket, density+gradmag] <span class="c"># 13ch</span>
-x += density_proj(cat[x, <b>frozen_vit</b>(scene)])
-x = unet(x); x = final_ligand(x)   <span class="c"># trained on top</span></pre>
+    <div class="table-wrap">
+      <table class="results">
+        <thead>
+          <tr class="grp">
+            <th class="col-method" rowspan="2">Method</th>
+            <th class="div-major" colspan="3">Test</th>
+          </tr>
+          <tr class="sub">
+            <th class="div-major">Pearson&nbsp;<i>r</i></th>
+            <th>Spearman&nbsp;&rho;</th>
+            <th>RMSE</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="col-method">C <span class="tag" style="background:var(--best-bg);color:#1d5a3a">PLINDER</span><span style="display:block;font-size:11px;color:#7a8699">coords + atom type &middot; plain ViT</span></td>
+            <td class="metric div-major"><span class="val">0.632</span> <span class="sd">±0.007</span></td>
+            <td class="metric"><span class="val">0.605</span> <span class="sd">±0.002</span></td>
+            <td class="metric"><span class="val">1.519</span> <span class="sd">±0.117</span></td>
+          </tr>
+          <tr>
+            <td class="col-method">C + D + G <span class="tag" style="background:var(--best-bg);color:#1d5a3a">PLINDER</span><span style="display:block;font-size:11px;color:#7a8699">+ density + gradmag &middot; ChannelViT [7,4,2]</span></td>
+            <td class="metric div-major best"><span class="val">0.656</span> <span class="sd">±0.006</span></td>
+            <td class="metric best"><span class="val">0.637</span> <span class="sd">±0.006</span></td>
+            <td class="metric best"><span class="val">1.353</span> <span class="sd">±0.031</span></td>
+          </tr>
+          <tr>
+            <td class="col-method">HBGSA (3.06M) <span class="tag supervised">supervised</span><span style="display:block;font-size:11px;color:#7a8699">H-bond graph + seq + pocket + SMILES</span></td>
+            <td class="metric div-major"><span class="val">0.565</span> <span class="sd">±0.007</span></td>
+            <td class="metric"><span class="val">0.546</span> <span class="sd">±0.003</span></td>
+            <td class="metric"><span class="val">1.568</span> <span class="sd">±0.066</span></td>
+          </tr>
+          <tr>
+            <td class="col-method">EGNN <span class="tag supervised">baseline</span><span style="display:block;font-size:11px;color:#7a8699">coords / atom-type EGNN (2.55M)</span></td>
+            <td class="metric div-major"><span class="val">0.539</span> <span class="sd">±0.012</span></td>
+            <td class="metric"><span class="val">0.533</span> <span class="sd">±0.016</span></td>
+            <td class="metric"><span class="val">1.531</span> <span class="sd">±0.012</span></td>
+          </tr>
+          <tr>
+            <td class="col-method">EGNN + TargetDiff <span class="tag supervised">baseline</span><span style="display:block;font-size:11px;color:#7a8699">+ pretrained TargetDiff features</span></td>
+            <td class="metric div-major"><span class="val">0.597</span> <span class="sd">±0.009</span></td>
+            <td class="metric"><span class="val">0.579</span> <span class="sd">±0.019</span></td>
+            <td class="metric"><span class="val">1.447</span> <span class="sd">±0.016</span></td>
+          </tr>
+          <tr>
+            <td class="col-method">Boltz <span class="tag inprog">pending</span><span style="display:block;font-size:11px;color:#7a8699">co-folding embedding baseline</span></td>
+            <td class="metric div-major"><span class="tbd">TBA</span></td>
+            <td class="metric"><span class="tbd">TBA</span></td>
+            <td class="metric"><span class="tbd">TBA</span></td>
+          </tr>
+          <tr>
+            <td class="col-method">ESM <span class="tag inprog">pending</span><span style="display:block;font-size:11px;color:#7a8699">protein language-model embedding</span></td>
+            <td class="metric div-major"><span class="tbd">TBA</span></td>
+            <td class="metric"><span class="tbd">TBA</span></td>
+            <td class="metric"><span class="tbd">TBA</span></td>
+          </tr>
+        </tbody>
+      </table>
     </div>
-  </div>
-  <div class="note" style="margin-top:8px;">
-    The ligand channels into the frozen encoder are <b>zeroed</b> — the ligand is the generation target and is unavailable
-    at sampling time, so the encoder conditions only on pocket + density. Because the pretrained encoder already carries
-    its <span class="mono">decoder_proj</span> at <span class="mono">c_out = n_channels/2 = 16</span>, the whole module
-    loads <b>strict</b> and the existing zero-init <span class="mono">density_proj</span> fusion is reused as-is.
+    <div class="legend">
+      <span><span style="width:12px;height:12px;border-radius:3px;background:#3498db;display:inline-block"></span> C</span>
+      <span><span style="width:12px;height:12px;border-radius:3px;background:#2ecc71;display:inline-block;border:2px solid #000"></span> C + D + G</span>
+      <span><span style="width:12px;height:12px;border-radius:3px;background:#9b59b6;display:inline-block"></span> HBGSA</span>
+      <span><span style="width:12px;height:12px;border-radius:3px;background:#e67e22;display:inline-block"></span> EGNN</span>
+      <span><span style="width:12px;height:12px;border-radius:3px;background:#e74c3c;display:inline-block"></span> EGNN + TargetDiff</span>
+      <span><span style="background:var(--best-bg);padding:2px 8px;border-radius:4px;font-weight:700;color:#1d5a3a">bold</span> best per test column</span>
+    </div>
+    <div class="notes">
+      <ul>
+        <li>The frozen <b>C&nbsp;+&nbsp;D&nbsp;+&nbsp;G</b> ChannelViT probe (&rho;&nbsp;0.637) leads coords-only by +0.032 and tops every supervised baseline on this split.</li>
+        <li><b>Boltz</b> and <b>ESM</b> embedding baselines are placeholders &mdash; values pending.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="block">
+    <p class="table-title">Table 2 &nbsp;&middot;&nbsp; Parameter scaling (affinity)</p>
+    <p class="table-sub">
+      Frozen-probe affinity as the <b>ChannelViT</b> <b>C&nbsp;+&nbsp;D&nbsp;+&nbsp;G</b> encoder scales in width&times;depth
+      &mdash; same PLINDER-OTF recipe and <code>lp_edrscc_v2</code> split, 3 seeds. <b>0.4M</b> = dim&nbsp;64&times;4,
+      <b>4M</b> = dim&nbsp;192&times;6, <b>40M</b> = dim&nbsp;512&times;12. The <b>dim-768</b> (97.9M) run is
+      <b>training now</b> (ep&nbsp;28&nbsp;/&nbsp;100) &rarr; probe TBA.
+    </p>
+    <div class="table-wrap" style="padding:16px 18px 10px;">
+      <svg viewBox="0 0 400 210" width="100%" style="max-width:400px;display:block;margin:0 auto" font-family="-apple-system,Segoe UI,Roboto,sans-serif">
+      <text x="200.0" y="15" font-size="11.5" font-weight="600" fill="#1c2433" text-anchor="middle">Test Spearman &rho; &mdash; encoder size</text>
+      <line x1="40.0" y1="176.0" x2="388.0" y2="176.0" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="35.0" y="179.0" font-size="8.5" fill="#9aa3b2" text-anchor="end">0.50</text>
+      <line x1="40.0" y1="132.2" x2="388.0" y2="132.2" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="35.0" y="135.2" font-size="8.5" fill="#9aa3b2" text-anchor="end">0.55</text>
+      <line x1="40.0" y1="88.5" x2="388.0" y2="88.5" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="35.0" y="91.5" font-size="8.5" fill="#9aa3b2" text-anchor="end">0.60</text>
+      <line x1="40.0" y1="44.8" x2="388.0" y2="44.8" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="35.0" y="47.8" font-size="8.5" fill="#9aa3b2" text-anchor="end">0.65</text>
+      <rect x="70.5" y="108.6" width="26" height="67.4" rx="2" fill="#aed0ec"/>
+      <line x1="83.5" y1="106.9" x2="83.5" y2="110.4" stroke="#566072" stroke-width="1"/>
+      <line x1="80.5" y1="106.9" x2="86.5" y2="106.9" stroke="#566072" stroke-width="1"/>
+      <line x1="80.5" y1="110.4" x2="86.5" y2="110.4" stroke="#566072" stroke-width="1"/>
+      <text x="83.5" y="102.9" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.577</text>
+      <text x="83.5" y="191.0" font-size="10" fill="#1c2433" text-anchor="middle">0.4M</text>
+      <rect x="157.5" y="75.4" width="26" height="100.6" rx="2" fill="#5dade2"/>
+      <line x1="170.5" y1="71.9" x2="170.5" y2="78.9" stroke="#566072" stroke-width="1"/>
+      <line x1="167.5" y1="71.9" x2="173.5" y2="71.9" stroke="#566072" stroke-width="1"/>
+      <line x1="167.5" y1="78.9" x2="173.5" y2="78.9" stroke="#566072" stroke-width="1"/>
+      <text x="170.5" y="67.9" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.615</text>
+      <text x="170.5" y="191.0" font-size="10" fill="#1c2433" text-anchor="middle">4M</text>
+      <rect x="244.5" y="56.1" width="26" height="119.9" rx="2" fill="#2c7fb8" stroke="#000" stroke-width="2.5"/>
+      <line x1="257.5" y1="50.9" x2="257.5" y2="61.4" stroke="#566072" stroke-width="1"/>
+      <line x1="254.5" y1="50.9" x2="260.5" y2="50.9" stroke="#566072" stroke-width="1"/>
+      <line x1="254.5" y1="61.4" x2="260.5" y2="61.4" stroke="#566072" stroke-width="1"/>
+      <text x="257.5" y="46.9" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.637</text>
+      <text x="257.5" y="191.0" font-size="10" fill="#1c2433" text-anchor="middle">40M</text>
+      <rect x="331.5" y="66.6" width="26" height="109.4" rx="2" fill="none" stroke="#c4ccd8" stroke-width="1.3" stroke-dasharray="3 3"/>
+      <text x="344.5" y="121.3" font-size="9" fill="#b07a17" text-anchor="middle" font-weight="600">TBA</text>
+      <text x="344.5" y="191.0" font-size="10" fill="#1c2433" text-anchor="middle">~98M</text>
+      <line x1="40.0" y1="176.0" x2="388.0" y2="176.0" stroke="#aeb6c4" stroke-width="1.5"/>
+      </svg>
+      <p class="figure-cap">Test Spearman&nbsp;&rho; (higher is better) &middot; whiskers&nbsp;=&nbsp;&plusmn;1&nbsp;std &middot; ~98M (dim&nbsp;768) pending.</p>
+    </div>
+    <div class="table-wrap">
+      <table class="results">
+        <thead>
+          <tr class="grp">
+            <th class="col-method" rowspan="2">Encoder size</th>
+            <th class="div-major" colspan="3">Test</th>
+            <th class="div-minor" colspan="2">Validation</th>
+          </tr>
+          <tr class="sub">
+            <th class="div-major">Pearson&nbsp;<i>r</i></th>
+            <th>Spearman&nbsp;&rho;</th>
+            <th>RMSE</th>
+            <th class="div-minor">Pearson&nbsp;<i>r</i></th>
+            <th>Spearman&nbsp;&rho;</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="col-method">0.4M<span style="display:block;font-size:11px;color:#7a8699">dim 64&times;4 &middot; 1.19M params</span></td>
+            <td class="metric div-major"><span class="val">0.599</span> <span class="sd">±0.003</span></td>
+            <td class="metric"><span class="val">0.577</span> <span class="sd">±0.002</span></td>
+            <td class="metric"><span class="val">1.440</span> <span class="sd">±0.014</span></td>
+            <td class="metric div-minor"><span class="sd">&mdash;</span></td>
+            <td class="metric"><span class="val">0.478</span> <span class="sd">±0.000</span></td>
+          </tr>
+          <tr>
+            <td class="col-method">4M<span style="display:block;font-size:11px;color:#7a8699">dim 192&times;6 &middot; 5.63M params</span></td>
+            <td class="metric div-major"><span class="val">0.631</span> <span class="sd">±0.004</span></td>
+            <td class="metric"><span class="val">0.615</span> <span class="sd">±0.004</span></td>
+            <td class="metric"><span class="val">1.386</span> <span class="sd">±0.008</span></td>
+            <td class="metric div-minor"><span class="sd">&mdash;</span></td>
+            <td class="metric"><span class="val">0.518</span> <span class="sd">±0.002</span></td>
+          </tr>
+          <tr>
+            <td class="col-method">40M<span style="display:block;font-size:11px;color:#7a8699">dim 512&times;12 &middot; 45.7M &middot; = Table&nbsp;1 C+D+G</span></td>
+            <td class="metric div-major best"><span class="val">0.656</span> <span class="sd">±0.006</span></td>
+            <td class="metric best"><span class="val">0.637</span> <span class="sd">±0.006</span></td>
+            <td class="metric best"><span class="val">1.353</span> <span class="sd">±0.031</span></td>
+            <td class="metric div-minor best"><span class="val">0.560</span> <span class="sd">±0.008</span></td>
+            <td class="metric best"><span class="val">0.548</span> <span class="sd">±0.009</span></td>
+          </tr>
+          <tr>
+            <td class="col-method">~98M <span class="tag inprog">running</span><span style="display:block;font-size:11px;color:#7a8699">dim 768&times;12 &middot; 97.9M params &middot; ep 28/100</span></td>
+            <td class="metric div-major"><span class="tbd">TBA</span></td>
+            <td class="metric"><span class="tbd">TBA</span></td>
+            <td class="metric"><span class="tbd">TBA</span></td>
+            <td class="metric div-minor"><span class="tbd">TBA</span></td>
+            <td class="metric"><span class="tbd">TBA</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="notes">
+      <ul>
+        <li>Affinity scales with width: test&nbsp;&rho; <b>0.577&nbsp;&rarr;&nbsp;0.615&nbsp;&rarr;&nbsp;0.637</b> (0.4M&nbsp;&rarr;&nbsp;4M&nbsp;&rarr;&nbsp;40M). The <b>dim-768 / 97.9M</b> encoder is pretraining now (ep&nbsp;28&nbsp;/&nbsp;100); its frozen probe lands in the TBA row.</li>
+      </ul>
+    </div>
+  </section>
   </div>
 
-  <h2>2 &middot; Three design points</h2>
-  <table>
-    <thead><tr><th>Point</th><th>Implementation</th></tr></thead>
-    <tbody>
-      <tr><td><b>1. Un-hardcode channel dim</b></td>
-        <td>The density branch width was fixed at 1&ndash;2ch. <span class="mono">scene_vit</span> builds
-          <span class="mono">DensityViT(n_in=13, channel_groups=(7,4,2), c_out=16)</span> from <span class="mono">n_ligand+n_pocket+n_density</span>.</td></tr>
-      <tr><td><b>2. Zero the ligand</b></td>
-        <td><span class="mono">cat([torch.zeros_like(ligand), pocket, density])</span> in <span class="mono">forward</span>
-          (always; <span class="mono">density=None</span> &rarr; null conditioning for CFG). Channel-group patch embed makes the
-          ligand group a clean constant.</td></tr>
-      <tr><td><b>3. Freeze encoder, train on top</b></td>
-        <td>Reuses <span class="mono">density_pretrained_path</span> + <span class="mono">density_freeze</span>
-          (<span class="mono">models/__init__.py</span>): strict-load &rarr; <span class="mono">requires_grad=False</span> &rarr; dropout off.
-          <span class="mono">ligand_encoder</span> / <span class="mono">density_proj</span> / U-Net stay trainable.</td></tr>
-    </tbody>
-  </table>
+  <!-- ============================================================ -->
+  <!-- SECTION 2 — PLINDER DATASET & DIVERSE ATOM TYPES             -->
+  <!-- ============================================================ -->
+  <div class="doc-section">
+    <h2 class="section-head"><span class="sec-num">2</span> PLINDER dataset and diverse atom types</h2>
+    <p class="section-intro">
+      The self-supervised pretraining corpus is built from <b>PLINDER</b> (2024-06 / v2). &sect;2.1 is the selection
+      funnel from the raw annotation table down to the trained set; &sect;2.2 probes a <b>diverse-atom-type</b>
+      (role-split) representation that admits the full element set.
+    </p>
 
-  <h2>3 &middot; How to run</h2>
-<pre>cd voxbind
-CUDA_VISIBLE_DEVICES=0,1,2,3 python train.py \
-  model=voxbind_scene_vit_g742 with_gradmag=true \
-  <span class="c"># dataset must yield xray_density + xray_gradmag (with_density path)</span></pre>
-  <div class="note" style="margin-top:6px;">
-    Config <span class="mono">configs/model/voxbind_scene_vit_g742.yaml</span> pins the encoder dims (dim 512 / depth 12 /
-    heads 8 / patch 8 / groups [7,4,2]) to the checkpoint — they <b>must</b> match or the strict load fails.
-    Requires top-level <span class="mono">with_gradmag=true</span> and an X-ray (density-bearing) dataset.
+  <section class="block">
+    <p class="table-title">2.1 &nbsp;&middot;&nbsp; PLINDER selection funnel</p>
+    <p class="table-sub">
+      One row per physical ligand-instance (left) with the unique 4-char PDB entries it spans (right); each stage is
+      applied on top of the previous. Source: <code>splits/plinder/v2/plinder_funnel.json</code>. The <b>v2 max-coverage</b>
+      recipe leans on <b>ligand RSCC&nbsp;&ge;&nbsp;0.8</b> alone for density quality &mdash; <b>no</b> resolution cap,
+      <b>all</b> PLINDER splits, multi-ligand, no dedup &mdash; growing the corpus from v1's 17,530 to
+      <b>113,976</b> ligand-instances across <b>41,833</b> PDB entries (&rarr; <b>112,733</b> role-split OTF training positions).
+    </p>
+    <div class="table-wrap">
+      <table class="results funnel">
+        <thead>
+          <tr class="head-row"><th class="stage">Filter stage</th><th class="n">Ligand-instances</th><th class="u">Unique PDB</th></tr>
+        </thead>
+        <tbody>
+          <tr class="head-row"><td class="stage" colspan="3" style="font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-soft)">Step 1 &middot; complex filter &mdash; is this a representable protein+ligand complex?</td></tr>
+          <tr><td class="stage">PLINDER annotation table <span class="sub">all</span></td><td class="n">1,357,906</td><td class="u">143,800</td></tr>
+          <tr><td class="stage">X-ray diffraction</td><td class="n">1,046,290 <span class="fn-drop">&minus;311,616</span></td><td class="u">128,915</td></tr>
+          <tr><td class="stage">proper ligand &amp; not ion / artifact / cofactor</td><td class="n">300,276 <span class="fn-drop">&minus;746,014</span></td><td class="u">85,476</td></tr>
+          <tr><td class="stage">valid &amp; RDKit-loadable, 6 &le; heavy &le; 50</td><td class="n">259,509 <span class="fn-drop">&minus;40,767</span></td><td class="u">76,432</td></tr>
+          <tr><td class="stage">non-covalent</td><td class="n">197,369 <span class="fn-drop">&minus;62,140</span></td><td class="u">66,825</td></tr>
+          <tr><td class="stage">exclude downstream test/val <span class="sub">drop PDB ids in PDBbind test+val, MISATO, CrossDocked test</span></td><td class="n">166,448 <span class="fn-drop">&minus;30,921</span></td><td class="u">53,663</td></tr>
+          <tr class="head-row"><td class="stage" colspan="3" style="font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-soft)">Step 2 &middot; density filter &mdash; does the experimental density match the ligand?</td></tr>
+          <tr><td class="stage">0 unresolved heavy atoms <span class="sub">every ligand atom has density</span></td><td class="n">153,270 <span class="fn-drop">&minus;13,178</span></td><td class="u">51,879</td></tr>
+          <tr class="keep"><td class="stage">ligand RSCC &ge; 0.8 <span class="sub">density fits the selected ligand &middot; final selection</span></td><td class="n">113,976</td><td class="u">41,833</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="notes">
+      <ul>
+        <li><b>RSCC carries the quality without a resolution cap.</b> Ligand RSCC&nbsp;&ge;&nbsp;0.8 still removes 26% of the
+          pool with no resolution filter; the selection's median resolution stays <b>2.09&nbsp;&Aring;</b>, and the lower-res
+          structures it now admits still have median ligand RSCC&nbsp;<b>0.935</b> &mdash; well-fit density, not noise.</li>
+        <li><b>Build:</b> 113,976 selected &rarr; parse mmCIFs into role-split tuples (71 parse-failures) &rarr;
+          <b>113,874</b> tuples &rarr; <b>112,733</b> OTF training positions
+          (<code>data_train_plinder_v2.pt</code> + <code>xray_resample_plinder_v2/</code>, pure on-the-fly resampling, no frozen crops).</li>
+        <li class="muted">Table&nbsp;1, Table&nbsp;2 and &sect;2.2 probe results below are still on the prior <b>v1</b> corpus
+          (17,530); the <b>v2 (110K)</b> encoder is pretraining now &mdash; its frozen probe will refresh those rows.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="block">
+    <p class="table-title">2.2 &nbsp;&middot;&nbsp; Diverse atom types (role-split representation)</p>
+    <p class="table-sub">
+      Instead of per-element one-hot channels (canonical reduced element set), the <b>role-split</b> representation uses
+      a small set of <b>role</b> channels [ligand, pocket] in which atom identity is carried by blob <b>size</b>
+      (per-atom vdW radius) rather than a one-hot channel &mdash; so the <b>full / diverse element set</b> is admitted.
+      Pretrained on the diverse PLINDER corpus (<code>data_train_plinder_diverse.pt</code>, 17,530), C&nbsp;+&nbsp;D&nbsp;+&nbsp;G
+      ChannelViT, frozen probe on <code>lp_edrscc_v2</code> (3 seeds). Reference row = the canonical per-element
+      C&nbsp;+&nbsp;D&nbsp;+&nbsp;G ChannelViT from Table&nbsp;1.
+    </p>
+    <div class="table-wrap">
+      <table class="results">
+        <thead>
+          <tr class="grp">
+            <th class="col-method" rowspan="2">Representation</th>
+            <th class="div-major" colspan="3">Test</th>
+            <th class="div-minor" colspan="1">Validation</th>
+          </tr>
+          <tr class="sub">
+            <th class="div-major">Pearson&nbsp;<i>r</i></th>
+            <th>Spearman&nbsp;&rho;</th>
+            <th>RMSE</th>
+            <th class="div-minor">Spearman&nbsp;&rho;</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="col-method">Per-element channels <span class="tag" style="background:var(--best-bg);color:#1d5a3a">canonical</span><span style="display:block;font-size:11px;color:#7a8699">= Table 1 C+D+G ChannelViT [7,4,2]</span></td>
+            <td class="metric div-major best"><span class="val">0.656</span> <span class="sd">±0.006</span></td>
+            <td class="metric best"><span class="val">0.637</span> <span class="sd">±0.006</span></td>
+            <td class="metric best"><span class="val">1.353</span> <span class="sd">±0.031</span></td>
+            <td class="metric div-minor best"><span class="val">0.548</span> <span class="sd">±0.009</span></td>
+          </tr>
+          <tr>
+            <td class="col-method">Role-split / diverse <span class="tag supervised">all elements</span><span style="display:block;font-size:11px;color:#7a8699">[ligand, pocket] roles &middot; vdW-size identity</span></td>
+            <td class="metric div-major"><span class="val">0.609</span> <span class="sd">±0.003</span></td>
+            <td class="metric"><span class="val">0.585</span> <span class="sd">±0.002</span></td>
+            <td class="metric"><span class="val">1.629</span> <span class="sd">±0.064</span></td>
+            <td class="metric div-minor"><span class="val">0.460</span> <span class="sd">±0.001</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="notes">
+      <ul>
+        <li>The diverse / role-split representation (element identity via vdW blob size, all elements admitted) probes
+          to test&nbsp;&rho; <b>0.585</b> &mdash; below the canonical per-element channels (0.637) on this split, at a more
+          compact, element-agnostic input.</li>
+        <li class="muted">Both pretrained on PLINDER (17,530), C&nbsp;+&nbsp;D&nbsp;+&nbsp;G ChannelViT, identical
+          <code>lp_edrscc_v2</code> probe (n_test&nbsp;=&nbsp;1,320, 3 seeds).</li>
+      </ul>
+    </div>
+  </section>
   </div>
 
-  <h2>4 &middot; Verification &amp; files</h2>
-  <div class="note">
-    <ul>
-      <li><span class="ok">Smoke test passed</span> (synthetic batch, GPU): original <span class="mono">forward &rarr; (2,7,64³)</span>
-        with <span class="mono">pocket_encoder</span> intact; scene_vit loads the encoder <b>strict</b>
-        (<b>45.71M frozen</b>, matches the checkpoint), <span class="mono">forward(density)</span> and
-        <span class="mono">forward(None)</span> &rarr; <span class="mono">(2,7,64³)</span>, and backward puts
-        <b>0 grad on the frozen encoder</b>, &gt;0 on <span class="mono">ligand_encoder</span>.</li>
-      <li>The clean strict-load also <b>validates the group assignment</b>: groups 7/4/2 are distinct sizes, so
-        ligand&rarr;g0, pocket&rarr;g1, density+gradmag&rarr;g2 must line up.</li>
-      <li><b>Files:</b> <span class="mono">models/voxbind.py</span> (scene_vit branch + forward + docstring),
-        <span class="mono">configs/model/voxbind_scene_vit_g742.yaml</span> (new). No change to
-        <span class="mono">models/__init__.py</span> (existing loader/freeze covers it) or the dataloader
-        (<span class="mono">train.py</span>/<span class="mono">sampling_utils.py</span> already pass density+gradmag).</li>
-      <li><b>Open question / assumption:</b> ligand-zeroing is always-on (vs stochastic CFG dropout); intra-group channel
-        order is the canonical voxbind order (C/O/N/S/&hellip;), shared with pretraining. Revisit if generation underperforms.</li>
-    </ul>
+  <!-- ============================================================ -->
+  <!-- SECTION 3 — DE NOVO DRUG DESIGN                              -->
+  <!-- ============================================================ -->
+  <div class="doc-section">
+    <h2 class="section-head"><span class="sec-num">3</span> De novo drug design</h2>
+    <p class="section-intro">
+      Conditional de novo ligand generation on the held-out CrossDocked test pockets. <b>VoxBind</b> (voxel walk-jump
+      sampling at noise level <b>&sigma;</b>) vs the <b>TargetDiff</b> diffusion baseline, scored on AutoDock Vina
+      docking and molecular properties. Values are pending the generation + docking eval.
+    </p>
+
+  <section class="block">
+    <p class="table-title">Table 3 &nbsp;&middot;&nbsp; De novo generation — CrossDocked</p>
+    <p class="table-sub">
+      Generated molecules per test pocket, scored by <b>AutoDock Vina</b> (<b>Score</b> / <b>Min</b> / <b>Dock</b>,
+      kcal/mol, lower&nbsp;better), <b>High aff.</b> (% of generated with Vina&nbsp;Dock better than the reference
+      ligand), drug-likeness (<b>QED</b>, <b>SA</b>), <b>Diversity</b>, and mean heavy-atom count. <b>VoxBind
+      &sigma;&nbsp;=&nbsp;0.9&nbsp;/&nbsp;1.0</b> are walk-jump sampling noise levels. All values <b>TBA</b>.
+    </p>
+    <div class="table-wrap">
+      <table class="results">
+        <thead>
+          <tr class="grp">
+            <th class="col-method" rowspan="2">Method</th>
+            <th class="div-major" colspan="3">Vina docking (kcal/mol) &darr;</th>
+            <th class="div-minor" rowspan="2">High aff.<br>(%) &uarr;</th>
+            <th rowspan="2">QED &uarr;</th>
+            <th rowspan="2">SA &uarr;</th>
+            <th rowspan="2">Diversity &uarr;</th>
+            <th rowspan="2"># atoms<br>/ mol</th>
+          </tr>
+          <tr class="sub">
+            <th class="div-major">Score</th>
+            <th>Min</th>
+            <th>Dock</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="col-method">TargetDiff <span class="tag supervised">baseline</span><span style="display:block;font-size:11px;color:#7a8699">CrossDocked diffusion</span></td>
+            <td class="metric div-major"><span class="tbd">TBA</span></td>
+            <td class="metric"><span class="tbd">TBA</span></td>
+            <td class="metric"><span class="tbd">TBA</span></td>
+            <td class="metric div-minor"><span class="tbd">TBA</span></td>
+            <td class="metric"><span class="tbd">TBA</span></td>
+            <td class="metric"><span class="tbd">TBA</span></td>
+            <td class="metric"><span class="tbd">TBA</span></td>
+            <td class="metric"><span class="tbd">TBA</span></td>
+          </tr>
+          <tr>
+            <td class="col-method">VoxBind <span class="tag" style="background:var(--best-bg);color:#1d5a3a">ours</span><span style="display:block;font-size:11px;color:#7a8699">walk-jump &middot; &sigma; = 0.9</span></td>
+            <td class="metric div-major"><span class="tbd">TBA</span></td>
+            <td class="metric"><span class="tbd">TBA</span></td>
+            <td class="metric"><span class="tbd">TBA</span></td>
+            <td class="metric div-minor"><span class="tbd">TBA</span></td>
+            <td class="metric"><span class="tbd">TBA</span></td>
+            <td class="metric"><span class="tbd">TBA</span></td>
+            <td class="metric"><span class="tbd">TBA</span></td>
+            <td class="metric"><span class="tbd">TBA</span></td>
+          </tr>
+          <tr>
+            <td class="col-method">VoxBind <span class="tag" style="background:var(--best-bg);color:#1d5a3a">ours</span><span style="display:block;font-size:11px;color:#7a8699">walk-jump &middot; &sigma; = 1.0</span></td>
+            <td class="metric div-major"><span class="tbd">TBA</span></td>
+            <td class="metric"><span class="tbd">TBA</span></td>
+            <td class="metric"><span class="tbd">TBA</span></td>
+            <td class="metric div-minor"><span class="tbd">TBA</span></td>
+            <td class="metric"><span class="tbd">TBA</span></td>
+            <td class="metric"><span class="tbd">TBA</span></td>
+            <td class="metric"><span class="tbd">TBA</span></td>
+            <td class="metric"><span class="tbd">TBA</span></td>
+          </tr>
+          <tr>
+            <td class="col-method">CoDE <span class="tag" style="background:var(--best-bg);color:#1d5a3a">ours</span><span style="display:block;font-size:11px;color:#7a8699">Coordinate Density Encoder &middot; conditions on the frozen CDG (C+D+G) encoder</span></td>
+            <td class="metric div-major"><span class="tbd">TBA</span></td>
+            <td class="metric"><span class="tbd">TBA</span></td>
+            <td class="metric"><span class="tbd">TBA</span></td>
+            <td class="metric div-minor"><span class="tbd">TBA</span></td>
+            <td class="metric"><span class="tbd">TBA</span></td>
+            <td class="metric"><span class="tbd">TBA</span></td>
+            <td class="metric"><span class="tbd">TBA</span></td>
+            <td class="metric"><span class="tbd">TBA</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="notes">
+      <ul>
+        <li>Eight metrics: <b>Vina Score / Min / Dock</b> (&darr;), <b>High aff.</b> (&uarr;), <b>QED</b> (&uarr;),
+          <b>SA</b> (&uarr;), <b>Diversity</b> (&uarr;), and <b># atoms / mol</b>. All <span class="tbd">TBA</span>
+          &mdash; pending the generation + Vina docking run.</li>
+      </ul>
+    </div>
+  </section>
   </div>
 
-</div></body></html>
+</div>
+</body>
+</html>

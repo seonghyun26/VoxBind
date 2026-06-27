@@ -108,12 +108,13 @@ expand_task(){
         bfactor_rel|relb)          echo "bfactor_rel";;
         partial_charges|pc)        echo "partial_charges";;
         electron_affinity|ea)      echo "electron_affinity";;
+        hardness)                  echo "hardness";;
         adaptability)              echo "adaptability";;
         rmsf)                      echo "rmsf";;
         pose_stability|pose)       echo "pose_stability";;
         interaction_energy|ie)     echo "interaction_energy";;
         bfactors)                  echo "bfactor bfactor_rel";;
-        misato_qm|qm)              echo "partial_charges electron_affinity";;
+        misato_qm|qm)              echo "partial_charges electron_affinity hardness";;
         misato_md|md)              echo "adaptability rmsf pose_stability interaction_energy";;
         misato)                    echo "partial_charges electron_affinity adaptability rmsf pose_stability interaction_energy";;
         structural|struct)         echo "hbonds bfactor_rel";;
@@ -134,7 +135,7 @@ done
 [[ ${#TARGETS[@]} -gt 0 ]] || die "no tasks resolved from --tasks '$TASKS_RAW'"
 
 # soft coupling check: MISATO targets ↔ misato split
-_MISATO_RE='^(partial_charges|electron_affinity|adaptability|rmsf|pose_stability|interaction_energy)$'
+_MISATO_RE='^(partial_charges|electron_affinity|hardness|adaptability|rmsf|pose_stability|interaction_energy)$'
 has_misato=0; has_plain=0
 for r in "${TARGETS[@]}"; do
     if [[ "$r" =~ $_MISATO_RE ]]; then has_misato=1; else has_plain=1; fi
