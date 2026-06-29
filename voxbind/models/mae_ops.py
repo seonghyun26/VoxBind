@@ -120,6 +120,90 @@ def make_atom_biased_block_mask(
     return mask  # (B, 1, G, G, G) bool
 
 
+def make_cluster_mask(
+    atoms_sum: torch.Tensor,
+    block_size: int,
+    ratio: float,
+    n_seeds: int = 4,
+    generator: torch.Generator = None,
+) -> torch.Tensor:
+    """Sample a (B,1,G,G,G) bool mask as a few LARGE CONTIGUOUS atom-anchored clusters.
+
+    A dramatic alternative to scattered block masking (make_block_mask / atom_biased,
+    which both drop many small independent blocks). For each sample we pick `n_seeds`
+    seed blocks (∝ atom mass, like atom_biased), then mask the floor(ratio·gb³) blocks
+    that are CLOSEST (min Euclidean block-grid distance) to any seed. That yields
+    `n_seeds` large contiguous holes centred on chemistry, so the encoder must inpaint
+    whole substructures from long-range context instead of filling many tiny gaps —
+    the MAE "large contiguous masks force semantic inference" regime, but atom-anchored.
+    Mask cardinality is exact per sample. Reduces to a single big ball when n_seeds=1.
+    """
+    B, _, G, _, _ = atoms_sum.shape
+    assert G % block_size == 0, f"grid_dim {G} % block_size {block_size} != 0"
+    gb = G // block_size
+    n_blocks = gb ** 3
+    n_mask = max(1, int(round(ratio * n_blocks)))
+    k = max(1, min(int(n_seeds), n_blocks))
+    dev = atoms_sum.device
+    # per-block atom mass (≥0) → seed-sampling weights, biased toward atoms
+    w = (F.avg_pool3d(atoms_sum, block_size) * (block_size ** 3)).reshape(B, n_blocks)
+    w = w.clamp_min(0) + 1e-6
+    # integer block-grid coords (n_blocks, 3)
+    rng = torch.arange(gb, device=dev)
+    coords = torch.stack(torch.meshgrid(rng, rng, rng, indexing="ij"), dim=-1)\
+                  .reshape(-1, 3).float()
+    mask_flat = torch.zeros(B, n_blocks, dtype=torch.bool, device=dev)
+    for b in range(B):
+        seeds = torch.multinomial(w[b], k, replacement=False, generator=generator)
+        dist = torch.cdist(coords, coords[seeds]).amin(dim=1)        # (n_blocks,) → nearest seed
+        sel = dist.topk(n_mask, largest=False).indices
+        mask_flat[b, sel] = True
+    mask = mask_flat.view(B, 1, gb, gb, gb)
+    return mask.repeat_interleave(block_size, dim=2)\
+               .repeat_interleave(block_size, dim=3)\
+               .repeat_interleave(block_size, dim=4)  # (B, 1, G, G, G) bool
+
+
+def make_interface_mask(
+    lig_sum: torch.Tensor,
+    poc_sum: torch.Tensor,
+    block_size: int,
+    ratio: float,
+    tau: float = 0.0,
+    generator: torch.Generator = None,
+) -> torch.Tensor:
+    """Sample a (B,1,G,G,G) bool mask over the ligand–pocket INTERFACE (contact region).
+
+    The interface is where binding affinity originates: voxels where ligand and pocket
+    atoms are adjacent. We score each block by how much it has BOTH ligand and pocket
+    mass nearby — block-level product of (dilated) ligand and pocket occupancy — and mask
+    the floor(ratio·gb³) highest-scoring blocks. The encoder then reconstructs the contact
+    interface from its surroundings → learns binding-interaction structure. `tau`>0 adds
+    Gaussian tie-break noise (0 = deterministic top-K interface). Exact mask cardinality.
+    """
+    B, _, G, _, _ = lig_sum.shape
+    assert G % block_size == 0, f"grid_dim {G} % block_size {block_size} != 0"
+    gb = G // block_size
+    n_blocks = gb ** 3
+    n_mask = max(1, int(round(ratio * n_blocks)))
+    # block-resolution occupancy, dilated by 1 block so adjacency (not overlap) counts
+    lb = F.max_pool3d(F.avg_pool3d(lig_sum, block_size), kernel_size=3, stride=1, padding=1)
+    pb = F.max_pool3d(F.avg_pool3d(poc_sum, block_size), kernel_size=3, stride=1, padding=1)
+    score = (lb * pb).flatten(2)                                    # (B,1,gb³) high at the interface
+    if tau > 0:
+        std = score.std(dim=2, keepdim=True).clamp(min=1e-6)
+        noise = (torch.randn(score.shape, device=score.device, generator=generator)
+                 if generator is not None else torch.randn_like(score))
+        score = score + noise * std * tau
+    _, top_idx = score.topk(n_mask, dim=2)
+    blocks_flat = torch.zeros_like(score, dtype=torch.bool)
+    blocks_flat.scatter_(2, top_idx, True)
+    blocks = blocks_flat.view(B, 1, gb, gb, gb)
+    return blocks.repeat_interleave(block_size, dim=2)\
+                 .repeat_interleave(block_size, dim=3)\
+                 .repeat_interleave(block_size, dim=4)  # (B, 1, G, G, G) bool
+
+
 def per_sample_zscore(x: torch.Tensor, eps: float = 1e-6) -> torch.Tensor:
     """Z-score each (C, G, G, G) volume independently along spatial dims."""
     mu = x.mean(dim=(2, 3, 4), keepdim=True)

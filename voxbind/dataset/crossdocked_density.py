@@ -175,6 +175,8 @@ class DatasetCrossDockedDensity(DatasetCrossDockedXray):
         aug: bool = True,
         ligand_radius: float = 0.5,
         pocket_radius: float = -1,
+        n_lig_ch: int = 7,
+        n_poc_ch: int = 4,
         max_len: int = 30,
         delta_translate: float = 1.0,
         subset_n: Optional[int] = None,
@@ -202,6 +204,10 @@ class DatasetCrossDockedDensity(DatasetCrossDockedXray):
         # gradmag-only OTF: settable via dset.gradmag_as_density (config flag) in addition to the
         # VOXBIND_OTF_GRADMAG_AS_DENSITY env var; either feeds ‖∇ρ‖ into the density slot.
         self.gradmag_as_density = bool(gradmag_as_density)
+        # Ligand/pocket element-channel counts (voxelizer width). 7/4 default; 8/4 for the
+        # per-element "+other" corpus → the mask must keep atoms_channel up to n_lig_ch-1.
+        self.n_lig_ch = int(n_lig_ch)
+        self.n_poc_ch = int(n_poc_ch)
 
         rd = Path(resample_dir)
         recipe = json.loads((rd / "resample.json").read_text())
@@ -275,7 +281,7 @@ class DatasetCrossDockedDensity(DatasetCrossDockedXray):
         pocket_, ligand_ = self.data[index]
 
         # ── Ligand / pocket (identical to crossdocked_xray) ──────────────────────
-        mask = ligand_["atoms_channel"] < 7
+        mask = ligand_["atoms_channel"] < self.n_lig_ch
         if "radius" in ligand_:
             # Phase-2 diverse build: per-atom vdW radius is precomputed + stored in the
             # tuple (atoms_channel collapsed to 0 → single role channel) so EVERY heavy
@@ -295,7 +301,7 @@ class DatasetCrossDockedDensity(DatasetCrossDockedXray):
         }
         center_coords = ligand["coords"].mean(dim=0)  # crop center == atom-recenter center
 
-        mask = pocket_["atoms_channel"] < 4
+        mask = pocket_["atoms_channel"] < self.n_poc_ch
         poc_ch = pocket_["atoms_channel"][mask]
         if "radius" in pocket_:
             # Phase-2 diverse build (see ligand note): per-atom vdW radius stored in the

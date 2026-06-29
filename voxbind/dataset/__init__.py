@@ -31,6 +31,8 @@ def _make_dataset(cfg, split: str, aug: bool):
                 aug=aug,
                 ligand_radius=cfg.dset.ligand_radius,
                 pocket_radius=cfg.dset.pocket_radius,
+                n_lig_ch=cfg.dset.get("n_lig_ch", 7),
+                n_poc_ch=cfg.dset.get("n_poc_ch", 4),
                 max_len=cfg.dset.get("max_len", 30),
                 delta_translate=cfg.dset.get("delta_translate", 1.0),
                 subset_n=cfg.dset.get("subset_n", None),

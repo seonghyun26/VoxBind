@@ -57,7 +57,8 @@ from voxbind.models.adamw import AdamW
 from voxbind.models.mae_ops import (
     corrupt_noise, corrupt_reblur, corrupt_swap,
     gaussian_blur3d, gradient_magnitude3d, make_atom_biased_block_mask,
-    make_block_mask, per_sample_zscore, voxel_mask_to_patch_target,
+    make_block_mask, make_cluster_mask, make_interface_mask, per_sample_zscore,
+    voxel_mask_to_patch_target,
 )
 from voxbind.models.density_cha_mae import DensityChaMAE
 from voxbind.models.density_vit import DensityViTMAE
@@ -66,7 +67,7 @@ from voxbind.train_common import (  # shared pretext-independent engine (extract
     _ch_freq_cache_path, _cleanup_ddp, _compile_options, _reconcile_input_keys,
     _setup_ddp, _unwrap, _val_cache_path, _CH_FREQ_DEFAULT_N_SAMPLES,
     _CH_FREQ_POS_THRESH, _VALID_INPUT_MODES, log_metrics, maybe_compile_model,
-    precompute_channel_weights, precompute_val,
+    precompute_channel_weights, precompute_val, set_atom_channels,
 )
 from voxbind.models.ema import ModelEma
 from voxbind.utils.base_utils import create_exp_dir, makedir, seed_everything
@@ -149,9 +150,13 @@ class MAEPrefetcher:
         input_mode: str = "density",
         mask_strategy: str = "uniform",
         mask_atom_tau: float = 1.0,
+        mask_n_seeds: int = 4,
+        modal_mask_prob: float = 0.0,
         with_gradmag: bool = False,
         gradmag_reconstruct: bool = True,
         gradmag_noise: bool = False,
+        n_lig_ch: int = 7,
+        n_poc_ch: int = 4,
     ):
         assert pretext_style in ("mae", "electra", "denoise")
         assert density_source in ("synthetic", "xray"), (
@@ -160,8 +165,8 @@ class MAEPrefetcher:
         assert input_mode in _VALID_INPUT_MODES, (
             f"input_mode={input_mode!r}; expected one of {_VALID_INPUT_MODES}"
         )
-        assert mask_strategy in ("uniform", "atom_biased"), (
-            f"mask_strategy={mask_strategy!r}; expected 'uniform' or 'atom_biased'"
+        assert mask_strategy in ("uniform", "atom_biased", "cluster", "ligand", "interface"), (
+            f"mask_strategy={mask_strategy!r}; expected 'uniform', 'atom_biased', 'cluster', 'ligand' or 'interface'"
         )
         for op in corruption_ops:
             if op not in _RULE_BASED_OPS:
@@ -187,9 +192,13 @@ class MAEPrefetcher:
         self.input_mode = input_mode
         self.mask_strategy = mask_strategy
         self.mask_atom_tau = mask_atom_tau
+        self.mask_n_seeds = mask_n_seeds
+        self.modal_mask_prob = modal_mask_prob
         self.with_gradmag = with_gradmag
         self.gradmag_reconstruct = gradmag_reconstruct
         self.gradmag_noise = gradmag_noise
+        self.n_lig_ch = int(n_lig_ch)
+        self.n_poc_ch = int(n_poc_ch)
         self.layout = _channel_layout(input_mode, with_gradmag, gradmag_reconstruct)
         self.stream = torch.cuda.Stream()
 
@@ -197,8 +206,8 @@ class MAEPrefetcher:
         device = self.voxelizer.device
         with torch.cuda.stream(self.stream):
             with torch.no_grad():
-                v_lig = self.voxelizer.forward(batch["ligand"], num_channels=7)
-                v_poc = self.voxelizer.forward(batch["pocket"], num_channels=4)
+                v_lig = self.voxelizer.forward(batch["ligand"], num_channels=self.n_lig_ch)
+                v_poc = self.voxelizer.forward(batch["pocket"], num_channels=self.n_poc_ch)
 
                 # Density is only synthesized / loaded when the input actually
                 # needs it. atomblob* modes skip this entirely — no I/O via the
@@ -207,8 +216,8 @@ class MAEPrefetcher:
                     "density", "atomblob_density", "atomblob_merged_density",
                     "roleblob_density",
                 )
-                # atom-biased mask needs the all-channel atom sum even in atomblob mode
-                need_atoms_sum = need_density or self.mask_strategy == "atom_biased"
+                # atom-biased / cluster masks need the all-channel atom sum even in atomblob mode
+                need_atoms_sum = need_density or self.mask_strategy in ("atom_biased", "cluster")
                 d_clean = None
                 atoms_sum = None
                 sigma_lo, sigma_hi = self.sigma_range  # always defined for reblur
@@ -292,12 +301,47 @@ class MAEPrefetcher:
                         atoms_sum, self.block_size, self.mask_ratio,
                         tau=self.mask_atom_tau, generator=self.generator,
                     )
+                elif self.mask_strategy == "cluster":
+                    mask = make_cluster_mask(
+                        atoms_sum, self.block_size, self.mask_ratio,
+                        n_seeds=self.mask_n_seeds, generator=self.generator,
+                    )
+                elif self.mask_strategy == "ligand":
+                    # Pocket-conditioned ligand prediction: mask the blocks most occupied
+                    # by LIGAND atoms (reuse the atom-biased top-K, weighted by ligand mass
+                    # only) so the encoder reconstructs the ligand region from the pocket —
+                    # mirrors the de-novo placement task. Small mask_ratio ≈ ligand footprint.
+                    lig_sum = v_lig.sum(dim=1, keepdim=True)
+                    mask = make_atom_biased_block_mask(
+                        lig_sum, self.block_size, self.mask_ratio,
+                        tau=self.mask_atom_tau, generator=self.generator,
+                    )
+                elif self.mask_strategy == "interface":
+                    # Mask the ligand-pocket CONTACT region (where binding affinity lives),
+                    # reconstruct it from its surroundings → learn interaction structure.
+                    mask = make_interface_mask(
+                        v_lig.sum(dim=1, keepdim=True), v_poc.sum(dim=1, keepdim=True),
+                        self.block_size, self.mask_ratio,
+                        tau=self.mask_atom_tau, generator=self.generator,
+                    )
                 else:
                     mask = make_block_mask(B, G, self.block_size, self.mask_ratio, device)
                 # mask: (B, 1, G, G, G) — broadcasts across all input channels
 
                 if self.pretext_style == "mae":
                     x_in = x_noisy * (~mask).to(x_noisy.dtype)
+                    # Cross-modal masking (opt-in): per-sample, drop the ENTIRE density
+                    # (+gradmag) modality from the input so the encoder must predict it
+                    # from the atom channels alone — a cross-modal objective on top of the
+                    # spatial MAE. Target (x_clean) is unchanged, so the recon loss scores
+                    # the atoms→density prediction. No-op when modal_mask_prob=0.
+                    if self.modal_mask_prob > 0.0 and self.layout.get("n_density", 0) > 0:
+                        drop = torch.rand(B, device=device, generator=self.generator) < self.modal_mask_prob
+                        if bool(drop.any()):
+                            x_in[drop, self.layout["density_idx"]] = 0.0
+                            g_idx = self.layout.get("gradmag_idx", None)
+                            if g_idx is not None:
+                                x_in[drop, g_idx] = 0.0
                 elif self.pretext_style == "denoise":
                     # Recovery-from-noise: the FULL noised input (no masking); the recon
                     # loss covers every voxel (mask=all), so the model denoises the signal.
@@ -519,6 +563,7 @@ def val_epoch(cfg, model, val_cache, device, ch_weight=None) -> dict:
     input_mode = str(cfg.get("input_mode", "density"))
     mask_strategy = str(cfg.mae.get("mask_strategy", "uniform"))
     mask_atom_tau = float(cfg.mae.get("mask_atom_tau", 1.0))
+    mask_n_seeds = int(cfg.mae.get("mask_n_seeds", 4))
     patch_size = int(cfg.model.patch_size)
     with_gradmag = bool(cfg.get("with_gradmag", False))
     gradmag_reconstruct = bool(cfg.mae.get("gradmag_reconstruct", True))
@@ -528,7 +573,7 @@ def val_epoch(cfg, model, val_cache, device, ch_weight=None) -> dict:
         "density", "atomblob_density", "atomblob_merged_density",
         "roleblob_density",
     )
-    need_atoms_sum = need_density or mask_strategy == "atom_biased"
+    need_atoms_sum = need_density or mask_strategy in ("atom_biased", "cluster")
 
     if pretext_style == "electra":
         corruption_ops = tuple(cfg.electra.corruption_ops)
@@ -617,6 +662,10 @@ def val_epoch(cfg, model, val_cache, device, ch_weight=None) -> dict:
             if mask_strategy == "atom_biased":
                 mask = make_atom_biased_block_mask(
                     atoms_sum, block, ratio, tau=mask_atom_tau, generator=gen,
+                )
+            elif mask_strategy == "cluster":
+                mask = make_cluster_mask(
+                    atoms_sum, block, ratio, n_seeds=mask_n_seeds, generator=gen,
                 )
             else:
                 blocks = torch.rand(B, 1, G // block, G // block, G // block,
@@ -1044,6 +1093,9 @@ def run(cfg: DictConfig, method: str) -> None:
     # P1b/#2: normalize before create_exp_dir() writes cfg.yaml so downstream
     # tools that still consume the legacy top-level keys read the right layout.
     _reconcile_input_keys(cfg)
+    # Pin ligand/pocket element-channel counts for _channel_layout (default 7/4; 8/4 for the
+    # per-element "+other" corpus). Must precede any _channel_layout / model build below.
+    set_atom_channels(int(cfg.model.get("n_channels_ligand", 7)), int(cfg.model.get("n_channels_pocket", 4)))
     create_exp_dir(cfg, write=is_main)
     if world_size > 1:
         dist.barrier()
@@ -1375,9 +1427,13 @@ def run(cfg: DictConfig, method: str) -> None:
             input_mode=input_mode,
             mask_strategy=str(cfg.mae.get("mask_strategy", "uniform")),
             mask_atom_tau=float(cfg.mae.get("mask_atom_tau", 1.0)),
+            mask_n_seeds=int(cfg.mae.get("mask_n_seeds", 4)),
+            modal_mask_prob=float(cfg.mae.get("modal_mask_prob", 0.0)),
             with_gradmag=with_gradmag,
             gradmag_reconstruct=gradmag_reconstruct,
             gradmag_noise=gradmag_noise,
+            n_lig_ch=int(cfg.model.get("n_channels_ligand", 7)),
+            n_poc_ch=int(cfg.model.get("n_channels_pocket", 4)),
         )
         train_metrics, global_step = spec.train_epoch(
             cfg, prefetcher, model_train, optimizer, model_ema, device, global_step,

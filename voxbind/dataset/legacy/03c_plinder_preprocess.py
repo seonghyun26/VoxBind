@@ -106,7 +106,8 @@ def _is_protein_res(res) -> bool:
 
 
 def parse_cif_system(cif_path: Path, ligand_asym_id: str, ccd_codes: str,
-                     pocket_radius: float = 10.0, diverse: bool = False):
+                     pocket_radius: float = 10.0, diverse: bool = False,
+                     other_channel: bool = False):
     """Locate PLINDER's ligand instance in the deposited mmCIF + its pocket.
 
     Returns (lig_xyz, lig_ch, poc_xyz, poc_ch, lig_unsup, poc_unsup, lig_rad,
@@ -163,8 +164,12 @@ def parse_cif_system(cif_path: Path, ligand_asym_id: str, ccd_codes: str,
             else:
                 ch = PDBB._channel_of(el, PDBB.N_LIG_CH)
                 if ch is None:
-                    continue
+                    if not (other_channel and is_diverse_role_atom(el)):
+                        continue                      # per-element: drop out-of-vocab (or noble/dummy)
+                    ch = PDBB.N_LIG_CH                 # "other" channel = idx 7 (the 0.25% rare tail)
                 lig_xyz.append([a.pos.x, a.pos.y, a.pos.z]); lig_ch.append(ch)
+                if other_channel:
+                    lig_rad.append(vdw_radius(el))     # per-atom vdW (incl. common elems) → real blob size
     if not lig_xyz or not lig_all_heavy:     # no usable ligand atoms
         return None
 
@@ -186,8 +191,8 @@ def parse_cif_system(cif_path: Path, ligand_asym_id: str, ccd_codes: str,
                 else:
                     ch = PDBB._channel_of(el, PDBB.N_POC_CH)
                     if ch is None:
-                        continue
-                    rad = 0.0
+                        continue                       # pocket stays C/N/O/S (4) — drop the 0.01% rare
+                    rad = vdw_radius(el) if other_channel else 0.0
                 prot.append((ch, a.pos.x, a.pos.y, a.pos.z, rad)); poc_heavy.add(el)
     if not prot:
         return None
@@ -200,8 +205,9 @@ def parse_cif_system(cif_path: Path, ligand_asym_id: str, ccd_codes: str,
     if not poc_xyz:
         return None
 
-    lig_rad_t = torch.tensor(lig_rad, dtype=torch.float32) if diverse else None
-    poc_rad_t = torch.tensor(poc_rad, dtype=torch.float32) if diverse else None
+    store_rad = diverse or other_channel
+    lig_rad_t = torch.tensor(lig_rad, dtype=torch.float32) if store_rad else None
+    poc_rad_t = torch.tensor(poc_rad, dtype=torch.float32) if store_rad else None
     return (torch.tensor(lig_xyz, dtype=torch.float32),
             torch.tensor(lig_ch, dtype=torch.long),
             torch.tensor(poc_xyz, dtype=torch.float32),

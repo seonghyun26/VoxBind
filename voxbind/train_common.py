@@ -191,6 +191,20 @@ def _build_role_atoms(v_lig: torch.Tensor, v_poc: torch.Tensor) -> torch.Tensor:
     )                                                               # (B, 2, G³)
 
 
+# Ligand / pocket element-channel counts = the voxelizer width per partner. Default 7/4
+# (C,O,N,S,F,Cl,P / C,O,N,S). The per-element "+other" corpus uses 8/4 (a hybrid ligand
+# channel catching the 0.25% rare tail). Set ONCE at run() startup via set_atom_channels();
+# read by _channel_layout below (same module). The voxelize call-sites read cfg directly.
+LIG_CH = 7
+POC_CH = 4
+
+
+def set_atom_channels(n_lig: int, n_poc: int) -> None:
+    """Pin the ligand/pocket element-channel counts for _channel_layout (call once at startup)."""
+    global LIG_CH, POC_CH
+    LIG_CH, POC_CH = int(n_lig), int(n_poc)
+
+
 def _channel_layout(
     input_mode: str,
     with_gradmag: bool = False,
@@ -211,9 +225,9 @@ def _channel_layout(
     if input_mode == "density":
         n_atom = 0
     elif input_mode in ("atomblob", "atomblob_density"):
-        n_atom = 11
+        n_atom = LIG_CH + POC_CH                       # 7+4=11 default; 8+4=12 with the +other ligand channel
     elif input_mode in ("atomblob_merged", "atomblob_merged_density"):
-        n_atom = 7
+        n_atom = LIG_CH
     elif input_mode in ("roleblob", "roleblob_density"):
         n_atom = 2                                    # [ligand-occupancy, pocket-occupancy]
     else:
@@ -286,8 +300,8 @@ def precompute_val(loader_val, voxelizer, cfg) -> dict:
     all_lig, all_poc, all_xray, all_gradmag = [], [], [], []
     with torch.no_grad():
         for batch in loader_val:
-            all_lig.append(voxelizer.forward(batch["ligand"], num_channels=7).cpu())
-            all_poc.append(voxelizer.forward(batch["pocket"], num_channels=4).cpu())
+            all_lig.append(voxelizer.forward(batch["ligand"], num_channels=int(cfg.model.get("n_channels_ligand", 7))).cpu())
+            all_poc.append(voxelizer.forward(batch["pocket"], num_channels=int(cfg.model.get("n_channels_pocket", 4))).cpu())
             if density_source == "xray":
                 all_xray.append(batch["xray_density"].cpu())
             if cache_gradmag:
@@ -359,7 +373,8 @@ def precompute_channel_weights(
     With `merge_lig_poc=True`, pocket atoms are folded into the first 4 channels
     of the ligand 7-vec before counting.
     """
-    n_atom_channels = 7 if merge_lig_poc else 11
+    _nlig = int(cfg.model.get("n_channels_ligand", 7)); _npoc = int(cfg.model.get("n_channels_pocket", 4))
+    n_atom_channels = _nlig if merge_lig_poc else _nlig + _npoc
     path = _ch_freq_cache_path(cfg, n_samples, merge_lig_poc=merge_lig_poc)
     if os.path.isfile(path):
         logger.info(f"loading channel-frequency cache from {path}")
@@ -380,8 +395,8 @@ def precompute_channel_weights(
                        for k in ("coords", "radius", "atoms_channel")}
                 poc = {k: sample["pocket"][k].unsqueeze(0).to(device)
                        for k in ("coords", "radius", "atoms_channel")}
-                v_lig = voxelizer.forward(lig, num_channels=7)
-                v_poc = voxelizer.forward(poc, num_channels=4)
+                v_lig = voxelizer.forward(lig, num_channels=int(cfg.model.get("n_channels_ligand", 7)))
+                v_poc = voxelizer.forward(poc, num_channels=int(cfg.model.get("n_channels_pocket", 4)))
                 if merge_lig_poc:
                     atoms = _build_merged_atoms(v_lig, v_poc)          # (1, 7, G, G, G)
                 else:
