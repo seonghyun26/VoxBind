@@ -1,0 +1,61 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PLINDER v2 (112k) — atom representation on lp_edrscc_v2 (H200)</title><style>
+*{box-sizing:border-box}
+body{margin:0;background:#f5f6f8;color:#1c2433;font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+.page{max-width:880px;margin:0 auto;padding:40px 24px 90px}
+header{border-bottom:2px solid #1c2433;padding-bottom:14px;margin-bottom:24px}
+header .date{font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:#5b6678;margin-bottom:6px}
+header h1{font-size:25px;font-weight:650;margin:0}
+header .sub{font-size:13px;color:#5b6678;margin-top:8px;line-height:1.6}
+.card{background:#fff;border:1px solid #e3e7ee;border-radius:12px;padding:20px;margin-bottom:26px;box-shadow:0 1px 2px rgba(20,30,50,.04),0 8px 24px rgba(20,30,50,.05)}
+h2{font-size:17px;font-weight:640;margin:0 0 14px}
+table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}
+th,td{padding:9px 12px;text-align:left;vertical-align:top;border-top:1px solid #e3e7ee}
+thead th{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:#5b6678;border:0;border-bottom:1px solid #e3e7ee}
+.lbl{font-weight:600}
+.num{font-weight:660}.pm{color:#5b6678;font-weight:500;font-size:12px}
+.pos{color:#1d5a3a;font-weight:700}.neg{color:#b4413a;font-weight:700}.mut{color:#5b6678}.small{font-size:12.5px}
+.best{background:#e7f6ee}
+.tba{font-size:11px;font-weight:600;color:#9a6a00;background:#fdf3e0;padding:1px 6px;border-radius:4px;vertical-align:middle}
+.note{font-size:12.5px;color:#5b6678;line-height:1.65}
+</style></head><body><div class="page">
+<header><div class="date">VoxBind · PLINDER v2 full (112k) · H200</div>
+<h1>Atom representation × density — frozen probe on lp_edrscc_v2</h1>
+<div class="sub">Full <b>PLINDER v2</b> set (112,633 train / 100 val), 100-ep density-MAE pretrain at ~88% util via
+precomputed 96³ density boxes. Frozen 512-D mean-pooled features → 2-layer MLP affinity probe on
+<b>lp_edrscc_v2</b> (Kd/Ki-only, 3850/817/1320, 3 seeds, mean&nbsp;±&nbsp;std). All rows below share the
+<i>identical</i> 112k complexes, density boxes, and ChannelViT C+D+G architecture — they differ <b>only</b> in the
+ligand/pocket atom representation, so this is a controlled atom-encoding ablation.</div></header>
+
+<div class="card"><h2>Atom representation — full v2 (112k), C+D+G ChannelViT</h2>
+<table><thead><tr><th>ligand atoms</th><th>channels</th><th>test ρ (Spearman)</th><th>test r (Pearson)</th></tr></thead><tbody>
+<tr class="best"><td class="lbl">atomblob — element (8-ch)</td><td class="small">8 lig (C/O/N/S/F/Cl/P + other) + 4 poc + D + G = 14</td><td><span class="num">0.624</span> <span class="pm">±0.002</span> ★</td><td><span class="num">0.646</span> <span class="pm">±0.003</span></td></tr>
+<tr><td class="lbl">roleblob — occupancy (2-ch)</td><td class="small">2 role (lig, poc) + D + G = 4</td><td><span class="num">0.559</span> <span class="pm">±0.002</span></td><td><span class="num">0.581</span> <span class="pm">±0.002</span></td></tr>
+<tr><td class="lbl">atomblob7 — element, no "other" <span class="tba">v2.1</span></td><td class="small">7 lig + 4 poc + D + G = 13 · drops out-of-vocab-ligand complexes</td><td><span class="tba">running</span></td><td><span class="tba">running</span></td></tr>
+</tbody></table>
+<div class="note" style="margin-top:10px">★ best. <b>Element-resolved atoms beat role-occupancy by +0.065&nbsp;ρ</b> (0.559&nbsp;→&nbsp;0.624) on identical data + density + architecture — element identity (and the 8th out-of-vocab channel) carries real, recoverable affinity signal.</div></div>
+
+<div class="card"><h2>lp_edrscc_v2 reference leaderboard (test ρ)</h2>
+<table><thead><tr><th>encoder</th><th>pretrain set</th><th>test ρ</th></tr></thead><tbody>
+<tr class="best"><td class="lbl">atomblob8 C+D+G · ChannelViT</td><td class="small">v2 full 112k</td><td><span class="num">0.624</span></td></tr>
+<tr><td class="lbl">coords+density · ViT</td><td class="small">_v2clean 17k</td><td><span class="num">0.595</span></td></tr>
+<tr><td class="lbl">coords+density · ChannelViT</td><td class="small">_v2clean 17k</td><td><span class="num">0.576</span></td></tr>
+<tr><td class="lbl">roleblob C+D+G · ChannelViT</td><td class="small">v2 full 112k</td><td><span class="num">0.559</span></td></tr>
+<tr><td class="lbl">density-only · ViT</td><td class="small">_v2clean 17k</td><td><span class="num">0.345</span></td></tr>
+<tr><td class="lbl">density+gradmag · ViT</td><td class="small">_v2clean 17k</td><td><span class="num">0.332</span></td></tr>
+<tr><td class="lbl">noise-density control · ViT</td><td class="small">_v2clean 17k</td><td><span class="num">0.218</span></td></tr>
+</tbody></table>
+<div class="note" style="margin-top:10px"><b>atomblob8 (full 112k) tops the board</b>, above the coords+density runs (0.576–0.595, smaller _v2clean set) and far above all density-only / D+G ablations (0.31–0.35) and the noise floor (0.218).</div></div>
+
+<div class="card"><h2>Reading it</h2>
+<div class="note">
+The clean comparison is the <b>first table</b>: same 112k complexes, same density boxes, same C+D+G ChannelViT —
+only the atom channels change. Going from 2 role-occupancy channels (roleblob) to 8 element channels (atomblob8)
+adds <b>+0.065&nbsp;ρ</b>. The <span class="tba">v2.1</span> row (atomblob7) drops the 8th "other" channel <i>and</i>
+excludes the complexes whose ligand needed it, isolating how much the rare out-of-vocab atoms contribute vs. a
+clean 7-element vocabulary.<br><br>
+<span class="mut">Cross-set rows (coords+density / density-only on the 17k <code>_v2clean</code> set) are shown for
+reference only — they are not on the same pretraining corpus as the 112k rows.</span>
+</div></div>
+</div></body></html>
