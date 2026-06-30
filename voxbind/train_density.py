@@ -110,6 +110,24 @@ def _sample_op(
     return ops[idx]
 
 
+def nt_xent(z_a: torch.Tensor, z_b: torch.Tensor, temp: float) -> torch.Tensor:
+    """SimCLR NT-Xent contrastive loss for paired views.
+
+    z_a, z_b : (B, d) L2-normalized projections of two augmented views (here, two
+    independent MAE maskings) of the SAME B complexes. Positives = (a_i, b_i);
+    negatives = every other view in the local batch (2B-2 per anchor). Symmetric
+    over both view→view directions. Local in-batch negatives only (no cross-GPU
+    gather) — keeps the DDP backward a single clean reducer pass.
+    """
+    B = z_a.shape[0]
+    z = torch.cat([z_a, z_b], dim=0)                 # (2B, d)
+    sim = (z @ z.t()) / temp                         # (2B, 2B)
+    sim.fill_diagonal_(float("-inf"))                # drop self-similarity
+    targets = torch.cat([
+        torch.arange(B, 2 * B, device=z.device),     # a_i's positive is b_i
+        torch.arange(0, B, device=z.device),         # b_i's positive is a_i
+    ])
+    return F.cross_entropy(sim, targets)
 
 
 
@@ -152,6 +170,7 @@ class MAEPrefetcher:
         mask_atom_tau: float = 1.0,
         mask_n_seeds: int = 4,
         modal_mask_prob: float = 0.0,
+        contrastive: bool = False,
         with_gradmag: bool = False,
         gradmag_reconstruct: bool = True,
         gradmag_noise: bool = False,
@@ -194,6 +213,7 @@ class MAEPrefetcher:
         self.mask_atom_tau = mask_atom_tau
         self.mask_n_seeds = mask_n_seeds
         self.modal_mask_prob = modal_mask_prob
+        self.contrastive = bool(contrastive)
         self.with_gradmag = with_gradmag
         self.gradmag_reconstruct = gradmag_reconstruct
         self.gradmag_noise = gradmag_noise
@@ -328,6 +348,7 @@ class MAEPrefetcher:
                     mask = make_block_mask(B, G, self.block_size, self.mask_ratio, device)
                 # mask: (B, 1, G, G, G) — broadcasts across all input channels
 
+                x_in_b = None
                 if self.pretext_style == "mae":
                     x_in = x_noisy * (~mask).to(x_noisy.dtype)
                     # Cross-modal masking (opt-in): per-sample, drop the ENTIRE density
@@ -342,6 +363,12 @@ class MAEPrefetcher:
                             g_idx = self.layout.get("gradmag_idx", None)
                             if g_idx is not None:
                                 x_in[drop, g_idx] = 0.0
+                    # Contrastive 2nd view (opt-in): a SECOND independent uniform masking of
+                    # the SAME complex → the augmentation pair for the InfoNCE aux loss. The
+                    # encoder is pulled to map both maskings of a complex to the same vector.
+                    if self.contrastive:
+                        mask_b = make_block_mask(B, G, self.block_size, self.mask_ratio, device)
+                        x_in_b = x_noisy * (~mask_b).to(x_noisy.dtype)
                 elif self.pretext_style == "denoise":
                     # Recovery-from-noise: the FULL noised input (no masking); the recon
                     # loss covers every voxel (mask=all), so the model denoises the signal.
@@ -379,7 +406,7 @@ class MAEPrefetcher:
                         raise RuntimeError(f"unhandled corruption op: {op}")
 
                 target_str = torch.cat([v_lig, v_poc], dim=1)
-        return x_in, x_clean, mask, target_str
+        return x_in, x_clean, mask, target_str, x_in_b
 
     def __iter__(self):
         loader_it = iter(self.loader)
@@ -764,9 +791,13 @@ def train_epoch(cfg, prefetcher, model, optimizer, model_ema, device, global_ste
         pretext_key = "L_dens"
         lambda_pretext = float(cfg.mae.get("lambda_dens", 1.0))
     lambda_str = float(cfg.mae.get("lambda_str", 1.0))
+    # Contrastive auxiliary (opt-in): InfoNCE on two MAE-masked views per complex.
+    lambda_con = float(cfg.mae.get("contrastive_weight", 0.0))
+    con_temp = float(cfg.mae.get("contrastive_temp", 0.2))
+    contrastive_on = lambda_con > 0.0 and pretext_style == "mae"
 
     L_pretext_sum, L_str_sum, grad_norm_sum, n_batches = 0.0, 0.0, 0.0, 0
-    L_dens_atom_sum, L_dens_density_sum, L_dens_gradmag_sum = 0.0, 0.0, 0.0
+    L_dens_atom_sum, L_dens_density_sum, L_dens_gradmag_sum, L_con_sum = 0.0, 0.0, 0.0, 0.0
     accum_steps = max(1, int(cfg.get("accum_steps", 1)))
     grad_clip = float(cfg.mae.get("grad_clip", 0.0))
     optimizer.zero_grad(set_to_none=True)
@@ -775,16 +806,22 @@ def train_epoch(cfg, prefetcher, model, optimizer, model_ema, device, global_ste
     import contextlib
     amp_enabled, amp_ctx_fn = _amp_setup(cfg)
     channels_last = bool(cfg.get("channels_last", False))
-    for i, (x_in, x_clean, mask, target_str) in enumerate(prefetcher):
+    for i, (x_in, x_clean, mask, target_str, x_in_b) in enumerate(prefetcher):
         is_step = ((i + 1) % accum_steps == 0) or ((i + 1) == n_iter)
         sync_ctx = contextlib.nullcontext()
         if not is_step and hasattr(model, "no_sync"):
             sync_ctx = model.no_sync()
         if channels_last:
             x_in = x_in.to(memory_format=torch.channels_last_3d)
+        do_con = contrastive_on and x_in_b is not None
         with sync_ctx:
             with amp_ctx_fn():
-                out_pretext, a_hat = model(x_in)
+                if do_con:
+                    if channels_last:
+                        x_in_b = x_in_b.to(memory_format=torch.channels_last_3d)
+                    out_pretext, a_hat, z_a, z_b = model(x_in, x_in_b)
+                else:
+                    out_pretext, a_hat = model(x_in)
             out_pretext = out_pretext.float()        # loss math in fp32 (bf16 under autocast)
             if a_hat is not None:
                 a_hat = a_hat.float()
@@ -804,6 +841,10 @@ def train_epoch(cfg, prefetcher, model, optimizer, model_ema, device, global_ste
             L_pretext = losses[pretext_key]
             L_str = losses["L_str"]
             loss = lambda_pretext * L_pretext + lambda_str * L_str
+            if do_con:
+                L_con = nt_xent(z_a.float(), z_b.float(), con_temp)
+                loss = loss + lambda_con * L_con
+                L_con_sum += L_con.item()
             loss.backward()
         if is_step:
             if grad_clip > 0:
@@ -845,6 +886,8 @@ def train_epoch(cfg, prefetcher, model, optimizer, model_ema, device, global_ste
     if grad_clip > 0:
         n_steps = max(1, n_batches // accum_steps)
         metrics["grad_norm"] = grad_norm_sum / n_steps
+    if contrastive_on:
+        metrics["L_con"] = L_con_sum / n_b
     return metrics, global_step
 
 
@@ -908,8 +951,8 @@ def train_epoch_cha(cfg, prefetcher, model, optimizer, model_ema, device,
     optimizer.zero_grad(set_to_none=True)
     n_iter = len(prefetcher)
 
-    # MAEPrefetcher yields (x_in, x_clean, mask, target_str) — ChA uses x_clean only.
-    for i, (_x_in, x_clean, _mask, _target_str) in enumerate(prefetcher):
+    # MAEPrefetcher yields (x_in, x_clean, mask, target_str, x_in_b) — ChA uses x_clean only.
+    for i, (_x_in, x_clean, _mask, _target_str, _x_in_b) in enumerate(prefetcher):
         is_step = ((i + 1) % accum_steps == 0) or ((i + 1) == n_iter)
         sync_ctx = contextlib.nullcontext()
         if not is_step and hasattr(model, "no_sync"):
@@ -1067,6 +1110,8 @@ def _build_vit(cfg: DictConfig, device, layout: dict, is_main: bool):
         channel_groups=(tuple(int(c) for c in cfg.model.channel_groups)
                         if cfg.model.get("channel_groups", None) else None),
         channel_group_dropout=float(cfg.model.get("channel_group_dropout", 0.0)),
+        contrastive_dim=(int(cfg.mae.get("contrastive_dim", 128))
+                         if float(cfg.mae.get("contrastive_weight", 0.0)) > 0.0 else 0),
     ).to(device)
     if is_main:
         n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -1429,6 +1474,8 @@ def run(cfg: DictConfig, method: str) -> None:
             mask_atom_tau=float(cfg.mae.get("mask_atom_tau", 1.0)),
             mask_n_seeds=int(cfg.mae.get("mask_n_seeds", 4)),
             modal_mask_prob=float(cfg.mae.get("modal_mask_prob", 0.0)),
+            contrastive=(float(cfg.mae.get("contrastive_weight", 0.0)) > 0.0
+                         and prefetch_pretext == "mae"),
             with_gradmag=with_gradmag,
             gradmag_reconstruct=gradmag_reconstruct,
             gradmag_noise=gradmag_noise,

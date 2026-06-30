@@ -122,10 +122,9 @@ def mcell(d, kind, base_val, best=False, lower_better=False, is_base=False):
 # ── Phase 1 + Phase 2 (full-study baselines, both splits) ───────────────────────
 def baseline_tables():
     def row(enc, mod, label, best_v2=False, cls=""):
-        v2, lp = g(label, "lp_edrscc"), g(label, "lp")
+        v2 = g(label, "lp_edrscc")                       # lp_edrscc_v2 only (LP-raw columns removed)
         return (f'<tr class="{cls}"><td style="white-space:normal">{enc}</td><td style="white-space:normal">{mod}</td>'
-                f'<td>{cell(v2,"rho",best_v2)}</td><td>{cell(v2,"r")}</td>'
-                f'<td class="div">{cell(lp,"rho")}</td><td>{cell(lp,"r")}</td></tr>')
+                f'<td>{cell(v2,"rho",best_v2)}</td><td>{cell(v2,"r")}</td></tr>')
 
     # Phase 1 — modality (plain ViT). Δ density row.
     def delta_row():
@@ -146,7 +145,7 @@ def baseline_tables():
 
     # Phase 2 — architecture (C+D+G). ChannelViT is best on v2.
     p2 = (f'<table><thead><tr><th>Encoder</th><th>Input</th>'
-          f'<th>ρ (lp_edrscc_v2)</th><th>r</th><th class="div">ρ (lp raw)</th><th>r</th></tr></thead><tbody>'
+          f'<th>ρ (lp_edrscc_v2)</th><th>r</th></tr></thead><tbody>'
           + row("plain ViT (fused)", "C+D+G", "C+D+G")
           + row("ChannelViT [7,4,1,1]", "C+D+G", "C+D+G ChannelViT", best_v2=True, cls="hl")
           + row("ChA-MAEViT", "C+D+G", "C+D+G ChA-MAEViT", cls="mut")
@@ -161,10 +160,12 @@ def phase4_table():
     [7,4,2] reference). atomblob [7,4,2] highlighted as the reference."""
     rows = [
         # (label, representation, atom encoding, groups, ref?, running?)
-        ("ChannelViT g[7,4,2]",   "atomblob (element)",        "11 element 1-hot channels",        "[7,4,2]",  True,  False),
-        ("roleblob [1,1,1,1]",    "roleblob",                  "2 role ch · 7/4-vocab summed",     "[1,1,1,1]",False, False),
-        ("roleblob-div [1,1,1,1]","roleblob + diverse atoms",  "2 role ch · ALL atoms (vdW size)", "[1,1,1,1]",False, False),
-        ("roleblob-div [1,1,2]",  "roleblob-diverse + grp D+G","2 role ch · ALL atoms (vdW size)", "[1,1,2]",  False, True),
+        ("ChannelViT g[7,4,2]",       "atomblob (element)",          "11 element 1-hot channels",        "[7,4,2]",  True,  False),
+        ("roleblob [1,1,1,1]",        "roleblob",                    "2 role ch · 7/4-vocab summed",     "[1,1,1,1]",False, False),
+        ("roleblob-div [1,1,1,1]",    "roleblob + diverse atoms",    "2 role ch · ALL atoms (vdW size)", "[1,1,1,1]",False, False),
+        ("roleblob-div [1,1,2]",      "roleblob-diverse + grp D+G",  "2 role ch · ALL atoms (vdW size)", "[1,1,2]",  False, False),
+        ("roleblob-div [1,1,2] atombias","roleblob-div [1,1,2] + atom-bias","2 role ch · ALL atoms · atom_biased mask","[1,1,2]",False, False),
+        ("roleblob-div [1,1,2] v2-113K","roleblob-div [1,1,2] · 6.5× DATA","2 role ch · 113K corpus (vs 17K) · 50ep","[1,1,2]",False, False),
     ]
     body = ""
     for lbl, rep, enc, grp, ref, running in rows:
@@ -177,6 +178,87 @@ def phase4_table():
                  f'<td>{cell(d,"rho", ref)}</td><td>{cell(d,"r")}</td><td>{cell(d,"rmse")}</td></tr>')
     return (f'<table><thead><tr><th>Representation</th><th>Atom encoding</th><th>Groups</th>'
             f'<th>ρ (lp_edrscc_v2)</th><th>r</th><th>RMSE</th></tr></thead><tbody>{body}</tbody></table>')
+
+
+# ── Phase 5 — pretext objective (SSL signal; frontier follow-up on [7,4,2]) ──────
+def phase5_table():
+    rows = [
+        ("ChannelViT g[7,4,2]",        "masked reconstruction (MAE)", "mask 50% holes → inpaint",                       True,  False),
+        ("ChannelViT g[7,4,2] denoise","density denoising AE",        "no mask; density+∇ρ +N(0,1)·0.5 → reconstruct clean", False, False),
+    ]
+    body = ""
+    for lbl, obj, how, ref, running in rows:
+        d = g(lbl)
+        cls = ' class="hl"' if ref else ''
+        tag = ' <span class="tagref">ref</span>' if ref else (' <span class="tagrun">running</span>' if running and not d else '')
+        body += (f'<tr{cls}><td style="white-space:normal"><b>{esc(obj)}</b>{tag}</td>'
+                 f'<td class="small" style="white-space:normal">{esc(how)}</td>'
+                 f'<td>{cell(d,"rho", ref)}</td><td>{cell(d,"r")}</td><td>{cell(d,"rmse")}</td></tr>')
+    return (f'<table><thead><tr><th>Objective</th><th>What it reconstructs</th>'
+            f'<th>ρ (lp_edrscc_v2)</th><th>r</th><th>RMSE</th></tr></thead><tbody>{body}</tbody></table>')
+
+
+# ── Phase 6 — seed robustness (is any knob effect above the pretrain-seed noise floor?) ──
+def seed_robustness_table():
+    """Two pretrain seeds × {base [7,4,2], atom-bias}. Each ρ is already a 3-probe-seed mean;
+    this adds a 2nd PRETRAIN seed to expose the pretrain-seed variance — the real noise floor."""
+    rows = [
+        ("base [7,4,2]",      "ChannelViT g[7,4,2]",          "ChannelViT g[7,4,2] s1base"),
+        ("atom-bias [7,4,2]", "ChannelViT g[7,4,2] atombias", "ChannelViT g[7,4,2] s1ab"),
+    ]
+    body = ""
+    for name, lbl42, lbl1 in rows:
+        d42, d1 = g(lbl42), g(lbl1)
+        spread = (f'<span class="num">{abs(d42["rho"]-d1["rho"]):.3f}</span>'
+                  if (d42 and d1) else '<span class="mut">—</span>')
+        body += (f'<tr><td style="white-space:normal"><b>{esc(name)}</b></td>'
+                 f'<td>{cell(d42,"rho")}</td><td>{cell(d1,"rho")}</td><td>{spread}</td></tr>')
+    return (f'<table><thead><tr><th>Condition</th><th>ρ · pretrain seed 42</th>'
+            f'<th>ρ · pretrain seed 1</th><th>|spread|</th></tr></thead><tbody>{body}</tbody></table>')
+
+
+# ── Phase 7 — eval protocol (frozen probe vs end-to-end finetune) ───────────────
+def phase7_table():
+    rows = [
+        ("Frozen probe (head-only)", "encoder frozen → train MLP head",      "ft g742 frozen",     True),
+        ("End-to-end full-FT",       "unfreeze encoder, encoder_lr 1e-5",    "ft g742 end-to-end", False),
+    ]
+    body = ""
+    for name, how, lbl, ref in rows:
+        d = g(lbl); cls = ' class="hl"' if ref else ''
+        tag = ' <span class="tagref">ref</span>' if ref else ''
+        body += (f'<tr{cls}><td style="white-space:normal"><b>{esc(name)}</b>{tag}</td>'
+                 f'<td class="small" style="white-space:normal">{esc(how)}</td>'
+                 f'<td>{cell(d,"rho", ref)}</td><td>{cell(d,"r")}</td><td>{cell(d,"rmse")}</td></tr>')
+    return (f'<table><thead><tr><th>Protocol</th><th>What trains</th>'
+            f'<th>ρ (lp_edrscc_v2)</th><th>r</th><th>RMSE</th></tr></thead><tbody>{body}</tbody></table>')
+
+
+# ── Phase 8 — dramatic algorithm trials (new code, each w/ a trial{N}.html report) ──
+def phase8_table():
+    # (n, name, what changed, clean_results label, report html)
+    rows = [
+        (1, "Cluster masking",     "few LARGE contiguous atom-anchored holes (mask_strategy=cluster)",      "cluster mask [7,4,2]", "trial1.html"),
+        (2, "Cross-modal masking", "drop ALL density+gradmag, predict from atoms (modal_mask_prob=0.5)",    "crossmodal [7,4,2]",   "trial2.html"),
+        (3, "Ligand masking",      "mask the LIGAND, reconstruct from pocket (mask_strategy=ligand)",       "ligand mask [7,4,2]",  "trial3.html"),
+        (4, "Interface masking",   "mask the ligand-pocket CONTACT, reconstruct it (mask_strategy=interface)", "interface mask [7,4,2]", "trial4.html"),
+        (6, "Contrastive auxiliary","SimCLR InfoNCE on two MAE-masked views + MAE (contrastive_weight=0.05)", "contrastive [7,4,2]",  "trial6.html"),
+    ]
+    body = ""
+    for n, name, what, lbl, html in rows:
+        d = g(lbl)
+        if d:
+            dv = d["rho"] - 0.637
+            cls = "pos" if dv > 0.0015 else ("neg" if dv < -0.0015 else "mut")
+            rho = cell(d, "rho"); delta = f'<span class="{cls}">{dv:+.3f}</span>'
+        else:
+            rho = '<span class="tagrun">running</span>'; delta = '<span class="mut">—</span>'
+        body += (f'<tr><td style="white-space:nowrap"><b>trial {n}</b> · <a href="{html}">report&nbsp;↗</a></td>'
+                 f'<td style="white-space:normal"><b>{esc(name)}</b></td>'
+                 f'<td class="small" style="white-space:normal">{esc(what)}</td>'
+                 f'<td>{rho}</td><td>{delta}</td></tr>')
+    return (f'<table><thead><tr><th>Trial</th><th>Algorithm</th><th>What changed</th>'
+            f'<th>ρ (lp_edrscc_v2)</th><th>Δ vs 0.637</th></tr></thead><tbody>{body}</tbody></table>')
 
 
 # ── Phase 3 autoresearch progression chart ──────────────────────────────────────
@@ -268,12 +350,6 @@ def build():
     best_txt = f"{best_rho:.3f}" if best_rho is not None else "—"
     best_rmse_txt = f"{best_rmse:.3f}" if best_rmse is not None else "—"
 
-    prows = ""
-    for name, what, st in pending_rows():
-        sty = "background:#e8effe;color:#1d4ed8" if st in ("NEXT", "RUNNING") else "background:#eef1f6;color:#5b6678"
-        prows += (f'<tr><td style="white-space:normal">{esc(name)}</td><td class="small" style="white-space:normal">{esc(what)}</td>'
-                  f'<td><span style="font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:999px;{sty}">{st}</span></td></tr>')
-
     legend = ('<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:11px;height:11px;border-radius:50%;background:#1d6fd0"></span>trial</span>'
               ' <span style="display:inline-flex;align-items:center;gap:5px"><span style="width:13px;height:13px;border-radius:50%;background:#fff;border:2.5px solid #d97706"></span>best-so-far (Pareto frontier)</span>')
 
@@ -303,6 +379,7 @@ td:not(:first-child):not(:nth-child(2)),th:not(:first-child):not(:nth-child(2)){
 tr.ref td{{background:#eef2f7}}
 .tagref{{font-size:10px;font-weight:700;color:#1d4ed8;background:#e8effe;padding:1px 6px;border-radius:999px}}
 .tagrun{{font-size:10px;font-weight:700;color:#b07a17;background:#fcf3e0;padding:1px 6px;border-radius:999px}}
+a{{color:#1d4ed8;text-decoration:none;font-weight:600}}a:hover{{text-decoration:underline}}
 .best{{font-weight:700;color:#1d5a3a;background:#eaf5ee;border-radius:5px;padding:1px 5px}}
 tr.hl td{{background:#f3f8ff}}
 tr.delta td{{font-size:12.5px;color:#5b6678;background:#fcfdfe;font-style:italic}}
@@ -312,9 +389,9 @@ tr.delta td{{font-size:12.5px;color:#5b6678;background:#fcfdfe;font-style:italic
 <h1>Electron density: input modality, encoder architecture &amp; autoresearch</h1>
 <div class="sub">Frozen-encoder PDBbind affinity probe (pK). All encoders self-supervised on the <b>identical</b>
 PLINDER ligand-matched corpus (17,430/100, on-the-fly density resample-aug, 100 ep, eff-batch 128, uniform 50% mask),
-differing only in encoder architecture (Ph.2) or grouping/knob (Ph.3). Metrics = test Spearman ρ / Pearson r, mean ± std
-over 3 probe seeds. Built {ts} from <code>clean_results.csv</code>. <b>lp_edrscc_v2</b> = Kd/Ki-only, 3850/817/1320;
-<b>lp raw</b> = LP-PDBBind new_split (coords sees a larger pool than C+D+G).</div></header>
+differing only in encoder architecture (Ph.2), grouping/knob (Ph.3), or atom-type representation (Ph.4). Metrics =
+test Spearman ρ / Pearson r, mean ± std over 3 probe seeds. Built {ts} from <code>clean_results.csv</code>.
+Eval split <b>lp_edrscc_v2</b> = LP-PDBBind ∩ ED ∩ RSCC≥0.8, Kd/Ki-only, 3850/817/1320.</div></header>
 
 <div class="card"><h2>Phase 2 — Encoder architecture (C+D+G)</h2>
 <p class="csub">Given the 13-ch C+D+G input, which encoder reads the density channels best?</p>
@@ -337,14 +414,11 @@ over 3 probe seeds. Built {ts} from <code>clean_results.csv</code>. <b>lp_edrscc
 <div class="card"><h2>Phase 3 — trial table (completed)</h2>
 <p class="csub">Small Δ next to each value = vs the <b>[7,4,1,1] base</b> (T2, <span style="background:#eef2f7;padding:0 4px;border-radius:3px">highlighted</span>); <span class="pos">green</span> = better, <span class="neg">red</span> = worse (RMSE: lower is better).</p>
 <table><thead><tr><th>Trial</th><th>Input</th><th>What changed</th><th>test ρ</th><th>test r</th><th>test RMSE</th></tr></thead>
-<tbody>{trows}</tbody></table></div>
-
-<div class="card"><h2>Phase 3 — queued / running</h2>
-<table><thead><tr><th>Trial</th><th>What changes</th><th>status</th></tr></thead>
-<tbody>{prows}</tbody></table>
-<div class="note" style="margin-top:10px"><b>Autoresearch loop (GPU 0-3).</b> Masking-distribution axis now closed — mask 0.4 (0.626) and block 4
-(0.583, worst trial) both hurt; only atom-bias's <i>targeted</i> masking ever helped. Current arm = the
-<b>diverse-atom PLINDER-v2</b> representation (Phase 4): roleblob-diverse [1,1,2] running.</div></div>
+<tbody>{trows}</tbody></table>
+<div class="note" style="margin-top:10px"><b>Phase 3 concluded</b> — the ChannelViT knob/grouping sweep is closed: nothing beat [7,4,2] 0.637
+(atom-bias 0.641 within noise), and the masking-distribution axis (mask 0.4, block 4) hurt. Remaining knobs
+(lr/wd/head-d/[13]/dw0.5) deprioritized. <b>A 2nd-pretrain-seed re-run of atom-bias is in flight</b> to test
+whether the 0.641 replicates or was seed luck. The loop also explored representation (Phase 4) and pretext (Phase 5).</div></div>
 
 <div class="card"><h2>Phase 4 — atom-type representation (diverse PLINDER-v2)</h2>
 <p class="csub">Does keeping <b>all</b> heavy-atom types (metals/Se/halogens that the 7-lig/4-poc element vocab drops) help?
@@ -352,9 +426,70 @@ over 3 probe seeds. Built {ts} from <code>clean_results.csv</code>. <b>lp_edrscc
 the plinder-v2 build that admits every element. Reference = the element-channel atomblob winner [7,4,2].</p>
 {phase4_table()}
 <div class="note" style="margin-top:10px"><b>Diverse atoms help the role rep</b> (+0.031: 0.554→0.585) — the dropped metals/halogens carry real
-signal. But role-split still trails the element-channel atomblob (0.585 &lt; 0.637): collapsing atoms to role+size
-loses element info the 1-hot channels keep. <b>[1,1,2]</b> (group D+G — the campaign's one structural win) tests
-whether that transfers to the role rep.</div></div>
+signal. <b>The D+G-grouping win transfers</b>: [1,1,2] = 0.592 (+0.007 over [1,1,1,1] — the <i>same</i> +0.007 it gave
+the atomblob), so grouping density+gradmag is a representation-agnostic improvement. But <b>atom-bias does NOT
+transfer</b> — it <i>hurt</i> the role rep (−0.031 → 0.561): concentrating the mask on the few atom blobs destroys
+too much in a 2-channel rep (it only helped the redundant 11-channel atomblob). <b>Arm concluded:</b> role-split
+caps at <b>[1,1,2] 0.592 &lt; atomblob 0.637</b> — the gap is element-identity that role+size can't recover, not a
+tuning deficit. The on-theme frontier test (diverse atoms as <i>expanded element channels</i>) needs a vocab
+rebuild (element vocab is hardcoded 7-lig/4-poc) — flagged for approval, not a config override.
+<br><br><b>Data-scale verdict: 6.5× more pretrain data does NOT help.</b> Re-running the best role config [1,1,2] on
+the <b>full PLINDER-v2 corpus (113K complexes, 6.5× the 17.5K)</b> gives ρ <b>0.586</b> — flat vs the 17K run's 0.592
+(Δ −0.006, within seed noise), despite ~3.3× more total training samples. <b>Data quantity is not the bottleneck</b> —
+the plateau is representation/capacity-bound, not data-starved. This predicts the pending element-channel [8,4,2]-on-v2
+run will win (if at all) from its <i>per-element representation</i>, not from the larger corpus.</div></div>
+
+<div class="card"><h2>Phase 5 — pretext objective (SSL signal)</h2>
+<p class="csub">The whole campaign used masked-reconstruction MAE. Does a different self-supervised <b>objective</b> read
+density better? <b>Denoising</b> = no masking; corrupt the density+‖∇ρ‖ channels with Gaussian noise and reconstruct
+the <i>clean</i> field — a density-denoising autoencoder that directly targets density-reading. Frontier follow-up
+on the [7,4,2] winner.</p>
+{phase5_table()}
+<div class="note" style="margin-top:10px"><b>Denoising HURT</b> (0.587, −0.050). Same lesson as masking: the
+masked-reconstruction task forces the encoder to <i>infer missing structure from context</i> (harder, more
+semantic → better features), whereas denoise-in-place is a local low-level task. <b>MAE wins; the pretext axis is
+settled.</b> (electra — the other pretext — isn't applicable to 13-channel C+D+G.)</div></div>
+
+<div class="card"><h2>Phase 6 — seed robustness (the noise floor)</h2>
+<p class="csub">Every ρ above is a 3-<i>probe</i>-seed mean from a single <i>pretrain</i> run. But how much does the
+<b>pretrain</b> seed itself move ρ? This re-runs two conditions with a 2nd pretrain seed.</p>
+{seed_robustness_table()}
+<div class="note" style="margin-top:10px"><b>The apparent winner was seed luck.</b> Across two pretrain seeds the
+<b>two-seed means are base 0.633 ≥ atom-bias 0.630</b> — atom-bias is <i>not</i> better, and it's far less stable
+(spread 0.022 vs the base's 0.007). Its 0.641 was a single-seed high; seed 1 (0.619) is <i>below</i> the base. So
+<b>nothing reliably beats [7,4,2] ≈ 0.63</b>. The honest reading of the whole campaign: most Phase-3 trial-to-trial
+differences sit <i>within</i> this pretrain-seed noise; only the large effects exceed it — grouping over coords
+(real gain), and the clear regressions (capacity, denoise, block 4, role-rep). <b>Config-overridable design space
+exhausted.</b></div></div>
+
+<div class="card"><h2>Phase 7 — eval protocol (frozen probe vs end-to-end finetune)</h2>
+<p class="csub">Is ρ≈0.63 just the <i>frozen-probe</i> ceiling? Unfreeze the [7,4,2] encoder and finetune it end-to-end
+on lp_edrscc_v2 (<code>ft_scope=full</code>, encoder_lr 1e-5), vs the frozen head-only probe. Both 3 seeds.</p>
+{phase7_table()}
+<div class="note" style="margin-top:10px"><b>End-to-end finetuning HURTS</b> (0.605, −0.032, and worst RMSE) — and it's
+rock-stable (±.001), so not noise. Unfreezing a 46.7M encoder on only 3,850 train complexes <b>overfits</b>; the
+frozen pretrained features are <i>better</i>. So <b>0.637 is a genuine representation-quality ceiling, not a
+frozen-probe artifact</b> — finetuning does not unlock more. (A gentler protocol — partial <code>lastk</code> FT or
+lower encoder_lr — might avoid the overfit, but naive full-FT clearly loses.)</div></div>
+
+<div class="card"><h2>Phase 8 — dramatic algorithm trials</h2>
+<p class="csub">Pivot from minor-knob tweaks to <b>new algorithms</b>, each implemented as clean opt-in code (no-op default,
+non-destructive, like atom-bias) with its own implementation report. Off the [7,4,2] winner; <b>↗ links open the per-trial page</b>.</p>
+{phase8_table()}
+<div class="note" style="margin-top:10px"><b>trial 1</b> cluster masking <b>hurt</b> (0.609, −0.028 — large contiguous holes
+remove too much sparse local signal). <b>trial 2</b> cross-modal masking <b>tied</b> (0.635 — predicting density from
+atoms adds no affinity signal). <b>trial 3</b> ligand masking (mask the ligand, predict it from the pocket — the
+de-novo task itself) <b>running</b>. So far dramatic masking/objective changes confirm the plateau; the most
+on-theme binding-aware ideas <b>trial 3 (ligand 0.621) and trial 4 (interface 0.610) both HURT</b>. <b>Verdict:
+every targeted/concentrated masking hurts</b> (cluster −0.028, interface −0.027, ligand −0.016); uniform scattered
+masking is optimal. <b>Masking strategy is not the lever</b> — the plateau is robust to it.
+<br><br><b>trial 6 (contrastive auxiliary) badly HURT — ρ 0.499, the WORST result in the campaign</b> (−0.138). A SimCLR
+InfoNCE loss alongside MAE (two MAE-masked views pulled together, different complexes pushed apart) degraded val too
+(best_val 0.36 vs 0.53) — the features are worse, not mis-calibrated. <b>Instance discrimination is anti-affinity</b>:
+it pushes every different complex apart <i>equally</i>, discarding the graded similarity structure ρ needs (similar
+binders should sit close, not far). This was the last genuinely-different <i>objective</i>; both non-MAE objectives
+tried regress (denoise −0.050, contrastive −0.138), so <b>reconstruction is actively protected</b> and the plateau is
+firmly <b>data/probe-ceiling bound, not objective-bound</b> (the flat 6.5×-data result, Phase 4, agrees).</div></div>
 
 <div class="card"><h2>Reading it</h2>
 <div class="note">

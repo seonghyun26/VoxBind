@@ -433,15 +433,22 @@ class DensityViT(nn.Module):
             tokens = blk(tokens, rope=self.rope)
         return self.norm(tokens)
 
-    def forward(self, density: torch.Tensor) -> torch.Tensor:
-        """density: (B, n_in_channels, G, G, G) → (B, c_out, G, G, G)."""
+    def forward(self, density: torch.Tensor, return_tokens: bool = False):
+        """density: (B, n_in_channels, G, G, G) → (B, c_out, G, G, G).
+
+        `return_tokens=True` additionally returns the post-norm patch tokens
+        (B, T_patch, D) — the SAME representation `forward_features` exposes —
+        so a contrastive head can tap the pooled feature from this exact pass
+        (no extra trunk forward for view-a). The voxel output is unchanged."""
         z = self._tokenize(density)                      # (B, T, D)
         z = self.run_trunk(z, prepend_memory=True)       # (B, l+T, D) post-norm
         if self.memory_tokens is not None:
             z = z[:, self.n_memory_tokens:]              # drop memory tokens before to-voxel
+        tokens = z                                       # (B, T_patch, D) — probe representation
         z = self._pool_groups(z)                         # (B, N, D)
         z = self.decoder_proj(z)                         # (B, N, c_out·p³)
-        return self._tokens_to_voxels(z)                 # (B, c_out, G, G, G)
+        vox = self._tokens_to_voxels(z)                  # (B, c_out, G, G, G)
+        return (vox, tokens) if return_tokens else vox
 
     def forward_features(self, density: torch.Tensor) -> torch.Tensor:
         """Post-norm patch tokens (B, T_patch, D), memory tokens excluded and groups NOT
@@ -554,6 +561,7 @@ class DensityViTMAE(nn.Module):
         patch_embed_mode: str = "fused",  # "fused" | "channel_group" (ChannelViT) → forwarded to encoder
         channel_groups: Optional[Tuple[int, ...]] = None,  # channel_group: per-group channel counts
         channel_group_dropout: float = 0.0,  # ChannelViT HCS group-drop prob → forwarded to encoder
+        contrastive_dim: int = 0,     # >0 builds a SimCLR projector on the pooled tokens (opt-in aux)
     ):
         super().__init__()
         assert pretext_style in ("mae", "electra"), (
@@ -669,6 +677,17 @@ class DensityViTMAE(nn.Module):
         else:
             self.head_structure = None
 
+        # Contrastive projector (SimCLR-style, opt-in): pooled tokens (D) → MLP → proj_dim.
+        # Pretrain-only — NOT part of the `encoder.*` strip, so the frozen probe never
+        # sees it and downstream eval is bit-exact. None ⇒ pure MAE, no projector built.
+        self.contrastive_dim = int(contrastive_dim)
+        if self.contrastive_dim > 0:
+            self.projector = nn.Sequential(
+                nn.Linear(dim, dim), nn.GELU(), nn.Linear(dim, self.contrastive_dim),
+            )
+        else:
+            self.projector = None
+
         self.n_in_channels = n_in_channels
         self.n_recon_channels = n_recon
         self.n_channels = n_channels
@@ -681,10 +700,19 @@ class DensityViTMAE(nn.Module):
     def encode(self, density: torch.Tensor) -> torch.Tensor:
         return self.encoder(density)
 
-    def forward(
-        self, density: torch.Tensor
-    ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
-        z = self.encoder(density)
+    def _project(self, tokens: torch.Tensor) -> torch.Tensor:
+        """Pooled patch tokens (B, T_patch, D) → L2-normalized projection (B, proj_dim)."""
+        return F.normalize(self.projector(tokens.mean(dim=1)), dim=-1)
+
+    def forward(self, density: torch.Tensor, density_b: Optional[torch.Tensor] = None):
+        """Returns (out_pretext, out_structure). When `density_b` is given (a second
+        masked view of the same complex) AND a projector exists, ALSO returns two
+        L2-normalized contrastive projections (z_a, z_b) — both computed inside this
+        one forward so DDP's reducer sees every param. View-a's feature is tapped from
+        the MAE encoder pass (return_tokens); view-b costs one extra trunk forward."""
+        want_con = density_b is not None
+        enc = self.encoder(density, return_tokens=want_con)
+        z, tokens_a = enc if want_con else (enc, None)
         if self.pretext_style == "electra":
             out_pretext = self.head_rtd(z)            # (B, 1, g_p, g_p, g_p)
         elif self.dual_head:
@@ -700,6 +728,11 @@ class DensityViTMAE(nn.Module):
         out_structure = (
             self.head_structure(z) if self.head_structure is not None else None
         )
+        if want_con:
+            assert self.projector is not None, "contrastive forward needs contrastive_dim>0"
+            z_a = self._project(tokens_a)                          # view-a (free, MAE pass)
+            z_b = self._project(self.encoder.forward_features(density_b))  # view-b (+1 pass)
+            return out_pretext, out_structure, z_a, z_b
         return out_pretext, out_structure
 
 
