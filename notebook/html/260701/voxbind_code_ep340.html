@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>scene_vit samples - epoch 340 placeholder</title>
+  <style>
+    :root { --ink:#1a1a1a; --muted:#666; --line:#e3e3e3; --bg:#fafafa; --card:#fff; --good:#1d6b3a; --warn:#8a6d00; --bad:#9a2f2f; }
+    * { box-sizing:border-box; }
+    body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; color:var(--ink); background:var(--bg); margin:0; line-height:1.5; }
+    .wrap { max-width:1180px; margin:0 auto; padding:34px 26px 70px; }
+    h1 { font-size:24px; margin:0 0 4px; }
+    h2 { font-size:17px; margin:30px 0 10px; padding-bottom:6px; border-bottom:2px solid var(--line); }
+    .sub { color:var(--muted); font-size:13.5px; margin-bottom:8px; }
+    .sub span { margin-right:16px; }
+    .note { background:#fff8e6; border:1px solid #f0d98a; border-radius:8px; padding:14px 18px; margin:18px 0; font-size:14px; }
+    .mono { font-family:"SF Mono",Menlo,Consolas,monospace; font-size:11.5px; background:#f0f2f5; padding:1px 4px; border-radius:4px; }
+    table { width:100%; border-collapse:collapse; background:var(--card); font-size:13.5px; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+    th, td { text-align:left; padding:8px 12px; border-bottom:1px solid var(--line); font-variant-numeric:tabular-nums; }
+    th { background:#f2f3f5; font-size:11.5px; text-transform:uppercase; letter-spacing:.04em; color:#555; }
+    tr:last-child td { border-bottom:none; }
+    .ok { color:var(--good); font-weight:700; }
+    .wait { color:var(--warn); font-weight:700; }
+    .miss { color:var(--bad); font-weight:700; }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <h1>VoxBind scene_vit - generated ligands (epoch 340 placeholder)</h1>
+  <div class="sub">
+    <span>Run date: 2026-06-26</span>
+    <span>Experiment: <b>260701_voxbind_scene_vit_g742_plinder</b></span>
+    <span>Output: <span class="mono">samples/res_10targets</span></span>
+  </div>
+
+  <div class="note">
+    Sampling is still in progress. This placeholder mirrors the location/style of
+    <span class="mono">voxbind_code_ep111.html</span> and will be replaced with molecule
+    panels and metrics when the 10-target run finishes. Current status at creation:
+    2 completed SDFs (<span class="mono">target_00</span>, <span class="mono">target_02</span>);
+    sampler currently on pocket 3. Vina docking/evaluation has not been run yet.
+  </div>
+
+  <h2>Run Configuration</h2>
+  <table>
+    <tbody>
+      <tr><th>Field</th><th>Value</th></tr>
+      <tr><td>Checkpoint</td><td><span class="mono">voxbind/exps/260701_voxbind_scene_vit_g742_plinder/checkpoint.pth.tar</span></td></tr>
+      <tr><td>Python environment</td><td><span class="mono">/home/shpark/miniforge3/envs/voxbind/bin/python</span></td></tr>
+      <tr><td>GPU</td><td>CUDA_VISIBLE_DEVICES=0</td></tr>
+      <tr><td>Split / targets</td><td>val / 10 requested (<span class="mono">wjs.start=0</span>, <span class="mono">wjs.end=9</span>)</td></tr>
+      <tr><td>Samples per pocket</td><td>10</td></tr>
+      <tr><td>Dataset</td><td><span class="mono">data_train_plinder.pt</span>, x-ray enabled, gradmag model config</td></tr>
+      <tr><td>Log</td><td><span class="mono">voxbind/log/sample_260701_voxbind_scene_vit_g742_plinder_res_10targets.log</span></td></tr>
+    </tbody>
+  </table>
+
+  <h2>Sampling Status</h2>
+  <table>
+    <thead>
+      <tr><th>Target</th><th>Status</th><th>Artifact</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>target_00</td><td class="ok">complete</td><td><span class="mono">samples.sdf</span></td></tr>
+      <tr><td>target_01</td><td class="miss">directory only</td><td>no <span class="mono">samples.sdf</span> observed yet</td></tr>
+      <tr><td>target_02</td><td class="ok">complete</td><td><span class="mono">samples.sdf</span></td></tr>
+      <tr><td>target_03</td><td class="wait">running</td><td>sampler log reports pocket 3</td></tr>
+      <tr><td>target_04-target_09</td><td class="wait">pending</td><td>not started at placeholder creation</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Next Update</h2>
+  <p class="sub">
+    Replace this placeholder with final molecule grids, target-level summaries, and docking/property
+    metrics after sampling completes and optional Vina evaluation is run.
+  </p>
+</div>
+</body>
+</html>

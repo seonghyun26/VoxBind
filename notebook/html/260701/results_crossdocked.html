@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CrossDocked generation benchmark — VoxBind</title>
+<style>
+  :root {
+    --ink:#1c2433; --ink-soft:#5b6678; --line:#e3e7ee; --line-strong:#aeb6c4;
+    --bg:#f5f6f8; --card:#ffffff; --accent:#2f6f4f; --best-bg:#eaf5ee;
+    --tbd:#b07a17; --tbd-bg:#fcf3e0;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    font-size:16px; line-height:1.55; -webkit-font-smoothing:antialiased; }
+  .page { max-width:1400px; margin:0 auto; padding:48px 24px 96px; }
+
+  header.doc { border-bottom:2px solid var(--ink); padding-bottom:18px; margin-bottom:40px; }
+  header.doc .date { font-size:13px; letter-spacing:.12em; text-transform:uppercase;
+    color:var(--ink-soft); margin-bottom:6px; }
+  header.doc h1 { font-size:28px; font-weight:650; margin:0; letter-spacing:-0.01em; }
+  header.doc .meta { margin-top:10px; font-size:13px; color:var(--ink-soft); }
+  header.doc .meta span { margin-right:18px; }
+
+  .doc-section { margin-bottom:64px; }
+  .section-head { font-size:22px; font-weight:660; letter-spacing:-0.01em; color:var(--ink);
+    margin:0 0 18px; padding-bottom:12px; border-bottom:2px solid var(--line-strong);
+    display:flex; align-items:center; gap:14px; }
+  .section-head .sec-num { display:inline-flex; align-items:center; justify-content:center;
+    width:30px; height:30px; border-radius:8px; background:var(--accent); color:#fff;
+    font-size:15px; font-weight:700; flex:0 0 auto; }
+  .section-intro { font-size:13.5px; color:var(--ink-soft); margin:0 0 26px; max-width:1080px; line-height:1.6; }
+
+  section.block { margin-bottom:42px; }
+  .table-title { font-size:19px; font-weight:620; margin:0 0 4px; }
+  .table-title .tag { display:inline-block; font-size:11px; font-weight:600; letter-spacing:.04em;
+    padding:2px 9px; border-radius:999px; margin-left:9px; vertical-align:middle; }
+  .tag.done { background:var(--best-bg); color:#1d5a3a; }
+  .tag.supervised { background:#eef1f6; color:#5b6678; }
+  .tag.inprog { background:var(--tbd-bg); color:var(--tbd); }
+  .tag.pending { background:#eef1f6; color:#8a93a3; }
+  .table-sub { font-size:13.5px; color:var(--ink-soft); margin:0 0 18px; max-width:1080px; }
+  .table-sub code, .notes code, .section-intro code { background:#f0f2f5; padding:1px 5px; border-radius:4px; font-size:12.5px; }
+
+  .table-wrap { overflow-x:auto; border:1px solid var(--line); border-radius:12px; background:var(--card);
+    box-shadow:0 1px 2px rgba(20,30,50,.04),0 8px 24px rgba(20,30,50,.05); }
+  table.results { border-collapse:collapse; width:100%; font-variant-numeric:tabular-nums; }
+  table.results th, table.results td { padding:11px 12px; text-align:center; white-space:nowrap; }
+  table.results thead th { font-weight:600; color:var(--ink); background:#fafbfc; border-bottom:1px solid var(--line);
+    font-size:12.5px; }
+  table.results thead tr.grp th { border-bottom:1px solid var(--line); font-size:12px; }
+  table.results thead th.sub { font-size:11px; font-weight:500; color:var(--ink-soft); }
+  table.results th.grp-l { border-left:1px solid var(--line); }
+  table.results td.grp-l { border-left:1px solid var(--line); }
+  .col-key { text-align:left !important; font-weight:600; background:#fafbfc;
+    border-right:2px solid var(--line-strong); min-width:180px; }
+  table.results tbody tr { border-top:1px solid var(--line); }
+  table.results tbody tr:hover { background:#fbfcfd; }
+  tr.highlight td { background:var(--best-bg); }
+  tr.highlight td.col-key { color:#1d5a3a; }
+  tr.refrow td { color:var(--ink-soft); font-style:italic; }
+  .metric .sd { color:#9aa3b2; font-size:10.5px; font-weight:400; }
+  .arrow { font-size:11px; color:#9aa3b2; font-weight:500; }
+  .tbd { color:var(--tbd); font-weight:600; font-size:13px; }
+  .muted { color:var(--ink-soft); }
+
+  .notes { margin-top:18px; font-size:13px; color:var(--ink-soft); line-height:1.6; max-width:1080px; }
+  .notes b { color:var(--ink); font-weight:600; }
+  .notes ul { margin:6px 0 0; padding-left:20px; }
+  .notes li { margin-bottom:4px; }
+  .footer { margin-top:14px; font-size:12px; color:#9aa3b2; display:flex; justify-content:space-between; gap:16px; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="doc">
+    <div class="date">2026 · 07 · 01 — CrossDocked results</div>
+    <h1>Pocket-conditional generation benchmark on CrossDocked</h1>
+    <div class="meta">
+      <span>&#x1F9EA; CrossDocked2020 &middot; TargetDiff test split (100 pockets)</span>
+      <span>&#x1F4CA; VoxBind &middot; walk-jump sampling</span>
+      <span>&#x2699; voxbind env &middot; AutoDock Vina &middot; metrics.json v2</span>
+    </div>
+  </header>
+
+  <div class="doc-section">
+  <section class="block">
+    <p class="table-title">Table 2 &nbsp;&middot;&nbsp; CrossDocked test (100 pockets)
+      <span class="tag done">VoxBind &sigma;=0.9 &middot; reproduced</span></p>
+    <p class="table-sub">
+      Source: <code>voxbind/exps/reproduction/samples/res_test_100/target_*/metrics.json</code>.
+      Baseline rows (TargetDiff, VoxBind&nbsp;&sigma;=1.0) are <b>not yet reproduced</b> in this repo.
+    </p>
+    <div class="table-wrap">
+      <table class="results">
+        <thead>
+          <tr class="grp">
+            <th class="col-key" rowspan="2">Method</th>
+            <th class="grp-l" colspan="2">Vina Score &darr;</th>
+            <th class="grp-l" colspan="2">Vina Min &darr;</th>
+            <th class="grp-l" colspan="2">Vina Dock &darr;</th>
+            <th class="grp-l" colspan="2">High Affinity &uarr;</th>
+            <th class="grp-l" rowspan="2">QED &uarr;</th>
+            <th rowspan="2">SA &uarr;</th>
+            <th rowspan="2">Divers. &uarr;</th>
+            <th rowspan="2">Valid &uarr;</th>
+          </tr>
+          <tr>
+            <th class="sub grp-l">Avg</th><th class="sub">Med</th>
+            <th class="sub grp-l">Avg</th><th class="sub">Med</th>
+            <th class="sub grp-l">Avg</th><th class="sub">Med</th>
+            <th class="sub grp-l">Avg</th><th class="sub">Med</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="refrow">
+            <td class="col-key">Reference (test ligands)</td>
+            <td class="grp-l">&minus;5.64</td><td>&minus;6.40</td>
+            <td class="grp-l">&minus;6.54</td><td>&minus;6.43</td>
+            <td class="grp-l">&minus;7.27</td><td>&minus;7.11</td>
+            <td class="grp-l muted">&mdash;</td><td class="muted">&mdash;</td>
+            <td class="grp-l">0.48</td><td>0.73</td><td class="muted">&mdash;</td><td class="muted">&mdash;</td>
+          </tr>
+          <tr class="highlight">
+            <td class="col-key">VoxBind (&sigma;=0.9)</td>
+            <td class="grp-l">&minus;5.51</td><td>&minus;6.56</td>
+            <td class="grp-l">&minus;6.98</td><td>&minus;7.11</td>
+            <td class="grp-l">&minus;8.01</td><td>&minus;8.01</td>
+            <td class="grp-l">62.8%</td><td>68.5%</td>
+            <td class="grp-l">0.53</td><td>0.64</td><td>0.90</td><td>99.9%</td>
+          </tr>
+          <tr>
+            <td class="col-key">VoxBind (&sigma;=1.0)</td>
+            <td class="grp-l tbd">TBD</td><td class="tbd">TBD</td>
+            <td class="grp-l tbd">TBD</td><td class="tbd">TBD</td>
+            <td class="grp-l tbd">TBD</td><td class="tbd">TBD</td>
+            <td class="grp-l tbd">TBD</td><td class="tbd">TBD</td>
+            <td class="grp-l tbd">TBD</td><td class="tbd">TBD</td><td class="tbd">TBD</td><td class="tbd">TBD</td>
+          </tr>
+          <tr>
+            <td class="col-key">TargetDiff <span class="muted">(generative)</span></td>
+            <td class="grp-l tbd">TBD</td><td class="tbd">TBD</td>
+            <td class="grp-l tbd">TBD</td><td class="tbd">TBD</td>
+            <td class="grp-l tbd">TBD</td><td class="tbd">TBD</td>
+            <td class="grp-l tbd">TBD</td><td class="tbd">TBD</td>
+            <td class="grp-l tbd">TBD</td><td class="tbd">TBD</td><td class="tbd">TBD</td><td class="tbd">TBD</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="notes">
+      <b>Status (2026-07-01).</b>
+      <ul>
+        <li><b>VoxBind &sigma;=0.9</b> &mdash; <b>reproduced.</b> 100 pockets &times; 100 de&nbsp;novo samples, full <code>vina_dock</code>
+          scoring. Generated molecules dock <b>better than the reference ligands on average</b>
+          (&minus;8.01 vs &minus;7.27 Vina&nbsp;Dock), with 62.8% high-affinity rate and 0.90 diversity.</li>
+        <li><b>VoxBind &sigma;=1.0</b> &mdash; pending. No <code>exp_sig1.0</code> checkpoint or samples exist yet;
+          needs a training/finetune run then the same sampling + scoring pipeline.</li>
+        <li><b>TargetDiff (generative)</b> &mdash; pending. Only paper-cited numbers exist so far
+          (<code>figures/voxbind_results.png</code>, overlaid in <code>notebook/02a_results_docking.ipynb</code>);
+          molecules have not been re-sampled or re-scored in this repo.</li>
+        <li><b>Secondary metrics</b> (from the same <code>metrics.json</code>): mean similarity-to-reference 0.23,
+          near-zero steric clashes (&asymp;0.001 clashing atoms/mol).</li>
+      </ul>
+    </div>
+    <div class="footer">
+      <span>Data: <code>voxbind/exps/reproduction/samples/res_test_100/</code></span>
+      <span>Eval: <code>notebook/webapp/metrics.py</code> &middot; TargetDiff <code>get_chem</code> + <code>docking_vina</code></span>
+    </div>
+  </section>
+  </div>
+
+</div>
+</body>
+</html>
