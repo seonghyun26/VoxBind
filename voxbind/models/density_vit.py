@@ -183,9 +183,10 @@ class MultiHeadSelfAttention(nn.Module):
 
 
 class TransformerBlock(nn.Module):
-    """Pre-LN ViT block: x + MHSA(LN(x)) → x + MLP(LN(x))."""
+    """Pre-LN ViT block: x + DropPath(MHSA(LN(x))) → x + DropPath(MLP(LN(x)))."""
 
-    def __init__(self, dim: int, n_heads: int, mlp_ratio: int = 4, dropout: float = 0.0):
+    def __init__(self, dim: int, n_heads: int, mlp_ratio: int = 4, dropout: float = 0.0,
+                 drop_path: float = 0.0):
         super().__init__()
         self.norm1 = nn.LayerNorm(dim)
         self.attn = MultiHeadSelfAttention(dim, n_heads, dropout=dropout)
@@ -198,11 +199,121 @@ class TransformerBlock(nn.Module):
             nn.Linear(hidden, dim),
             nn.Dropout(dropout),
         )
+        self.drop_path = DropPath(drop_path)
 
     def forward(self, x: torch.Tensor, rope: "RoPE3D" = None) -> torch.Tensor:
-        x = x + self.attn(self.norm1(x), rope=rope)
-        x = x + self.mlp(self.norm2(x))
+        x = x + self.drop_path(self.attn(self.norm1(x), rope=rope))
+        x = x + self.drop_path(self.mlp(self.norm2(x)))
         return x
+
+
+class DropPath(nn.Module):
+    """Stochastic depth (Huang 2016 / DeiT): per-SAMPLE, drop the whole residual branch
+    with prob `p` during training (surviving branches rescaled by 1/(1−p) to keep the
+    expected value). Eval / p=0 → identity (frozen probe + checkpoints bit-exact). Drops
+    activations, not parameters, so every param still gets grad (DDP-safe)."""
+
+    def __init__(self, p: float = 0.0):
+        super().__init__()
+        self.p = float(p)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if not self.training or self.p <= 0.0:
+            return x
+        keep = 1.0 - self.p
+        shape = (x.shape[0],) + (1,) * (x.ndim - 1)         # per-sample, broadcast over (T,D)
+        mask = torch.empty(shape, dtype=x.dtype, device=x.device).bernoulli_(keep)
+        return x * mask / keep
+
+
+# ── RadiusAtomEmbed (learnable radius-conditioned atom embedding, opt-in) ─────
+
+class RadiusAtomEmbed(nn.Module):
+    """Replace the per-element one-hot atom channels with a learned k-dim feature
+    that is a NONLINEAR function of each element's vdW radius.
+
+    Two small MLPs φ_lig, φ_poc map a scalar radius → ℝ^k, evaluated at the (fixed)
+    per-element radii to give embedding matrices W_lig (n_lig×k), W_poc (n_poc×k).
+    The k-channel ligand/pocket embedding grids are then `einsum`-contractions of the
+    one-hot occupancy grids with these matrices — which, for the type-determined radii
+    we use, is *exactly* the per-atom splat ``Σ_a φ(role_a, r_a)·g_a`` (a zeroed/masked
+    voxel maps to a zero embedding, so MAE masking commutes with the embedding).
+
+    Because φ sees only the *continuous* radius (nonlinear), this is NOT absorbable into
+    the linear patch-embed when k < n_elements (a learned soft vocabulary), and it
+    recovers the per-element separation that role-occupancy (roleblob) sums away. Note:
+    elements that share a vdW radius (e.g. ligand S and P are both 1.8 Å) necessarily
+    map to the same embedding — radius cannot tell them apart, by construction.
+
+    DISTANCE CONDITIONING (opt-in, `scales` = list of extra-blur σ in voxels): the radial
+    profile is learned as a MIXTURE over B fixed Gaussian scales. φ now outputs (B·k); for
+    each scale b the occupancy is depthwise-blurred by σ_b (σ=0 → identity) and contracted
+    with that scale's W slice, then summed: ``e = Σ_b W[:,b,:] · blur_{σ_b}(occupancy)``. So
+    near an atom the deposited feature is a learned mixture of Gaussians at increasing widths
+    — a learned (widening) radial profile instead of the single fixed Gaussian. scales=[0.0]
+    (default) → exactly the single-scale version above (φ outputs k, no blur).
+
+    Input grid layout (channel order): [ n_lig ligand | n_poc pocket | n_pt passthrough ]
+    where passthrough = density (+ gradmag) is forwarded unchanged. Output width = 2k+n_pt.
+    """
+
+    def __init__(self, lig_radii, poc_radii, k: int, hidden: int = 16, n_passthrough: int = 2,
+                 scales=None):
+        super().__init__()
+        self.n_lig = len(lig_radii)
+        self.n_poc = len(poc_radii)
+        self.k = int(k)
+        self.n_pt = int(n_passthrough)
+        self.scales = [float(s) for s in (scales if scales is not None else [0.0])]
+        self.n_scales = len(self.scales)
+        self.register_buffer("lig_r", torch.tensor(lig_radii, dtype=torch.float32).view(-1, 1))
+        self.register_buffer("poc_r", torch.tensor(poc_radii, dtype=torch.float32).view(-1, 1))
+        # fixed separable 1-D Gaussian kernels per non-zero scale (depthwise blur basis).
+        for b, s in enumerate(self.scales):
+            if s > 0:
+                r = int(3 * s) + 1
+                xs = torch.arange(-r, r + 1, dtype=torch.float32)
+                ker = torch.exp(-(xs ** 2) / (2 * s * s)); ker = ker / ker.sum()
+                self.register_buffer(f"gk_{b}", ker)            # (2r+1,)
+        def _mlp():  # outputs B·k → reshaped (·, B, k) so each scale gets its own weights
+            return nn.Sequential(nn.Linear(1, hidden), nn.GELU(),
+                                 nn.Linear(hidden, self.n_scales * self.k))
+        self.phi_lig, self.phi_poc = _mlp(), _mlp()
+
+    @property
+    def out_channels(self) -> int:
+        return 2 * self.k + self.n_pt
+
+    @staticmethod
+    def _sep_blur(x: torch.Tensor, ker: torch.Tensor) -> torch.Tensor:
+        """Depthwise separable 3-D Gaussian blur (same 1-D kernel along each axis)."""
+        C, K = x.shape[1], ker.numel()
+        pad = K // 2
+        kz = ker.view(1, 1, K, 1, 1).expand(C, 1, K, 1, 1)
+        ky = ker.view(1, 1, 1, K, 1).expand(C, 1, 1, K, 1)
+        kx = ker.view(1, 1, 1, 1, K).expand(C, 1, 1, 1, K)
+        x = F.conv3d(x, kz, padding=(pad, 0, 0), groups=C)
+        x = F.conv3d(x, ky, padding=(0, pad, 0), groups=C)
+        x = F.conv3d(x, kx, padding=(0, 0, pad), groups=C)
+        return x
+
+    def _embed(self, v, W):
+        """v: (B, n_elem, G³); W: (n_elem, B_scales, k) → (B, k, G³) summed over scales."""
+        out = 0.0
+        for b, s in enumerate(self.scales):
+            vb = v if s == 0 else self._sep_blur(v, getattr(self, f"gk_{b}"))
+            out = out + torch.einsum("bcxyz,ck->bkxyz", vb, W[:, b, :])
+        return out
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        W_lig = self.phi_lig(self.lig_r).view(self.n_lig, self.n_scales, self.k)
+        W_poc = self.phi_poc(self.poc_r).view(self.n_poc, self.n_scales, self.k)
+        v_lig = x[:, : self.n_lig]                  # (B, n_lig, G,G,G)
+        v_poc = x[:, self.n_lig : self.n_lig + self.n_poc]
+        passth = x[:, self.n_lig + self.n_poc :]    # density (+ gradmag)
+        e_lig = self._embed(v_lig, W_lig)           # (B, k, G,G,G), learned radial profile
+        e_poc = self._embed(v_poc, W_poc)
+        return torch.cat([e_lig, e_poc, passth], dim=1)   # (B, 2k+n_pt, G,G,G)
 
 
 # ── DensityViT (encoder w/ to-spatial head, drop-in for CNN density_encoder) ──
@@ -240,11 +351,19 @@ class DensityViT(nn.Module):
         channel_groups: Optional[Tuple[int, ...]] = None,  # channel_group: per-group channel counts (sum=n_in)
         n_memory_tokens: int = 0,          # ChA-MAE: l learnable cross-channel memory tokens prepended pre-trunk
         channel_group_dropout: float = 0.0,  # ChannelViT HCS: per-forward prob of dropping each whole channel-group (train-only)
+        radius_embed: Optional[dict] = None,  # opt-in learnable radius→k atom embedding front-end (see RadiusAtomEmbed)
+        drop_path: float = 0.0,            # stochastic depth: max DropPath rate, linearly ramped 0→drop_path over depth
     ):
         super().__init__()
         assert grid_dim % patch_size == 0, (
             f"grid_dim={grid_dim} must be divisible by patch_size={patch_size}"
         )
+        # Learnable radius-conditioned atom embedding (opt-in): transforms the raw
+        # [n_lig|n_poc|passthrough] input into 2k+n_pt channels BEFORE patch_embed. When
+        # set, n_in_channels / channel_groups passed in must already describe the POST-embed
+        # width (the caller, DensityViTMAE, computes them). frozen probe inherits it (it lives
+        # in the encoder), so feeding the raw atomblob grid just works.
+        self.atom_embed = RadiusAtomEmbed(**radius_embed) if radius_embed else None
         self.grid_dim = grid_dim
         self.patch_size = patch_size
         self.n_in_channels = n_in_channels
@@ -265,10 +384,18 @@ class DensityViT(nn.Module):
             f"unknown patch_embed_mode={patch_embed_mode!r} (expected 'fused' or 'channel_group')"
         )
         self.patch_embed_mode = patch_embed_mode
+        # With the radius-embed front-end, patch_embed/grouping operate on the POST-embed
+        # width (2k+n_pt), regrouped (k,k,n_pt); n_in_channels above stays the RAW width the
+        # encoder receives (atom_embed bridges raw→pe in _tokenize). Without it, pe == raw.
+        pe_in, pe_groups = n_in_channels, channel_groups
+        if self.atom_embed is not None:
+            pe_in = self.atom_embed.out_channels
+            if patch_embed_mode == "channel_group":
+                pe_groups = (self.atom_embed.k, self.atom_embed.k, self.atom_embed.n_pt)
         if patch_embed_mode == "fused":
             # one Conv3d fuses ALL input channels into each patch token (original ViT).
             self.patch_embed = nn.Conv3d(
-                n_in_channels, dim, kernel_size=patch_size, stride=patch_size, padding=0
+                pe_in, dim, kernel_size=patch_size, stride=patch_size, padding=0
             )
             self.group_proj = None
             self.group_embed = None
@@ -279,14 +406,14 @@ class DensityViT(nn.Module):
             # self-attention spans (group × patch) tokens and can attend across groups.
             # Each group keeps its own projection (groups differ in channel count + meaning);
             # a learnable group embedding tags every patch token of that group.
-            assert channel_groups is not None and sum(channel_groups) == n_in_channels, (
-                f"channel_groups={channel_groups} must sum to n_in_channels={n_in_channels}"
+            assert pe_groups is not None and sum(pe_groups) == pe_in, (
+                f"channel_groups={pe_groups} must sum to (post-embed) n_in_channels={pe_in}"
             )
             # pos_encoding='rope3d' IS supported here: the (group, patch) token axis is
             # group-tiled, so RoPE3D tiles its per-patch table nG times (see _cos_sin) —
             # every group's patch reuses the same spatial rotation; group identity is
             # carried by group_embed, not by position. (learnable PE also fine.)
-            self.channel_groups = tuple(int(c) for c in channel_groups)
+            self.channel_groups = tuple(int(c) for c in pe_groups)
             self.n_groups = len(self.channel_groups)
             self.patch_embed = None
             self.group_proj = nn.ModuleList([
@@ -321,9 +448,12 @@ class DensityViT(nn.Module):
         else:
             self.memory_tokens = None
 
+        # Stochastic depth: linearly ramp the DropPath rate 0 → drop_path across blocks
+        # (DeiT schedule — shallow blocks barely dropped, deepest dropped at `drop_path`).
+        dpr = [drop_path * i / max(1, depth - 1) for i in range(depth)]
         self.blocks = nn.ModuleList([
-            TransformerBlock(dim, n_heads, mlp_ratio=mlp_ratio, dropout=dropout)
-            for _ in range(depth)
+            TransformerBlock(dim, n_heads, mlp_ratio=mlp_ratio, dropout=dropout, drop_path=dpr[i])
+            for i in range(depth)
         ])
         self.norm = nn.LayerNorm(dim)
 
@@ -396,6 +526,8 @@ class DensityViT(nn.Module):
         """(B, C, G,G,G) → (B, T, D) patch tokens. fused: T=N patches. channel_group:
         T=n_groups·N — one token-set per group, +learnable group embedding, +shared patch PE.
         channel_group + HCS (train-only): T=nG_keep·N over a random non-empty group subset."""
+        if self.atom_embed is not None:
+            density = self.atom_embed(density)     # (B, raw) → (B, 2k+n_pt) learnable radius embed
         if self.patch_embed_mode == "fused":
             z = self.patch_embed(density).flatten(2).transpose(1, 2)        # (B, N, D)
             if self.pos_embed is not None:
@@ -562,6 +694,9 @@ class DensityViTMAE(nn.Module):
         channel_groups: Optional[Tuple[int, ...]] = None,  # channel_group: per-group channel counts
         channel_group_dropout: float = 0.0,  # ChannelViT HCS group-drop prob → forwarded to encoder
         contrastive_dim: int = 0,     # >0 builds a SimCLR projector on the pooled tokens (opt-in aux)
+        radius_embed: Optional[dict] = None,  # opt-in learnable radius→k atom embedding (RadiusAtomEmbed kwargs)
+        drop_path: float = 0.0,            # stochastic depth max rate (ramped over depth) → forwarded to encoder
+        data2vec: bool = False,            # opt-in: build the data2vec latent-prediction predictor head
     ):
         super().__init__()
         assert pretext_style in ("mae", "electra"), (
@@ -606,6 +741,10 @@ class DensityViTMAE(nn.Module):
             layers.append(nn.Conv3d(head_h, c_out, kernel_size=3, padding=1))
             return nn.Sequential(*layers)
 
+        # Radius-embed front-end (opt-in): DensityViT internally widens its patch_embed to
+        # the post-embed width (2k+n_pt) and regroups (k,k,n_pt) while keeping n_in_channels
+        # = the RAW atom+density width (what it receives & the probe must feed). The MAE still
+        # reconstructs the RAW n_recon channels, so pass the raw n_in_channels / channel_groups.
         self.encoder = DensityViT(
             grid_dim=grid_dim,
             patch_size=patch_size,
@@ -621,6 +760,8 @@ class DensityViTMAE(nn.Module):
             patch_embed_mode=patch_embed_mode,
             channel_groups=channel_groups,
             channel_group_dropout=channel_group_dropout,
+            radius_embed=radius_embed,
+            drop_path=drop_path,
         )
 
         if pretext_style == "mae":
@@ -688,6 +829,15 @@ class DensityViTMAE(nn.Module):
         else:
             self.projector = None
 
+        # data2vec predictor (opt-in): 2-layer MLP on the per-patch pooled tokens that
+        # predicts the EMA-teacher's contextualized latent at masked patches. Pretrain-only
+        # (NOT in the `encoder.*` strip) → frozen probe bit-exact.
+        self.data2vec = bool(data2vec)
+        self.d2v_predictor = (
+            nn.Sequential(nn.Linear(dim, dim), nn.GELU(), nn.Linear(dim, dim))
+            if self.data2vec else None
+        )
+
         self.n_in_channels = n_in_channels
         self.n_recon_channels = n_recon
         self.n_channels = n_channels
@@ -704,15 +854,23 @@ class DensityViTMAE(nn.Module):
         """Pooled patch tokens (B, T_patch, D) → L2-normalized projection (B, proj_dim)."""
         return F.normalize(self.projector(tokens.mean(dim=1)), dim=-1)
 
-    def forward(self, density: torch.Tensor, density_b: Optional[torch.Tensor] = None):
-        """Returns (out_pretext, out_structure). When `density_b` is given (a second
-        masked view of the same complex) AND a projector exists, ALSO returns two
-        L2-normalized contrastive projections (z_a, z_b) — both computed inside this
-        one forward so DDP's reducer sees every param. View-a's feature is tapped from
-        the MAE encoder pass (return_tokens); view-b costs one extra trunk forward."""
+    @torch.no_grad()
+    def data2vec_target(self, density: torch.Tensor) -> torch.Tensor:
+        """EMA-teacher path: per-patch pooled latent of the FULL (unmasked) input, LayerNorm'd
+        → (B, N, D). Used as the regression target the student predicts at masked patches."""
+        z = self.encoder._pool_groups(self.encoder.forward_features(density))  # (B, N, D)
+        return F.layer_norm(z, (z.shape[-1],))
+
+    def forward(self, density: torch.Tensor, density_b: Optional[torch.Tensor] = None,
+                return_d2v: bool = False):
+        """Returns (out_pretext, out_structure). When `density_b` is given (a second masked
+        view) AND a projector exists, ALSO returns contrastive projections (z_a, z_b). When
+        `return_d2v`, ALSO returns the data2vec student prediction (B, N, D) from the predictor
+        on the pooled tokens. All extra heads run inside this one forward so DDP sees every param."""
+        want_tok = (density_b is not None) or return_d2v
         want_con = density_b is not None
-        enc = self.encoder(density, return_tokens=want_con)
-        z, tokens_a = enc if want_con else (enc, None)
+        enc = self.encoder(density, return_tokens=want_tok)
+        z, tokens_a = enc if want_tok else (enc, None)
         if self.pretext_style == "electra":
             out_pretext = self.head_rtd(z)            # (B, 1, g_p, g_p, g_p)
         elif self.dual_head:
@@ -728,6 +886,10 @@ class DensityViTMAE(nn.Module):
         out_structure = (
             self.head_structure(z) if self.head_structure is not None else None
         )
+        if return_d2v:
+            assert self.d2v_predictor is not None, "return_d2v needs data2vec=True"
+            d2v_pred = self.d2v_predictor(self.encoder._pool_groups(tokens_a))  # (B, N, D)
+            return out_pretext, out_structure, d2v_pred
         if want_con:
             assert self.projector is not None, "contrastive forward needs contrastive_dim>0"
             z_a = self._project(tokens_a)                          # view-a (free, MAE pass)

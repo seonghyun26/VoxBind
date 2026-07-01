@@ -684,6 +684,28 @@ def validate_feature_bundle(bundle: dict, expected: dict, feat_path: Path) -> li
 # features — frozen-encoder mean-pooled patch tokens
 # ═══════════════════════════════════════════════════════════════════════════════
 
+def _radius_embed_from_cfg(m) -> "dict | None":
+    """Reconstruct RadiusAtomEmbed kwargs from a saved cfg.model (None if radius_embed_k<=0).
+    Mirrors the assembly in train_density.py so the probe rebuilds the SAME encoder arch
+    (the learnable radius→k atom embedding lives in encoder.*, so it must be present to load)."""
+    rek = int(m.get("radius_embed_k", 0))
+    if rek <= 0:
+        return None
+    from voxbind.constants import vdw_radius
+    LIG_EL = ["C", "O", "N", "S", "F", "Cl", "P"]
+    POC_EL = ["C", "O", "N", "S"]
+    n_lig = int(m.get("n_channels_ligand", 7))
+    n_poc = int(m.get("n_channels_pocket", 4))
+    def _radii(elems, n):
+        return [vdw_radius(elems[i]) if i < len(elems) else vdw_radius("C") for i in range(n)]
+    n_pt = int(m.n_in_channels) - (n_lig + n_poc)
+    scales_cfg = m.get("radius_embed_scales", None)
+    scales = [float(s) for s in scales_cfg] if scales_cfg is not None else [0.0]
+    return {"lig_radii": _radii(LIG_EL, n_lig), "poc_radii": _radii(POC_EL, n_poc),
+            "k": rek, "hidden": int(m.get("radius_embed_hidden", 16)), "n_passthrough": n_pt,
+            "scales": scales}
+
+
 def load_encoder(exp_dir: Path, epoch: int, device: str, cfg=None) -> DensityViT:
     """Instantiate DensityViT from the exp's cfg.yaml and load EMA weights."""
     cfg = cfg if cfg is not None else OmegaConf.load(exp_dir / "cfg.yaml")
@@ -704,6 +726,7 @@ def load_encoder(exp_dir: Path, epoch: int, device: str, cfg=None) -> DensityViT
                                  "channel_group" if m.get("channel_groups", None) else "fused"),
         channel_groups   = (tuple(m.channel_groups) if m.get("channel_groups", None) else None),
         n_memory_tokens  = int(m.get("n_memory_tokens", 0)),   # ChA-MAE encoders carry l memory tokens
+        radius_embed     = _radius_embed_from_cfg(m),          # learnable radius→k atom embedding (opt-in)
     )
 
     ckpt_path = exp_dir / f"checkpoint_e{epoch:04d}.pth.tar"
@@ -1807,6 +1830,7 @@ def make_encoder_factory(exp_dir: Path, epoch: int):
                                      "channel_group" if m.get("channel_groups", None) else "fused"),
             channel_groups   = (tuple(m.channel_groups) if m.get("channel_groups", None) else None),
             n_memory_tokens  = int(m.get("n_memory_tokens", 0)),   # ChA-MAE encoders carry l memory tokens
+            radius_embed     = _radius_embed_from_cfg(m),          # learnable radius→k atom embedding (opt-in)
         )
         enc.load_state_dict(stripped, strict=True)
         return enc

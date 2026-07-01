@@ -56,7 +56,7 @@ with_gradmag: true                 # + gradmag → 4 channels total
 dset:
   data_dir: ${oc.env:VOXBIND_DATA_ROOT,dataset/data}
   crops_dir: ""
-  resample_dir: ${oc.env:VOXBIND_DATA_ROOT,dataset/data}/pretrain/xray_resample_plinder
+  resample_dir: ${oc.env:VOXBIND_DATA_ROOT,dataset/data}/plinder/xray_resample_plinder
   data_file: data_train_plinder.pt
   normalize: false
   ligand_radius: -1                # element-wise vdW radius → blob size encodes atom identity

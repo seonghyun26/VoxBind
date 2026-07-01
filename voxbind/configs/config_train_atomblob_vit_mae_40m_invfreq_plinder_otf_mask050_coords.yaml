@@ -57,7 +57,7 @@ with_gradmag: false
 dset:
   data_dir: ${oc.env:VOXBIND_DATA_ROOT,dataset/data}
   crops_dir: ""                    # off: no frozen crops (resample_dir takes priority)
-  resample_dir: ${oc.env:VOXBIND_DATA_ROOT,dataset/data}/pretrain/xray_resample_plinder   # OTF resample-aug
+  resample_dir: ${oc.env:VOXBIND_DATA_ROOT,dataset/data}/plinder/xray_resample_plinder   # OTF resample-aug
   data_file: data_train_plinder.pt # PLINDER ligand-matched corpus (17,530 tuples; pre-shuffled seed 1234)
   normalize: false                 # OTF path applies its own arcsinh+z (v5) recipe (resample.json)
   ligand_radius: -1                # element-wise vdW radii (lig + poc)

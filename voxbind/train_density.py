@@ -795,9 +795,15 @@ def train_epoch(cfg, prefetcher, model, optimizer, model_ema, device, global_ste
     lambda_con = float(cfg.mae.get("contrastive_weight", 0.0))
     con_temp = float(cfg.mae.get("contrastive_temp", 0.2))
     contrastive_on = lambda_con > 0.0 and pretext_style == "mae"
+    # data2vec auxiliary (opt-in): predict the EMA-teacher's per-patch latent at masked patches.
+    lambda_d2v = float(cfg.mae.get("data2vec_weight", 0.0))
+    d2v_on = lambda_d2v > 0.0 and pretext_style == "mae"
+    if d2v_on:
+        model_ema.module.eval()                 # teacher = EMA; eval so DropPath/dropout are off
 
     L_pretext_sum, L_str_sum, grad_norm_sum, n_batches = 0.0, 0.0, 0.0, 0
     L_dens_atom_sum, L_dens_density_sum, L_dens_gradmag_sum, L_con_sum = 0.0, 0.0, 0.0, 0.0
+    L_d2v_sum = 0.0
     accum_steps = max(1, int(cfg.get("accum_steps", 1)))
     grad_clip = float(cfg.mae.get("grad_clip", 0.0))
     optimizer.zero_grad(set_to_none=True)
@@ -820,6 +826,8 @@ def train_epoch(cfg, prefetcher, model, optimizer, model_ema, device, global_ste
                     if channels_last:
                         x_in_b = x_in_b.to(memory_format=torch.channels_last_3d)
                     out_pretext, a_hat, z_a, z_b = model(x_in, x_in_b)
+                elif d2v_on:
+                    out_pretext, a_hat, d2v_pred = model(x_in, return_d2v=True)
                 else:
                     out_pretext, a_hat = model(x_in)
             out_pretext = out_pretext.float()        # loss math in fp32 (bf16 under autocast)
@@ -845,6 +853,14 @@ def train_epoch(cfg, prefetcher, model, optimizer, model_ema, device, global_ste
                 L_con = nt_xent(z_a.float(), z_b.float(), con_temp)
                 loss = loss + lambda_con * L_con
                 L_con_sum += L_con.item()
+            if d2v_on:
+                with torch.no_grad():
+                    target = _unwrap(model_ema.module).data2vec_target(x_clean)   # (B, N, D)
+                pm = voxel_mask_to_patch_target(
+                    mask.to(out_pretext.dtype), patch_size).reshape(mask.shape[0], -1) > 0.5
+                L_d2v = F.smooth_l1_loss(d2v_pred.float()[pm], target.float()[pm])
+                loss = loss + lambda_d2v * L_d2v
+                L_d2v_sum += L_d2v.item()
             loss.backward()
         if is_step:
             if grad_clip > 0:
@@ -888,6 +904,8 @@ def train_epoch(cfg, prefetcher, model, optimizer, model_ema, device, global_ste
         metrics["grad_norm"] = grad_norm_sum / n_steps
     if contrastive_on:
         metrics["L_con"] = L_con_sum / n_b
+    if d2v_on:
+        metrics["L_d2v"] = L_d2v_sum / n_b
     return metrics, global_step
 
 
@@ -1085,6 +1103,40 @@ def _build_vit(cfg: DictConfig, device, layout: dict, is_main: bool):
             f"input_mode={input_mode!r} with_gradmag={with_gradmag} expects "
             f"model.n_in_channels={layout['n_in']}, got {n_in_cfg}"
         )
+    # Learnable radius-conditioned atom embedding (opt-in, model.radius_embed_k>0): replaces
+    # the one-hot atom channels with a learned φ(vdW-radius)→k feature per role. The encoder
+    # reconstructs the RAW atom+density channels (n_recon unchanged); only its patch_embed
+    # width/grouping change. Requires per-element atom channels (atomblob*), not roleblob.
+    radius_embed = None
+    rek = int(cfg.model.get("radius_embed_k", 0))
+    if rek > 0:
+        from voxbind.constants import vdw_radius
+        if layout["n_atom"] <= 0:
+            raise RuntimeError("radius_embed_k>0 requires per-element atom channels "
+                               f"(atomblob* input_mode); got input_mode={input_mode!r}")
+        LIG_EL = ["C", "O", "N", "S", "F", "Cl", "P"]
+        POC_EL = ["C", "O", "N", "S"]
+        n_lig = int(cfg.model.get("n_channels_ligand", 7))
+        n_poc = int(cfg.model.get("n_channels_pocket", 4))
+        def _radii(elems, n):
+            return [vdw_radius(elems[i]) if i < len(elems) else vdw_radius("C")
+                    for i in range(n)]
+        n_pt = layout["n_in"] - layout["n_atom"]    # density (+ gradmag) passthrough
+        scales_cfg = cfg.model.get("radius_embed_scales", None)
+        scales = [float(s) for s in scales_cfg] if scales_cfg is not None else [0.0]
+        radius_embed = {
+            "lig_radii": _radii(LIG_EL, n_lig),
+            "poc_radii": _radii(POC_EL, n_poc),
+            "k": rek,
+            "hidden": int(cfg.model.get("radius_embed_hidden", 16)),
+            "n_passthrough": n_pt,
+            "scales": scales,
+        }
+        if is_main:
+            logger.info(f"radius-embed front-end: k={rek} scales={scales} "
+                        f"lig_radii={radius_embed['lig_radii']} poc_radii={radius_embed['poc_radii']} "
+                        f"n_pt={n_pt} → encoder patch_embed={2*rek+n_pt}ch groups=({rek},{rek},{n_pt}), "
+                        f"recon={layout['n_recon']}ch")
     model = DensityViTMAE(
         grid_dim=int(cfg.vox.grid_dim),
         patch_size=int(cfg.model.patch_size),
@@ -1112,6 +1164,9 @@ def _build_vit(cfg: DictConfig, device, layout: dict, is_main: bool):
         channel_group_dropout=float(cfg.model.get("channel_group_dropout", 0.0)),
         contrastive_dim=(int(cfg.mae.get("contrastive_dim", 128))
                          if float(cfg.mae.get("contrastive_weight", 0.0)) > 0.0 else 0),
+        radius_embed=radius_embed,
+        drop_path=float(cfg.model.get("drop_path", 0.0)),
+        data2vec=(float(cfg.mae.get("data2vec_weight", 0.0)) > 0.0),
     ).to(device)
     if is_main:
         n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)

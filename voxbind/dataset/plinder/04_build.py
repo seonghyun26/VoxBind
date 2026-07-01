@@ -101,7 +101,7 @@ def main():
     print(f"  {OUT_TUPLES.name}: {len(tuples):,} tuples")
 
     # normalization recipe: reuse the existing PLINDER v6 arcsinh+z stats (byte-identical scale)
-    src = PRETRAIN / "xray_resample_plinder" / "resample.json"
+    src = DATA / "plinder" / "xray_resample_plinder" / "resample.json"
     norm_block = json.loads(src.read_text())["normalization"]
 
     # laydown mirrors DatasetCrossDockedDensity: shuffle(1234) → drop VAL_SZ → max_len filter

@@ -100,7 +100,7 @@ def main():
     print(f"  {OUT_TUPLES.name}: {len(tuples):,} tuples")
 
     # manifest (own, to guarantee alignment) — same laydown as 04_build.py
-    norm_block = json.loads((PRETRAIN / "xray_resample_plinder" / "resample.json").read_text())["normalization"]
+    norm_block = json.loads((DATA / "plinder" / "xray_resample_plinder" / "resample.json").read_text())["normalization"]
     order = list(tuples); random.Random(1234).shuffle(order)
     order = order[: len(order) - M.VAL_SZ]
     order = [t for t in order if t[1]["max_len"] <= M.MAX_LEN]
