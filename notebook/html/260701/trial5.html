@@ -1,0 +1,37 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Trial 5 — Finer patches (1 Å)</title><style>
+*{box-sizing:border-box}body{margin:0;background:#f5f6f8;color:#1c2433;font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+.page{max-width:860px;margin:0 auto;padding:40px 24px 90px}
+header{border-bottom:2px solid #1c2433;padding-bottom:14px;margin-bottom:24px}
+header .k{font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:#5b6678;margin-bottom:6px}
+header h1{font-size:24px;font-weight:650;margin:0}header .sub{font-size:13px;color:#5b6678;margin-top:6px}
+.card{background:#fff;border:1px solid #e3e7ee;border-radius:12px;padding:20px 22px;margin-bottom:22px;box-shadow:0 1px 2px rgba(20,30,50,.04),0 8px 24px rgba(20,30,50,.05)}
+h2{font-size:16px;font-weight:640;margin:0 0 10px}p{margin:0 0 10px}
+code{background:#f0f2f5;padding:1px 5px;border-radius:4px;font-size:12.5px;font-family:ui-monospace,Menlo,Consolas,monospace}
+.pill{display:inline-block;font-size:11px;font-weight:700;padding:2px 9px;border-radius:999px}.done{background:#eaf5ee;color:#2f6f4f}
+.tag{display:inline-block;font-size:11px;font-weight:600;padding:1px 8px;border-radius:999px;background:#eef1f6;color:#5b6678;margin-right:5px}
+.kv{font-size:13px;color:#5b6678}table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums;margin-top:6px}
+th,td{padding:7px 10px;text-align:left;border-top:1px solid #e3e7ee;font-size:13.5px}.mut{color:#5b6678}
+</style></head><body><div class="page">
+<header><div class="k">VoxBind · autoresearch · dramatic change #5</div>
+<h1>Trial 5 — Finer patches (1 Å resolution)</h1>
+<div class="sub"><span class="tag">architecture</span><span class="tag">spatial resolution</span>
+base = ChannelViT <code>[7,4,2]</code> (ρ≈0.637) · <span class="pill done">done — ρ 0.639 (tie, +0.002)</span></div></header>
+
+<div class="card"><h2>Hypothesis</h2>
+<p>The whole campaign used <code>patch_size=8</code> (2 Å patches). Maybe the frozen-probe plateau is partly a
+<b>spatial-resolution</b> limit — the encoder reads density gradients / pocket detail only at 2 Å. Drop to
+<code>patch_size=4</code> (1 Å patches) so it sees structure at 2× finer resolution: 16³=4096 patches/group →
+<b>12,288 ChannelViT tokens</b> (8× the token count). No new code — a pure architectural knob.</p></div>
+
+<div class="card"><h2>Experiment &amp; result</h2>
+<table><tbody>
+<tr><td>exp</td><td><code>260629_ar_cvit_g742_patch4</code> · <code>model.patch_size=4</code>, bsz2×accum16 (eff-128), compile OFF</td></tr>
+<tr><td>cost</td><td>12,288 tokens/forward → ~1300 s/epoch, ~34 h for 100 ep (8× the base)</td></tr>
+<tr><td>result</td><td><b>ρ 0.639 ±.002</b> · r 0.656 · RMSE 1.432 &nbsp;→&nbsp; <b>+0.002 vs 0.637 (tie), worse RMSE</b> (3 seeds)</td></tr>
+</tbody></table>
+<p style="margin-top:10px"><b>Finer resolution does not help.</b> 8× the tokens and 34 h of compute buy a dead tie on ρ (within the
+±0.02 seed floor) and a slightly <i>worse</i> RMSE (1.432 vs 1.353). <b>Spatial resolution is not the bottleneck</b> — the
+2 Å patches already capture what the affinity probe can use. Folded into Phase 8.</p></div>
+</div></body></html>

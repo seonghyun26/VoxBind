@@ -12,25 +12,29 @@ HTML = "/home/shpark/prj-denovo/VoxBind/notebook/html/260701/260701_meeting.html
 
 # bar order + styling (matches existing legend)
 BARS = [
-    ("C",                 "#3498db", False),
-    ("C+D+G",             "#2ecc71", True),   # best per panel -> black stroke
     ("HBGSA",             "#9b59b6", False),
     ("EGNN",              "#e67e22", False),
     ("EGNN + TargetDiff", "#e74c3c", False),
+    ("GET",               "#2c3e50", False),
+    ("ProFSA",            "#e84393", False),
     ("AEV-PLIG",          "#1abc9c", False),
+    ("DSMBind",           "#8395a7", False),
+    ("C",                 "#3498db", False),
+    ("C+D+G",             "#2ecc71", True),   # best per panel -> black stroke
 ]
 
-# (mean, std) per bar, same order as BARS
+# (mean, std) per bar, same order as BARS (baselines first, ours C / C+D+G last)
+# DSMBind = frozen SE(3)-DSM encoder + 3-seed MLP probe (not the zero-shot energy)
 PANELS = [
     {"title": "Test Pearson r", "lo": 0.50, "hi": 0.70, "step": 0.05, "dec": 3,
-     "vals": [(0.632, 0.007), (0.656, 0.006), (0.565, 0.007),
-              (0.539, 0.012), (0.597, 0.009), (0.522, 0.019)]},
+     "vals": [(0.565, 0.007), (0.539, 0.012), (0.597, 0.009), (0.596, 0.005),
+              (0.626, 0.005), (0.522, 0.019), (0.541, 0.007), (0.632, 0.007), (0.656, 0.006)]},
     {"title": "Test Spearman &rho;", "lo": 0.45, "hi": 0.65, "step": 0.05, "dec": 3,
-     "vals": [(0.605, 0.002), (0.637, 0.006), (0.546, 0.003),
-              (0.533, 0.016), (0.579, 0.019), (0.492, 0.019)]},
+     "vals": [(0.546, 0.003), (0.533, 0.016), (0.579, 0.019), (0.591, 0.005),
+              (0.597, 0.007), (0.492, 0.019), (0.507, 0.010), (0.605, 0.002), (0.637, 0.006)]},
     {"title": "Test RMSE", "lo": 1.30, "hi": 1.70, "step": 0.10, "dec": 3,
-     "vals": [(1.519, 0.117), (1.353, 0.031), (1.568, 0.066),
-              (1.531, 0.012), (1.447, 0.016), (1.617, 0.004)]},
+     "vals": [(1.568, 0.066), (1.531, 0.012), (1.447, 0.016), (1.428, 0.008),
+              (1.518, 0.016), (1.617, 0.004), (1.494, 0.011), (1.519, 0.117), (1.353, 0.031)]},
 ]
 
 PANEL_W = 300.0      # each panel occupies 300 user-units horizontally
@@ -103,12 +107,15 @@ def build_svg():
     parts.append('</svg>')
     svg = "\n      ".join(parts)
     legend = ('<div class="legend" style="justify-content:center;margin-top:8px;gap:14px;">'
-              '<span><span style="width:12px;height:12px;border-radius:3px;background:#3498db;display:inline-block"></span> C</span> '
-              '<span><span style="width:12px;height:12px;border-radius:3px;background:#2ecc71;display:inline-block;border:2px solid #000"></span> C+D+G</span> '
               '<span><span style="width:12px;height:12px;border-radius:3px;background:#9b59b6;display:inline-block"></span> HBGSA</span> '
               '<span><span style="width:12px;height:12px;border-radius:3px;background:#e67e22;display:inline-block"></span> EGNN</span> '
               '<span><span style="width:12px;height:12px;border-radius:3px;background:#e74c3c;display:inline-block"></span> EGNN + TargetDiff</span> '
-              '<span><span style="width:12px;height:12px;border-radius:3px;background:#1abc9c;display:inline-block"></span> AEV-PLIG</span></div>')
+              '<span><span style="width:12px;height:12px;border-radius:3px;background:#2c3e50;display:inline-block"></span> GET</span> '
+              '<span><span style="width:12px;height:12px;border-radius:3px;background:#e84393;display:inline-block"></span> ProFSA</span> '
+              '<span><span style="width:12px;height:12px;border-radius:3px;background:#1abc9c;display:inline-block"></span> AEV-PLIG</span> '
+              '<span><span style="width:12px;height:12px;border-radius:3px;background:#8395a7;display:inline-block"></span> DSMBind</span> '
+              '<span><span style="width:12px;height:12px;border-radius:3px;background:#3498db;display:inline-block"></span> C</span> '
+              '<span><span style="width:12px;height:12px;border-radius:3px;background:#2ecc71;display:inline-block;border:2px solid #000"></span> C+D+G</span></div>')
     return svg, legend
 
 

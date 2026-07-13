@@ -50,6 +50,18 @@ def _unpatchify(t: torch.Tensor, gp: int, p: int, c: int) -> torch.Tensor:
     return x.reshape(B, c, gp * p, gp * p, gp * p)
 
 
+def _quat_to_rot(q: torch.Tensor) -> torch.Tensor:
+    """Unit-quaternion (..., 4) → rotation matrix (..., 3, 3). Normalizes q first."""
+    q = F.normalize(q, dim=-1)
+    w, x, y, z = q.unbind(-1)
+    R = torch.stack([
+        1 - 2 * (y * y + z * z), 2 * (x * y - w * z),     2 * (x * z + w * y),
+        2 * (x * y + w * z),     1 - 2 * (x * x + z * z), 2 * (y * z - w * x),
+        2 * (x * z - w * y),     2 * (y * z + w * x),     1 - 2 * (x * x + y * y),
+    ], dim=-1).reshape(*q.shape[:-1], 3, 3)
+    return R
+
+
 # ── Transformer building blocks ───────────────────────────────────────────────
 
 def _rope_axis_dim(head_dim: int) -> int:
@@ -674,8 +686,10 @@ class DensityViTMAE(nn.Module):
         patch_size: int = 8,
         n_in_channels: int = 1,       # patch-embed input width (atoms + density + gradmag)
         n_recon_channels: Optional[int] = None,  # MAE recon / loss-target width; None → n_in_channels.
-                                      # Set < n_in to make trailing channels (e.g. an input-only
-                                      # gradmag) encoded but NOT reconstructed.
+                                      # < n_in → trailing channels (e.g. input-only gradmag) encoded
+                                      # but NOT reconstructed. > n_in → target-only channels the
+                                      # encoder must PREDICT from a narrower input (e.g. coords-only
+                                      # encoder reconstructing density+gradmag).
         n_channels: int = 32,         # backbone width; c_out = n_channels // 2
         dim: int = 192,
         depth: int = 6,
@@ -687,7 +701,9 @@ class DensityViTMAE(nn.Module):
         dual_head: bool = False,      # split the MAE recon head into atoms vs density branches
         head_hidden_dim: int = 0,     # MLP-head hidden width; 0 → defaults to c_half (=n_channels//2)
         head_depth: int = 2,          # total Conv3d layers in each MAE recon head (>=1)
-        head_style: str = "conv",     # "conv" = full-res Conv3d head; "patch_mlp" = per-patch token MLP
+        head_style: str = "conv",     # "conv" = full-res Conv3d head; "patch_mlp" = per-patch token MLP; "splat" = Gaussian-splat head
+        splat_k: int = 4,             # head_style="splat": # Gaussians predicted per patch (rendered analytically)
+        splat_aniso: bool = False,    # splat: True → anisotropic Gaussians (per-axis scale + quaternion rotation) vs isotropic σ
         pos_encoding: str = "learnable",  # "learnable" | "rope3d" → forwarded to the DensityViT encoder
         rope_fast: bool = False,       # fused q/k rotate (rope3d only) → forwarded to the DensityViT encoder
         patch_embed_mode: str = "fused",  # "fused" | "channel_group" (ChannelViT) → forwarded to encoder
@@ -713,14 +729,17 @@ class DensityViTMAE(nn.Module):
                 "it is incompatible with an input-only (n_recon < n_in) layout."
             )
         assert head_depth >= 1, f"head_depth must be >= 1, got {head_depth}"
-        assert head_style in ("conv", "patch_mlp"), f"unknown head_style: {head_style!r}"
-        assert not (dual_head and head_style == "patch_mlp"), (
-            "head_style='patch_mlp' is incompatible with dual_head"
+        assert head_style in ("conv", "patch_mlp", "splat"), f"unknown head_style: {head_style!r}"
+        assert not (dual_head and head_style in ("patch_mlp", "splat")), (
+            f"head_style={head_style!r} is incompatible with dual_head"
         )
         n_recon = n_recon_channels if n_recon_channels is not None else n_in_channels
-        assert 1 <= n_recon <= n_in_channels, (
-            f"n_recon_channels={n_recon} must be in [1, n_in_channels={n_in_channels}]"
-        )
+        # n_recon may be < n_in (trailing input-only channels, e.g. gradmag encoded but
+        # not predicted) OR > n_in (target-only channels the encoder must PREDICT from a
+        # narrower input, e.g. a coords-only encoder reconstructing density+gradmag). Both
+        # are valid; the single MAE / patch_mlp head sizes its output to n_recon. dual_head
+        # separately requires n_recon == n_in (asserted above).
+        assert n_recon >= 1, f"n_recon_channels={n_recon} must be >= 1"
         self.pretext_style = pretext_style
         self.dual_head = dual_head
         c_half = n_channels // 2
@@ -794,6 +813,33 @@ class DensityViTMAE(nn.Module):
                 self.recon_mlp = nn.Sequential(
                     nn.Linear(c_half * pv, h), nn.GELU(), nn.Linear(h, n_recon * pv),
                 )
+            elif head_style == "splat":
+                # Gaussian-splatting recon head (initial version): each patch token predicts
+                # K free Gaussians — position μ∈[0,p]³ (sub-voxel), isotropic σ, and per-channel
+                # amplitude — which are SPLATTED (analytically evaluated) onto the patch's p³ voxel
+                # grid and summed. So the head reconstructs density as a sum of atom-like Gaussians
+                # (the physical prior) rather than free voxel regression. Pretrain-only (not in
+                # encoder.*) → frozen probe bit-exact. per-Gaussian params = 3 (μ) + 1 (logσ) + n_recon (amp).
+                self.head_atoms = None
+                self.head_density = None
+                self.splat_k = int(splat_k)
+                self.splat_aniso = bool(splat_aniso)
+                # per-Gaussian params: 3 (μ) + amp(n_recon) + width.
+                #   isotropic : 1 (log σ)
+                #   anisotropic: 3 (log per-axis scale) + 4 (rotation quaternion)
+                self.splat_per_g = 3 + (7 if self.splat_aniso else 1) + n_recon
+                pv = patch_size ** 3
+                h = head_hidden_dim if head_hidden_dim > 0 else c_half
+                self.recon_mlp = nn.Sequential(
+                    nn.Linear(c_half * pv, h), nn.GELU(), nn.Linear(h, self.splat_k * self.splat_per_g),
+                )
+                # patch voxel-center grid (p³, 3), ordered (px,py,pz) with px slowest to match
+                # _unpatchify's reshape(c,p,p,p); +0.5 → voxel centers.
+                _p = patch_size
+                _ix = torch.arange(_p)
+                _gx, _gy, _gz = torch.meshgrid(_ix, _ix, _ix, indexing="ij")
+                _ctr = torch.stack([_gx, _gy, _gz], dim=-1).reshape(-1, 3).float() + 0.5  # (p³,3)
+                self.register_buffer("splat_centers", _ctr, persistent=False)
             else:
                 self.head_atoms = None
                 self.head_density = _build_head(c_half, n_recon)
@@ -850,6 +896,31 @@ class DensityViTMAE(nn.Module):
     def encode(self, density: torch.Tensor) -> torch.Tensor:
         return self.encoder(density)
 
+    def _splat_render(self, params: torch.Tensor) -> torch.Tensor:
+        """Render K per-patch Gaussians onto the p³ voxel grid (differentiable analytic splat).
+        params: (B, P, K·per_g) → recon (B, P, n_recon·p³) laid out for _unpatchify.
+        Weight = exp(-½ (v-μ)ᵀ Σ⁻¹ (v-μ)); isotropic Σ=σ²I, or anisotropic Σ=R·diag(scale²)·Rᵀ."""
+        B, P, _ = params.shape
+        K, p, C = self.splat_k, self.patch_size, self.n_recon
+        g = params.reshape(B, P, K, self.splat_per_g)
+        mu = torch.sigmoid(g[..., :3]) * p                 # (B,P,K,3) sub-voxel position in [0,p]
+        ctr = self.splat_centers                           # (p³, 3) voxel centers
+        d = ctr.view(1, 1, 1, -1, 3) - mu.unsqueeze(3)     # (B,P,K,p³,3) voxel−center offsets
+        if self.splat_aniso:
+            scale = F.softplus(g[..., 3:6]) + 0.5          # (B,P,K,3) per-axis widths ≥~0.5
+            R = _quat_to_rot(g[..., 6:10])                 # (B,P,K,3,3) rotation
+            # local-frame offset d' = Rᵀ d, then Mahalanobis quad = Σ_i (d'_i/scale_i)²
+            d_local = torch.einsum("bpkji,bpkvj->bpkvi", R, d)   # Rᵀ·d  (R indexed [.,j,i] = Rᵀ[i,j])
+            quad = ((d_local / scale.unsqueeze(3)) ** 2).sum(-1)  # (B,P,K,p³)
+            amp = g[..., 10:10 + C]                        # (B,P,K,C)
+        else:
+            sigma = F.softplus(g[..., 3]) + 0.5            # (B,P,K) isotropic width
+            quad = (d ** 2).sum(-1) / sigma.unsqueeze(-1) ** 2   # (B,P,K,p³)
+            amp = g[..., 4:4 + C]                          # (B,P,K,C)
+        w = torch.exp(-0.5 * quad)                         # (B,P,K,p³)
+        recon = torch.einsum("bpkc,bpkv->bpcv", amp, w)    # (B,P,C,p³)
+        return recon.reshape(B, P, C * p ** 3)             # (B,P, n_recon·p³)
+
     def _project(self, tokens: torch.Tensor) -> torch.Tensor:
         """Pooled patch tokens (B, T_patch, D) → L2-normalized projection (B, proj_dim)."""
         return F.normalize(self.projector(tokens.mean(dim=1)), dim=-1)
@@ -881,6 +952,11 @@ class DensityViTMAE(nn.Module):
             tok = _patchify(z, self.g_p, self.patch_size)      # (B, g_p³, c_half·p³)
             tok = self.recon_mlp(tok)                          # (B, g_p³, n_recon·p³)
             out_pretext = _unpatchify(tok, self.g_p, self.patch_size, self.n_recon)
+        elif self.head_style == "splat":
+            tok = _patchify(z, self.g_p, self.patch_size)      # (B, g_p³, c_half·p³)
+            params = self.recon_mlp(tok)                       # (B, g_p³, K·per_g)
+            patch = self._splat_render(params)                 # (B, g_p³, n_recon·p³)
+            out_pretext = _unpatchify(patch, self.g_p, self.patch_size, self.n_recon)
         else:
             out_pretext = self.head_density(z)        # (B, n_recon_channels, G, G, G)
         out_structure = (

@@ -209,18 +209,26 @@ def _channel_layout(
     input_mode: str,
     with_gradmag: bool = False,
     gradmag_reconstruct: bool = True,
+    density_input: bool = True,
 ) -> dict:
     """Single source of truth for the multi-channel input / reconstruction layout.
 
     Channel order is always  [ …atoms (n_atom)…, density (n_density), gradmag (n_gradmag) ].
 
-      n_in     : encoder patch-embed input width  (atoms + density + gradmag)
-      n_recon  : MAE head / loss-target width.  Equals n_in when gradmag is a
-                 reconstruction target; n_in − n_gradmag when gradmag is
-                 input-only (encoded as context but not predicted).
+      n_in     : encoder patch-embed input width.  Full atoms+density+gradmag when
+                 density_input=True; just the atom channels when density_input=False
+                 (density/gradmag are reconstruction TARGETS only, never fed to the
+                 encoder — a coords-only encoder that must PREDICT the density field).
+      n_recon  : MAE head / loss-target width.  Full atoms+density+gradmag when
+                 gradmag is reconstructed; − n_gradmag when gradmag is input-only.
+                 Independent of density_input, so n_recon > n_in is valid (extra
+                 target-only channels).
 
     `density_idx` / `gradmag_idx` are the channel offsets of those trailing
-    channels (gradmag_idx is None when with_gradmag is False).
+    channels IN THE TARGET (x_clean) frame — unchanged by density_input, since the
+    target always carries them.  When density_input=False they lie past n_in, so
+    they must not be used to index the encoder input (gradmag_idx is None when
+    with_gradmag is False).
     """
     if input_mode == "density":
         n_atom = 0
@@ -243,14 +251,27 @@ def _channel_layout(
             f"(density / *_density); got input_mode={input_mode!r}"
         )
     n_gradmag = 1 if with_gradmag else 0
-    n_in = n_atom + n_density + n_gradmag
-    n_recon = n_in - (0 if gradmag_reconstruct else n_gradmag)
+    n_full = n_atom + n_density + n_gradmag           # full assembled width (= target width source)
+    # Reconstruction / loss-target width: gradmag dropped only when input-only.
+    n_recon = n_full - (0 if gradmag_reconstruct else n_gradmag)
+    # Encoder input width. density_input=False → atoms-only encoder; density+gradmag
+    # are reconstruction targets the coords-only encoder must predict (n_in < n_recon).
+    if density_input:
+        n_in = n_full
+    else:
+        if not has_density:
+            raise ValueError(
+                f"density_input=False requires a density-bearing input_mode "
+                f"(density / *_density); got input_mode={input_mode!r}"
+            )
+        n_in = n_atom
     return {
         "n_atom": n_atom,
         "n_density": n_density,
         "n_gradmag": n_gradmag,
         "n_in": n_in,
         "n_recon": n_recon,
+        "density_input": density_input,
         "density_idx": n_atom,
         "gradmag_idx": (n_atom + n_density) if with_gradmag else None,
     }

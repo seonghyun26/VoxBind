@@ -4,3 +4,8 @@
 !*.csv
 !MANIFEST.json
 !.gitignore
+# CleanSplit (GEMS) reference inputs + filtering scripts (define clean_ed_* schemes)
+!cleansplit_ref/
+!cleansplit_ref/*.json
+!cleansplit_ref/*.py
+!cleansplit_ref/*.md

@@ -174,6 +174,7 @@ class MAEPrefetcher:
         with_gradmag: bool = False,
         gradmag_reconstruct: bool = True,
         gradmag_noise: bool = False,
+        density_input: bool = True,
         n_lig_ch: int = 7,
         n_poc_ch: int = 4,
     ):
@@ -217,9 +218,12 @@ class MAEPrefetcher:
         self.with_gradmag = with_gradmag
         self.gradmag_reconstruct = gradmag_reconstruct
         self.gradmag_noise = gradmag_noise
+        self.density_input = bool(density_input)
         self.n_lig_ch = int(n_lig_ch)
         self.n_poc_ch = int(n_poc_ch)
-        self.layout = _channel_layout(input_mode, with_gradmag, gradmag_reconstruct)
+        self.layout = _channel_layout(
+            input_mode, with_gradmag, gradmag_reconstruct, density_input=self.density_input
+        )
         self.stream = torch.cuda.Stream()
 
     def _step(self, batch):
@@ -349,14 +353,20 @@ class MAEPrefetcher:
                 # mask: (B, 1, G, G, G) — broadcasts across all input channels
 
                 x_in_b = None
+                # Encoder input width: full channels normally; atoms-only when density
+                # is a reconstruction target only (density_input=False → n_in < C). The
+                # trailing density/gradmag channels stay in x_clean (the target) but are
+                # sliced off the encoder input here. No-op when n_in == C.
+                n_in_enc = self.layout["n_in"]
                 if self.pretext_style == "mae":
-                    x_in = x_noisy * (~mask).to(x_noisy.dtype)
+                    x_in = x_noisy[:, :n_in_enc] * (~mask).to(x_noisy.dtype)
                     # Cross-modal masking (opt-in): per-sample, drop the ENTIRE density
                     # (+gradmag) modality from the input so the encoder must predict it
                     # from the atom channels alone — a cross-modal objective on top of the
                     # spatial MAE. Target (x_clean) is unchanged, so the recon loss scores
                     # the atoms→density prediction. No-op when modal_mask_prob=0.
-                    if self.modal_mask_prob > 0.0 and self.layout.get("n_density", 0) > 0:
+                    if (self.modal_mask_prob > 0.0 and self.density_input
+                            and self.layout.get("n_density", 0) > 0):
                         drop = torch.rand(B, device=device, generator=self.generator) < self.modal_mask_prob
                         if bool(drop.any()):
                             x_in[drop, self.layout["density_idx"]] = 0.0
@@ -368,11 +378,11 @@ class MAEPrefetcher:
                     # encoder is pulled to map both maskings of a complex to the same vector.
                     if self.contrastive:
                         mask_b = make_block_mask(B, G, self.block_size, self.mask_ratio, device)
-                        x_in_b = x_noisy * (~mask_b).to(x_noisy.dtype)
+                        x_in_b = x_noisy[:, :n_in_enc] * (~mask_b).to(x_noisy.dtype)
                 elif self.pretext_style == "denoise":
                     # Recovery-from-noise: the FULL noised input (no masking); the recon
                     # loss covers every voxel (mask=all), so the model denoises the signal.
-                    x_in = x_noisy
+                    x_in = x_noisy[:, :n_in_enc]
                     mask = torch.ones_like(mask)
                 else:
                     # ELECTRA corruption ops are currently single-channel only;
@@ -595,7 +605,9 @@ def val_epoch(cfg, model, val_cache, device, ch_weight=None) -> dict:
     with_gradmag = bool(cfg.get("with_gradmag", False))
     gradmag_reconstruct = bool(cfg.mae.get("gradmag_reconstruct", True))
     gradmag_noise = bool(cfg.mae.get("gradmag_noise", False))
-    layout = _channel_layout(input_mode, with_gradmag, gradmag_reconstruct)
+    density_input = bool(cfg.mae.get("density_input", True))
+    layout = _channel_layout(input_mode, with_gradmag, gradmag_reconstruct,
+                             density_input=density_input)
     need_density = input_mode in (
         "density", "atomblob_density", "atomblob_merged_density",
         "roleblob_density",
@@ -701,10 +713,14 @@ def val_epoch(cfg, model, val_cache, device, ch_weight=None) -> dict:
                              .repeat_interleave(block, 3)\
                              .repeat_interleave(block, 4)
 
+            # Encoder input width: atoms-only when density is a target-only channel
+            # (density_input=False → n_in < C); no-op otherwise. x_clean keeps all C
+            # channels as the recon target.
+            n_in_enc = layout["n_in"]
             if pretext_style == "mae":
-                x_in = x_noisy * (~mask).to(x_noisy.dtype)
+                x_in = x_noisy[:, :n_in_enc] * (~mask).to(x_noisy.dtype)
             elif pretext_style == "denoise":
-                x_in = x_noisy
+                x_in = x_noisy[:, :n_in_enc]
                 mask = torch.ones_like(mask)
             else:
                 if input_mode != "density":
@@ -783,7 +799,8 @@ def train_epoch(cfg, prefetcher, model, optimizer, model_ema, device, global_ste
     patch_size = int(cfg.model.patch_size)
     with_gradmag = bool(cfg.get("with_gradmag", False))
     gradmag_reconstruct = bool(cfg.mae.get("gradmag_reconstruct", True))
-    layout = _channel_layout(input_mode, with_gradmag, gradmag_reconstruct)
+    layout = _channel_layout(input_mode, with_gradmag, gradmag_reconstruct,
+                             density_input=bool(cfg.mae.get("density_input", True)))
     if pretext_style == "electra":
         pretext_key = "L_rtd"
         lambda_pretext = float(cfg.mae.get("lambda_rtd", 1.0))
@@ -1096,6 +1113,8 @@ def _build_vit(cfg: DictConfig, device, layout: dict, is_main: bool):
     head_hidden_dim = int(cfg.model.get("head_hidden_dim", 0))
     head_depth = int(cfg.model.get("head_depth", 2))
     head_style = str(cfg.model.get("head_style", "conv"))
+    splat_k = int(cfg.model.get("splat_k", 4))
+    splat_aniso = bool(cfg.model.get("splat_aniso", False))
     pos_encoding = str(cfg.model.get("pos_encoding", "learnable"))
     n_in_cfg = int(cfg.model.get("n_in_channels", 1))
     if n_in_cfg != layout["n_in"]:
@@ -1156,6 +1175,8 @@ def _build_vit(cfg: DictConfig, device, layout: dict, is_main: bool):
         head_hidden_dim=head_hidden_dim,
         head_depth=head_depth,
         head_style=head_style,
+        splat_k=splat_k,
+        splat_aniso=splat_aniso,
         pos_encoding=pos_encoding,
         rope_fast=bool(cfg.model.get("rope_fast", False)),
         patch_embed_mode=str(cfg.model.get("patch_embed_mode", "fused")),
@@ -1268,7 +1289,8 @@ def run(cfg: DictConfig, method: str) -> None:
     gradmag_reconstruct = bool(cfg.mae.get("gradmag_reconstruct", True))
     gradmag_noise = bool(cfg.mae.get("gradmag_noise", False))
     gradmag_channel_weight = float(cfg.mae.get("gradmag_channel_weight", 1.0))
-    layout = _channel_layout(input_mode, with_gradmag, gradmag_reconstruct)
+    layout = _channel_layout(input_mode, with_gradmag, gradmag_reconstruct,
+                             density_input=bool(cfg.mae.get("density_input", True)))
     torch.manual_seed(cfg.seed)
     torch.cuda.manual_seed(cfg.seed)
     model = spec.build_model(cfg, device, layout, is_main)
@@ -1534,6 +1556,7 @@ def run(cfg: DictConfig, method: str) -> None:
             with_gradmag=with_gradmag,
             gradmag_reconstruct=gradmag_reconstruct,
             gradmag_noise=gradmag_noise,
+            density_input=bool(cfg.mae.get("density_input", True)),
             n_lig_ch=int(cfg.model.get("n_channels_ligand", 7)),
             n_poc_ch=int(cfg.model.get("n_channels_pocket", 4)),
         )

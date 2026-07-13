@@ -1,0 +1,71 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Trial 4 — Interface masking</title><style>
+*{box-sizing:border-box}
+body{margin:0;background:#f5f6f8;color:#1c2433;font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+.page{max-width:860px;margin:0 auto;padding:40px 24px 90px}
+header{border-bottom:2px solid #1c2433;padding-bottom:14px;margin-bottom:24px}
+header .k{font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:#5b6678;margin-bottom:6px}
+header h1{font-size:24px;font-weight:650;margin:0}
+header .sub{font-size:13px;color:#5b6678;margin-top:6px}
+.card{background:#fff;border:1px solid #e3e7ee;border-radius:12px;padding:20px 22px;margin-bottom:22px;box-shadow:0 1px 2px rgba(20,30,50,.04),0 8px 24px rgba(20,30,50,.05)}
+h2{font-size:16px;font-weight:640;margin:0 0 10px}
+p{margin:0 0 10px}
+code{background:#f0f2f5;padding:1px 5px;border-radius:4px;font-size:12.5px;font-family:ui-monospace,Menlo,Consolas,monospace}
+pre{background:#1c2433;color:#e6edf3;border-radius:9px;padding:14px 16px;overflow-x:auto;font-size:12px;line-height:1.5;font-family:ui-monospace,Menlo,Consolas,monospace}
+pre .c{color:#8a97a8}
+.pill{display:inline-block;font-size:11px;font-weight:700;padding:2px 9px;border-radius:999px}
+.run{background:#fcf3e0;color:#b07a17}.done{background:#eaf5ee;color:#2f6f4f}
+.tag{display:inline-block;font-size:11px;font-weight:600;padding:1px 8px;border-radius:999px;background:#eef1f6;color:#5b6678;margin-right:5px}
+ul{margin:6px 0 10px;padding-left:20px}li{margin:3px 0}
+.kv{font-size:13px;color:#5b6678}.kv b{color:#1c2433}
+table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums;margin-top:6px}
+th,td{padding:7px 10px;text-align:left;border-top:1px solid #e3e7ee;font-size:13.5px}
+thead th{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#5b6678;border:0;border-bottom:1px solid #e3e7ee}
+.mut{color:#5b6678}
+</style></head><body><div class="page">
+<header><div class="k">VoxBind · autoresearch · dramatic change #4</div>
+<h1>Trial 4 — Interface masking (binding contact)</h1>
+<div class="sub"><span class="tag">masking algorithm</span><span class="tag">on-theme</span><span class="tag">new code</span>
+base = ChannelViT <code>[7,4,2]</code> (ρ≈0.637) · <span class="pill done">done — ρ 0.610 (−0.027)</span></div></header>
+
+<div class="card"><h2>Hypothesis</h2>
+<p>Binding affinity is determined at the <b>ligand–pocket interface</b> — the contact region where atoms of the two
+molecules pack against each other. Trial 3 masks the ligand; this one masks the <b>contact itself</b>. If the
+encoder must reconstruct the interface from its surroundings, it should learn the <b>interaction geometry</b>
+(complementarity, packing) that affinity actually depends on — arguably the single most affinity-relevant region a
+self-supervised objective could target.</p></div>
+
+<div class="card"><h2>What was implemented</h2>
+<p>A new opt-in <code>mae.mask_strategy=interface</code> backed by <code>make_interface_mask</code> in
+<code>models/mae_ops.py</code>. Each block is scored by ligand×pocket co-occupancy (block-level occupancy of each,
+<b>dilated by one block so adjacency — not overlap — counts</b>); the top <code>ratio·gb³</code> blocks (the
+contact) are masked. <b>Non-destructive:</b> default <code>uniform</code> unchanged; ligand/cluster/atom-bias
+untouched.</p>
+<pre><span class="c"># models/mae_ops.py — make_interface_mask(lig_sum, poc_sum, block_size, ratio, tau=0)</span>
+lb = max_pool3d(avg_pool3d(lig_sum, block), 3, 1, 1)   <span class="c"># dilated ligand occupancy (block-res)</span>
+pb = max_pool3d(avg_pool3d(poc_sum, block), 3, 1, 1)   <span class="c"># dilated pocket occupancy</span>
+score = lb * pb                                        <span class="c"># high only where BOTH present nearby = interface</span>
+mask  = topk(score, n_mask)                            <span class="c"># mask the contact blocks</span></pre>
+<p class="kv"><b>Enable:</b> <code>mae.mask_strategy=interface mae.mask_ratio=0.3 mae.mask_atom_tau=0.0</code>.
+Smoke: masks the lig–poc contact (1.00) while ignoring an isolated pocket lump (0.00).</p></div>
+
+<div class="card"><h2>Experiment</h2>
+<table><thead><tr><th>Field</th><th>Value</th></tr></thead><tbody>
+<tr><td>exp</td><td><code>260629_ar_cvit_g742_interface</code></td></tr>
+<tr><td>base recipe</td><td>ChannelViT [7,4,2], C+D+G, 100 ep, PLINDER-OTF</td></tr>
+<tr><td>change</td><td><code>mask_strategy=interface</code>, ratio 0.3, tau 0 (mask the binding contact)</td></tr>
+<tr><td>compute</td><td>GPU 4-7, 4×bsz8×accum4 = eff-batch 128 (parallel to trial 3 on GPU 0-3)</td></tr>
+<tr><td>eval</td><td>frozen probe, lp_edrscc_v2 (Kd/Ki, n=1320), 3 seeds</td></tr>
+<tr><td>target to beat</td><td>ρ 0.637 (seed noise ≈ ±0.02)</td></tr>
+<tr><td>result</td><td><b>ρ 0.610 ±.001</b> · r 0.635 · RMSE 1.469 &nbsp;→&nbsp; <b>Δ −0.027 vs 0.637</b> (3 seeds)</td></tr>
+</tbody></table></div>
+
+<div class="card"><h2>Result &amp; interpretation</h2>
+<p><b>Interface masking HURT</b> — ρ 0.610, a robust −0.027. With trial 3 (ligand, −0.016) this completes a clear
+verdict: <b>every targeted/concentrated masking hurts</b> — cluster (−0.028), interface (−0.027), ligand (−0.016)
+— while uniform scattered masking is optimal (0.637).</p>
+<p>Even masking <i>exactly where binding happens</i> makes the representation worse. Concentrating the mask on one
+region removes too much local signal there and over-specialises the reconstruction, whereas broad scattered masking
+forces general, distributed feature learning. <b>Masking strategy is not the lever.</b> Folded into Phase 8.</p></div>
+</div></body></html>

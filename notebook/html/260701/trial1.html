@@ -1,0 +1,96 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Trial 1 — Cluster masking</title><style>
+*{box-sizing:border-box}
+body{margin:0;background:#f5f6f8;color:#1c2433;font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+.page{max-width:860px;margin:0 auto;padding:40px 24px 90px}
+header{border-bottom:2px solid #1c2433;padding-bottom:14px;margin-bottom:24px}
+header .k{font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:#5b6678;margin-bottom:6px}
+header h1{font-size:24px;font-weight:650;margin:0}
+header .sub{font-size:13px;color:#5b6678;margin-top:6px}
+.card{background:#fff;border:1px solid #e3e7ee;border-radius:12px;padding:20px 22px;margin-bottom:22px;box-shadow:0 1px 2px rgba(20,30,50,.04),0 8px 24px rgba(20,30,50,.05)}
+h2{font-size:16px;font-weight:640;margin:0 0 10px}
+p{margin:0 0 10px}
+code{background:#f0f2f5;padding:1px 5px;border-radius:4px;font-size:12.5px;font-family:ui-monospace,Menlo,Consolas,monospace}
+pre{background:#1c2433;color:#e6edf3;border-radius:9px;padding:14px 16px;overflow-x:auto;font-size:12px;line-height:1.5;font-family:ui-monospace,Menlo,Consolas,monospace}
+pre .c{color:#8a97a8}
+.pill{display:inline-block;font-size:11px;font-weight:700;padding:2px 9px;border-radius:999px}
+.run{background:#fcf3e0;color:#b07a17}.done{background:#eaf5ee;color:#2f6f4f}
+.tag{display:inline-block;font-size:11px;font-weight:600;padding:1px 8px;border-radius:999px;background:#eef1f6;color:#5b6678;margin-right:5px}
+ul{margin:6px 0 10px;padding-left:20px}li{margin:3px 0}
+.kv{font-size:13px;color:#5b6678}.kv b{color:#1c2433}
+table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums;margin-top:6px}
+th,td{padding:7px 10px;text-align:left;border-top:1px solid #e3e7ee;font-size:13.5px}
+thead th{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#5b6678;border:0;border-bottom:1px solid #e3e7ee}
+.mut{color:#5b6678}
+</style></head><body><div class="page">
+<header><div class="k">VoxBind · autoresearch · dramatic change #1</div>
+<h1>Trial 1 — Contiguous cluster masking</h1>
+<div class="sub"><span class="tag">masking algorithm</span><span class="tag">new code</span>
+opt-in, non-destructive · base = ChannelViT <code>[7,4,2]</code> (ρ≈0.637) · <span class="pill done">done — ρ 0.609 (−0.028)</span></div></header>
+
+<div class="card"><h2>Hypothesis</h2>
+<p>The campaign showed two things about masking: (1) <b>easier/more-local masking hurts</b> — finer blocks (block 4)
+collapsed to 0.583, and lowering the ratio (mask 0.4) lost ground; (2) only <b>atom-targeted</b> masking (atom-bias)
+ever helped. Both point the same way: the encoder learns better when forced to <b>infer missing structure from
+long-range context</b>, not fill small local gaps.</p>
+<p>Standard block masking drops <i>many small, scattered</i> blocks (≈50% of the volume in 2&nbsp;Å cubes). This
+trial takes the lesson to its logical end: mask a <b>few LARGE contiguous regions, centred on the atoms</b>, so the
+model must reconstruct whole chemical substructures from their surroundings — the image-MAE regime (large masked
+spans → semantic features), but anchored to chemistry rather than random.</p></div>
+
+<div class="card"><h2>What was implemented</h2>
+<p>A new masking function <code>make_cluster_mask</code> in <code>models/mae_ops.py</code>, plus a new opt-in
+strategy <code>mae.mask_strategy=cluster</code> wired through the train + val mask paths in
+<code>train_density.py</code>. <b>Fully non-destructive:</b> <code>uniform</code> stays the default;
+<code>uniform</code>/<code>atom_biased</code> code is untouched; the only new config key is
+<code>mae.mask_n_seeds</code> (default 4).</p>
+<p class="mut">Algorithm — per sample, at block resolution (gb³ blocks):</p>
+<ul>
+<li>sample <code>n_seeds</code> seed blocks, weighted by atom mass (∝ <code>avg_pool3d</code> of the atom channels — like atom-bias picks atom-rich regions);</li>
+<li>compute each block's Euclidean distance to its <i>nearest seed</i>;</li>
+<li>mask the <code>floor(ratio·gb³)</code> blocks <b>closest to any seed</b> → exactly <code>ratio</code> coverage, as <code>n_seeds</code> large contiguous clusters;</li>
+<li>upsample the block mask back to voxels.</li>
+</ul>
+<pre><span class="c"># models/mae_ops.py — core of make_cluster_mask(atoms_sum, block_size, ratio, n_seeds=4)</span>
+w = (F.avg_pool3d(atoms_sum, block_size) * block_size**3).reshape(B, n_blocks).clamp_min(0) + 1e-6
+coords = stack(meshgrid(arange(gb), arange(gb), arange(gb))).reshape(-1, 3).float()
+for b in range(B):
+    seeds = multinomial(w[b], n_seeds)              <span class="c"># atom-weighted seed blocks</span>
+    dist  = cdist(coords, coords[seeds]).amin(dim=1) <span class="c"># nearest-seed distance</span>
+    mask[b, dist.topk(n_mask, largest=False).indices] = True  <span class="c"># closest n_mask blocks</span></pre>
+<p class="kv"><b>Enable:</b> <code>mae.mask_strategy=cluster +mae.mask_n_seeds=4</code> &nbsp;·&nbsp; default <code>n_seeds=4</code> → ~4 large holes covering 50%; <code>n_seeds=1</code> → one big ball.</p></div>
+
+<div class="card"><h2>Smoke verification (CPU)</h2>
+<ul>
+<li>exact mask fraction = 0.500 (target 0.5); shape/dtype correct;</li>
+<li><b>contiguous</b> — masked-block spread ≈ 3.2 (clustered, not scattered);</li>
+<li><b>atom-anchored</b> — atom mass inside the mask ≫ outside (≈ 7.0 vs 1.4);</li>
+<li>deterministic given a generator seed; <code>uniform</code> &amp; <code>atom_biased</code> outputs unchanged (no regression).</li>
+</ul></div>
+
+<div class="card"><h2>Experiment</h2>
+<table><thead><tr><th>Field</th><th>Value</th></tr></thead><tbody>
+<tr><td>exp</td><td><code>260628_ar_cvit_g742_cluster</code></td></tr>
+<tr><td>base recipe</td><td>ChannelViT [7,4,2], C+D+G, mask 0.50, 100 ep, PLINDER-OTF</td></tr>
+<tr><td>change</td><td><code>mask_strategy=cluster</code>, <code>n_seeds=4</code> (vs <code>uniform</code> block mask)</td></tr>
+<tr><td>compute</td><td>GPU 1-3, 3×bsz8×accum5 = eff-batch 120 (≈ base 128)</td></tr>
+<tr><td>eval</td><td>frozen probe, lp_edrscc_v2 (Kd/Ki, n=1320), 3 seeds</td></tr>
+<tr><td>target to beat</td><td>ρ 0.637 (and note: pretrain-seed noise ≈ ±0.02)</td></tr>
+<tr><td>result</td><td><b>ρ 0.609 ±.001</b> · r 0.635 · RMSE 1.386 &nbsp;→&nbsp; <b>Δ −0.028 vs 0.637</b> (3 seeds)</td></tr>
+</tbody></table></div>
+
+<div class="card"><h2>Result &amp; interpretation</h2>
+<p><b>Cluster masking HURT</b> — ρ 0.609, a robust −0.028 (±.001, well outside the ~±0.02 seed noise). The
+"large contiguous masks → semantic features" intuition from image-MAE <b>does not transfer</b> to this domain.</p>
+<p>Reason: atom/density signal is <b>sparse and local</b>, not redundant like image pixels. Masking a few large
+contiguous chunks <i>centred on the atoms</i> removes most of the irreplaceable local signal at once, so the
+reconstruction target is unrecoverable rather than usefully hard. Clean contrast across the masking sweep:</p>
+<table><thead><tr><th>Masking</th><th>character</th><th>ρ</th></tr></thead><tbody>
+<tr><td>block-4</td><td>too fine / easy (scattered 1Å)</td><td>0.583</td></tr>
+<tr><td><b>uniform / atom-bias</b></td><td><b>scattered 2Å — sweet spot</b></td><td><b>≈0.63</b></td></tr>
+<tr><td>cluster (this trial)</td><td>too contiguous / destructive</td><td>0.609</td></tr>
+</tbody></table>
+<p class="kv" style="margin-top:10px">Verdict: <b>not pursued further</b> (no n_seeds sweep — it would be minor-knob tuning of a losing idea).
+Folded into <code>autoresearch.html</code> Phase 8.</p></div>
+</div></body></html>

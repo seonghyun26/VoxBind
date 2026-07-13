@@ -1,0 +1,73 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Trial 3 — Ligand masking</title><style>
+*{box-sizing:border-box}
+body{margin:0;background:#f5f6f8;color:#1c2433;font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+.page{max-width:860px;margin:0 auto;padding:40px 24px 90px}
+header{border-bottom:2px solid #1c2433;padding-bottom:14px;margin-bottom:24px}
+header .k{font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:#5b6678;margin-bottom:6px}
+header h1{font-size:24px;font-weight:650;margin:0}
+header .sub{font-size:13px;color:#5b6678;margin-top:6px}
+.card{background:#fff;border:1px solid #e3e7ee;border-radius:12px;padding:20px 22px;margin-bottom:22px;box-shadow:0 1px 2px rgba(20,30,50,.04),0 8px 24px rgba(20,30,50,.05)}
+h2{font-size:16px;font-weight:640;margin:0 0 10px}
+p{margin:0 0 10px}
+code{background:#f0f2f5;padding:1px 5px;border-radius:4px;font-size:12.5px;font-family:ui-monospace,Menlo,Consolas,monospace}
+pre{background:#1c2433;color:#e6edf3;border-radius:9px;padding:14px 16px;overflow-x:auto;font-size:12px;line-height:1.5;font-family:ui-monospace,Menlo,Consolas,monospace}
+pre .c{color:#8a97a8}
+.pill{display:inline-block;font-size:11px;font-weight:700;padding:2px 9px;border-radius:999px}
+.run{background:#fcf3e0;color:#b07a17}.done{background:#eaf5ee;color:#2f6f4f}
+.tag{display:inline-block;font-size:11px;font-weight:600;padding:1px 8px;border-radius:999px;background:#eef1f6;color:#5b6678;margin-right:5px}
+ul{margin:6px 0 10px;padding-left:20px}li{margin:3px 0}
+.kv{font-size:13px;color:#5b6678}.kv b{color:#1c2433}
+table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums;margin-top:6px}
+th,td{padding:7px 10px;text-align:left;border-top:1px solid #e3e7ee;font-size:13.5px}
+thead th{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#5b6678;border:0;border-bottom:1px solid #e3e7ee}
+.mut{color:#5b6678}
+</style></head><body><div class="page">
+<header><div class="k">VoxBind · autoresearch · dramatic change #3</div>
+<h1>Trial 3 — Ligand masking (pocket → ligand)</h1>
+<div class="sub"><span class="tag">masking algorithm</span><span class="tag">on-theme</span><span class="tag">new code</span>
+base = ChannelViT <code>[7,4,2]</code> (ρ≈0.637) · <span class="pill done">done — ρ 0.621 (−0.016)</span></div></header>
+
+<div class="card"><h2>Hypothesis</h2>
+<p>The previous masking trials hid <i>random</i> or <i>atom-rich</i> regions. This one masks something specific and
+meaningful: the <b>ligand</b>. If the encoder is forced to reconstruct the ligand region from the surrounding
+<b>pocket</b>, it has to learn <b>which ligands a pocket admits</b> — exactly the de-novo placement problem VoxBind
+is built for. Those pocket-conditioned, binding-aware features are plausibly the most affinity-relevant signal a
+self-supervised objective could produce here.</p></div>
+
+<div class="card"><h2>What was implemented</h2>
+<p>A new opt-in <code>mae.mask_strategy=ligand</code> in the MAE prefetcher (<code>train_density.py</code>). It
+masks the blocks most occupied by <b>ligand</b> atoms — reusing the existing atom-biased top-K selector, but weighted
+by the <i>ligand</i> mass only (<code>v_lig.sum</code>) instead of all atoms. The masked region (across all input
+channels) covers the ligand and its immediate surroundings; the encoder reconstructs it from the rest (mostly
+pocket). <b>Non-destructive:</b> default <code>uniform</code> unchanged; <code>atom_biased</code>/<code>cluster</code>
+untouched; no new mask function (reuses <code>make_atom_biased_block_mask</code>).</p>
+<pre><span class="c"># train_density.py — mask_strategy == "ligand":</span>
+lig_sum = v_lig.sum(dim=1, keepdim=True)            <span class="c"># ligand-only occupancy (7 lig channels)</span>
+mask = make_atom_biased_block_mask(lig_sum, block_size, ratio, tau)  <span class="c"># top-K ligand-mass blocks</span>
+<span class="c"># mask ≈ ligand footprint → reconstruct ligand region from the pocket</span></pre>
+<p class="kv"><b>Enable:</b> <code>mae.mask_strategy=ligand mae.mask_ratio=0.25 mae.mask_atom_tau=0.5</code> &nbsp;·&nbsp;
+small ratio (≈ ligand footprint) + low tau (strong ligand focus) so the masked region is the ligand, not half the pocket.</p></div>
+
+<div class="card"><h2>Experiment</h2>
+<table><thead><tr><th>Field</th><th>Value</th></tr></thead><tbody>
+<tr><td>exp</td><td><code>260629_ar_cvit_g742_ligand</code></td></tr>
+<tr><td>base recipe</td><td>ChannelViT [7,4,2], C+D+G, 100 ep, PLINDER-OTF</td></tr>
+<tr><td>change</td><td><code>mask_strategy=ligand</code>, ratio 0.25, tau 0.5 (mask ligand, predict from pocket)</td></tr>
+<tr><td>compute</td><td>GPU 0-3, 4×bsz8×accum4 = eff-batch 128</td></tr>
+<tr><td>eval</td><td>frozen probe, lp_edrscc_v2 (Kd/Ki, n=1320), 3 seeds</td></tr>
+<tr><td>target to beat</td><td>ρ 0.637 (seed noise ≈ ±0.02)</td></tr>
+<tr><td>result</td><td><b>ρ 0.621 ±.002</b> · r 0.641 · RMSE 1.444 &nbsp;→&nbsp; <b>Δ −0.016 vs 0.637</b> (3 seeds)</td></tr>
+</tbody></table></div>
+
+<div class="card"><h2>Result &amp; interpretation</h2>
+<p><b>Ligand masking HURT</b> — ρ 0.621, a robust −0.016 (±.002). The most on-theme idea did <i>not</i> produce
+better affinity features.</p>
+<p>The likely reason is a <b>task mismatch</b>: reconstructing the ligand from the pocket is a <i>generative</i>
+objective — "what could bind here" — which is underdetermined (many ligands fit a pocket) and trains features for
+<i>placement</i>. The frozen probe asks a <i>discriminative</i> question — "how tightly does <b>this</b> ligand
+bind". Features optimised for generation aren't the features that rank affinity, so the pretext pulls the
+representation the wrong way. (Smaller mask ratio also gives less of the standard MAE signal.) Folded into
+<code>autoresearch.html</code> Phase 8.</p></div>
+</div></body></html>

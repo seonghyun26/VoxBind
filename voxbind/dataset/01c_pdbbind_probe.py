@@ -330,6 +330,14 @@ def infer_feature_spec(condition: str, cfg, atom_source_arg: str = "auto") -> Fe
     with_gradmag = bool(
         condition.endswith("gradmag") if with_gradmag_cfg is None else with_gradmag_cfg
     )
+    # density_input=False encoders (coords-only patch embed; density+gradmag are
+    # reconstruction TARGETS only, not encoder input) must be fed atoms-only at probe
+    # time — the density that input_mode names lives only in the training target. Strip
+    # it from the INPUT spec. Default True → unchanged for every existing encoder.
+    density_input = OmegaConf.select(cfg, "mae.density_input", default=True)
+    if density_input is False and input_mode.endswith("_density"):
+        input_mode = input_mode[: -len("_density")]      # atomblob_density -> atomblob
+        with_gradmag = False
     ligand_radius = float(OmegaConf.select(cfg, "dset.ligand_radius", default=0.5))
     expected = _expected_channels(input_mode, with_gradmag)
     needs_density = input_mode in ("density", "atomblob_density", "atomblob_merged_density") \
@@ -1211,6 +1219,10 @@ FROZEN_SPLIT_SCHEMES = {
     "lp_edrscc_v2": "lp_edrscc_v2",   # explicit alias for the canonical (3850/817/1320)
     "time":         "time_v1",        # temporal holdout (train ≤2016 / val 2017 / test ≥2018)
     "misato":       "misato_md_v1",   # MISATO official 8:1:1 MD split (committed mirror)
+    # GEMS CleanSplit (leakage + intra-train redundancy filtered) ∩ ED+RSCC+Kd/Ki; test = CASF-2016
+    "clean_ed":        "clean_ed_v1",         # 4099/1000/214 (CASF-2016 test)
+    "clean_ed_v1":     "clean_ed_v1",
+    "clean_ed_v1_indep": "clean_ed_v1_indep", # 4099/1000/109 (leakage-independent CASF-2016 test)
 }
 
 
@@ -2452,7 +2464,7 @@ def build_parser() -> argparse.ArgumentParser:
                          "resolution-robust). A non-pK target adds a _<target> token to the CSV name "
                          "and needs its cache built (dataset/extract_bfactors.py for B-factors); "
                          "complexes lacking a label are dropped.")
-    pr.add_argument("--split", choices=["lp", "lp_edrscc", "lp_edrscc_v1", "lp_edrscc_v2", "time", "misato"], default="lp",
+    pr.add_argument("--split", choices=["lp", "lp_edrscc", "lp_edrscc_v1", "lp_edrscc_v2", "time", "misato", "clean_ed", "clean_ed_v1", "clean_ed_v1_indep"], default="lp",
                     help="Split source. lp = LP_PDBBind new_split recomputed locally (legacy; can drift "
                          "across servers). FROZEN, hash-verified manifests in voxbind/splits/ (identical "
                          "on every server): lp_edrscc (canonical = Kd/Ki-only v2, 3850/817/1320; "
@@ -2577,7 +2589,7 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Keep covalent complexes (default: drop)")
     pt.add_argument("--cl1_only", action="store_true",
                     help="Restrict to LP_PDBBind CL1=True (cleanest subset); adds _filtered to the CSV name")
-    pt.add_argument("--split", choices=["lp", "lp_edrscc", "lp_edrscc_v1", "lp_edrscc_v2", "time", "misato"], default="lp",
+    pt.add_argument("--split", choices=["lp", "lp_edrscc", "lp_edrscc_v1", "lp_edrscc_v2", "time", "misato", "clean_ed", "clean_ed_v1", "clean_ed_v1_indep"], default="lp",
                     help="Split source (see `probe --split`). Frozen schemes (lp_edrscc/time/misato) load "
                          "the hash-verified manifest in voxbind/splits/ so both arms AND every server use "
                          "the identical pids; lp = legacy local recompute. Pair with --tag to name the CSV.")

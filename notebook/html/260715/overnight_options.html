@@ -1,0 +1,154 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Overnight options — new hypotheses + Gaussian-splatting decoding</title><style>
+*{box-sizing:border-box}
+body{margin:0;background:#f5f6f8;color:#1c2433;font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+.page{max-width:1000px;margin:0 auto;padding:40px 24px 90px}
+header{border-bottom:2px solid #1c2433;padding-bottom:14px;margin-bottom:24px}
+header .date{font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:#5b6678;margin-bottom:6px}
+header h1{font-size:25px;font-weight:650;margin:0}
+header .sub{font-size:13px;color:#5b6678;margin-top:6px}
+.card{background:#fff;border:1px solid #e3e7ee;border-radius:12px;padding:22px;margin-bottom:24px;box-shadow:0 1px 2px rgba(20,30,50,.04),0 8px 24px rgba(20,30,50,.05)}
+h2{font-size:18px;font-weight:660;margin:0 0 4px}
+h3{font-size:15px;font-weight:660;margin:20px 0 6px;color:#1d5a3a}
+.csub{font-size:12.5px;color:#5b6678;margin:0 0 14px}
+table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums;margin:8px 0}
+th,td{padding:8px 11px;text-align:left;vertical-align:top;border-top:1px solid #e3e7ee;font-size:13.5px}
+thead th{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:#5b6678;border:0;border-bottom:1px solid #e3e7ee}
+.num{font-weight:660}.pm{color:#5b6678;font-weight:500;font-size:11.5px}
+.tag{font-size:10px;font-weight:700;padding:2px 7px;border-radius:999px;white-space:nowrap}
+.trun{color:#b07a17;background:#fcf3e0}.tq{color:#5b6678;background:#eef1f5}.tidea{color:#1d4ed8;background:#e8effe}.tdone{color:#1d5a3a;background:#eaf5ee}
+.hi{background:#eaf5ee;font-weight:700;color:#1d5a3a;padding:1px 5px;border-radius:5px}
+.note{font-size:13px;color:#43506a;line-height:1.65}
+.note b{color:#1c2433}
+code{background:#f0f2f5;padding:1px 5px;border-radius:4px;font-size:12.5px}
+ul{margin:6px 0;padding-left:20px}li{margin-bottom:5px}
+.opt{border-left:3px solid #cdd5e0;padding:2px 0 2px 14px;margin:14px 0}
+.opt.rec{border-left-color:#1d5a3a}
+.eff{font-size:11px;font-weight:700;padding:1px 7px;border-radius:4px;background:#eef1f5;color:#5b6678;margin-left:6px}
+.eff.lo{background:#eaf5ee;color:#1d5a3a}.eff.md{background:#fcf3e0;color:#b07a17}.eff.hi{background:#fde8e6;color:#b4413a}
+a{color:#1d4ed8;text-decoration:none;font-weight:600}a:hover{text-decoration:underline}
+</style></head><body><div class="page">
+
+<header><div class="date">VoxBind · overnight · 2026-07-08</div>
+<h1>Overnight options — new hypotheses + Gaussian-splatting decoding</h1>
+<div class="sub">Two asks: (1) new hypotheses from the 100M/v2 recipe sweep, with the top ones launched; (2) is a
+Gaussian-splatting decoder feasible? Experiments are in flight (won't finish by morning — pick which to keep/kill).</div></header>
+
+<div class="card">
+<h2>Where we are</h2>
+<p class="note">The 100M balanced encoder (d640/L18/h10) on PLINDER v2, with the masking ratio re-tuned to <b>0.75</b>,
+hit ρ&nbsp;<b>0.644</b> (50ep) — the <b>first break of the ~0.637 ceiling</b> that held across the whole ~30-trial v1 campaign.
+Every recipe axis now has a clean optimum: <b>mask 0.75</b> (0.50→0.614, <span class="hi">0.75→0.644</span>, 0.85→0.623),
+<b>balanced d640×18</b> (d768×12 width 0.595, d512×28 depth 0.616), <b>head_dim 64</b> (h16 hurts, 0.633). The headline finding:
+<b>bigger data+model needs a heavier mask</b> — the recipe, not just the scale, was the lever.</p>
+</div>
+
+<div class="card">
+<h2>1 · New hypotheses</h2>
+<p class="csub">Ranked by expected impact. The big one is a <b>confound</b>: the whole earlier size×corpus grid used mask 0.50.</p>
+<table><thead><tr><th>#</th><th>Hypothesis</th><th>Test</th><th>Status</th></tr></thead><tbody>
+<tr><td class="num">H1</td><td><b>The grid was under-masked?</b> <span class="hi">Answered — mask×size INTERACTION.</span> 40M·v2 @ mask 0.75 = <b>0.6225</b> ≈
+its mask-0.50 number (0.620): heavy masking does NOT help the small model. But: at mask 0.50 capacity <i>hurts</i> (100M 0.614 &lt; 40M
+0.620); at mask 0.75 capacity <i>helps</i> (100M <b>0.644</b> &gt; 40M 0.6225). So <b>"more capacity hurts" was an under-masking artifact</b> —
+the mask optimum scales with model <b>capacity</b>. <span class="pm">(caveat: 50ep vs grid 100ep)</span></td><td><b>40M · v2 @ mask 0.75</b> = 0.6225</td><td><span class="tag tdone">done</span></td></tr>
+<tr><td class="num" style="color:#1d5a3a">S1</td><td><b>Does capacity keep helping past 100M at mask 0.75?</b> H1 showed heavy masking <i>unlocks</i> capacity
+(bigger wins at mask 0.75, loses at 0.50). So scale the balanced winner up and see if the gain continues — a real scaling-law test,
+now that the recipe is right.</td><td><b>d768/L20/h12 (~150M) · v2 @ mask 0.75</b> = <b>0.626</b> — regresses (−0.018)</td><td><span class="tag tdone">done</span></td></tr>
+<tr><td class="num">H2</td><td><b>Re-probe the grid at the right mask.</b> If H1 holds, the width/depth ordering may change once correctly masked —
+maybe width didn't "regress", it was just under-masked.</td><td><b>width-98M (d768/L12) · v2 @ mask 0.75</b> = <b>0.627</b> — recovers +0.032!</td><td><span class="tag tdone">done</span></td></tr>
+<tr><td class="num">H3</td><td><b>Fine mask peak.</b> The optimum is ~0.75 (between 0.50 and 0.85) but not pinned.</td><td><b>100M @ mask 0.70 &amp; 0.80</b></td><td><span class="tag tidea">idea</span></td></tr>
+<tr><td class="num">H4</td><td><b>Is the mask shift driven by MODEL size or DATA size?</b> On v1-17K, mask 0.75 <i>hurt</i> the 40M (0.621 &lt; 0.637). On
+v2-112K it <i>helps</i> the 100M (0.644). Disentangle the two axes.</td><td><b>100M · v1 @ mask 0.75</b> (big model, small data)</td><td><span class="tag tidea">idea</span></td></tr>
+<tr><td class="num">H5</td><td><b>Does 2× training push further?</b> <span class="hi">Answered: NO — it overshoots.</span> The 0.644 model at 100ep <i>drops</i> to
+0.618 (same trajectory → frozen-probe peaks ~e49, overfits by e99).</td><td><b>0.644 model → e99</b> = ρ <b>0.618</b></td><td><span class="tag tdone">done</span></td></tr>
+<tr><td class="num">H7</td><td><b>Epoch curve — peaks early (~e20) but it's INSIDE the seed-noise band.</b> Curve: e10 0.621 → <b>e20 0.633</b> → e30 0.630
+→ e40 0.622 → e50 0.615 → e59 0.625 → e99 0.618. Peaks ~e20-30 then wobbles down (over-specialization). <b>But this re-run of the
+0.644 config tops out at 0.633</b> — the exact same recipe, ~0.01-0.02 lower: <b>pretrain-seed/aug noise (±0.02)</b>. So the epoch effect
+≈ seed noise; the 0.644 headline was a favorable draw (expected ~0.63±0.02). Robust findings (mask +0.030, capacity×mask) still clear
+the noise; exact best-number/epoch/arch optima do not → key claims need <b>multi-seed</b>.</td><td>epoch curve mapped; peak ~e20 within noise</td><td><span class="tag tdone">done</span></td></tr>
+<tr><td class="num" style="color:#1d5a3a">B1</td><td><b>Did the mask GEOMETRY (block size) also need re-tuning?</b> Block size was only swept at v1/mask0.50/40M
+(block4=1Å hurt 0.583, block8=2Å best). Re-sweep at the best recipe — block size × mask ratio interact, so the 2Å optimum may shift
+now that ratio=0.75.</td><td><b>block 4 (1Å) &amp; block 16 (4Å)</b> @ d640/L18/h10 mask0.75 — vs block8 0.644</td><td><span class="tag tq">queued · fires as GPUs free</span></td></tr>
+<tr><td class="num">B2</td><td><b>Re-test masking PRIORITY at the new recipe.</b> Default = uniform (random). atom_biased (mask where coords/density
+are) was ~tied at v1/mask0.50 (0.641 nominal but seed luck); ligand/interface/cluster all hurt. Masking-<i>distribution</i> axis was
+closed at mask0.50 — never re-tested at 0.75.</td><td><b>atom_biased @ d640/L18/h10 mask0.75</b> (offered)</td><td><span class="tag tidea">idea</span></td></tr>
+<tr><td class="num">H6</td><td><b>Arch fine-tune around the sweet spot</b> (lower priority — balanced already found).</td><td>d704/L16, d576/L20 @ mask 0.75</td><td><span class="tag tidea">idea</span></td></tr>
+</tbody></table>
+<div class="note"><b>The reframe, now confirmed (H1+H2+S1).</b> The campaign's "scaling hurts" verdicts were measured at mask 0.50.
+Re-run at mask 0.75, the size ordering <b>flips</b>: capacity <i>helps</i>. But it still peaks — <b>higher mask shifts the capacity sweet
+spot up, not away.</b><br>
+<table style="margin-top:8px"><thead><tr><th>model</th><th>mask 0.50</th><th>mask 0.75 (50ep)</th></tr></thead><tbody>
+<tr><td>40M</td><td>0.620</td><td>0.6225</td></tr>
+<tr><td>width-98M (d768/L12)</td><td>0.595</td><td>0.627</td></tr>
+<tr><td><b>balanced-100M (d640/L18)</b></td><td>0.614</td><td><span class="hi">0.644</span> ← peak</td></tr>
+<tr><td>150M (d768/L20) · S1</td><td>—</td><td>0.626</td></tr>
+</tbody></table>
+<span class="pm">Sweet spot ~40M at mask 0.50 → ~100M at mask 0.75; 150M regresses. (mask-0.50 col is 100ep grid except 100M=50ep;
+a 40M @ mask0.50 @ 50ep control is running to make the 50ep grid airtight.)</span></div>
+</div>
+
+<div class="card">
+<h2>2 · Gaussian-splatting decoding — feasible &amp; well-precedented</h2>
+<p class="csub">Short answer: <b>yes.</b> The forward pass is <i>already</i> Gaussian splatting — the voxelizer splats each atom as a
+Gaussian (<code>scatter_add</code>, σ = radius/res). A splatting <b>decoder</b> is the inverse: fit Gaussians to the generated density.</p>
+
+<div class="note"><b>Current decoder (the baseline to beat).</b> VoxBind generates a density grid, then decodes atoms by
+<b>peak-finding</b>: threshold (>0.25) → per-channel 3D local-maxima (<code>voxelizer.find_peaks</code>/<code>get_atom_coords</code>).
+It's <i>discrete</i> (atoms snap to the 0.25&nbsp;Å voxel grid), <i>non-differentiable</i>, per-channel, and models <b>no atom shape</b> —
+just "is this voxel a local max?". There is a <code>refine=True</code> hook in the voxelizer but the production path is peak-finding.</div>
+
+<h3>Prior work (this is a trodden path)</h3>
+<ul class="note">
+<li><b>VoxMol / "denoising voxel grids"</b> (Pinheiro 2023, the direct VoxBind ancestor) already fits atoms by
+<b>differentiable re-voxelization + L-BFGS</b>, minimizing L2 between re-splatted and generated density — this <i>is</i> splatting-fit decoding.</li>
+<li><b>DiffFit</b> (IEEE TVCG 2024) — differentiable fitting of atom structures into cryo-EM density by sampling density at atom coords.</li>
+<li><b>TEMPy-ReFF</b> — atoms as a Gaussian-mixture; per-atom variance = B-factor (exactly our density+∇ρ story).</li>
+<li><b>3D Gaussian Splatting</b> (3DGS) — anisotropic Gaussian primitives, opacity, differentiable rasterization, densify/prune for variable count.</li>
+<li><b>Atlas Gaussians Diffusion</b> (2024) — generating 3D content <i>as</i> sets of Gaussians via diffusion.</li>
+</ul>
+
+<h3>Options ladder (cheap → ambitious)</h3>
+
+<div class="opt rec"><b>Opt 0 · L-BFGS re-splat refinement</b> <span class="eff lo">effort: low</span> <span class="tag tdone" style="margin-left:6px">recommended first</span>
+<div class="note">Keep peak-finding for init (atom count + rough positions), then optimize atom (x,y,z) [and optionally per-atom σ/amplitude]
+by <b>re-voxelizing (splatting) and minimizing L2</b> to the generated density via L-BFGS/Adam. Sub-voxel accuracy, better bond
+geometry &amp; validity, fully differentiable. This is the proven VoxMol recipe and may partly exist behind <code>refine=</code>.
+<b>Fastest path to a decode-quality win; low risk.</b> Measure on the existing Vina/QED/validity harness.</div></div>
+
+<div class="opt"><b>Opt 1 · Anisotropic Gaussians (3DGS-style)</b> <span class="eff md">effort: medium</span>
+<div class="note">Give each atom a full covariance Σ (not just spherical σ) + amplitude, fit differentiably. Captures bonded/anisotropic
+density and matches the density+∇ρ channels better than isotropic blobs. Natural extension of Opt 0.</div></div>
+
+<div class="opt"><b>Opt 2 · Learned splatting-decoder head</b> <span class="eff hi">effort: high (research)</span>
+<div class="note">Replace the heuristic peak-finder with a <b>neural decoder that emits a SET of Gaussians</b> (μ, Σ, atom-type, opacity)
+from the latent/density, trained end-to-end through a differentiable splatting rasterizer (à la 3DGS). Permutation-invariant,
+handles variable atom count via opacity prune/densify, differentiable throughout. This is the real research bet — and the density
+encoder from <i>this</i> campaign is a natural conditioner/initializer for it.</div></div>
+
+<div class="opt"><b>Opt 3 · Generate-as-Gaussians (reframe)</b> <span class="eff hi">effort: high (new model)</span>
+<div class="note">Generate the molecule <i>directly</i> as a sparse set of 3D Gaussians instead of a dense voxel grid — a hybrid of
+point-cloud and voxel diffusion. No voxel-resolution ceiling, continuous coordinates, differentiable end-to-end. Biggest upside,
+biggest change; a genuine new model rather than a decoder swap.</div></div>
+
+<div class="note" style="margin-top:14px"><b>Recommendation.</b> Start with <b>Opt 0</b> (a day of work, high precedent, likely
+improves bond geometry / validity on the current generations) to de-risk and get a measurable win. Then <b>Opt 2</b> as the research
+direction, reusing the density encoder. Opt 3 is the moonshot if the splatting decoder proves out. All four are compatible with the
+existing walk-jump sampler — they only change the <i>density → atoms</i> step, not generation.</div>
+</div>
+
+<div class="card">
+<h2>3 · Tonight's status</h2>
+<table><thead><tr><th>Run</th><th>GPU</th><th>Tests</th><th>Result / ETA</th></tr></thead><tbody>
+<tr><td>0.644 model → e99 (100ep)</td><td>4-7</td><td>H5 — does 2× training help?</td><td><b>done: 0.618</b> (overshoots, −0.026)</td></tr>
+<tr><td>40M · v2 @ mask 0.75</td><td>0-3</td><td>H1 — was the grid under-masked?</td><td><b>done: 0.6225</b> (tied — mask helps big, not small)</td></tr>
+<tr><td>width-98M · v2 @ mask 0.75</td><td>4-7</td><td>H2 — does width recover?</td><td>ep25/50 · ~8 h</td></tr>
+</tbody></table>
+<div class="note"><b>New overnight result:</b> H5 answered — more training overshoots (100ep 0.618 &lt; 50ep 0.644), so the epoch budget
+joins mask/arch as an axis with an early optimum (new hypothesis <b>H7</b>). H1 and H2 (the grid-under-masked confound tests) run
+overnight — partial by morning. Live tracker: <a href="loop.html">loop.html</a>. Decisions for the morning: which hypotheses to keep
+(esp. H7 epoch-peak, which could re-open the whole grid), and whether to green-light <b>Opt 0</b> (L-BFGS re-splat decoder) as the
+first splatting step.</div>
+</div>
+
+</div></body></html>

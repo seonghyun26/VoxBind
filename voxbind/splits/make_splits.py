@@ -45,6 +45,12 @@ LP_CSV = PDBBIND / "raw" / "LP_PDBBind.csv"
 ED_RSCC = PDBBIND / "ed_rscc_split.csv"
 MISATO_SPLIT_DIR = REPO_ROOT / "voxbind" / "dataset" / "data" / "misato" / "misato_splits"
 
+# CleanSplit (GEMS, Nat. Mach. Intell. 2025) released lists — the leakage- and
+# redundancy-filtered PDBbind partition. Vendored under splits/cleansplit_ref/.
+CLEANSPLIT_DIR = SPLITS_DIR / "cleansplit_ref"
+CLEANSPLIT_JSON = CLEANSPLIT_DIR / "PDBbind_data_split_cleansplit.json"
+CLEANSPLIT_FOLD = CLEANSPLIT_DIR / "PDBbind_cleansplit_train_val_split_f0.json"
+
 RSCC_THRESHOLD = 0.8
 
 
@@ -104,6 +110,59 @@ def build_lp_edrscc_v2(q: pd.DataFrame) -> tuple[list, dict]:
         "generalization": "novel-target (sequence-dedup); Kd/Ki-only affinity labels (no assay-dependent IC50)",
         "inputs": {"ed_rscc_split": ED_RSCC.name, "lp_pdbbind": LP_CSV.name,
                    "rscc_threshold": RSCC_THRESHOLD, "measurement_types": ["Kd", "Ki"]},
+    }
+    return pairs, prov
+
+
+def build_clean_ed(q: pd.DataFrame, indep: bool = False) -> tuple[list, dict]:
+    """CleanSplit partition restricted to the lp_edrscc_v2 quality universe.
+
+    Combines two ideas: (1) GEMS' PDBbind CleanSplit (Nat. Mach. Intell. 2025) — a
+    leakage-AND-redundancy-filtered PDBbind training set with CASF-2016 as the held-out
+    test — and (2) our electron-density + RSCC + Kd/Ki quality bar (the same universe as
+    lp_edrscc_v2). This yields a "clean AND density-available" benchmark on which the
+    density probe and the external baselines can be compared under CleanSplit's stricter
+    de-leaking regime.
+
+    Assignment comes from CleanSplit's RELEASED lists (splits/cleansplit_ref/):
+      test  = CASF-2016  (indep=True → the leakage-independent CASF-2016 subset)
+      val   = CleanSplit fold-0 validation
+      train = CleanSplit filtered train  (minus anything assigned to val/test)
+    each intersected with the eligible universe = ED-available ∧ lig&poc RSCC ≥ 0.8 ∧
+    non-covalent ∧ (Kd or Ki). To re-derive CleanSplit from scratch (custom thresholds),
+    see cleansplit_ref/remove_train_test_sims.py + remove_train_redundancy.py.
+    """
+    cs = json.loads(CLEANSPLIT_JSON.read_text())
+    fold = json.loads(CLEANSPLIT_FOLD.read_text())
+    lc = lambda xs: {str(x).strip().lower() for x in xs}
+
+    eligible = set(q.loc[q["mtype"].isin(["kd", "ki"]), "pid"])   # ED+RSCC+KdKi, non-cov
+    test_pool = lc(cs["casf2016_indep"] if indep else cs["casf2016"])
+    val_pool = lc(fold["validation"])
+    train_pool = lc(cs["train"])
+
+    pairs, seen = [], set()
+    for pid in sorted(test_pool & eligible):
+        pairs.append((pid, "test")); seen.add(pid)
+    for pid in sorted(val_pool & eligible):
+        if pid not in seen:
+            pairs.append((pid, "val")); seen.add(pid)
+    for pid in sorted(train_pool & eligible):
+        if pid not in seen:
+            pairs.append((pid, "train")); seen.add(pid)
+
+    test_desc = "CASF-2016 leakage-independent subset" if indep else "CASF-2016"
+    prov = {
+        "description": f"GEMS PDBbind CleanSplit (leakage + intra-train redundancy filtered) ∩ "
+                       f"ED-available ∩ (lig & poc RSCC ≥ 0.8) ∩ (Kd or Ki), non-covalent; test = {test_desc}",
+        "partition": f"CleanSplit released lists (train / fold-0 val / {test_desc})",
+        "generalization": "de-leaked (protein+ligand) AND redundancy-reduced training; CASF-2016 held-out test",
+        "inputs": {"cleansplit": CLEANSPLIT_JSON.name, "cleansplit_fold": CLEANSPLIT_FOLD.name,
+                   "ed_rscc_split": ED_RSCC.name, "lp_pdbbind": LP_CSV.name,
+                   "rscc_threshold": RSCC_THRESHOLD, "measurement_types": ["Kd", "Ki"],
+                   "casf_independent_subset": indep},
+        "reference": "Gao/Durairaj et al., 'Resolving data bias improves generalization in binding "
+                     "affinity prediction', Nat. Mach. Intell. 2025; code camlab-ethz/GEMS",
     }
     return pairs, prov
 
@@ -172,7 +231,8 @@ def _write_manifest_csv(pairs, path: Path) -> None:
 def main() -> int:
     ap = argparse.ArgumentParser(description="Regenerate frozen PDBbind split manifests.")
     ap.add_argument("--scheme", default="all",
-                    choices=["all", "lp_edrscc_v1", "lp_edrscc_v2", "time_v1", "misato_md_v1"])
+                    choices=["all", "lp_edrscc_v1", "lp_edrscc_v2", "time_v1", "misato_md_v1",
+                             "clean_ed_v1", "clean_ed_v1_indep"])
     ap.add_argument("--test_from", type=int, default=2018, help="time_v1: first test year (>=)")
     ap.add_argument("--val_year", type=int, default=2017, help="time_v1: validation year")
     args = ap.parse_args()
@@ -184,10 +244,12 @@ def main() -> int:
                         "MANIFEST.json pins counts+sha256. Regenerate via make_splits.py.")
     manifest.setdefault("schemes", {})
 
-    want = ["lp_edrscc_v1", "lp_edrscc_v2", "time_v1", "misato_md_v1"] if args.scheme == "all" else [args.scheme]
+    want = (["lp_edrscc_v1", "lp_edrscc_v2", "time_v1", "misato_md_v1",
+             "clean_ed_v1", "clean_ed_v1_indep"] if args.scheme == "all" else [args.scheme])
 
     # the quality frame is only needed for the pdbbind-derived schemes
-    q = _load_quality_frame() if any(s in want for s in ("lp_edrscc_v1", "lp_edrscc_v2", "time_v1")) else None
+    _pdbbind_schemes = ("lp_edrscc_v1", "lp_edrscc_v2", "time_v1", "clean_ed_v1", "clean_ed_v1_indep")
+    q = _load_quality_frame() if any(s in want for s in _pdbbind_schemes) else None
 
     for scheme in want:
         if scheme == "lp_edrscc_v1":
@@ -202,6 +264,12 @@ def main() -> int:
         elif scheme == "misato_md_v1":
             pairs, prov = build_misato_md()
             fname = "misato_md_v1.csv"
+        elif scheme == "clean_ed_v1":
+            pairs, prov = build_clean_ed(q, indep=False)
+            fname = "clean_ed_v1.csv"
+        elif scheme == "clean_ed_v1_indep":
+            pairs, prov = build_clean_ed(q, indep=True)
+            fname = "clean_ed_v1_indep.csv"
         else:
             raise ValueError(scheme)
 

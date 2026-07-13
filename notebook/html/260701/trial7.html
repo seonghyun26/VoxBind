@@ -1,0 +1,89 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Trial 7 — Learnable radius-conditioned atom embedding</title><style>
+*{box-sizing:border-box}
+body{margin:0;background:#f5f6f8;color:#1c2433;font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+.page{max-width:860px;margin:0 auto;padding:40px 24px 90px}
+header{border-bottom:2px solid #1c2433;padding-bottom:14px;margin-bottom:24px}
+header .k{font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:#5b6678;margin-bottom:6px}
+header h1{font-size:24px;font-weight:650;margin:0}
+header .sub{font-size:13px;color:#5b6678;margin-top:6px}
+.card{background:#fff;border:1px solid #e3e7ee;border-radius:12px;padding:20px 22px;margin-bottom:22px;box-shadow:0 1px 2px rgba(20,30,50,.04),0 8px 24px rgba(20,30,50,.05)}
+h2{font-size:16px;font-weight:640;margin:0 0 10px}
+p{margin:0 0 10px}
+code{background:#f0f2f5;padding:1px 5px;border-radius:4px;font-size:12.5px;font-family:ui-monospace,Menlo,Consolas,monospace}
+pre{background:#1c2433;color:#e6edf3;border-radius:9px;padding:14px 16px;overflow-x:auto;font-size:12px;line-height:1.5;font-family:ui-monospace,Menlo,Consolas,monospace}
+pre .c{color:#8a97a8}
+.pill{display:inline-block;font-size:11px;font-weight:700;padding:2px 9px;border-radius:999px}
+.run{background:#fcf3e0;color:#b07a17}.done{background:#eaf5ee;color:#2f6f4f}
+.tag{display:inline-block;font-size:11px;font-weight:600;padding:1px 8px;border-radius:999px;background:#eef1f6;color:#5b6678;margin-right:5px}
+ul{margin:6px 0 10px;padding-left:20px}li{margin:3px 0}
+.kv{font-size:13px;color:#5b6678}.kv b{color:#1c2433}
+table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums;margin-top:6px}
+th,td{padding:7px 10px;text-align:left;border-top:1px solid #e3e7ee;font-size:13.5px}
+thead th{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#5b6678;border:0;border-bottom:1px solid #e3e7ee}
+.mut{color:#5b6678}
+</style></head><body><div class="page">
+<header><div class="k">VoxBind · autoresearch · dramatic change #7</div>
+<h1>Trial 7 — Learnable radius-conditioned atom embedding</h1>
+<div class="sub"><span class="tag">representation</span><span class="tag">user idea</span><span class="tag">new code</span>
+base = ChannelViT <code>[7,4,2]</code> (ρ≈0.637) · <span class="pill done">done — ρ 0.624 (+0.032 vs roleblob, −0.013 vs atomblob)</span></div></header>
+
+<div class="card"><h2>Hypothesis</h2>
+<p>Today atom identity is encoded two ways: <b>atomblob</b> gives each element its own one-hot channel; <b>roleblob</b>
+collapses everything to 2 role channels and lets the vdW blob <i>size</i> (diameter) carry identity. The idea here:
+replace "encode identity by diameter" with a <b>learnable embedding</b> — a small MLP <code>φ(radius)→ℝ^k</code> per role
+that maps each atom's vdW radius to a learned k-dim feature. If a continuous, learned radius→feature map is a better
+inductive bias than either sparse one-hot channels or raw blob-size, it should help — and a <b>compressed</b> k&lt;#elements
+gives a "soft vocabulary" where chemically-similar atoms share representation (potentially better on the small probe).</p></div>
+
+<div class="card"><h2>What was implemented</h2>
+<p>A new opt-in <code>model.radius_embed_k=k</code> backed by <code>RadiusAtomEmbed</code> in <code>models/density_vit.py</code>.
+Two MLPs <code>φ_lig, φ_poc: ℝ¹→ℝ^k</code> are evaluated at the fixed per-element vdW radii to form embedding matrices
+<code>W_lig (7×k), W_poc (4×k)</code>; the k-channel ligand/pocket grids are <code>einsum</code>-contractions of the one-hot
+occupancy with those matrices — which (for type-determined radii) equals the per-atom splat
+<code>Σ_a φ(role_a, r_a)·g_a</code>. It is a learnable front-end <b>inside the encoder</b>, so the <b>frozen probe inherits
+it automatically</b>; the MAE still reconstructs the RAW 13-ch atomblob+D+G, so only the input atom encoding changes.</p>
+<pre><span class="c"># models/density_vit.py — RadiusAtomEmbed (k=4): raw [7|4|D,G] → [k|k|D,G]=10ch, groups (4,4,2)</span>
+W_lig = φ_lig(lig_radii)              <span class="c"># (7, k)  differentiable in φ</span>
+W_poc = φ_poc(poc_radii)              <span class="c"># (4, k)</span>
+e_lig = einsum('bcxyz,ck->bkxyz', v_lig, W_lig)   <span class="c"># learned k-ch ligand grid</span>
+e_poc = einsum('bcxyz,ck->bkxyz', v_poc, W_poc)
+x = cat([e_lig, e_poc, density, gradmag])         <span class="c"># → patch_embed → encoder → recon 13ch</span></pre>
+<p class="kv"><b>Enable:</b> <code>+model.radius_embed_k=4</code>. Non-absorbable when k&lt;7 (a learned soft vocabulary);
+recovers the element separation roleblob sums away. <b>Smoke:</b> default path unchanged, φ gets grads, masking commutes
+(zeroed voxel→zero embed), and the standalone probe encoder loads the trained <code>encoder.*</code> strict.</p>
+<p class="kv"><b>Honest caveat:</b> ligand <b>S and P both have vdW radius 1.8 Å</b>, so a pure-radius embedding <i>cannot</i>
+separate them — radius-based encoding conflates same-radius elements by construction. So this is strictly ≤ atomblob in
+raw info; the bet is that the learned map + soft vocabulary out-generalizes the gap on the small probe.</p></div>
+
+<div class="card"><h2>Experiment</h2>
+<table><thead><tr><th>Field</th><th>Value</th></tr></thead><tbody>
+<tr><td>exp</td><td><code>260630_ar_cvit_radembed_k4</code></td></tr>
+<tr><td>base recipe</td><td>ChannelViT [7,4,2], C+D+G, 100 ep, PLINDER-OTF, 45.92M</td></tr>
+<tr><td>change</td><td><code>radius_embed_k=4</code> — learned φ(radius)→4 per role, groups (4,4,2)</td></tr>
+<tr><td>compute</td><td>GPU 0-3, 4×bsz8×accum4 = eff-batch 128, compile OFF</td></tr>
+<tr><td>eval</td><td>frozen probe, lp_edrscc_v2 (Kd/Ki, n=1320), 3 seeds</td></tr>
+<tr><td>target to beat</td><td>ρ 0.637 (atomblob one-hot); also vs roleblob 0.592</td></tr>
+<tr><td>result</td><td><b>ρ 0.624 ±.004</b> · r 0.650 · RMSE 1.366 &nbsp;→&nbsp; <b>+0.032 vs roleblob, −0.013 vs atomblob</b> (3 seeds)</td></tr>
+</tbody></table></div>
+
+<div class="card"><h2>Result &amp; interpretation</h2>
+<p><b>The learned radius embedding works — and lands almost exactly where the mechanism predicts.</b> At ρ 0.624 it
+<b>beats roleblob (0.592) by +0.032</b> — well above the ±0.004 seed noise — confirming that a learned <code>φ(radius)</code>
+map <b>recovers the element-identity signal that role-occupancy sums away</b>, the whole point of the idea. It does this
+while <b>compressing 11 one-hot atom channels into 8 learned ones</b> (k=4 per role) and with the best-in-class RMSE 1.366
+(≈ base 1.353).</p>
+<p><b>It does not beat one-hot atomblob (0.637, −0.013).</b> That −0.013 is real given the tight σ, and it's exactly the
+predicted cost: radius cannot separate ligand <b>S and P (both 1.8 Å)</b>, so the embedding is strictly ≤ one-hot in raw
+information. So the learned continuous embedding is a <b>near-lossless substitute</b> for discrete element channels — not
+an improvement on them. The ρ≈0.63 plateau holds, now also against a learned atom featurization.</p>
+<p><b>Follow-up — k=8 (no compression): ρ 0.613, WORSE than k=4 (−0.011).</b> Doubling the embedding to 16 atom channels
+<i>hurt</i> (and destabilised RMSE: 1.46±0.10 vs k=4's 1.37±0.01). So the −0.013 gap to one-hot was <b>not</b> a compression
+bottleneck — k=4's compression was a <b>beneficial regularizer</b> on the 3,850-complex probe, and the extra capacity
+overfits. Same motif as the rest of the campaign (dim768, finetune): capacity hurts the frozen probe. The residual gap to
+atomblob is the <b>S/P radius collision</b>, not channel count.</p>
+<p class="mut"><b>Running:</b> <b>distance-conditioned</b> k=8 (scales [0,2,4]) — a learned radial profile (mixture of
+Gaussian widths) instead of the single fixed Gaussian, so the embedding varies core-vs-shell. Tests whether a richer
+<i>spatial</i> profile (vs richer channels) helps. → trial8.html.</p></div>
+</div></body></html>

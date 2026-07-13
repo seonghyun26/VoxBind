@@ -39,6 +39,17 @@ manifests so they commit with a plain `git add`.
 | `lp_edrscc_v2` | 3850 / 817 / 1320 | `lp_edrscc_v1` ∩ (Kd **or** Ki) — IC50 dropped | **novel-target**, Kd/Ki-only target (**canonical**) |
 | `time_v1` | 8308 / 934 / 1182 | deposition year: train ≤2016 / val 2017 / test ≥2018 (same RSCC bar) | **temporal** generalization |
 | `misato_md_v1` | 13765 / 1595 / 1612 | mirror of MISATO official 8:1:1 MD split | MISATO QM/MD targets |
+| `clean_ed_v1` | 4099 / 1000 / 214 | GEMS **CleanSplit** (leakage + intra-train redundancy filtered) ∩ ED ∩ lig&poc RSCC≥0.8 ∩ Kd/Ki, non-cov; test = **CASF-2016** | **de-leaked + de-redundant**, density-available |
+| `clean_ed_v1_indep` | 4099 / 1000 / 109 | same as `clean_ed_v1` but test = **CASF-2016 leakage-independent subset** | strictest de-leaked test |
+
+> **`clean_ed_*` (code ready, split not yet materialized):** builder `build_clean_ed()` in
+> `make_splits.py` combines GEMS' PDBbind CleanSplit released lists (`cleansplit_ref/`) with
+> our ED+RSCC+Kd/Ki quality bar. Same eligible universe as `lp_edrscc_v2`, but CleanSplit's
+> partition (CASF-2016 test) instead of LP-PDBBind's `new_split`. `_indep` shares train/val
+> and uses only the leakage-independent CASF subset as test. Generate with
+> `python voxbind/splits/make_splits.py --scheme clean_ed_v1` (and `clean_ed_v1_indep`).
+> The full CleanSplit filtering algorithm (to re-derive from scratch with custom thresholds)
+> is vendored at `cleansplit_ref/remove_train_test_sims.py` + `remove_train_redundancy.py`.
 
 > **`time_v1` caveat:** a temporal split does **not** control sequence redundancy —
 > a recent test target may be near-identical to a training one. It measures

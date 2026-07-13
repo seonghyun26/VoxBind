@@ -242,7 +242,12 @@ def phase8_table():
         (2, "Cross-modal masking", "drop ALL density+gradmag, predict from atoms (modal_mask_prob=0.5)",    "crossmodal [7,4,2]",   "trial2.html"),
         (3, "Ligand masking",      "mask the LIGAND, reconstruct from pocket (mask_strategy=ligand)",       "ligand mask [7,4,2]",  "trial3.html"),
         (4, "Interface masking",   "mask the ligand-pocket CONTACT, reconstruct it (mask_strategy=interface)", "interface mask [7,4,2]", "trial4.html"),
+        (5, "Finer patches (1 Å)",  "patch_size 8→4: 2× finer patches, 12K ChannelViT tokens (spatial-resolution axis)", "patch4 [7,4,2]", "trial5.html"),
         (6, "Contrastive auxiliary","SimCLR InfoNCE on two MAE-masked views + MAE (contrastive_weight=0.05)", "contrastive [7,4,2]",  "trial6.html"),
+        (7, "Radius-embed atoms",   "learned φ(vdW-radius)→k per role replaces one-hot atom channels (radius_embed_k=4)", "radius-embed [7,4,2]", "trial7.html"),
+        (8, "Distance-cond. atoms", "radius-embed k=8 with a LEARNED radial profile (multi-scale blur mixture, scales [0,2,4])", "radius-embed-dist [7,4,2]", "trial8.html"),
+        (9, "Stochastic Depth",     "CV/DeiT: drop whole residual branches in training, ramped 0→0.1 over depth (drop_path=0.1)", "droppath [7,4,2]", "trial9.html"),
+        (10, "data2vec latent MAE", "NLP/CV: + predict EMA-teacher per-patch latent at masked patches (data2vec_weight=0.1)", "data2vec [7,4,2]", "trial10.html"),
     ]
     body = ""
     for n, name, what, lbl, html in rows:
@@ -489,7 +494,13 @@ InfoNCE loss alongside MAE (two MAE-masked views pulled together, different comp
 it pushes every different complex apart <i>equally</i>, discarding the graded similarity structure ρ needs (similar
 binders should sit close, not far). This was the last genuinely-different <i>objective</i>; both non-MAE objectives
 tried regress (denoise −0.050, contrastive −0.138), so <b>reconstruction is actively protected</b> and the plateau is
-firmly <b>data/probe-ceiling bound, not objective-bound</b> (the flat 6.5×-data result, Phase 4, agrees).</div></div>
+firmly <b>data/probe-ceiling bound, not objective-bound</b> (the flat 6.5×-data result, Phase 4, agrees).
+<br><br><b>trial 7 (learnable radius-embed atoms) — the best dramatic trial, ρ 0.624.</b> Replacing one-hot element
+channels with a learned <code>φ(vdW-radius)→4</code> per role (a continuous, compressed atom featurization)
+<b>beats roleblob 0.592 by +0.032</b> (it recovers the element separation role-occupancy sums away) and comes within
+<b>−0.013 of one-hot atomblob 0.637</b> — a near-lossless substitute, not an improvement. The small gap is exactly the
+predicted cost: ligand S and P share vdW 1.8 Å, so radius cannot separate them. <b>So even a learned atom featurization
+sits at the plateau</b>; representation richness isn't the missing lever either.</div></div>
 
 <div class="card"><h2>Reading it</h2>
 <div class="note">

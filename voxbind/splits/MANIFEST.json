@@ -74,6 +74,58 @@
           "Ki"
         ]
       }
+    },
+    "clean_ed_v1": {
+      "file": "clean_ed_v1.csv",
+      "counts": {
+        "train": 4099,
+        "val": 1000,
+        "test": 214,
+        "total": 5313
+      },
+      "sha256": "e4d2a91f2c8a2f382bc457fc7defb7528ac999a0d155edeb9250cdfa34aedfae",
+      "description": "GEMS PDBbind CleanSplit (leakage + intra-train redundancy filtered) \u2229 ED-available \u2229 (lig & poc RSCC \u2265 0.8) \u2229 (Kd or Ki), non-covalent; test = CASF-2016",
+      "partition": "CleanSplit released lists (train / fold-0 val / CASF-2016)",
+      "generalization": "de-leaked (protein+ligand) AND redundancy-reduced training; CASF-2016 held-out test",
+      "inputs": {
+        "cleansplit": "PDBbind_data_split_cleansplit.json",
+        "cleansplit_fold": "PDBbind_cleansplit_train_val_split_f0.json",
+        "ed_rscc_split": "ed_rscc_split.csv",
+        "lp_pdbbind": "LP_PDBBind.csv",
+        "rscc_threshold": 0.8,
+        "measurement_types": [
+          "Kd",
+          "Ki"
+        ],
+        "casf_independent_subset": false
+      },
+      "reference": "Gao/Durairaj et al., 'Resolving data bias improves generalization in binding affinity prediction', Nat. Mach. Intell. 2025; code camlab-ethz/GEMS"
+    },
+    "clean_ed_v1_indep": {
+      "file": "clean_ed_v1_indep.csv",
+      "counts": {
+        "train": 4099,
+        "val": 1000,
+        "test": 109,
+        "total": 5208
+      },
+      "sha256": "f4a43082c74df79f186e03e047362675795264318b2f1b674fea7181c7b2a13c",
+      "description": "GEMS PDBbind CleanSplit (leakage + intra-train redundancy filtered) \u2229 ED-available \u2229 (lig & poc RSCC \u2265 0.8) \u2229 (Kd or Ki), non-covalent; test = CASF-2016 leakage-independent subset",
+      "partition": "CleanSplit released lists (train / fold-0 val / CASF-2016 leakage-independent subset)",
+      "generalization": "de-leaked (protein+ligand) AND redundancy-reduced training; CASF-2016 held-out test",
+      "inputs": {
+        "cleansplit": "PDBbind_data_split_cleansplit.json",
+        "cleansplit_fold": "PDBbind_cleansplit_train_val_split_f0.json",
+        "ed_rscc_split": "ed_rscc_split.csv",
+        "lp_pdbbind": "LP_PDBBind.csv",
+        "rscc_threshold": 0.8,
+        "measurement_types": [
+          "Kd",
+          "Ki"
+        ],
+        "casf_independent_subset": true
+      },
+      "reference": "Gao/Durairaj et al., 'Resolving data bias improves generalization in binding affinity prediction', Nat. Mach. Intell. 2025; code camlab-ethz/GEMS"
     }
   }
 }
