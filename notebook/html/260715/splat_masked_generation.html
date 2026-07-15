@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Splat-and-Mask — exploiting a frozen MAE for de novo ligand generation</title>
+<style>
+  :root{
+    --ink:#1c2433; --ink-soft:#5b6678; --line:#e3e7ee; --line-strong:#aeb6c4;
+    --bg:#f5f6f8; --card:#ffffff; --accent:#2f6f4f; --best-bg:#eaf5ee;
+    --frozen:#2f5f8f; --frozen-bg:#eef3f8; --warn:#b07a17; --warn-bg:#fcf3e0; --bad:#b0472f;
+    --C:#5b6678; --N:#3a6ea5; --O:#c0504d;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    font-size:16px;line-height:1.55;-webkit-font-smoothing:antialiased;}
+  .page{max-width:1180px;margin:0 auto;padding:48px 24px 96px;}
+  header.doc{border-bottom:2px solid var(--ink);padding-bottom:18px;margin-bottom:14px;}
+  header.doc .date{font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:6px;}
+  header.doc h1{font-size:28px;font-weight:650;margin:0;letter-spacing:-0.01em;}
+  header.doc .lede{font-size:14px;color:var(--ink-soft);margin-top:10px;max-width:960px;}
+  .tldr{background:var(--best-bg);border:1px solid #cfe6d8;border-left:4px solid var(--accent);
+    border-radius:10px;padding:16px 20px;margin:26px 0 44px;font-size:14.5px;}
+  .tldr b{color:#1d5a3a;}
+  .doc-section{margin-bottom:60px;}
+  .section-head{font-size:22px;font-weight:660;letter-spacing:-0.01em;margin:0 0 8px;padding-bottom:12px;
+    border-bottom:2px solid var(--line-strong);display:flex;align-items:center;gap:14px;}
+  .section-head .sec-num{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;
+    border-radius:8px;background:var(--accent);color:#fff;font-size:15px;font-weight:700;flex:0 0 auto;}
+  .section-intro{font-size:14px;color:var(--ink-soft);margin:16px 0 22px;max-width:980px;line-height:1.65;}
+  .fig{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:22px 24px 10px;
+    box-shadow:0 1px 2px rgba(20,30,50,.04),0 8px 24px rgba(20,30,50,.05);margin:10px 0 8px;}
+  .fig svg{width:100%;height:auto;display:block;}
+  .figure-cap{margin:6px 2px 16px;font-size:12.5px;color:var(--ink-soft);}
+  .figure-cap b{color:var(--ink);}
+  p{max-width:980px;}
+  .notes{font-size:14px;color:var(--ink-soft);line-height:1.7;max-width:980px;}
+  .notes b{color:var(--ink);font-weight:600;}
+  ul{max-width:980px;padding-left:22px;}
+  li{margin-bottom:7px;}
+  code{background:#f0f2f5;padding:1px 6px;border-radius:4px;font-size:13px;
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace;}
+  table.cmp{border-collapse:collapse;width:100%;font-size:13.5px;background:var(--card);
+    border:1px solid var(--line);border-radius:12px;overflow:hidden;box-shadow:0 8px 24px rgba(20,30,50,.05);}
+  table.cmp th,table.cmp td{padding:11px 12px;text-align:center;border-top:1px solid var(--line);}
+  table.cmp thead th{background:#fafbfc;font-weight:600;border-top:none;font-size:12px;
+    text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft);}
+  table.cmp td.m{text-align:left;font-weight:560;white-space:nowrap;}
+  table.cmp tr.hero td{background:var(--best-bg);}
+  table.cmp tr.hero td.m{color:#1d5a3a;font-weight:680;}
+  .yes{color:var(--accent);font-weight:700;} .no{color:var(--bad);font-weight:700;}
+  .mid{color:var(--warn);font-weight:600;}
+  .pill{display:inline-block;font-size:11px;font-weight:600;letter-spacing:.03em;padding:2px 9px;border-radius:999px;}
+  .pill.frozen{background:var(--fræozen-bg);color:var(--frozen);}
+  .pill.train{background:var(--best-bg);color:var(--accent);}
+  .pill.new{background:var(--warn-bg);color:var(--warn);}
+  .foot{margin-top:60px;padding-top:18px;border-top:1px solid var(--line);font-size:12.5px;color:var(--ink-soft);}
+  /* svg helpers */æ
+  .svg-t{font:600 14px -apple-system,"Segoe UI",sans-serif;fill:var(--ink);}
+  .svg-s{font:500 12px -apple-system,"Segoe UI",sans-serif;fill:var(--ink-soft);}
+  .svg-lab{font:600 11px ui-monospace,Menlo,monospace;}
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="doc">
+    <div class="date">2026 · 07 · 15 — Design note</div>
+    <h1>Splat-and-Mask: exploiting a frozen MAE for de&nbsp;novo ligand generation</h1>
+    <div class="lede">A representation + sampling swap so the pretrained atomblob density-MAE stays
+      <i>in-distribution</i> the whole way through generation — atoms as a set of 3D Gaussians,
+      differentiably splatted into the voxel field the encoder was trained on, filled in by iterative
+      masking instead of Gaussian denoising.</div>
+  </header>
+
+  <div class="tldr">
+    <b>The one idea.</b> VoxBind's walk-jump corrupts the ligand with <b>Gaussian noise</b>; our frozen
+    MAE was pretrained with <b>masking</b> on clean voxels. That mismatch is what makes "let the frozen
+    encoder see the ligand" fail. Fix it at the root: represent the ligand as an explicit <b>set of
+    atom-Gaussians</b>, <b>splat</b> them into the voxel density the MAE expects, and generate by
+    <b>iterative unmasking</b> (MaskGIT/MAE-style). The encoder then only ever sees <i>partially-masked
+    clean</i> complexes — exactly its pretraining diet.
+  </div>
+
+  <!-- ========================= SECTION 1 ========================= -->
+  <div class="doc-section">
+    <h2 class="section-head"><span class="sec-num">1</span> Why a new sampler at all</h2>
+    <p class="section-intro">
+      The frozen encoder (atomblob7 v2.1 ChannelViT, 45.7M, pretrained as a <b>Masked Autoencoder</b> on
+      110k PLINDER complexes, <code>mask_ratio 0.5</code>) has only ever seen two things: <b>clean</b>
+      atom-blob voxels, and <b>whole patches masked out</b>. Walk-jump feeds it neither — it adds
+      continuous Gaussian noise to the ligand, and at sampling step&nbsp;0 the ligand is <i>pure noise</i>.
+      A frozen network can't adapt to a corruption it never saw.
+    </p>
+
+    <div class="fig">
+      <svg viewBox="0 0 1000 330" role="img" aria-label="corruption mismatch">
+        <defs>
+          <marker id="ar" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+            <path d="M0,0 L9,4.5 L0,9 z" fill="#5b6678"/>
+          </marker>
+          <pattern id="hatch" width="6" height="6" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
+            <line x1="0" y1="0" x2="0" y2="6" stroke="#aeb6c4" stroke-width="2"/>
+          </pattern>
+        </defs>
+        <!-- column headers -->
+        <text x="120" y="26" text-anchor="middle" class="svg-s">clean ligand</text>
+        <text x="470" y="26" text-anchor="middle" class="svg-s">corruption applied</text>
+        <text x="830" y="26" text-anchor="middle" class="svg-s">for the frozen MAE…</text>
+
+        <!-- ROW 1: walk-jump -->
+        <text x="20" y="86" class="svg-t">Walk-jump</text>
+        <text x="20" y="104" class="svg-s">(VoxBind today)</text>
+        <!-- clean atoms -->
+        <g><circle cx="100" cy="90" r="9" fill="#5b6678"/><circle cx="128" cy="80" r="9" fill="#3a6ea5"/>
+           <circle cx="120" cy="106" r="9" fill="#c0504d"/><circle cx="146" cy="98" r="9" fill="#5b6678"/></g>
+        <line x1="200" y1="92" x2="360" y2="92" stroke="#5b6678" stroke-width="1.5" marker-end="url(#ar)"/>
+        <text x="280" y="84" text-anchor="middle" class="svg-lab" fill="#b0472f">+ Gaussian noise</text>
+        <!-- noisy version -->
+        <g opacity="0.9"><circle cx="440" cy="90" r="9" fill="#5b6678" opacity=".5"/>
+          <circle cx="468" cy="80" r="9" fill="#3a6ea5" opacity=".5"/><circle cx="460" cy="106" r="9" fill="#c0504d" opacity=".5"/>
+          <circle cx="486" cy="98" r="9" fill="#5b6678" opacity=".5"/></g>
+        <g fill="#b07a17">
+          <circle cx="430" cy="72" r="2.4" opacity=".7"/><circle cx="500" cy="86" r="2.4" opacity=".7"/>
+          <circle cx="452" cy="120" r="2.4" opacity=".7"/><circle cx="478" cy="66" r="2.4" opacity=".7"/>
+          <circle cx="418" cy="104" r="2.4" opacity=".7"/><circle cx="504" cy="110" r="2.4" opacity=".7"/>
+          <circle cx="446" cy="60" r="2.4" opacity=".7"/><circle cx="492" cy="124" r="2.4" opacity=".7"/></g>
+        <rect x="690" y="70" width="250" height="44" rx="8" fill="#f7ecec" stroke="#e0bcbc"/>
+        <text x="815" y="97" text-anchor="middle" class="svg-lab" fill="#b0472f">out-of-distribution ✗</text>
+
+        <!-- ROW 2: MAE pretrain -->
+        <text x="20" y="186" class="svg-t">MAE pretrain</text>
+        <text x="20" y="204" class="svg-s">(patch masking)</text>
+        <g><circle cx="100" cy="190" r="9" fill="#5b6678"/><circle cx="128" cy="180" r="9" fill="#3a6ea5"/>
+           <circle cx="120" cy="206" r="9" fill="#c0504d"/><circle cx="146" cy="198" r="9" fill="#5b6678"/></g>
+        <line x1="200" y1="192" x2="360" y2="192" stroke="#5b6678" stroke-width="1.5" marker-end="url(#ar)"/>
+        <text x="280" y="184" text-anchor="middle" class="svg-lab" fill="#5b6678">mask patches</text>
+        <g><circle cx="440" cy="190" r="9" fill="#5b6678"/><rect x="458" y="170" width="20" height="20" fill="url(#hatch)" stroke="#aeb6c4"/>
+           <circle cx="460" cy="206" r="9" fill="#c0504d"/><rect x="476" y="188" width="20" height="20" fill="url(#hatch)" stroke="#aeb6c4"/></g>
+        <rect x="690" y="170" width="250" height="44" rx="8" fill="#eef3f8" stroke="#c4d6e6"/>
+        <text x="815" y="197" text-anchor="middle" class="svg-lab" fill="#2f5f8f">the encoder's native diet</text>
+
+        <!-- ROW 3: masked generation -->
+        <text x="20" y="286" class="svg-t">Masked generation</text>
+        <text x="20" y="304" class="svg-s">(this proposal)</text>
+        <g><circle cx="100" cy="290" r="9" fill="#5b6678"/><rect x="116" y="272" width="20" height="20" fill="url(#hatch)" stroke="#aeb6c4"/>
+           <rect x="112" y="296" width="20" height="20" fill="url(#hatch)" stroke="#aeb6c4"/><circle cx="146" cy="298" r="9" fill="#5b6678"/></g>
+        <line x1="200" y1="292" x2="360" y2="292" stroke="#5b6678" stroke-width="1.5" marker-end="url(#ar)"/>
+        <text x="280" y="284" text-anchor="middle" class="svg-lab" fill="#2f6f4f">same masking</text>
+        <g><circle cx="440" cy="290" r="9" fill="#5b6678"/><rect x="456" y="272" width="20" height="20" fill="url(#hatch)" stroke="#aeb6c4"/>
+           <rect x="452" y="296" width="20" height="20" fill="url(#hatch)" stroke="#aeb6c4"/><circle cx="486" cy="298" r="9" fill="#5b6678"/></g>
+        <rect x="690" y="270" width="250" height="44" rx="8" fill="#eaf5ee" stroke="#bfe0cc"/>
+        <text x="815" y="297" text-anchor="middle" class="svg-lab" fill="#2f6f4f">in-distribution ✓</text>
+      </svg>
+      <div class="figure-cap"><b>Fig 1.</b> The corruption a model trains under has to match the corruption the
+        frozen encoder sees at inference. Walk-jump's Gaussian noise doesn't; MAE-style masking does — so we
+        change the <i>sampler</i>, not the encoder.</div>
+    </div>
+  </div>
+
+  <!-- ========================= SECTION 2 ========================= -->
+  <div class="doc-section">
+    <h2 class="section-head"><span class="sec-num">2</span> Represent the ligand as atom-Gaussians</h2>
+    <p class="section-intro">
+      A molecule <i>is</i> a sparse set of 3D Gaussians — one per atom (position + a width set by its element +
+      a "colour" = element channel). This is exactly the primitive Gaussian&nbsp;splatting uses for scenes.
+      And VoxBind's atom-blob voxelizer is <b>already the splat</b>: it rasterizes those atom-Gaussians onto
+      the 64³ grid. Today VoxBind generates the <i>rasterized grid</i>; we instead generate the <b>explicit
+      Gaussian set</b> and splat it — sparse, continuous, and naturally maskable.
+    </p>
+
+    <div class="fig">
+      <svg viewBox="0 0 1000 300" role="img" aria-label="representation">
+        <defs>
+          <radialGradient id="gC" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#5b6678" stop-opacity=".9"/><stop offset="100%" stop-color="#5b6678" stop-opacity="0"/></radialGradient>
+          <radialGradient id="gN" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#3a6ea5" stop-opacity=".9"/><stop offset="100%" stop-color="#3a6ea5" stop-opacity="0"/></radialGradient>
+          <radialGradient id="gO" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#c0504d" stop-opacity=".9"/><stop offset="100%" stop-color="#c0504d" stop-opacity="0"/></radialGradient>
+          <marker id="ar2" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#2f6f4f"/></marker>
+        </defs>
+        <!-- left: explicit gaussian set -->
+        <rect x="30" y="40" width="360" height="220" rx="12" fill="#fbfcfd" stroke="var(--line)"/>
+        <text x="210" y="66" text-anchor="middle" class="svg-t">Explicit atom-Gaussians</text>
+        <text x="210" y="86" text-anchor="middle" class="svg-lab" fill="#5b6678">{ (xyz, element, width) }  ·  ~40 atoms</text>
+        <g transform="translate(210,175)">
+          <circle cx="-70" cy="-30" r="34" fill="url(#gC)"/><circle cx="-20" cy="10" r="34" fill="url(#gN)"/>
+          <circle cx="35" cy="-20" r="34" fill="url(#gO)"/><circle cx="70" cy="25" r="34" fill="url(#gC)"/>
+          <circle cx="0" cy="55" r="34" fill="url(#gC)"/><circle cx="-55" cy="35" r="34" fill="url(#gO)"/>
+          <circle cx="-70" cy="-30" r="4" fill="#5b6678"/><circle cx="-20" cy="10" r="4" fill="#3a6ea5"/>
+          <circle cx="35" cy="-20" r="4" fill="#c0504d"/><circle cx="70" cy="25" r="4" fill="#5b6678"/>
+          <circle cx="0" cy="55" r="4" fill="#5b6678"/><circle cx="-55" cy="35" r="4" fill="#c0504d"/>
+        </g>
+        <text x="210" y="250" text-anchor="middle" class="svg-s">sparse · continuous positions · generate HERE</text>
+
+        <!-- arrow -->
+        <line x1="410" y1="150" x2="590" y2="150" stroke="#2f6f4f" stroke-width="2" marker-end="url(#ar2)"/>
+        <text x="500" y="138" text-anchor="middle" class="svg-lab" fill="#2f6f4f">differentiable splat</text>
+        <text x="500" y="170" text-anchor="middle" class="svg-s">(= VoxBind's voxelizer)</text>
+
+        <!-- right: voxel density -->
+        <rect x="610" y="40" width="360" height="220" rx="12" fill="#fbfcfd" stroke="var(--line)"/>
+        <text x="790" y="66" text-anchor="middle" class="svg-t">Voxel density (13ch)</text>
+        <text x="790" y="86" text-anchor="middle" class="svg-lab" fill="#5b6678">what the FROZEN MAE eats</text>
+        <g transform="translate(660,104)">
+          <!-- a small grid with soft shaded cells -->
+          <g stroke="#e3e7ee" stroke-width="1">
+            <!-- draw 12x9 grid -->
+            <g id="grid"></g>
+          </g>
+          <rect x="0" y="0" width="252" height="126" fill="none" stroke="#cfd6e0"/>
+          <!-- blurred blobs (splatted) -->
+          <circle cx="60" cy="40" r="26" fill="url(#gC)"/><circle cx="105" cy="70" r="26" fill="url(#gN)"/>
+          <circle cx="150" cy="45" r="26" fill="url(#gO)"/><circle cx="185" cy="80" r="26" fill="url(#gC)"/>
+          <circle cx="120" cy="100" r="26" fill="url(#gC)"/><circle cx="80" cy="92" r="26" fill="url(#gO)"/>
+        </g>
+        <text x="790" y="250" text-anchor="middle" class="svg-s">dense · quantized · the MAE's input space</text>
+      </svg>
+      <div class="figure-cap"><b>Fig 2.</b> Two views of the same ligand. We <b>generate</b> the sparse
+        Gaussian set (left) and <b>render</b> it into the dense voxel field (right) that the frozen encoder
+        understands. The splat is differentiable, so gradients flow back to atom positions — the Gaussian-splatting move.</div>
+    </div>
+  </div>
+
+  <!-- ========================= SECTION 3 ========================= -->
+  <div class="doc-section">
+    <h2 class="section-head"><span class="sec-num">3</span> Generation = iterative masked inpainting</h2>
+    <p class="section-intro">
+      Instead of denoising, we <b>inpaint the ligand into the pocket</b> — literally what an MAE learned to do.
+      The pocket + density stay clean and fully visible; the ligand starts fully masked and is filled in over a
+      handful of steps, committing the most confident atoms each round (a cosine mask schedule). The frozen
+      encoder is <i>in-distribution at every step</i>.
+    </p>
+
+    <div class="fig">
+      <svg viewBox="0 0 1000 430" role="img" aria-label="pipeline">
+        <defs>
+          <marker id="ar3" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#5b6678"/></marker>
+        </defs>
+        <!-- input row -->
+        <rect x="40" y="30" width="300" height="96" rx="10" fill="#fff" stroke="var(--line-strong)"/>
+        <text x="190" y="54" text-anchor="middle" class="svg-t">Ligand: atom-Gaussian set</text>
+        <text x="190" y="72" text-anchor="middle" class="svg-s">partially masked</text>
+        <g transform="translate(120,98)">
+          <circle cx="0" cy="0" r="9" fill="#5b6678"/><circle cx="26" cy="-8" r="9" fill="#c0504d"/>
+          <rect x="42" y="-9" width="18" height="18" rx="3" fill="#eef0f3" stroke="#aeb6c4" stroke-dasharray="3 2"/>
+          <rect x="70" y="-9" width="18" height="18" rx="3" fill="#eef0f3" stroke="#aeb6c4" stroke-dasharray="3 2"/>
+          <circle cx="108" cy="0" r="9" fill="#3a6ea5"/>
+        </g>
+        <rect x="40" y="140" width="300" height="60" rx="10" fill="#f7faf8" stroke="#bfe0cc"/>
+        <text x="190" y="166" text-anchor="middle" class="svg-t">Pocket + density</text>
+        <text x="190" y="185" text-anchor="middle" class="svg-s">always visible · clean · never masked</text>
+
+        <!-- splat -->
+        <line x1="190" y1="200" x2="190" y2="238" stroke="#5b6678" stroke-width="1.5" marker-end="url(#ar3)"/>
+        <text x="300" y="224" text-anchor="middle" class="svg-lab" fill="#2f6f4f">differentiable splat</text>
+        <rect x="40" y="246" width="300" height="52" rx="10" fill="#fbfcfd" stroke="var(--line)"/>
+        <text x="190" y="277" text-anchor="middle" class="svg-t">Voxel density (13ch)</text>
+
+        <!-- encoder -->
+        <line x1="340" y1="272" x2="392" y2="272" stroke="#5b6678" stroke-width="1.5" marker-end="url(#ar3)"/>
+        <rect x="398" y="238" width="196" height="68" rx="10" fill="var(--frozen-bg)" stroke="#2f5f8f"/>
+        <text x="496" y="266" text-anchor="middle" class="svg-t" fill="#2f5f8f">FROZEN MAE encoder</text>
+        <text x="496" y="286" text-anchor="middle" class="svg-s">45.7M · 🔒 no grad</text>
+
+        <!-- decode head -->
+        <line x1="594" y1="272" x2="646" y2="272" stroke="#5b6678" stroke-width="1.5" marker-end="url(#ar3)"/>
+        <rect x="652" y="238" width="196" height="68" rx="10" fill="var(--best-bg)" stroke="#2f6f4f"/>
+        <text x="750" y="262" text-anchor="middle" class="svg-t" fill="#2f6f4f">set-decode head</text>
+        <text x="750" y="282" text-anchor="middle" class="svg-s">trainable</text>
+
+        <!-- predict -->
+        <line x1="750" y1="238" x2="750" y2="196" stroke="#5b6678" stroke-width="1.5" marker-end="url(#ar3)"/>
+        <rect x="620" y="130" width="300" height="64" rx="10" fill="#fff" stroke="var(--line-strong)"/>
+        <text x="770" y="156" text-anchor="middle" class="svg-t">Predict masked atoms</text>
+        <text x="770" y="176" text-anchor="middle" class="svg-s">(xyz, element) + confidence</text>
+
+        <!-- commit / loop -->
+        <line x1="620" y1="162" x2="470" y2="162" stroke="#5b6678" stroke-width="1.5"/>
+        <rect x="360" y="130" width="230" height="64" rx="10" fill="#fff" stroke="var(--line-strong)"/>
+        <text x="475" y="156" text-anchor="middle" class="svg-t">Commit top-confidence</text>
+        <text x="475" y="176" text-anchor="middle" class="svg-s">re-mask the rest</text>
+        <!-- loop arrow back to input -->
+        <path d="M360,150 C280,150 250,120 250,96 C250,80 230,110 200,120" fill="none" stroke="#2f6f4f" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#ar3)"/>
+        <text x="300" y="120" text-anchor="middle" class="svg-lab" fill="#2f6f4f">repeat ×T</text>
+
+        <!-- side stamp -->
+        <rect x="620" y="330" width="330" height="60" rx="10" fill="#eaf5ee" stroke="#bfe0cc"/>
+        <text x="785" y="356" text-anchor="middle" class="svg-lab" fill="#2f6f4f">corruption = masking</text>
+        <text x="785" y="376" text-anchor="middle" class="svg-lab" fill="#2f6f4f">→ encoder in-distribution ✓</text>
+      </svg>
+      <div class="figure-cap"><b>Fig 3.</b> The loop. The trainable set-decode head predicts the masked atoms
+        from the frozen encoder's read of the splatted, partially-filled complex; confident atoms are committed
+        and the rest re-masked. Because the ligand is only ever <i>masked</i> (never noised), and the pocket/density
+        are always clean, the frozen encoder never leaves its pretraining distribution.</div>
+    </div>
+
+    <div class="fig">
+      <svg viewBox="0 0 1000 220" role="img" aria-label="progressive inpainting">
+        <defs>
+          <radialGradient id="pk" cx="50%" cy="45%" r="60%"><stop offset="0%" stop-color="#eef3f8"/><stop offset="100%" stop-color="#dbe6f0"/></radialGradient>
+        </defs>
+        <!-- four panels -->
+        <g>
+          <!-- panel template repeated with increasing atoms -->
+          <!-- t1 -->
+          <g transform="translate(20,20)">
+            <path d="M20,120 C10,60 60,20 120,20 C180,20 220,55 210,110" fill="url(#pk)" stroke="#c4d6e6"/>
+            <text x="115" y="150" text-anchor="middle" class="svg-s">t = 1  ·  90% masked</text>
+            <circle cx="100" cy="80" r="8" fill="#5b6678"/><circle cx="130" cy="70" r="8" fill="#c0504d"/>
+          </g>
+          <!-- t2 -->
+          <g transform="translate(260,20)">
+            <path d="M20,120 C10,60 60,20 120,20 C180,20 220,55 210,110" fill="url(#pk)" stroke="#c4d6e6"/>
+            <text x="115" y="150" text-anchor="middle" class="svg-s">t = 2  ·  60% masked</text>
+            <circle cx="100" cy="80" r="8" fill="#5b6678"/><circle cx="130" cy="70" r="8" fill="#c0504d"/>
+            <circle cx="88" cy="58" r="8" fill="#3a6ea5"/><circle cx="120" cy="98" r="8" fill="#5b6678"/>
+          </g>
+          <!-- t3 -->
+          <g transform="translate(500,20)">
+            <path d="M20,120 C10,60 60,20 120,20 C180,20 220,55 210,110" fill="url(#pk)" stroke="#c4d6e6"/>
+            <text x="115" y="150" text-anchor="middle" class="svg-s">t = 3  ·  30% masked</text>
+            <circle cx="100" cy="80" r="8" fill="#5b6678"/><circle cx="130" cy="70" r="8" fill="#c0504d"/>
+            <circle cx="88" cy="58" r="8" fill="#3a6ea5"/><circle cx="120" cy="98" r="8" fill="#5b6678"/>
+            <circle cx="150" cy="92" r="8" fill="#5b6678"/><circle cx="70" cy="86" r="8" fill="#c0504d"/>
+          </g>
+          <!-- t4 -->
+          <g transform="translate(740,20)">
+            <path d="M20,120 C10,60 60,20 120,20 C180,20 220,55 210,110" fill="url(#pk)" stroke="#c4d6e6"/>
+            <text x="115" y="150" text-anchor="middle" class="svg-s">t = T  ·  complete</text>
+            <circle cx="100" cy="80" r="8" fill="#5b6678"/><circle cx="130" cy="70" r="8" fill="#c0504d"/>
+            <circle cx="88" cy="58" r="8" fill="#3a6ea5"/><circle cx="120" cy="98" r="8" fill="#5b6678"/>
+            <circle cx="150" cy="92" r="8" fill="#5b6678"/><circle cx="70" cy="86" r="8" fill="#c0504d"/>
+            <circle cx="108" cy="60" r="8" fill="#5b6678"/><circle cx="140" cy="108" r="8" fill="#3a6ea5"/>
+            <line x1="100" y1="80" x2="130" y2="70" stroke="#8a94a5" stroke-width="2"/><line x1="130" y1="70" x2="150" y2="92" stroke="#8a94a5" stroke-width="2"/>
+            <line x1="100" y1="80" x2="88" y2="58" stroke="#8a94a5" stroke-width="2"/><line x1="100" y1="80" x2="120" y2="98" stroke="#8a94a5" stroke-width="2"/>
+          </g>
+        </g>
+      </svg>
+      <div class="figure-cap"><b>Fig 4.</b> Generation as progressive inpainting inside a fixed pocket: atoms
+        are committed a few at a time over <code>T</code> steps (a cosine mask schedule), analogous to
+        MaskGIT parallel decoding. Adding/pruning atoms across steps handles variable molecule size —
+        the splatting analogue of adaptive densification.</div>
+    </div>
+  </div>
+
+  <!-- ========================= SECTION 4 ========================= -->
+  <div class="doc-section">
+    <h2 class="section-head"><span class="sec-num">4</span> Why this is the right fit</h2>
+    <ul class="notes">
+      <li><b>In-distribution by construction.</b> The frozen encoder only ever sees <i>masked clean</i>
+        complexes — the corruption it was pretrained on. The Gaussian-noise OOD problem simply cannot arise.</li>
+      <li><b>Fullest use of the MAE.</b> A masked autoencoder repurposed as a masked <i>generator</i> — the
+        network is used almost exactly as it was built, encoder + a light decode head.</li>
+      <li><b>Sparse &amp; continuous.</b> ~40 atom-Gaussians instead of a 64³×7 grid; atom positions aren't
+        quantized to a lattice, so geometry is cleaner and memory drops sharply.</li>
+      <li><b>Masking is natural on a set.</b> You mask <i>atoms</i>, not arbitrary grid patches — a well-defined,
+        permutation-friendly corruption.</li>
+      <li><b>Adaptive densification ↔ variable atom count.</b> Splatting grows/prunes Gaussians; here that
+        becomes add/remove-atoms, a clean handle on "how many atoms?" — a perennial SBDD headache.</li>
+    </ul>
+  </div>
+
+  <!-- ========================= SECTION 5 ========================= -->
+  <div class="doc-section">
+    <h2 class="section-head"><span class="sec-num">5</span> Where it sits — the cost / payoff ladder</h2>
+    <p class="section-intro">Everything we considered, ordered by build cost. The top rows are cheap and already
+      in flight; this proposal is the biggest swing with the biggest payoff.</p>
+    <table class="cmp">
+      <thead><tr>
+        <th class="m">approach</th><th>encoder<br>in-distribution?</th><th>uses ligand<br>knowledge</th>
+        <th>handles the<br>noise problem</th><th>build cost</th>
+      </tr></thead>
+      <tbody>
+        <tr><td class="m">Pocket+density only <span class="pill frozen">running · #29</span></td>
+          <td class="yes">✓ never sees ligand</td><td class="no">✗</td><td class="yes">n/a</td><td class="yes">free</td></tr>
+        <tr><td class="m">Self-conditioning (feed x̂) <span class="pill train">flag</span></td>
+          <td class="yes">✓ sees clean x̂</td><td class="yes">✓</td><td class="yes">✓</td><td class="mid">medium</td></tr>
+        <tr class="hero"><td class="m">Splat + masked generation <span class="pill new">this note</span></td>
+          <td class="yes">✓✓ masking = pretraining</td><td class="yes">✓✓</td><td class="yes">✓ dissolved</td><td class="no">high</td></tr>
+        <tr><td class="m">Diffusion / flow-matching</td>
+          <td class="no">✗ Gaussian noise</td><td class="mid">only w/ self-cond</td><td class="no">✗ same issue</td><td class="no">high</td></tr>
+        <tr><td class="m">Feed noisy ligand to frozen enc <span class="pill" style="background:#f7ecec;color:#b0472f">rejected</span></td>
+          <td class="no">✗ OOD</td><td class="mid">attempted</td><td class="no">✗ breaks walk-jump</td><td class="mid">medium</td></tr>
+      </tbody>
+    </table>
+    <p class="notes" style="margin-top:16px"><b>Sequencing.</b> #29 answers the prerequisite — <i>does the
+      pocket/density signal help at all?</i> If yes, self-conditioning is the cheap way to also feed the ligand
+      in-distribution. Splat-and-mask is the all-in rebuild worth doing only if the density signal proves real
+      and the grid-quantization limits start to bite.</p>
+  </div>
+
+  <!-- ========================= SECTION 6 ========================= -->
+  <div class="doc-section">
+    <h2 class="section-head"><span class="sec-num">6</span> Design sketch &amp; open questions</h2>
+    <ul class="notes">
+      <li><b>Atom-set parameterization.</b> Each atom = <code>(xyz ∈ ℝ³, element ∈ {C,N,O,…}, width)</code>.
+        Positions continuous; element as a small categorical; a shared isotropic width per element (or learned).</li>
+      <li><b>Differentiable splat.</b> Reuse VoxBind's voxelizer but keep it autograd-friendly
+        (sum of element-wise Gaussians onto the 13ch grid) so position gradients flow from the encoder loss.</li>
+      <li><b>Set-decode head.</b> A light transformer/GNN head over slot tokens that reads the frozen encoder's
+        features and predicts the masked atoms' <code>(xyz, type)</code> + a confidence for the commit schedule.</li>
+      <li><b>Stochasticity (the crux).</b> The current MAE is a <i>regression</i> AE (mean reconstruction → low
+        diversity). To sample diverse ligands, add either a <b>VQ codebook</b> over atom-slots (categorical
+        MaskGIT) or a small per-atom generative head (mixture / mini-diffusion).</li>
+      <li><b>Bonds.</b> Atoms alone give no connectivity — keep VoxBind's voxel→bond inference on the final splat,
+        or add a pairwise bond head.</li>
+      <li><b>Variable size &amp; permutation.</b> Slot-based set generation with an explicit "add/stop" action;
+        train with Hungarian-matched or masking-consistent loss so order doesn't matter.</li>
+      <li><b>De-risk first (cheap, no training):</b> the noise-robustness probe on the frozen encoder — confirm the
+        latent tolerates masking far better than Gaussian noise, validating the whole premise before any rebuild.</li>
+    </ul>
+  </div>
+
+  <div class="foot">
+    Design note from the 2026-07-15 architecture discussion. Frozen encoder =
+    <code>260701_plinder_v2p1_box_atomblob7_cdg_channelvit_full_pretrain</code> (ChannelViT MAE, 45.7M,
+    mask_ratio 0.5, 13ch). Cheaper alternatives (#29 ligand-masked frozen-enc, self-conditioning) precede this
+    on the roadmap; splat-and-mask is the high-payoff / high-cost end of the ladder. Diagrams are inline SVG (offline).
+  </div>
+
+</div>
+</body>
+</html>

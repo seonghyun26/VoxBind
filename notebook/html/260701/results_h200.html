@@ -24,21 +24,24 @@ thead th{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:
 <h1>Atom representation × density — frozen probe on lp_edrscc_v2</h1>
 <div class="sub">Full <b>PLINDER v2</b> set (112,633 train / 100 val), 100-ep density-MAE pretrain at ~88% util via
 precomputed 96³ density boxes. Frozen 512-D mean-pooled features → 2-layer MLP affinity probe on
-<b>lp_edrscc_v2</b> (Kd/Ki-only, 3850/817/1320, 3 seeds, mean&nbsp;±&nbsp;std). All rows below share the
-<i>identical</i> 112k complexes, density boxes, and ChannelViT C+D+G architecture — they differ <b>only</b> in the
-ligand/pocket atom representation, so this is a controlled atom-encoding ablation.</div></header>
+<b>lp_edrscc_v2</b> (Kd/Ki-only, 3850/817/1320, 3 seeds, mean&nbsp;±&nbsp;std). The <b>atomblob8</b> &amp; <b>roleblob</b>
+rows share the <i>identical</i> 112k complexes + density boxes + ChannelViT C+D+G architecture (a clean
+atom-encoding ablation); the <b>v2.1</b> rows use the clean 107k subset (out-of-vocab-ligand complexes dropped).</div></header>
 
 <div class="card"><h2>Atom representation — full v2 (112k), C+D+G ChannelViT</h2>
 <table><thead><tr><th>ligand atoms</th><th>channels</th><th>test ρ (Spearman)</th><th>test r (Pearson)</th></tr></thead><tbody>
 <tr class="best"><td class="lbl">atomblob — element (8-ch)</td><td class="small">8 lig (C/O/N/S/F/Cl/P + other) + 4 poc + D + G = 14</td><td><span class="num">0.624</span> <span class="pm">±0.002</span> ★</td><td><span class="num">0.646</span> <span class="pm">±0.003</span></td></tr>
 <tr><td class="lbl">roleblob — occupancy (2-ch)</td><td class="small">2 role (lig, poc) + D + G = 4</td><td><span class="num">0.559</span> <span class="pm">±0.002</span></td><td><span class="num">0.581</span> <span class="pm">±0.002</span></td></tr>
-<tr><td class="lbl">atomblob7 — element, no "other" <span class="tba">v2.1</span></td><td class="small">7 lig + 4 poc + D + G = 13 · drops out-of-vocab-ligand complexes</td><td><span class="tba">running</span></td><td><span class="tba">running</span></td></tr>
+<tr><td class="lbl">atomblob7 — element, no "other" <span class="tba" style="background:#e8f0fe;color:#1d4ed8">v2.1</span></td><td class="small">7 lig + 4 poc + D + G = 13 · clean 107k (drops 5% out-of-vocab-ligand)</td><td><span class="num">0.617</span> <span class="pm">±0.006</span></td><td><span class="num">0.637</span> <span class="pm">±0.010</span></td></tr>
+<tr><td class="lbl">predict-density — atoms→D+G <span class="tba" style="background:#e8f0fe;color:#1d4ed8">v2.1</span></td><td class="small">input = atoms only; density+gradmag are DECODER-ONLY targets (107k)</td><td><span class="num">0.607</span> <span class="pm">±0.002</span></td><td><span class="num">0.637</span> <span class="pm">±0.002</span></td></tr>
 </tbody></table>
-<div class="note" style="margin-top:10px">★ best. <b>Element-resolved atoms beat role-occupancy by +0.065&nbsp;ρ</b> (0.559&nbsp;→&nbsp;0.624) on identical data + density + architecture — element identity (and the 8th out-of-vocab channel) carries real, recoverable affinity signal.</div></div>
+<div class="note" style="margin-top:10px">★ best. <b>Element atoms &raquo; role-occupancy: +0.065&nbsp;ρ</b> (0.559&nbsp;→&nbsp;0.624; identical 112k data/density/arch). <b>The 8th "other" channel adds little: +0.008&nbsp;ρ</b> — atomblob8 (full, 8-ch) 0.624 vs atomblob7&nbsp;v2.1 (clean 107k, 7-ch) 0.617, within ~1σ — so a clean 7-element vocab on 95% of complexes nearly matches the full 8-ch set. <b>Feeding density in beats predicting it: &minus;0.010&nbsp;ρ.</b> predict-density (atoms&nbsp;→&nbsp;ρ+∇ρ as decoder-only targets) <b>0.607&nbsp;±&nbsp;0.002</b> vs atomblob7&nbsp;v2.1 (density as INPUT, same clean 107k) 0.617 — making the encoder reconstruct density from atoms alone nearly matches, but stays marginally below, supplying density as a direct input channel.</div></div>
 
 <div class="card"><h2>lp_edrscc_v2 reference leaderboard (test ρ)</h2>
 <table><thead><tr><th>encoder</th><th>pretrain set</th><th>test ρ</th></tr></thead><tbody>
 <tr class="best"><td class="lbl">atomblob8 C+D+G · ChannelViT</td><td class="small">v2 full 112k</td><td><span class="num">0.624</span></td></tr>
+<tr><td class="lbl">atomblob7 C+D+G · ChannelViT</td><td class="small">v2.1 clean 107k</td><td><span class="num">0.617</span></td></tr>
+<tr><td class="lbl">predict-density (atoms→D+G) · ChannelViT</td><td class="small">v2.1 clean 107k</td><td><span class="num">0.607</span></td></tr>
 <tr><td class="lbl">coords+density · ViT</td><td class="small">_v2clean 17k</td><td><span class="num">0.595</span></td></tr>
 <tr><td class="lbl">coords+density · ChannelViT</td><td class="small">_v2clean 17k</td><td><span class="num">0.576</span></td></tr>
 <tr><td class="lbl">roleblob C+D+G · ChannelViT</td><td class="small">v2 full 112k</td><td><span class="num">0.559</span></td></tr>
@@ -54,7 +57,10 @@ The clean comparison is the <b>first table</b>: same 112k complexes, same densit
 only the atom channels change. Going from 2 role-occupancy channels (roleblob) to 8 element channels (atomblob8)
 adds <b>+0.065&nbsp;ρ</b>. The <span class="tba">v2.1</span> row (atomblob7) drops the 8th "other" channel <i>and</i>
 excludes the complexes whose ligand needed it, isolating how much the rare out-of-vocab atoms contribute vs. a
-clean 7-element vocabulary.<br><br>
+clean 7-element vocabulary. The <span class="tba" style="background:#e8f0fe;color:#1d4ed8">v2.1</span> <b>predict-density</b>
+row asks a different question — make density a <i>decoder-only target</i> (atoms in, ρ+∇ρ reconstructed) rather than an
+input channel: it reaches <b>0.607</b>, just below the 0.617 of feeding density in, so the encoder learns density
+structure well from atoms alone, but a direct density input is marginally better.<br><br>
 <span class="mut">Cross-set rows (coords+density / density-only on the 17k <code>_v2clean</code> set) are shown for
 reference only — they are not on the same pretraining corpus as the 112k rows.</span>
 </div></div>

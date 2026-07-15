@@ -630,8 +630,9 @@
     <p class="section-intro">
       Conditional de novo ligand generation on the held-out CrossDocked test pockets. <b>VoxBind</b> (voxel walk-jump
       sampling at noise level <b>&sigma;</b>) vs the <b>TargetDiff</b> diffusion baseline, scored on AutoDock Vina
-      docking and molecular properties. <b>VoxBind &sigma;&nbsp;=&nbsp;0.9</b> is reproduced (100 pockets &times; 100
-      de&nbsp;novo samples, full <code>vina_dock</code> scoring); TargetDiff, VoxBind&nbsp;&sigma;&nbsp;=&nbsp;1.0 and CoDE are pending.
+      docking and molecular properties. <b>VoxBind &sigma;&nbsp;=&nbsp;0.9</b> is reproduced on <b>79 pockets</b>
+      (<b>79%</b> of the 100-pocket test split) &times; ~100 de&nbsp;novo samples each (7,787 valid mols), full
+      <code>vina_dock</code> scoring; TargetDiff, VoxBind&nbsp;&sigma;&nbsp;=&nbsp;1.0 and CoDE are pending.
     </p>
 
   <section class="block">
@@ -674,15 +675,15 @@
             <td class="metric"><span class="tbd">TBA</span></td>
           </tr>
           <tr>
-            <td class="col-method">VoxBind <span class="tag supervised">baseline</span><span style="display:block;font-size:11px;color:#7a8699">walk-jump &middot; &sigma; = 0.9 &middot; reproduced</span></td>
-            <td class="metric div-major"><span class="val">&minus;5.51</span> <span class="sd">med&nbsp;&minus;6.56</span></td>
-            <td class="metric"><span class="val">&minus;6.98</span> <span class="sd">med&nbsp;&minus;7.11</span></td>
-            <td class="metric"><span class="val">&minus;8.01</span> <span class="sd">med&nbsp;&minus;8.01</span></td>
-            <td class="metric div-minor"><span class="val">62.8%</span> <span class="sd">med&nbsp;68.5</span></td>
-            <td class="metric"><span class="val">0.53</span></td>
-            <td class="metric"><span class="val">0.64</span></td>
-            <td class="metric"><span class="val">0.90</span></td>
-            <td class="metric"><span class="tbd">TBA</span></td>
+            <td class="col-method">VoxBind <span class="tag supervised">baseline</span><span style="display:block;font-size:11px;color:#7a8699">walk-jump &middot; &sigma; = 0.9 &middot; reproduced &middot; 79 pockets</span></td>
+            <td class="metric div-major"><span class="val">&minus;5.09</span> <span class="sd">med&nbsp;&minus;6.70</span></td>
+            <td class="metric"><span class="val">&minus;6.65</span> <span class="sd">med&nbsp;&minus;7.04</span></td>
+            <td class="metric"><span class="val">&minus;7.83</span> <span class="sd">med&nbsp;&minus;7.87</span></td>
+            <td class="metric div-minor"><span class="val">62.9%</span> <span class="sd">med&nbsp;65.0</span></td>
+            <td class="metric"><span class="val">0.54</span></td>
+            <td class="metric"><span class="val">0.70</span></td>
+            <td class="metric"><span class="val">0.76</span></td>
+            <td class="metric"><span class="val">24.0</span></td>
           </tr>
           <tr>
             <td class="col-method">VoxBind <span class="tag supervised">baseline</span><span style="display:block;font-size:11px;color:#7a8699">walk-jump &middot; &sigma; = 1.0</span></td>
@@ -714,10 +715,14 @@
         <li>Eight metrics: <b>Vina Score / Min / Dock</b> (&darr;), <b>High aff.</b> (&uarr;), <b>QED</b> (&uarr;),
           <b>SA</b> (&uarr;), <b>Diversity</b> (&uarr;), and <b># atoms / mol</b>. Vina cells show the mean with the
           <span class="sd">median</span> beside it.</li>
-        <li><b>VoxBind &sigma;&nbsp;=&nbsp;0.9</b> (reproduced, 100 pockets &times; 100 samples): generated molecules
-          <b>dock better than the reference test ligands on average</b> (Vina&nbsp;Dock &minus;8.01 vs reference
-          &minus;7.27), with a 62.8% high-affinity rate, 0.90 diversity, and 99.9% validity. <b># atoms/mol</b> is not
-          in the current results export &mdash; left <span class="tbd">TBA</span> (the export instead reports Valid&nbsp;=&nbsp;99.9%).</li>
+        <li><b>VoxBind &sigma;&nbsp;=&nbsp;0.9</b> (reproduced, <b>79 pockets = 79%</b> of the 100-pocket test split
+          &times; ~100 samples, 7,787 valid mols): generated molecules <b>dock better than the reference test ligands
+          on average</b> (Vina&nbsp;Dock &minus;7.83 vs reference &minus;7.18), with a 62.9% per-molecule high-affinity
+          rate (Vina&nbsp;Dock&nbsp;&lt;&nbsp;reference), 0.76 diversity, 99.9% validity, and 24.0 heavy&nbsp;atoms/mol.</li>
+        <li><b>Per-pocket wins</b> &mdash; fraction of the 78 pockets with a scorable reference where VoxBind's
+          generated set achieves the <b>lower (better) mean score than the reference ligand</b>:
+          <b>Vina&nbsp;Score 38/78&nbsp;(49%)</b>, Vina&nbsp;Min 42/78&nbsp;(54%), <b>Vina&nbsp;Dock 55/78&nbsp;(71%)</b>.
+          VoxBind wins most pockets on Dock but only about half on the un-minimized Score.</li>
         <li><b>TargetDiff</b>, <b>VoxBind &sigma;&nbsp;=&nbsp;1.0</b>, <b>CoDE</b> &mdash; pending generation + Vina docking.</li>
       </ul>
     </div>

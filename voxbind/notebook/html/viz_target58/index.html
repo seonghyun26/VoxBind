@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>VoxBind · target 58 (4buz) — generated samples</title>
+<script src="3Dmol-min.js"></script>
+<style>
+  :root{--bg:#0f1117;--pan:#181b24;--line:#2a2f3a;--txt:#e6e9ef;--mut:#9aa3b2;--acc:#5ac8fa;--good:#3ddc97;--ref:#37d67a;}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--txt);font:13px/1.5 -apple-system,Segoe UI,Roboto,sans-serif}
+  #wrap{display:flex;height:100vh}
+  #side{width:360px;min-width:360px;background:var(--pan);border-right:1px solid var(--line);overflow-y:auto;padding:16px}
+  #view{flex:1;position:relative}
+  h1{font-size:15px;margin:0 0 2px}
+  .sub{color:var(--mut);font-size:12px;margin-bottom:14px}
+  .card{background:#12151d;border:1px solid var(--line);border-radius:8px;padding:11px 12px;margin-bottom:12px}
+  .card h2{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--mut);margin:0 0 8px}
+  label.rw{display:flex;align-items:center;gap:8px;padding:5px 6px;border-radius:6px;cursor:pointer}
+  label.rw:hover{background:#1c2029}
+  .rw input{accent-color:var(--acc)}
+  .badge{margin-left:auto;font-variant-numeric:tabular-nums;color:var(--good);font-weight:600}
+  .stat{display:flex;justify-content:space-between;padding:3px 0;font-variant-numeric:tabular-nums}
+  .stat .k{color:var(--mut)}
+  .nav{display:flex;gap:6px;align-items:center;margin:6px 0}
+  button{background:#232838;color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:6px 10px;cursor:pointer;font-size:13px}
+  button:hover{background:#2c3346}
+  select{width:100%;background:#12151d;color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:6px}
+  .smi{word-break:break-all;font-family:ui-monospace,Menlo,monospace;font-size:11px;color:#cdd3de;background:#0c0e13;border-radius:6px;padding:7px;margin-top:6px;max-height:90px;overflow:auto}
+  .big{font-size:20px;font-weight:700;font-variant-numeric:tabular-nums}
+  .good{color:var(--good)} .warn{color:#ffcf5c}
+  .tog{display:flex;flex-wrap:wrap;gap:6px}
+  .tog label{display:flex;align-items:center;gap:6px;background:#12151d;border:1px solid var(--line);border-radius:6px;padding:5px 8px;cursor:pointer;font-size:12px}
+  .pz{display:inline-flex;align-items:center;gap:3px;font-size:12px;cursor:pointer}
+  .pz input{accent-color:var(--acc)}
+  #hud{position:absolute;left:12px;top:12px;background:rgba(15,17,23,.82);border:1px solid var(--line);border-radius:8px;padding:8px 12px;font-variant-numeric:tabular-nums;pointer-events:none}
+  #hud .t{font-size:12px;color:var(--mut)} #hud .v{font-size:17px;font-weight:700}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="side">
+    <h1>Target 58 · <span style="color:var(--acc)">4buz</span></h1>
+    <div class="sub">4buz (ocz) pocket — 100 generated ligands/model, Vina-docked</div>
+
+    <div class="card">
+      <h2>Model</h2>
+      <div id="models"></div>
+    </div>
+
+    <div class="card">
+      <h2>Pocket summary</h2>
+      <div id="summary"></div>
+    </div>
+
+    <div class="card">
+      <h2>Molecule <span id="rank" style="color:var(--mut);font-weight:400"></span></h2>
+      <div class="nav">
+        <button id="prev">◀ prev</button>
+        <button id="next">next ▶</button>
+        <span style="margin-left:auto;color:var(--mut);font-size:11px">sort by</span>
+        <select id="sortby" style="width:auto">
+          <option value="dock">Vina dock</option>
+          <option value="min">Vina min</option>
+          <option value="score">Vina score</option>
+        </select>
+      </div>
+      <select id="molsel"></select>
+      <div class="nav" style="margin-top:8px;flex-wrap:wrap">
+        <span style="color:var(--mut);font-size:11px">pose:</span>
+        <label class="pz"><input type="radio" name="pose" value="gen" checked> generated</label>
+        <label class="pz"><input type="radio" name="pose" value="min"> Vina-min</label>
+        <label class="pz"><input type="radio" name="pose" value="dock"> Vina-dock</label>
+        <label class="pz" style="margin-left:auto"><input type="checkbox" id="t_overlay"> overlay 3</label>
+      </div>
+      <div id="posenote" style="color:var(--mut);font-size:11px;margin-top:4px;min-height:15px"></div>
+      <div style="margin-top:10px">
+        <div class="stat"><span class="k">Vina dock</span><span id="m_dock" class="big good"></span></div>
+        <div class="stat"><span class="k">Vina min</span><span id="m_min"></span></div>
+        <div class="stat"><span class="k">Vina score</span><span id="m_score"></span></div>
+        <div class="stat"><span class="k">heavy atoms</span><span id="m_na"></span></div>
+      </div>
+      <div class="smi" id="m_smi"></div>
+    </div>
+
+    <div class="card">
+      <h2>Display</h2>
+      <div class="tog">
+        <label><input type="checkbox" id="t_ref" checked> reference ligand</label>
+        <label><input type="checkbox" id="t_cart" checked> protein cartoon</label>
+        <label><input type="checkbox" id="t_atoms"> protein atoms</label>
+        <label><input type="checkbox" id="t_surf"> pocket surface</label>
+        <label><input type="checkbox" id="t_all"> overlay all 100</label>
+        <label><input type="checkbox" id="t_spin"> spin</label>
+      </div>
+      <div class="nav" style="margin-top:8px"><button id="reset">recenter view</button></div>
+    </div>
+    <div class="sub">Green = native reference ligand · colored sticks = selected generated ligand</div>
+  </div>
+
+  <div id="view">
+    <div id="hud"><div class="t">Vina dock (selected)</div><div class="v" id="hud_v">—</div></div>
+  </div>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+let viewer, pocketMdl, refMdl, molMdls=[], allMdls=[];
+let DATA=null, TAG=null, BLOCKS=[], ORDER=[], POS=0, SDFCACHE={}, SORTBY="dock";
+let POSECACHE={}, POSES=null, POSE="gen";  // regenerated Vina min/dock poses per model
+
+async function boot(){
+  viewer=$3Dmol.createViewer($("view"),{backgroundColor:"#0f1117"});
+  const [pdb,ref] = await Promise.all([fetch("pocket.pdb").then(r=>r.text()),
+                                       fetch("ref.sdf").then(r=>r.text())]);
+  DATA=await fetch("scores.json").then(r=>r.text()).then(JSON.parse);
+  pocketMdl=viewer.addModel(pdb,"pdb");
+  applyPocketStyle();
+  refMdl=viewer.addModel(ref,"sdf");
+  refMdl.setStyle({},{stick:{colorscheme:"greenCarbon",radius:.16}});
+  // model radios
+  const mv=$("models");
+  DATA.models.forEach((tag,i)=>{
+    const m=DATA.meta[tag]||{};
+    const lab=document.createElement("label"); lab.className="rw";
+    lab.innerHTML=`<input type="radio" name="mdl" value="${tag}" ${i==0?"checked":""}>
+      <span>${m.label||tag}</span><span class="badge">${m.mean_dock?m.mean_dock.toFixed(2):"–"}</span>`;
+    lab.querySelector("input").onchange=()=>setModel(tag);
+    mv.appendChild(lab);
+  });
+  await setModel(DATA.models[0]);
+  viewer.zoomTo({model:refMdl}); viewer.zoom(0.7); viewer.render();
+  wireToggles();
+}
+
+async function setModel(tag){
+  TAG=tag;
+  if(!SDFCACHE[tag]) SDFCACHE[tag]=await fetch(`samples_${tag}.sdf`).then(r=>r.text());
+  // regenerated Vina min/dock poses (may 404 until the pose job finishes → null).
+  // re-fetch while still null so switching back picks them up without a full reload.
+  if(!POSECACHE[tag])
+    POSECACHE[tag]=await fetch(`poses_${tag}.json`).then(r=>r.ok?r.json():null).catch(()=>null);
+  POSES=POSECACHE[tag];
+  // split multi-mol SDF into molblocks. DO NOT trim: RDKit writes an empty title
+  // line, so leading-whitespace trimming would shift the header and corrupt the counts line.
+  BLOCKS=SDFCACHE[tag].split(/\$\$\$\$\r?\n/).filter(b=>b.includes("M  END"));
+  // summary card
+  const m=DATA.meta[tag]||{};
+  $("summary").innerHTML=[
+    ["mean Vina dock", m.mean_dock?m.mean_dock.toFixed(2):"–", m.mean_dock<m.ref_dock?"good":""],
+    ["reference dock", m.ref_dock?m.ref_dock.toFixed(2):"–",""],
+    ["high-affinity", m.high_aff!=null?(100*m.high_aff).toFixed(0)+"%":"–","good"],
+    ["QED (mean)", m.qed?m.qed.toFixed(3):"–",""],
+    ["SA (mean)", m.sa?m.sa.toFixed(3):"–",""],
+    ["diversity", m.div?m.div.toFixed(3):"–",""],
+  ].map(([k,v,c])=>`<div class="stat"><span class="k">${k}</span><span class="${c}">${v}</span></div>`).join("");
+  rebuildOrder();
+  if($("t_all").checked) drawAll(); else clearAll();
+  showMol(0);
+}
+
+// (re)build the molecule ordering + dropdown for the current SORTBY metric (lower = better for all 3)
+function rebuildOrder(){
+  const sc=DATA.scores[TAG]||[];
+  ORDER=BLOCKS.map((_,i)=>i).sort((a,b)=>{
+    const va=(sc[a]&&sc[a][SORTBY]!=null)?sc[a][SORTBY]:1e9;
+    const vb=(sc[b]&&sc[b][SORTBY]!=null)?sc[b][SORTBY]:1e9;
+    return va-vb;
+  });
+  const sel=$("molsel"); sel.innerHTML="";
+  ORDER.forEach((idx,rank)=>{
+    const v=(sc[idx]&&sc[idx][SORTBY]!=null)?sc[idx][SORTBY].toFixed(2):"n/a";
+    const o=document.createElement("option"); o.value=rank;
+    o.textContent=`#${rank+1}  ·  mol ${idx}  ·  ${SORTBY} ${v}`;
+    sel.appendChild(o);
+  });
+  sel.onchange=()=>showMol(+sel.value);
+}
+
+// combined pocket style: cartoon and/or all-atom sticks, per the toggles
+function applyPocketStyle(){
+  const s={};
+  if($("t_cart").checked)  s.cartoon={color:"#8b93a7",opacity:.9};
+  if($("t_atoms").checked) s.stick={colorscheme:"grayCarbon",radius:.09};
+  pocketMdl.setStyle({}, s);
+  viewer.render();
+}
+
+function addMol(block, scheme){ const m=viewer.addModel(block,"sdf");
+  m.setStyle({},{stick:{colorscheme:scheme,radius:.14}}); molMdls.push(m); }
+function clearMols(){ molMdls.forEach(m=>viewer.removeModel(m)); molMdls=[]; }
+
+function showMol(pos){
+  POS=Math.max(0,Math.min(ORDER.length-1,pos));
+  $("molsel").value=POS;
+  const idx=ORDER[POS], sc=(DATA.scores[TAG]||[])[idx]||{};
+  const pd=(POSES&&POSES[idx])||{};
+  clearMols();
+  const overlay=$("t_overlay").checked;
+  if(overlay){
+    addMol(BLOCKS[idx],"cyanCarbon");
+    if(pd.min_sdf)  addMol(pd.min_sdf,"orangeCarbon");
+    if(pd.dock_sdf) addMol(pd.dock_sdf,"magentaCarbon");
+  } else if(POSE==="min" && pd.min_sdf){ addMol(pd.min_sdf,"orangeCarbon");
+  } else if(POSE==="dock" && pd.dock_sdf){ addMol(pd.dock_sdf,"magentaCarbon");
+  } else { addMol(BLOCKS[idx],"cyanCarbon"); }
+  // info
+  $("rank").textContent=`#${POS+1} of ${ORDER.length} (mol ${idx})`;
+  const f=(x,d=2)=>x==null?"–":x.toFixed(d);
+  $("m_dock").textContent=f(sc.dock); $("m_min").textContent=f(sc.min);
+  $("m_score").textContent=f(sc.score); $("m_na").textContent=sc.na??"–";
+  $("m_smi").textContent=sc.smi||"(smiles n/a)";
+  $("hud_v").textContent=f(sc.dock)+" kcal/mol";
+  $("hud_v").className="v "+(sc.dock!=null&&sc.dock<(DATA.meta[TAG]||{}).ref_dock?"good":"warn");
+  // pose note / legend
+  let pn="";
+  if(!POSES) pn="⏳ regenerating Vina min/dock poses — reload in a few min";
+  else if(overlay) pn=`overlay — cyan=generated · orange=min (${f(pd.min_aff)}) · magenta=dock (${f(pd.dock_aff)})`;
+  else if(POSE==="min")  pn=pd.min_sdf ?`Vina-min pose · aff ${f(pd.min_aff)}` :"(no min pose for this mol)";
+  else if(POSE==="dock") pn=pd.dock_sdf?`Vina-dock pose · aff ${f(pd.dock_aff)}`:"(no dock pose for this mol)";
+  else pn="generated pose (as sampled — this is the Vina-score input)";
+  $("posenote").textContent=pn;
+  viewer.render();
+}
+
+function drawAll(){
+  clearAll();
+  BLOCKS.forEach((b,i)=>{ if(i===ORDER[POS])return; const m=viewer.addModel(b,"sdf");
+    m.setStyle({},{line:{colorscheme:"grayCarbon",opacity:.25}}); allMdls.push(m); });
+  viewer.render();
+}
+function clearAll(){ allMdls.forEach(m=>viewer.removeModel(m)); allMdls=[]; }
+
+function wireToggles(){
+  $("prev").onclick=()=>showMol(POS-1);
+  $("next").onclick=()=>showMol(POS+1);
+  $("reset").onclick=()=>{viewer.zoomTo({model:refMdl});viewer.zoom(0.7);viewer.render();};
+  $("t_ref").onchange=e=>{refMdl.setStyle({},e.target.checked?{stick:{colorscheme:"greenCarbon",radius:.16}}:{});viewer.render();};
+  $("t_cart").onchange=applyPocketStyle;
+  $("t_atoms").onchange=applyPocketStyle;
+  $("sortby").onchange=e=>{ const cur=ORDER[POS]; SORTBY=e.target.value; rebuildOrder();
+    showMol(Math.max(0,ORDER.indexOf(cur))); };
+  Array.from(document.getElementsByName("pose")).forEach(r=>r.onchange=e=>{POSE=e.target.value;showMol(POS);});
+  $("t_overlay").onchange=()=>showMol(POS);
+  $("t_surf").onchange=e=>{ if(e.target.checked){ surf=viewer.addSurface($3Dmol.SurfaceType.VDW,
+      {opacity:.6,color:"#3a4256"},{model:pocketMdl}); } else { viewer.removeAllSurfaces(); } viewer.render(); };
+  $("t_all").onchange=e=>{ if(e.target.checked)drawAll(); else clearAll(); viewer.render(); };
+  $("t_spin").onchange=e=>{ viewer.spin(e.target.checked?"y":false); };
+  document.addEventListener("keydown",ev=>{ if(ev.key==="ArrowLeft")showMol(POS-1);
+    if(ev.key==="ArrowRight")showMol(POS+1); });
+}
+let surf=null;
+boot();
+</script>
+</body>
+</html>
