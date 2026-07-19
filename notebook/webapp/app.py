@@ -40,6 +40,7 @@ from data import (  # noqa: E402
 )
 from metrics import (  # noqa: E402
     DOCKING_MODES,
+    POSE_MODES,
     cache_satisfies,
     compute_reference,
     compute_target_metrics,
@@ -47,6 +48,7 @@ from metrics import (  # noqa: E402
     load_metrics,
     metrics_are_fresh,
     metrics_path,
+    pose_eval_available,
     ref_satisfies,
 )
 
@@ -213,14 +215,14 @@ def _delta_str(sample_val, ref_val, prec: int = 2) -> str | None:
 # 0 no preferred direction (those cells stay uncoloured).
 _METRIC_DIR = {
     "QED": 1, "SA": 1, "LogP": 0, "Lipinski": 1, "HAtoms": 0, "Sim→Ref": 0,
-    "Clashes": -1,
+    "Clashes": -1, "Strain": -1, "PB-valid": 1,
     "Vina Score": -1, "Vina Min": -1, "Vina Dock": -1,
 }
 # Display formats for the comparison table's metric columns.
 _TABLE_FMT = {
     "QED": "{:.3f}", "SA": "{:.2f}", "LogP": "{:.2f}",
     "Lipinski": "{:.1f}", "HAtoms": "{:.0f}", "Sim→Ref": "{:.3f}",
-    "Clashes": "{:.1f}",
+    "Clashes": "{:.1f}", "Strain": "{:.0f}", "PB-valid": "{:.2f}",
     "Vina Score": "{:.2f}", "Vina Min": "{:.2f}", "Vina Dock": "{:.2f}",
 }
 
@@ -258,11 +260,22 @@ def _comparison_df(metrics: dict) -> pd.DataFrame:
             row[col] = rec.get(key)
         if label == "Reference":
             row["Sim→Ref"] = 1.0  # the reference is identical to itself
-        # Clashes live under `interactions.n_clashes` and aren't computed for
-        # the reference ligand — only populate for sample rows that have it.
-        ix = rec.get("interactions")
-        if isinstance(ix, dict) and isinstance(ix.get("n_clashes"), (int, float)):
-            row["Clashes"] = ix["n_clashes"]
+        # Clashes + strain: prefer the real PoseCheck block; fall back to the
+        # legacy distance-based interactions.n_clashes when pose eval hasn't run.
+        pc = rec.get("posecheck")
+        if isinstance(pc, dict) and "error" not in pc:
+            if isinstance(pc.get("clashes"), (int, float)):
+                row["Clashes"] = pc["clashes"]
+            if isinstance(pc.get("strain"), (int, float)):
+                row["Strain"] = pc["strain"]
+        else:
+            ix = rec.get("interactions")
+            if isinstance(ix, dict) and isinstance(ix.get("n_clashes"), (int, float)):
+                row["Clashes"] = ix["n_clashes"]
+        # PoseBusters validity — 1.0/0.0 so the Mean row reads as a pass-rate.
+        pb = rec.get("posebusters")
+        if isinstance(pb, dict) and isinstance(pb.get("valid"), bool):
+            row["PB-valid"] = 1.0 if pb["valid"] else 0.0
         v = rec.get("vina")
         if isinstance(v, dict) and "error" not in v:
             for key, col in vina:
@@ -385,7 +398,7 @@ def _progress_dialog(kind: str, args: tuple) -> None:
     st.caption("Working — this window closes when the compute finishes.")
 
     if kind == "target":
-        target, docking, exh, force = args
+        target, docking, exh, force, pose = args
         st.markdown(f"##### {target.name}")
         bar = st.progress(0.0, text="Starting…")
 
@@ -401,7 +414,7 @@ def _progress_dialog(kind: str, args: tuple) -> None:
             coords, elems = parse_pocket_pdb(pdb)
             compute_target_metrics(target, coords, elems, docking=docking,
                                    receptor_pdb=pdb, exhaustiveness=exh,
-                                   progress_cb=_cb, force=force)
+                                   progress_cb=_cb, force=force, pose=pose)
         except Exception as e:  # noqa: BLE001
             st.error(f"Compute failed — {e}")
             return
@@ -425,7 +438,7 @@ def _progress_dialog(kind: str, args: tuple) -> None:
 
     else:  # "all" | "all_ref" — batch over every target
         if kind == "all":
-            targets, docking, exh, force, skip_existing = args
+            targets, docking, exh, force, skip_existing, pose = args
             eligible = [t for t in targets
                         if (t / "samples.sdf").exists()
                         and find_pocket_pdb(t) is not None]
@@ -434,11 +447,11 @@ def _progress_dialog(kind: str, args: tuple) -> None:
             # redo everything); otherwise filter out already-satisfied targets.
             if skip_existing and not force:
                 eligible = [t for t in eligible
-                            if not cache_satisfies(t, docking)]
+                            if not cache_satisfies(t, docking, pose)]
                 if not eligible:
                     empty_msg = ("All targets already satisfy the selected "
-                                 "Vina mode — nothing to do (turn off 'Skip "
-                                 "already-done' to recompute).")
+                                 "Vina/pose modes — nothing to do (turn off "
+                                 "'Skip already-done' to recompute).")
         else:  # "all_ref" — compute_reference merges into existing metrics.json
             targets, docking, exh, skip_existing = args
             eligible = [t for t in targets if metrics_path(t).exists()]
@@ -470,7 +483,7 @@ def _progress_dialog(kind: str, args: tuple) -> None:
                     coords, elems = parse_pocket_pdb(pdb)
                     compute_target_metrics(t, coords, elems, docking=docking,
                                            receptor_pdb=pdb, exhaustiveness=exh,
-                                           progress_cb=_cb, force=force)
+                                           progress_cb=_cb, force=force, pose=pose)
                 else:  # "all_ref"
                     compute_reference(t, docking=docking, receptor_pdb=pdb,
                                       exhaustiveness=exh, progress_cb=_cb)
@@ -485,7 +498,8 @@ def _progress_dialog(kind: str, args: tuple) -> None:
 
 @st.dialog("Force-recompute this target?")
 def _confirm_target_eval(target: Path, docking: str,
-                         exhaustiveness: int, force: bool) -> None:
+                         exhaustiveness: int, force: bool,
+                         pose: str = "none") -> None:
     """Only shown when **Force recompute** is on for a target that already has
     a cache. Smart compute is non-destructive (preserves cached chem / vina
     that already satisfies the request), so it never triggers this dialog.
@@ -495,10 +509,12 @@ def _confirm_target_eval(target: Path, docking: str,
                "scratch and any cached vina results re-run.")
     if docking != "none":
         st.caption(f"Vina mode `{docking}` is selected; docking can be slow.")
+    if pose != "none":
+        st.caption(f"Pose mode `{pose}` is selected (moleval env).")
     go, cancel = st.columns(2)
     if go.button("Force recompute", type="primary", width="stretch"):
         st.session_state["_pending_compute"] = (
-            "target", (target, docking, exhaustiveness, force))
+            "target", (target, docking, exhaustiveness, force, pose))
         st.rerun()
     if cancel.button("Cancel", width="stretch"):
         st.rerun()
@@ -507,7 +523,7 @@ def _confirm_target_eval(target: Path, docking: str,
 @st.dialog("Force-recompute all targets?")
 def _confirm_all_eval(targets: list[Path], docking: str,
                       exhaustiveness: int, force: bool,
-                      skip_existing: bool) -> None:
+                      skip_existing: bool, pose: str = "none") -> None:
     """Only shown when **Force recompute** is on for a batch that has cached
     targets. Smart-compute batches (force off) skip this and just run."""
     n_cached = sum(1 for t in targets if metrics_path(t).exists())
@@ -516,12 +532,14 @@ def _confirm_all_eval(targets: list[Path], docking: str,
                "files will be overwritten and any cached vina re-run.")
     if docking != "none":
         st.caption(f"Vina mode `{docking}` across all targets can be slow.")
+    if pose != "none":
+        st.caption(f"Pose mode `{pose}` across all targets (moleval env).")
     if skip_existing:
         st.caption("Note: 'Skip already-done' is ignored when Force is on.")
     go, cancel = st.columns(2)
     if go.button("Force recompute all", type="primary", width="stretch"):
         st.session_state["_pending_compute"] = (
-            "all", (targets, docking, exhaustiveness, force, skip_existing))
+            "all", (targets, docking, exhaustiveness, force, skip_existing, pose))
         st.rerun()
     if cancel.button("Cancel", width="stretch"):
         st.rerun()
@@ -655,6 +673,20 @@ with ctrl:
                 "sample. Install instructions are in the `metrics.py` docstring."
             )
 
+    # Optional PoseCheck + PoseBusters — attaches posecheck/posebusters blocks
+    # to metrics.json. Runs in the dedicated `moleval` env via a subprocess.
+    pose_mode = st.selectbox(
+        "Pose eval", POSE_MODES, index=0,
+        help="none = skip · posecheck = clashes/strain/interactions · "
+             "posebusters = validity checks · all = both. Runs in the moleval env.",
+    )
+    if pose_mode != "none" and not pose_eval_available():
+        st.warning(
+            "moleval env not found — pose eval records an error per sample. "
+            "Build it: `conda create -n moleval python=3.10 && conda run -n "
+            "moleval pip install posecheck posebusters 'pandas>=2.2.3'`."
+        )
+
     force = st.checkbox(
         "Force recompute", value=False,
         help="Off (default) = *smart compute*: per-sample chem and per-sample "
@@ -673,18 +705,19 @@ with ctrl:
     if st.button("Compute metrics for all targets", width="stretch"):
         if force and any(metrics_path(t).exists() for t in targets):
             _confirm_all_eval(targets, docking_mode, docking_exh,
-                              force, skip_existing)
+                              force, skip_existing, pose_mode)
         else:
             st.session_state["_pending_compute"] = (
                 "all", (targets, docking_mode, docking_exh,
-                        force, skip_existing))
+                        force, skip_existing, pose_mode))
             st.rerun()
     if st.button(f"Compute metrics for {target.name}", width="stretch"):
         if force and metrics_path(target).exists():
-            _confirm_target_eval(target, docking_mode, docking_exh, force)
+            _confirm_target_eval(target, docking_mode, docking_exh, force,
+                                 pose_mode)
         else:
             st.session_state["_pending_compute"] = (
-                "target", (target, docking_mode, docking_exh, force))
+                "target", (target, docking_mode, docking_exh, force, pose_mode))
             st.rerun()
     if st.button("Compute reference ligand", width="stretch"):
         if metrics_path(target).exists():
@@ -880,6 +913,55 @@ else:
                         height=min(280, 38 * (len(ix["closest"]) + 1)),
                     )
 
+            # ── PoseCheck + PoseBusters (real structural-quality metrics) ──────
+            pc = sample_match.get("posecheck")
+            pb = sample_match.get("posebusters")
+            if isinstance(pc, dict) or isinstance(pb, dict):
+                st.markdown("##### PoseCheck & PoseBusters")
+                ref_pc = ref.get("posecheck") if isinstance(ref, dict) else None
+                ref_pc = ref_pc if isinstance(ref_pc, dict) else {}
+                pcols = st.columns(4)
+                if isinstance(pc, dict) and "error" not in pc:
+                    cl = pc.get("clashes")
+                    pcols[0].metric(
+                        "clashes",
+                        cl if isinstance(cl, (int, float)) else "—",
+                        delta=_delta_str(cl, ref_pc.get("clashes"), 0),
+                        delta_color="inverse",
+                        help="PoseCheck: steric clashes with the pocket (lower better)",
+                    )
+                    s = pc.get("strain")
+                    pcols[1].metric(
+                        "strain (UFF)",
+                        f"{s:.0f}" if isinstance(s, (int, float)) else "—",
+                        delta=_delta_str(s, ref_pc.get("strain"), 0),
+                        delta_color="inverse",
+                        help="PoseCheck: internal-energy strain vs a relaxed pose",
+                    )
+                    ni = pc.get("n_interactions")
+                    pcols[2].metric("interactions",
+                                    ni if isinstance(ni, (int, float)) else "—",
+                                    help="prolif protein–ligand interaction count")
+                if isinstance(pb, dict) and "error" not in pb:
+                    valid = pb.get("valid")
+                    pcols[3].metric(
+                        "PoseBusters",
+                        "PASS" if valid else "FAIL",
+                        delta=f"{pb.get('n_pass', '?')}/{pb.get('n_checks', '?')} checks",
+                        delta_color="off",
+                        help="PoseBusters dock-mode validity (all checks pass)",
+                    )
+                    fails = [k for k, v in (pb.get("checks") or {}).items()
+                             if v is False]
+                    if fails:
+                        st.caption("❌ PoseBusters fails: " + ", ".join(fails))
+                if isinstance(pc, dict) and pc.get("interactions"):
+                    st.caption("Interactions: " + " · ".join(
+                        f"{k} {v}" for k, v in pc["interactions"].items()))
+                for blk, name in ((pc, "PoseCheck"), (pb, "PoseBusters")):
+                    if isinstance(blk, dict) and blk.get("error"):
+                        st.caption(f"⚠ {name} error — {blk['error']}")
+
 
 # Per-pocket metrics — set-level stats + the reference-vs-mean comparison
 st.subheader("Per-pocket metrics")
@@ -904,6 +986,28 @@ else:
                      f"{agg.get('high_affinity_total', 0)} samples beat the "
                      "reference Vina Dock score · needs vina_dock",
             )
+
+        # PoseCheck + PoseBusters set-level aggregates (present when pose ran).
+        pose_items: list[tuple[str, str, str]] = []
+        if isinstance(agg.get("clashes_median"), (int, float)):
+            pose_items.append(("Clashes (med)", f"{agg['clashes_median']:.1f}",
+                               "PoseCheck: median steric clashes with the pocket"))
+        if isinstance(agg.get("strain_median"), (int, float)):
+            pose_items.append(("Strain (med)", f"{agg['strain_median']:.0f}",
+                               "PoseCheck: median UFF strain energy (lower better)"))
+        if isinstance(agg.get("n_interactions_mean"), (int, float)):
+            pose_items.append(("Interact. (mean)",
+                               f"{agg['n_interactions_mean']:.1f}",
+                               "prolif: mean protein–ligand interaction count"))
+        if isinstance(agg.get("pb_valid_rate"), (int, float)):
+            pose_items.append(
+                ("PB-valid", f"{agg['pb_valid_rate'] * 100:.0f}%",
+                 f"{agg.get('pb_valid_n', 0)}/{agg.get('pb_valid_total', 0)} "
+                 "samples pass every PoseBusters check"))
+        if pose_items:
+            pcols2 = st.columns(6)
+            for _i, (_label, _val, _help) in enumerate(pose_items):
+                pcols2[_i].metric(_label, _val, help=_help)
 
         # The Ligand column carries the row role (gray = Reference/Mean,
         # yellow = sidebar-selected sample); value cells carry the direction

@@ -46,8 +46,12 @@ TRIALS = [
          flag="notable", note="Re-run of T2 peaks 0.633, not 0.644 → pretrain-seed noise ±0.02. 0.644 was a favorable draw."),
     dict(t="C", label="40M @0.50·50ep", cfg="40M control · mask0.50 · 50ep", rho=0.6221, sd=.001, kind="trial",
          flag="notable", note="Tied with 40M@0.75 (0.6225) → at matched 50ep the mask ratio is FLAT for the small model. Interaction airtight."),
-    dict(t="SP", label="splat head", cfg="100M · mask0.75 · Gaussian-splat recon head (K=4)", rho=0.6283, sd=.003, kind="trial",
-         flag="notable", note="Physical-prior recon (reconstruct density as sum of atom-Gaussians, not free voxels) = TIED with patch-MLP baseline (within seed noise). First alt-objective that doesn't regress (vs denoise −0.05, contrastive −0.14)."),
+    dict(t="SP", label="splat head (iso)", cfg="100M · mask0.75 · Gaussian-splat recon (K=4, isotropic)", rho=0.6283, sd=.003, kind="trial",
+         flag="notable", note="Physical-prior recon (density = sum of atom-Gaussians, not free voxels) = TIED with patch-MLP baseline. First alt-objective that doesn't regress (vs denoise −0.05, contrastive −0.14)."),
+    dict(t="SPA", label="splat (aniso)", cfg="100M · mask0.75 · splat + anisotropic Σ (scale+rotation)", rho=0.6203, sd=.004, kind="trial",
+         flag="", note="Anisotropy (per-Gaussian scale+rotation, 3DGS-style) did NOT help — ≤ isotropic splat (0.628) ≤ baseline. Extra orientation flexibility is a wash for the encoder."),
+    dict(t="HCS", label="HCS chan-drop", cfg="100M · mask0.75 · channel_group_dropout=0.15 (1 seed)", rho=0.6351, sd=.002, kind="trial",
+         flag="notable", note="Channel-group dropout (drops whole groups incl the 7-ch ligand group) = TIED with baseline 0.631±.010 (within noise, no accuracy cost). ADOPT for free robustness to a zero/missing ligand channel → ligand-masked generation & pocket-only inputs."),
     # ---- running / queued ----
     dict(t="B4", label="block 4 (1Å)", cfg="100M · mask0.75 · block4", rho=0.6044, sd=.001, kind="trial",
          flag="notable", note="Finer masking HURTS (−0.03, clears noise) — 1Å holes too easy to inpaint. block8 (2Å) stays optimal; geometry didn't shift with mask0.75."),
@@ -175,10 +179,15 @@ mask-0.50 baseline · red dashed = prior ceiling (0.637).</p>
 <div class="card"><h2>Dramatic differences &amp; noticeable points</h2>
 {calls(DRAMATIC,'')}
 {calls(NOTABLE,'n')}
+<div class="call n" style="border-left-color:#1d5a3a"><b>Multi-seed confirmation (3 pretrain seeds each).</b> The single-draw points above are noisy;
+the real numbers with error bars: <b>100M 0.631±0.010</b> · <b>150M 0.623±0.003</b> · <b>width-98M 0.621±0.004</b> — so 100M is <i>marginally</i>
+best and capacity past it doesn't help (150M≈width-98M). Splat recon objective: iso 0.628 / aniso 0.620 — both TIED-or-below the patch-MLP
+baseline (0.631), anisotropy doesn't help → physical splat is a wash for the encoder.</div>
 <div class="call n" style="border-left-color:#b4413a"><b>Bottom line.</b> Re-tuning the <b>mask ratio</b> (0.50→0.75) is the one robust win
 (+0.030, confirmed independently on width-98M at +0.032) and it <b>reversed the campaign's "scaling hurts" verdicts</b> — at the right
 mask, the ~100M models beat the 40M. The capacity sweet spot <b>shifts up</b> (~40M→~100M) but still peaks. Everything else — exact best
-number, epoch-peak, fine arch — sits inside the ±0.02 seed noise, so the headline recipe lands <b>~0.63 ± 0.02</b>, straddling the 0.637 ceiling.</div></div>
+number, epoch-peak, fine arch, alt-objectives (splat/aniso) — sits inside the ±0.01–0.02 seed noise. The headline recipe lands
+<b>0.631 ± 0.010</b> (3 seeds), straddling the old 0.637 ceiling rather than clearing it.</div></div>
 
 <div class="card"><h2>All trials</h2>
 <table><thead><tr><th>#</th><th>trial</th><th>config</th><th>test ρ</th><th>finding</th></tr></thead>

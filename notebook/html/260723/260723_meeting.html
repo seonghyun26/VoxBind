@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Macrocycles in generated & dataset ligands — 260723</title>
+<style>
+  :root{--ink:#1c2433;--ink-soft:#5b6678;--line:#e3e7ee;--line-strong:#aeb6c4;--bg:#f5f6f8;--card:#fff;
+    --accent:#2f6f4f;--best-bg:#eaf5ee;--tbd:#b07a17;--tbd-bg:#fcf3e0;}
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    font-size:16px;line-height:1.55;-webkit-font-smoothing:antialiased;}
+  .page{max-width:1120px;margin:0 auto;padding:48px 24px 96px;}
+  header.doc{border-bottom:2px solid var(--ink);padding-bottom:18px;margin-bottom:40px;}
+  header.doc .date{font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:6px;}
+  header.doc h1{font-size:28px;font-weight:650;margin:0;letter-spacing:-0.01em;}
+  header.doc .lead{font-size:14.5px;color:var(--ink-soft);margin:10px 0 0;max-width:1000px;}
+  .doc-section{margin-bottom:60px;}
+  .section-head{font-size:22px;font-weight:660;letter-spacing:-0.01em;margin:0 0 18px;padding-bottom:12px;
+    border-bottom:2px solid var(--line-strong);display:flex;align-items:center;gap:14px;}
+  .section-head .sec-num{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;
+    border-radius:8px;background:var(--accent);color:#fff;font-size:15px;font-weight:700;flex:0 0 auto;}
+  .section-intro{font-size:13.5px;color:var(--ink-soft);margin:-2px 0 22px;max-width:1000px;line-height:1.6;}
+  .table-title{font-size:19px;font-weight:620;margin:0 0 4px;}
+  .table-sub{font-size:13.5px;color:var(--ink-soft);margin:0 0 18px;max-width:1000px;}
+  .table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:var(--card);
+    box-shadow:0 1px 2px rgba(20,30,50,.04),0 8px 24px rgba(20,30,50,.05);}
+  table.results{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums;}
+  table.results th,table.results td{padding:11px 12px;text-align:center;white-space:nowrap;}
+  table.results thead th{font-weight:600;background:#fafbfc;border-bottom:1px solid var(--line);font-size:12.5px;}
+  .col-method{text-align:left !important;min-width:210px;}
+  td.col-method{font-weight:560;}
+  td.col-method .sub{display:block;font-size:11px;color:#7a8699;font-weight:400;white-space:normal;}
+  table.results tbody tr{border-top:1px solid var(--line);}
+  table.results tbody tr:hover{background:#fbfcfd;}
+  .val{font-weight:600;} .sd{color:#9aa3b2;font-size:11px;font-weight:400;}
+  td.hi .val{color:#1d5a3a;} td.hi{background:var(--best-bg);}
+  .na{color:#c2c8d2;}
+  .tag{display:inline-block;font-size:10.5px;font-weight:600;letter-spacing:.04em;padding:2px 8px;border-radius:999px;margin-left:7px;vertical-align:middle;}
+  .tag.gen{background:#fdecdb;color:#b45c17;} .tag.data{background:#e7eefb;color:#38559b;}
+  .fig{margin:8px 0 4px;text-align:center;} .fig img{max-width:100%;height:auto;}
+  .fig-cap{font-size:12.5px;color:var(--ink-soft);margin:6px 0 0;text-align:center;}
+  .two-col{display:flex;gap:28px;flex-wrap:wrap;align-items:flex-start;}
+  .two-col > div{flex:1 1 380px;min-width:340px;}
+  .notes{margin-top:18px;font-size:13px;color:var(--ink-soft);line-height:1.6;max-width:1000px;}
+  .notes b{color:var(--ink);font-weight:600;}
+  .notes ul{margin:6px 0 0;padding-left:20px;} .notes li{margin-bottom:6px;}
+  .notes code,.section-intro code,.table-sub code{background:#f0f2f5;padding:1px 5px;border-radius:4px;font-size:12.5px;}
+  .callout{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--accent);
+    border-radius:8px;padding:14px 18px;margin:6px 0 0;font-size:13.5px;line-height:1.6;max-width:1000px;}
+  .callout b{color:var(--ink);}
+  .pill{display:inline-block;padding:1px 9px;border-radius:999px;font-size:12px;font-weight:600;}
+  .pill.ns{background:#eef1f6;color:#5b6678;} .pill.sig{background:var(--best-bg);color:#1d5a3a;}
+  .subsection-head{font-size:16px;font-weight:640;color:var(--ink);margin:30px 0 8px;display:flex;align-items:center;gap:10px;}
+  .subsection-head .sub-lab{display:inline-flex;align-items:center;justify-content:center;min-width:26px;height:22px;padding:0 7px;border-radius:6px;background:#eef1f6;color:#5b6678;font-size:12px;font-weight:700;}
+  .placeholder{border:1.5px dashed var(--line-strong);border-radius:12px;background:var(--card);padding:24px 26px;color:var(--ink-soft);font-size:14px;line-height:1.65;}
+  .placeholder .ph-tag{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--tbd);background:var(--tbd-bg);padding:3px 10px;border-radius:999px;margin-bottom:14px;}
+  .placeholder h4{margin:0 0 8px;font-size:15px;font-weight:640;color:var(--ink);}
+  .placeholder ul{margin:4px 0 16px;padding-left:20px;} .placeholder ul:last-child{margin-bottom:0;}
+  .placeholder li{margin-bottom:5px;} .placeholder .todo{color:var(--tbd);font-weight:600;}
+</style></head>
+<body><div class="page">
+
+<header class="doc">
+  <div class="date">Meeting note · 2026-07-23</div>
+  <h1>Macrocycles, fusion choices, reproducibility &amp; affinity baselines</h1>
+  <div class="lead">Agenda
+    <ol style="margin:6px 0 0;padding-left:22px;">
+      <li>Macrocycles in VoxBind generations vs. CrossDocked &amp; PLINDER ligands</li>
+      <li>De novo drug design — fusion choices</li>
+      <li>Reproducibility issue</li>
+      <li>Binding-affinity regression — baselines to be added</li>
+    </ol>
+  </div>
+</header>
+
+<section class="doc-section">
+  <h2 class="section-head"><span class="sec-num">1</span>Macrocycles</h2>
+  <p class="section-intro">Do the ligands VoxBind generates contain macrocycles, how does their rate
+  compare to the training/reference corpora (CrossDocked, PLINDER), and does being a macrocycle
+  correlate with a better Vina docking score? A macrocycle = any ring of <b>≥ 12 atoms</b>
+  (largest SSSR ring); ring ≥ 8 shown as a looser "large-ring" cut.</p>
+  <h3 class="subsection-head"><span class="sub-lab">1a</span>Prevalence</h3>
+  <p class="section-intro">Largest ring size per ligand computed with RDKit
+  (<code>GetRingInfo().AtomRings()</code>). Datasets deduplicated by canonical SMILES so the fraction
+  reflects distinct chemistry, not repeated poses/instances.</p>
+
+  <p class="table-title">Table 1 · Fraction of ligands that are macrocyclic</p>
+  <p class="table-sub">Highlighted column = macrocycle rate at the standard ≥ 12-atom threshold.</p>
+  <div class="table-wrap"><table class="results">
+    <thead><tr>
+      <th class="col-method">Population</th><th>N ligands</th>
+      <th>macrocycles<br>(ring ≥ 12)</th><th>% macro<br>(ring ≥ 12)</th>
+      <th>large-ring<br>(ring ≥ 8)</th><th>% large-ring<br>(ring ≥ 8)</th>
+    </tr></thead>
+    <tbody><tr><td class="col-method">VoxBind generated <span class="tag gen">generated</span><span class="sub">diffusion samples, 62 pockets · 10k-step run · res_ep99_test</span></td><td>618</td><td class="hi"><span class="val">10</span></td><td class="hi"><span class="val">1.62%</span></td><td><span class="val">17</span></td><td><span class="val">2.75%</span></td></tr>
+<tr><td class="col-method">CrossDocked <span class="tag data">dataset</span><span class="sub">reference ligands, deduplicated by canonical SMILES</span></td><td>11,685<span class="sd"><br>(149,309 poses)</span></td><td class="hi"><span class="val">190</span></td><td class="hi"><span class="val">1.63%</span></td><td><span class="val">240</span></td><td><span class="val">2.05%</span></td></tr>
+<tr><td class="col-method">PLINDER v2 (unique) <span class="tag data">dataset</span><span class="sub">canonical SMILES, deduplicated · RSCC≥0.8 pretrain corpus</span></td><td>22,050<span class="sd"><br>(113,976 inst.)</span></td><td class="hi"><span class="val">360</span></td><td class="hi"><span class="val">1.63%</span></td><td><span class="val">463</span></td><td><span class="val">2.10%</span></td></tr>
+<tr><td class="col-method">PLINDER v2 (instances) <span class="tag data">dataset</span><span class="sub">instance-level (multi-ligand, no dedup) — what the encoder sees</span></td><td>113,976</td><td class="hi"><span class="val">1,430</span></td><td class="hi"><span class="val">1.25%</span></td><td><span class="val">1,846</span></td><td><span class="val">1.62%</span></td></tr></tbody>
+  </table></div>
+
+  <div class="fig" style="margin-top:26px;">
+    <img src="fig_macrocycle_fraction.svg" alt="macrocycle fraction per source">
+  </div>
+  <p class="fig-cap">Figure 1 · Macrocycle (ring ≥ 12) and large-ring (ring ≥ 8) rate per population.</p>
+
+  <div class="callout" style="margin-top:22px;">
+    <b>Read-out.</b> Macrocycles are <b>rare everywhere</b>. VoxBind generates them at
+    <b>1.62%</b> (10/618 samples; ring sizes 12, 12, 12, 12, 15, 16, 18, 19, 21, 23),
+    versus <b>1.63%</b> of unique CrossDocked ligands and
+    <b>1.63%</b> of unique PLINDER-v2 ligands. The generator neither invents
+    nor strongly suppresses macrocycles relative to its training distribution.
+  </div>
+
+  <h3 class="subsection-head" style="margin-top:44px;"><span class="sub-lab">1b</span>Macrocycle vs. docking score</h3>
+  <p class="section-intro">Restricted to the two populations that carry per-molecule Vina scores
+  (from <code>metrics.json</code>): the 618 VoxBind samples and the 62 CrossDocked test-set
+  reference ligands. Vina is reported in kcal/mol where <b>lower (more negative) = stronger predicted binding</b>.
+  Δ = mean(macro) − mean(non-macro); a <b>negative Δ</b> means macrocycles dock better.
+  Point-biserial <i>r</i> correlates the macrocycle flag (1/0) with the score.</p>
+
+  <div class="two-col">
+    <div>
+      <p class="table-title">Table 2 · Docking by macrocycle status</p>
+      <p class="table-sub">p = Mann–Whitney U (two-sided); * = p&lt;0.05.</p>
+      <div class="table-wrap"><table class="results">
+        <thead><tr>
+          <th class="col-method">Population · metric</th>
+          <th>n<br>macro</th><th>n<br>non</th>
+          <th>mean<br>macro</th><th>mean<br>non</th>
+          <th>Δ</th><th>pt-bis<br><i>r</i></th><th>p</th>
+        </tr></thead>
+        <tbody><tr><td class="col-method">VoxBind generated · dock<span class="sub">618 samples · full Vina re-dock</span></td><td>10</td><td>608</td><td><span class="val">-9.98</span> <span class="sd">±1.90</span></td><td><span class="val">-7.32</span> <span class="sd">±2.10</span></td><td><span class="val">-2.66</span></td><td><span class="val">-0.158</span></td><td><span class="pill sig">0.000 *</span></td></tr>
+<tr><td class="col-method">VoxBind generated · minimize<span class="sub">618 samples · Vina local minimize</span></td><td>10</td><td>608</td><td><span class="val">-9.23</span> <span class="sd">±2.08</span></td><td><span class="val">-6.31</span> <span class="sd">±2.52</span></td><td><span class="val">-2.92</span></td><td><span class="val">-0.145</span></td><td><span class="pill sig">0.000 *</span></td></tr>
+<tr><td class="col-method">VoxBind generated · score_only<span class="sub">618 samples · Vina score of generated pose</span></td><td>10</td><td>608</td><td><span class="val">-8.78</span> <span class="sd">±2.04</span></td><td><span class="val">-5.28</span> <span class="sd">±6.14</span></td><td><span class="val">-3.50</span></td><td><span class="val">-0.072</span></td><td><span class="pill sig">0.000 *</span></td></tr>
+<tr><td class="col-method">CrossDocked refs · dock<span class="sub">62 test-set reference ligands · full Vina re-dock</span></td><td>3</td><td>59</td><td><span class="val">-7.33</span> <span class="sd">±1.75</span></td><td><span class="val">-6.91</span> <span class="sd">±1.98</span></td><td><span class="val">-0.42</span></td><td><span class="val">-0.047</span></td><td><span class="pill ns">0.757</span></td></tr></tbody>
+      </table></div>
+    </div>
+    <div>
+      <div class="fig">
+        <img src="fig_dock_macro.svg" alt="dock score by macrocycle status">
+      </div>
+      <p class="fig-cap">Figure 2 · Vina dock score of VoxBind samples, macrocycle vs. non-macrocycle
+      (box = IQR/median; points = individual samples; better at top).</p>
+    </div>
+  </div>
+
+  <div class="callout" style="margin-top:22px;">
+    <b>Raw correlation.</b> On the generated set, macrocycles (10 of 618)
+    dock better by Δ = <b>-2.66 kcal/mol</b>
+    (mean -9.98 vs -7.32), point-biserial
+    <i>r</i> = <b>-0.158</b>, Mann–Whitney
+    <b>p = 0.0001</b> → strongly significant. <b>But read §3 before believing it</b> — macrocycles are
+    large by construction and Vina scores track molecular size, so this is almost certainly a size artefact.
+  </div>
+
+  <h3 class="subsection-head" style="margin-top:44px;"><span class="sub-lab">1c</span>Is it real, or just molecular size?</h3>
+  <p class="section-intro">A macrocycle contributes 12–23 ring atoms on its own, so macrocyclic ligands are
+  necessarily heavy — and Vina scores grow more negative with heavy-atom count regardless of binding.
+  Before attributing the §2 gap to macrocyclicity we control for size two ways: (a) an OLS with
+  <code>n_atoms</code> + macrocycle flag as predictors, and (b) a size-matched comparison against only the
+  large non-macrocycles.</p>
+
+  <div class="two-col">
+    <div>
+      <p class="table-title">Table 3 · Size control (VoxBind generated · dock)</p>
+      <div class="table-wrap"><table class="results">
+        <tbody>
+          <tr><td class="col-method">mean heavy atoms — macro vs non</td>
+            <td><span class="val">36.5</span> vs <span class="val">22.3</span></td></tr>
+          <tr><td class="col-method">corr(dock, heavy atoms) — Pearson / Spearman</td>
+            <td><span class="val">-0.656</span> / <span class="val">-0.706</span></td></tr>
+          <tr><td class="col-method">Vina per added heavy atom (OLS slope)</td>
+            <td><span class="val">-0.159</span> kcal/mol·atom⁻¹</td></tr>
+          <tr><td class="col-method"><b>macrocycle effect, size-adjusted</b> (OLS coef ± SE)</td>
+            <td><span class="val">-0.41</span> <span class="sd">±0.52</span> · p = <span class="pill ns">0.437</span></td></tr>
+          <tr><td class="col-method">size-matched set (non-macro heavy atoms ≥ smallest macrocycle)</td>
+            <td>n = 10 macro vs 81 large non-macro</td></tr>
+          <tr><td class="col-method">size-matched Δ · p</td>
+            <td><span class="val">-0.87</span> kcal/mol · p = <span class="pill ns">0.153</span></td></tr>
+        </tbody>
+      </table></div>
+    </div>
+    <div>
+      <div class="fig">
+        <img src="fig_dock_natoms.svg" alt="dock vs heavy-atom count">
+      </div>
+      <p class="fig-cap">Figure 3 · Dock score vs. heavy-atom count. Macrocycles (green) sit at the
+      heavy / strong-dock end of the general size trend (dashed).</p>
+    </div>
+  </div>
+
+  <div class="callout" style="margin-top:22px;">
+    <b>Verdict.</b> Docking is dominated by size (Pearson corr(dock, atoms) = <b>-0.656</b>;
+    macrocycles average <b>36</b> vs <b>22</b> heavy atoms).
+    After adjusting for atom count the macrocycle-specific effect is <b>-0.41 ± 0.52 kcal/mol</b>
+    (p = 0.437, not significant), and against size-matched
+    large non-macrocycles the gap is Δ = <b>-0.87 kcal/mol</b>
+    (p = 0.153, not significant).
+    → <b>The apparent macrocycle→better-dock correlation is largely a molecular-size effect, not a macrocycle-specific one.</b>
+  </div>
+
+  <div class="notes">
+    <b>Notes &amp; caveats.</b>
+    <ul>
+      <li><b>Definition.</b> Macrocycle = largest SSSR ring ≥ 12 atoms (IUPAC-style). SSSR can split a
+      bridged macrocycle into smaller rings, so this is a mild <i>under</i>-count; the ≥ 8 column bounds it above.</li>
+      <li><b>Docking sign.</b> Vina scores are negative; "lower = better". A <i>negative</i> Δ / point-biserial
+      <i>r</i> means macrocycles bind more favourably.</li>
+      <li><b>Power.</b> Only 10 generated macrocycles, so every docking test on them is low-powered;
+      the size confound (§3) is the dominant caveat, mirroring the size-confound seen in the DSMBind baseline.</li>
+      <li><b>Provenance.</b> Generated set = <code>voxbind/exps/260518_voxbind_10k_noise/samples/res_ep99_test</code>;
+      CrossDocked = <code>voxbind/dataset/data/crossdocked_pocket10</code> (unique ligands);
+      PLINDER = <code>voxbind/splits/plinder/v2/plinder_selected.csv</code>.</li>
+    </ul>
+  </div>
+</section>
+
+<section class="doc-section">
+  <h2 class="section-head"><span class="sec-num">2</span>De novo drug design — fusion choices</h2>
+  <p class="section-intro">How the conditioning signal (pocket / density / gradmag) is fused into the
+  generative backbone — options, trade-offs, and the choice we'll run.</p>
+  <div class="placeholder">
+    <span class="ph-tag">Placeholder</span>
+    <h4>To fill in</h4>
+    <ul>
+      <li><span class="todo">TODO —</span> the fusion options under consideration (early channel-concat vs.
+        cross-attention conditioning vs. adapter / FiLM injection).</li>
+      <li><span class="todo">TODO —</span> at which stage each signal enters the denoiser, and why.</li>
+      <li><span class="todo">TODO —</span> compute / memory trade-offs per choice.</li>
+      <li><span class="todo">TODO —</span> recommended choice + the experiment that decides it.</li>
+    </ul>
+  </div>
+</section>
+
+<section class="doc-section">
+  <h2 class="section-head"><span class="sec-num">3</span>Reproducibility issue</h2>
+  <p class="section-intro">Where results are not reproducing, the suspected cause, and the plan to pin it down.</p>
+  <div class="placeholder">
+    <span class="ph-tag">Placeholder</span>
+    <h4>To fill in</h4>
+    <ul>
+      <li><span class="todo">TODO —</span> what fails to reproduce (metric, run, expected vs. observed).</li>
+      <li><span class="todo">TODO —</span> suspected sources (split drift, seed / dataloader nondeterminism,
+        checkpoint / config mismatch, cross-server path differences).</li>
+      <li><span class="todo">TODO —</span> what's been ruled in / out so far.</li>
+      <li><span class="todo">TODO —</span> action items to close it.</li>
+    </ul>
+  </div>
+</section>
+
+<section class="doc-section">
+  <h2 class="section-head"><span class="sec-num">4</span>Binding-affinity regression — baselines to be added</h2>
+  <p class="section-intro">New external baselines to add to the <code>lp_edrscc_v2</code> Table 1 comparison.</p>
+  <div class="placeholder">
+    <span class="ph-tag">Placeholder</span>
+    <h4>To fill in</h4>
+    <ul>
+      <li><span class="todo">TODO —</span> which baselines to add (name, venue, code availability).</li>
+      <li><span class="todo">TODO —</span> setup per baseline (env, weights, split alignment to
+        <code>lp_edrscc_v2</code>).</li>
+      <li><span class="todo">TODO —</span> results once run (Pearson <i>r</i> / Spearman ρ / RMSE, 3 seeds)
+        — slot into Table 1 / the baseline bar chart.</li>
+      <li><span class="todo">TODO —</span> status: <span style="color:var(--tbd);font-weight:600;">TBA</span>.</li>
+    </ul>
+  </div>
+</section>
+
+<footer style="border-top:1px solid var(--line);padding-top:14px;color:#9aa3b2;font-size:12px;">
+  §1 generated by <code>notebook/html/260723/build_macrocycle.py</code> (numbers cached in
+  <code>macrocycle_data.json</code>). §2–4 are hand-authored placeholders — fill in before the meeting.
+</footer>
+</div></body></html>

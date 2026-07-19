@@ -1217,6 +1217,10 @@ FROZEN_SPLIT_SCHEMES = {
     "lp_edrscc":    "lp_edrscc_v2",
     "lp_edrscc_v1": "lp_edrscc_v1",   # legacy: IC50-inclusive (5817/1498/2813)
     "lp_edrscc_v2": "lp_edrscc_v2",   # explicit alias for the canonical (3850/817/1320)
+    # LP-PDBBind nested no-leak cleaning tiers (exact subsets of v2, filter on all splits)
+    "lp_edrscc_v2_cl1":   "lp_edrscc_v2_cl1",    # +CL1        (2721/680/1166)
+    "lp_edrscc_v2_cl12":  "lp_edrscc_v2_cl12",   # +CL1+CL2    (2643/659/1149)
+    "lp_edrscc_v2_cl123": "lp_edrscc_v2_cl123",  # +CL1+CL2+CL3 (1559/410/733)
     "time":         "time_v1",        # temporal holdout (train ≤2016 / val 2017 / test ≥2018)
     "misato":       "misato_md_v1",   # MISATO official 8:1:1 MD split (committed mirror)
     # GEMS CleanSplit (leakage + intra-train redundancy filtered) ∩ ED+RSCC+Kd/Ki; test = CASF-2016
@@ -2464,7 +2468,7 @@ def build_parser() -> argparse.ArgumentParser:
                          "resolution-robust). A non-pK target adds a _<target> token to the CSV name "
                          "and needs its cache built (dataset/extract_bfactors.py for B-factors); "
                          "complexes lacking a label are dropped.")
-    pr.add_argument("--split", choices=["lp", "lp_edrscc", "lp_edrscc_v1", "lp_edrscc_v2", "time", "misato", "clean_ed", "clean_ed_v1", "clean_ed_v1_indep"], default="lp",
+    pr.add_argument("--split", choices=["lp", "lp_edrscc", "lp_edrscc_v1", "lp_edrscc_v2", "lp_edrscc_v2_cl1", "lp_edrscc_v2_cl12", "lp_edrscc_v2_cl123", "time", "misato", "clean_ed", "clean_ed_v1", "clean_ed_v1_indep"], default="lp",
                     help="Split source. lp = LP_PDBBind new_split recomputed locally (legacy; can drift "
                          "across servers). FROZEN, hash-verified manifests in voxbind/splits/ (identical "
                          "on every server): lp_edrscc (canonical = Kd/Ki-only v2, 3850/817/1320; "
@@ -2589,7 +2593,7 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Keep covalent complexes (default: drop)")
     pt.add_argument("--cl1_only", action="store_true",
                     help="Restrict to LP_PDBBind CL1=True (cleanest subset); adds _filtered to the CSV name")
-    pt.add_argument("--split", choices=["lp", "lp_edrscc", "lp_edrscc_v1", "lp_edrscc_v2", "time", "misato", "clean_ed", "clean_ed_v1", "clean_ed_v1_indep"], default="lp",
+    pt.add_argument("--split", choices=["lp", "lp_edrscc", "lp_edrscc_v1", "lp_edrscc_v2", "lp_edrscc_v2_cl1", "lp_edrscc_v2_cl12", "lp_edrscc_v2_cl123", "time", "misato", "clean_ed", "clean_ed_v1", "clean_ed_v1_indep"], default="lp",
                     help="Split source (see `probe --split`). Frozen schemes (lp_edrscc/time/misato) load "
                          "the hash-verified manifest in voxbind/splits/ so both arms AND every server use "
                          "the identical pids; lp = legacy local recompute. Pair with --tag to name the CSV.")

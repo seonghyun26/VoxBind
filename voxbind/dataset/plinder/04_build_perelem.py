@@ -28,9 +28,15 @@ DATA = VOX_ROOT / "dataset" / "data"
 CIF_DIR = DATA / "cif"
 CCP4_DIR = DATA / "ccp4"
 PRETRAIN = DATA / "pretrain"
-FREEZE = VOX_ROOT / "splits" / "plinder" / "v2"
-OUT_TUPLES = PRETRAIN / "data_train_plinder_v2_perelem.pt"
-OUT_DIR = PRETRAIN / "xray_resample_plinder_v2_perelem"
+
+
+def version_paths(version):
+    """v2 → the original v2 names (bit-identical); other versions get a suffix. All
+    reuse the SHARED data/cif + data/ccp4 caches (no downloads)."""
+    suff = "" if version == "v2" else f"_{version}"
+    return (VOX_ROOT / "splits" / "plinder" / version,
+            PRETRAIN / f"data_train_plinder_{version}_perelem.pt",
+            PRETRAIN / f"xray_resample_plinder_{version}_perelem")
 
 
 def load_module(path, name):
@@ -41,23 +47,27 @@ def load_module(path, name):
 M = load_module(VOX_ROOT / "dataset" / "legacy" / "03c_plinder_preprocess.py", "p03c")
 
 
-def resolve_v2_selection() -> Path:
-    csv = FREEZE / "plinder_selected.csv"
-    inp = FREEZE / "plinder_inputs.json"
+def resolve_selection(freeze: Path) -> Path:
+    csv = freeze / "plinder_selected.csv"
+    inp = freeze / "plinder_inputs.json"
     if inp.exists():
         want = json.loads(inp.read_text()).get("selection_sha256")
         if want and hashlib.sha256(csv.read_bytes()).hexdigest() != want:
-            raise SystemExit("[fatal] v2 selection hash MISMATCH")
+            raise SystemExit("[fatal] selection hash MISMATCH")
     return csv
 
 
 def main():
     ap = argparse.ArgumentParser()
+    ap.add_argument("--version", default="v2", help="selection freeze / output suffix (v2, v2p1, …)")
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--pocket_radius", type=float, default=10.0)
     args = ap.parse_args()
 
-    sel = pd.read_csv(resolve_v2_selection())
+    global FREEZE, OUT_TUPLES, OUT_DIR
+    FREEZE, OUT_TUPLES, OUT_DIR = version_paths(args.version)
+
+    sel = pd.read_csv(resolve_selection(FREEZE))
     if args.limit:
         sel = sel.head(args.limit)
     print(f"=== v2 PER-ELEMENT+other build (8 lig / 4 poc) ===\n  selection: {len(sel):,} rows\n  cifs: {CIF_DIR}")

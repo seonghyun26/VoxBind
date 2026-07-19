@@ -126,6 +126,84 @@
         "casf_independent_subset": true
       },
       "reference": "Gao/Durairaj et al., 'Resolving data bias improves generalization in binding affinity prediction', Nat. Mach. Intell. 2025; code camlab-ethz/GEMS"
+    },
+    "lp_edrscc_v2_cl1": {
+      "file": "lp_edrscc_v2_cl1.csv",
+      "counts": {
+        "train": 2721,
+        "val": 680,
+        "test": 1166,
+        "total": 4567
+      },
+      "sha256": "2b4e00fb0914f06744ef52484b98390d9d7f7eae452a9496c8c7994810d8225e",
+      "description": "lp_edrscc_v2 \u2229 LP-PDBBind cleaning level(s) CL1 (applied to all splits); ED-available \u2229 (lig & poc RSCC \u2265 0.8) \u2229 (Kd or Ki), non-covalent",
+      "partition": "LP_PDBBind 'new_split' column (sequence-identity clustered)",
+      "generalization": "novel-target (sequence-dedup); Kd/Ki-only; LP cleaning CL1 \u2014 a progressively-cleaner subset of lp_edrscc_v2 (all splits filtered)",
+      "inputs": {
+        "ed_rscc_split": "ed_rscc_split.csv",
+        "lp_pdbbind": "LP_PDBBind.csv",
+        "rscc_threshold": 0.8,
+        "measurement_types": [
+          "Kd",
+          "Ki"
+        ],
+        "cleaning_levels": [
+          "CL1"
+        ]
+      }
+    },
+    "lp_edrscc_v2_cl12": {
+      "file": "lp_edrscc_v2_cl12.csv",
+      "counts": {
+        "train": 2643,
+        "val": 659,
+        "test": 1149,
+        "total": 4451
+      },
+      "sha256": "c6c698b636803fc9273e3ff80ac4dc2c45c572258021b5d3abe2569ef246b340",
+      "description": "lp_edrscc_v2 \u2229 LP-PDBBind cleaning level(s) CL1+CL2 (applied to all splits); ED-available \u2229 (lig & poc RSCC \u2265 0.8) \u2229 (Kd or Ki), non-covalent",
+      "partition": "LP_PDBBind 'new_split' column (sequence-identity clustered)",
+      "generalization": "novel-target (sequence-dedup); Kd/Ki-only; LP cleaning CL1+CL2 \u2014 a progressively-cleaner subset of lp_edrscc_v2 (all splits filtered)",
+      "inputs": {
+        "ed_rscc_split": "ed_rscc_split.csv",
+        "lp_pdbbind": "LP_PDBBind.csv",
+        "rscc_threshold": 0.8,
+        "measurement_types": [
+          "Kd",
+          "Ki"
+        ],
+        "cleaning_levels": [
+          "CL1",
+          "CL2"
+        ]
+      }
+    },
+    "lp_edrscc_v2_cl123": {
+      "file": "lp_edrscc_v2_cl123.csv",
+      "counts": {
+        "train": 1559,
+        "val": 410,
+        "test": 733,
+        "total": 2702
+      },
+      "sha256": "a33f9838987d6ae136bc222703ba8551a4fb2fa16017a3235ae8daaeb3f96f78",
+      "description": "lp_edrscc_v2 \u2229 LP-PDBBind cleaning level(s) CL1+CL2+CL3 (applied to all splits); ED-available \u2229 (lig & poc RSCC \u2265 0.8) \u2229 (Kd or Ki), non-covalent",
+      "partition": "LP_PDBBind 'new_split' column (sequence-identity clustered)",
+      "generalization": "novel-target (sequence-dedup); Kd/Ki-only; LP cleaning CL1+CL2+CL3 \u2014 a progressively-cleaner subset of lp_edrscc_v2 (all splits filtered)",
+      "inputs": {
+        "ed_rscc_split": "ed_rscc_split.csv",
+        "lp_pdbbind": "LP_PDBBind.csv",
+        "rscc_threshold": 0.8,
+        "measurement_types": [
+          "Kd",
+          "Ki"
+        ],
+        "cleaning_levels": [
+          "CL1",
+          "CL2",
+          "CL3"
+        ]
+      }
     }
   }
 }

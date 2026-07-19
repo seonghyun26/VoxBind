@@ -12,8 +12,15 @@ data/cif + data/ccp4, and cropped (step 5) into the PLINDER-specific corpus.
 v2 recipe (vs v1): drop in-vocab + resolution filters (RSCC carries quality),
 all PLINDER splits, multi-ligand, no dedup. ~113,976 instances / ~41,833 PDB.
 
-    cd voxbind && python dataset/plinder/01_select.py            # build + freeze v2
-    cd voxbind && python dataset/plinder/01_select.py --dry_run  # funnel only, no write
+v2.1 recipe (--version v2p1): CLEAN rebuild after the 260718 data audit found v2's
+6.5x is illusory (59% same-ligand-same-PDB dups, +23% >2.5A, pocket density unfiltered).
+Adds: pocket-RSCC>=0.80 (v2 gated LIGAND rscc only), max_res<=2.5 (v2 had no cap),
+dedup one instance per (PDB, ligand CCD) (v2 kept all copies). ~35-40K clean crops.
+Freezes to splits/plinder/v2p1/. v2 path stays BIT-IDENTICAL (default --version v2).
+
+    cd voxbind && python dataset/plinder/01_select.py                    # build + freeze v2
+    cd voxbind && python dataset/plinder/01_select.py --version v2p1     # build + freeze v2.1
+    cd voxbind && python dataset/plinder/01_select.py --version v2p1 --dry_run  # funnel only
 """
 import os; os.environ.setdefault("OMP_NUM_THREADS", "2")
 import argparse, hashlib, json
@@ -24,17 +31,23 @@ import torch; torch.set_num_threads(2)
 VOX = Path(__file__).resolve().parents[2]            # .../voxbind
 DATA = VOX / "dataset" / "data"
 PLINDER = DATA / "plinder"
-FREEZE = VOX / "splits" / "plinder" / "v2"
 
-RECIPE = dict(min_rscc=0.80, max_res=0, min_heavy=6, max_heavy=50,   # max_res=0 -> no cap
-              single_ligand=False, allow_covalent=False, plinder_splits=[],  # [] = all splits
-              dedup="none", in_vocab_filter=False)
+# min_pocket_rscc=0 / max_res=0 / dedup="none" are all no-ops -> v2 recipe unchanged.
+RECIPES = {
+    "v2":   dict(min_rscc=0.80, min_pocket_rscc=0.0, max_res=0, min_heavy=6, max_heavy=50,
+                 single_ligand=False, allow_covalent=False, plinder_splits=[],
+                 dedup="none", in_vocab_filter=False),
+    "v2p1": dict(min_rscc=0.80, min_pocket_rscc=0.80, max_res=2.5, min_heavy=6, max_heavy=50,
+                 single_ligand=False, allow_covalent=False, plinder_splits=[],
+                 dedup="pdb_ccd", in_vocab_filter=False),   # 1 per (PDB, ligand CCD)
+}
 BUILD = dict(shuffle_seed=1234, val_tail=100, max_len=30,
              norm_version="v6_arcsinh_z", pocket_radius=10.0, frame="deposited (transform=None)")
 
 KEEP = ["entry_pdb_id", "system_id", "system_biounit_id", "ligand_asym_id", "ligand_ccd_code",
         "ligand_rdkit_canonical_smiles", "entry_resolution",
-        "system_ligand_validation_average_rscc", "system_ligand_validation_average_occupancy",
+        "system_ligand_validation_average_rscc", "system_pocket_validation_average_rscc",
+        "system_ligand_validation_average_occupancy",
         "ligand_num_heavy_atoms", "ligand_molecular_weight",
         "system_pocket_ECOD", "system_pocket_UniProt", "split"]
 
@@ -66,8 +79,13 @@ def leakage_holdout():
 
 def main():
     ap = argparse.ArgumentParser()
+    ap.add_argument("--version", default="v2", choices=list(RECIPES), help="selection recipe/freeze dir")
     ap.add_argument("--dry_run", action="store_true", help="print funnel, do not write the freeze")
     args = ap.parse_args()
+
+    RECIPE = RECIPES[args.version]
+    FREEZE = VOX / "splits" / "plinder" / args.version
+    print(f"[recipe] {args.version}: {RECIPE}\n")
 
     excl, leak_hashes = leakage_holdout()
     print(f"[leakage] {len(excl):,} held-out PDB ids\n")
@@ -84,9 +102,20 @@ def main():
 
     res = pd.to_numeric(df.entry_resolution, errors="coerce")
     rscc = pd.to_numeric(df.system_ligand_validation_average_rscc, errors="coerce")
+    prscc = pd.to_numeric(df.system_pocket_validation_average_rscc, errors="coerce")
     nh = pd.to_numeric(df.ligand_num_heavy_atoms, errors="coerce")
     un = pd.to_numeric(df.ligand_num_unresolved_heavy_atoms, errors="coerce")
     b = lambda c: df[c].eq(True)
+
+    # v2.1-only clean filters; no-ops at v2 defaults (max_res=0, min_pocket_rscc=0).
+    density_subs = [
+        ("unresolved_heavy == 0",            un.eq(0)),
+        (f"ligand RSCC >= {RECIPE['min_rscc']}", rscc.ge(RECIPE['min_rscc'])),
+    ]
+    if RECIPE["min_pocket_rscc"] > 0:
+        density_subs.append((f"pocket RSCC >= {RECIPE['min_pocket_rscc']}", prscc.ge(RECIPE["min_pocket_rscc"])))
+    if RECIPE["max_res"] and RECIPE["max_res"] > 0:
+        density_subs.append((f"resolution <= {RECIPE['max_res']} A", res.le(RECIPE["max_res"])))
 
     stages = [
         ("STEP 1 — COMPLEX filter", [
@@ -98,10 +127,7 @@ def main():
             ("!covalent",                        ~b("ligand_is_covalent")),
             ("exclude downstream-test",          ~df.entry_pdb_id.str.lower().isin(excl)),
         ]),
-        ("STEP 2 — DENSITY filter", [
-            ("unresolved_heavy == 0",            un.eq(0)),
-            (f"RSCC >= {RECIPE['min_rscc']}",    rscc.ge(RECIPE['min_rscc'])),
-        ]),
+        ("STEP 2 — DENSITY filter", density_subs),
     ]
     print(f"{'stage':<40}{'inst':>12}{'removed':>11}{'uniq_pdb':>11}")
     print("-" * 74)
@@ -116,8 +142,19 @@ def main():
             funnel.append({"stage": name, "ligand_instances": ni, "unique_pdb": npdb}); prev = ni
 
     sel = df.loc[mask, KEEP].reset_index(drop=True)
+
+    # Dedup: v2 keeps every copy (a ligand CCD repeated across chains of one PDB shows up
+    # dozens-hundreds of times). "pdb_ccd" keeps ONE instance per (entry_pdb_id, ligand CCD),
+    # deterministically (sort then drop_duplicates) so every server freezes the same rows.
+    if RECIPE["dedup"] == "pdb_ccd":
+        pre = len(sel)
+        sel = (sel.sort_values(["entry_pdb_id", "ligand_ccd_code", "ligand_asym_id"])
+                  .drop_duplicates(["entry_pdb_id", "ligand_ccd_code"], keep="first")
+                  .reset_index(drop=True))
+        print(f"\n[dedup pdb_ccd] {pre:,} -> {len(sel):,} instances ({pre - len(sel):,} redundant copies dropped)")
+
     n, npdb, nccd = len(sel), sel.entry_pdb_id.nunique(), sel.ligand_ccd_code.nunique()
-    print(f"\nv2 selection: {n:,} instances / {npdb:,} PDB / {nccd:,} chemotypes")
+    print(f"\n{args.version} selection: {n:,} instances / {npdb:,} PDB / {nccd:,} chemotypes")
 
     if args.dry_run:
         print("\n[dry_run] nothing written."); return
@@ -128,8 +165,9 @@ def main():
     (FREEZE / "plinder_funnel.json").write_text(json.dumps(
         {"funnel": funnel, "n_selected": int(n), "n_unique_pdb": int(npdb), "n_chemotypes": int(nccd)}, indent=2))
     inputs = {
-        "name": "plinder_v2",
-        "description": "Frozen PLINDER v2 ligand-matched density pretraining selection (max-coverage; RSCC-gated).",
+        "name": f"plinder_{args.version}",
+        "description": f"Frozen PLINDER {args.version} ligand-matched density pretraining selection "
+                       f"({'max-coverage; RSCC-gated' if args.version == 'v2' else 'CLEAN: dedup + res<=2.5 + ligand&pocket RSCC>=0.8'}).",
         "plinder_bucket": "gs://plinder/2024-06/v2",
         "selection_csv": "plinder_selected.csv",
         "selection_sha256": sha256(csv),

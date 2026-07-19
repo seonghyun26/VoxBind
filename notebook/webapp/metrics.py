@@ -22,7 +22,9 @@ import argparse
 import json
 import os
 import shutil
+import subprocess
 import sys
+import tempfile
 import time
 from collections.abc import Callable
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -50,6 +52,28 @@ METRICS_VERSION = 2
 # vina_min   -> + score_only & minimize  (local optimisation; no pose search)
 # vina_dock  -> + score_only, minimize & full re-docking — all three paper scores
 DOCKING_MODES = ("none", "vina_score", "vina_min", "vina_dock")
+
+# Pose-quality eval (PoseCheck + PoseBusters), computed in the dedicated
+# `moleval` conda env via the pose_eval.py subprocess worker. Additive &
+# optional, exactly like vina above — a metrics.json with or without the
+# per-sample `posecheck`/`posebusters` blocks is still version 2, so requesting
+# pose never invalidates a cached (and possibly expensively docked) target.
+# none        -> no pose eval
+# posecheck   -> + PoseCheck (clashes, strain energy, interaction profile)
+# posebusters -> + PoseBusters (dock-mode validity checks)
+# all         -> both
+POSE_MODES = ("none", "posecheck", "posebusters", "all")
+
+# The moleval interpreter (override with $MOLEVAL_PY). Its env `bin/` is
+# prepended to PATH for the worker so posecheck can shell out to `hydride` /
+# `reduce` (protein protonation).
+_MOLEVAL_PY = os.environ.get("MOLEVAL_PY", "/home/shpark/.conda/envs/moleval/bin/python")
+_POSE_WORKER = str(Path(__file__).with_name("pose_eval.py"))
+_POSE_IMPORT_ERROR: str | None = None
+# Backstop: kill the worker if a whole target's pose eval exceeds this (protein
+# protonation / posebusters can also hang, not just strain). The worker already
+# bounds strain per-molecule; this catches everything else. Override with env.
+_POSE_TIMEOUT_S = float(os.environ.get("POSE_TIMEOUT_S", "600"))
 
 # An optional progress callback: progress_cb(done, total, stage_label). Called
 # during the chemical-scoring and docking phases so a UI can show a live bar.
@@ -115,13 +139,37 @@ def _has_vina_for_mode(vina, mode: str) -> bool:
                for k in _vina_mode_keys(mode))
 
 
-def cache_satisfies(target_dir: Path, docking: str) -> bool:
+def _pose_blocks(mode: str) -> tuple[str, ...]:
+    """Per-sample pose blocks required to satisfy `mode` (empty for 'none')."""
+    if mode == "posecheck":   return ("posecheck",)
+    if mode == "posebusters": return ("posebusters",)
+    if mode == "all":         return ("posecheck", "posebusters")
+    return ()
+
+
+def _has_pose_for_mode(row: dict, mode: str) -> bool:
+    """Cached row already carries every pose block `mode` needs (error-free).
+
+    A block whose top-level value is an error dict (protein-load / worker
+    failure) counts as unsatisfied so it retries; deterministic per-field issues
+    live under the block's own `errors` key and do not force a recompute.
+    """
+    if mode == "none":
+        return True
+    for blk in _pose_blocks(mode):
+        b = row.get(blk)
+        if not isinstance(b, dict) or "error" in b:
+            return False
+    return True
+
+
+def cache_satisfies(target_dir: Path, docking: str, pose: str = "none") -> bool:
     """True when target_dir/metrics.json is fresh AND has chem for every sample
-    AND — if `docking` is requested — the required vina fields for every sample
-    and (when present) the reference ligand.
+    AND — if `docking`/`pose` are requested — the required vina fields / pose
+    blocks for every sample and (when present) the reference ligand.
 
     Drives the batch "skip-existing" toggle: a target whose cache already
-    satisfies the requested mode is skipped without recomputing anything.
+    satisfies the requested modes is skipped without recomputing anything.
     """
     if not metrics_are_fresh(target_dir):
         return False
@@ -137,6 +185,13 @@ def cache_satisfies(target_dir: Path, docking: str) -> bool:
         ref = data.get("reference")
         if isinstance(ref, dict) and "error" not in ref:
             if not _has_vina_for_mode(ref.get("vina"), docking):
+                return False
+    if pose != "none":
+        if not all(_has_pose_for_mode(s, pose) for s in samples):
+            return False
+        ref = data.get("reference")
+        if isinstance(ref, dict) and "error" not in ref:
+            if not _has_pose_for_mode(ref, pose):
                 return False
     return True
 
@@ -487,6 +542,116 @@ def _aggregate_vina(sample_rows: list[dict], reference: dict | None = None) -> d
     return out
 
 
+# ── PoseCheck + PoseBusters bridge (runs in the `moleval` env) ─────────────────
+def pose_eval_available() -> bool:
+    """True if the moleval interpreter and pose_eval.py worker are both present.
+
+    Records why in `_POSE_IMPORT_ERROR` when not — mirrors `docking_available`.
+    """
+    global _POSE_IMPORT_ERROR
+    if not os.path.exists(_MOLEVAL_PY):
+        _POSE_IMPORT_ERROR = f"moleval python not found: {_MOLEVAL_PY} (set $MOLEVAL_PY)"
+        return False
+    if not os.path.exists(_POSE_WORKER):
+        _POSE_IMPORT_ERROR = f"pose_eval.py worker not found: {_POSE_WORKER}"
+        return False
+    _POSE_IMPORT_ERROR = None
+    return True
+
+
+def run_pose_eval(
+    mols: list[Chem.Mol],
+    receptor_pdb: Path | str,
+    mode: str = "all",
+    tmp_dir: Path | str | None = None,
+) -> list[dict]:
+    """Score `mols` against `receptor_pdb` with PoseCheck + PoseBusters.
+
+    Bridges to the `moleval` env: writes the mols to a temp SDF (order
+    preserved), runs pose_eval.py there, and returns a list aligned to `mols` —
+    each entry {"posecheck": {..}, "posebusters": {..}} for the requested
+    `mode`. Never raises: a worker/env failure yields an error block per mol so
+    the per-sample record still captures why.
+    """
+    if not mols:
+        return []
+    blocks = _pose_blocks(mode)
+
+    def _err(reason: str) -> list[dict]:
+        return [{b: {"error": reason} for b in blocks} for _ in mols]
+
+    if not pose_eval_available():
+        return _err(f"pose toolchain unavailable: {_POSE_IMPORT_ERROR}")
+
+    tmp = Path(tempfile.mkdtemp(
+        prefix="poseeval_", dir=str(tmp_dir) if tmp_dir else None))
+    sdf_path, out_path = tmp / "ligands.sdf", tmp / "pose.json"
+    try:
+        with Chem.SDWriter(str(sdf_path)) as w:
+            for m in mols:
+                w.write(m)
+        # Prepend the moleval bin so posecheck's `hydride`/`reduce` shell-outs
+        # resolve; without this they hit `/bin/sh: hydride: not found`.
+        env = dict(os.environ)
+        env["PATH"] = os.pathsep.join(
+            [str(Path(_MOLEVAL_PY).parent), env.get("PATH", "")])
+        proc = subprocess.run(
+            [_MOLEVAL_PY, _POSE_WORKER, "--protein", str(receptor_pdb),
+             "--ligands", str(sdf_path), "--out", str(out_path), "--pose", mode],
+            env=env, capture_output=True, text=True, timeout=_POSE_TIMEOUT_S,
+        )
+        if proc.returncode != 0 or not out_path.exists():
+            tail = " | ".join((proc.stderr or "").strip().splitlines()[-3:])
+            return _err(f"worker rc={proc.returncode}: {tail}")
+        results = json.loads(out_path.read_text())
+        if len(results) != len(mols):
+            return _err(f"worker returned {len(results)} records for {len(mols)} mols")
+        return [{b: r[b] for b in blocks if b in r} for r in results]
+    except Exception as e:  # noqa: BLE001
+        return _err(f"{type(e).__name__}: {e}")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def _aggregate_pose(sample_rows: list[dict]) -> dict:
+    """Aggregate PoseCheck + PoseBusters over samples that were scored.
+
+    Strain energy is summarised by median (its distribution is heavy-tailed, so
+    the median is the robust central value the SBDD literature reports); clashes
+    by both mean and median. PoseBusters contributes `pb_valid_rate` — the share
+    of samples that pass *every* validity check.
+    """
+    out: dict = {}
+
+    def _vals(blk: str, key: str) -> list[float]:
+        v = []
+        for s in sample_rows:
+            b = s.get(blk)
+            if isinstance(b, dict) and isinstance(b.get(key), (int, float)):
+                v.append(b[key])
+        return v
+
+    clashes = _vals("posecheck", "clashes")
+    if clashes:
+        out["clashes_mean"] = float(np.mean(clashes))
+        out["clashes_median"] = float(np.median(clashes))
+    strain = _vals("posecheck", "strain")
+    if strain:
+        out["strain_mean"] = float(np.mean(strain))
+        out["strain_median"] = float(np.median(strain))
+    ninter = _vals("posecheck", "n_interactions")
+    if ninter:
+        out["n_interactions_mean"] = float(np.mean(ninter))
+    pb_valid = [bool(s["posebusters"]["valid"]) for s in sample_rows
+                if isinstance(s.get("posebusters"), dict)
+                and isinstance(s["posebusters"].get("valid"), bool)]
+    if pb_valid:
+        out["pb_valid_rate"] = float(np.mean(pb_valid))
+        out["pb_valid_n"] = int(sum(pb_valid))
+        out["pb_valid_total"] = len(pb_valid)
+    return out
+
+
 def _reference_row(target_dir: Path):
     """Chemical metrics for the crystal reference ligand — the per-target baseline.
 
@@ -526,6 +691,7 @@ def compute_target_metrics(
     workers: int | None = None,
     progress_cb: ProgressCb | None = None,
     force: bool = False,
+    pose: str = "none",
 ) -> dict:
     """Score every valid sample under `target_dir` and write metrics.json.
 
@@ -732,6 +898,38 @@ def compute_target_metrics(
                         if progress_cb is not None:
                             progress_cb(done, n_dock, "Docking molecules")
 
+    # ── PoseCheck + PoseBusters — one moleval subprocess over the needed mols ─
+    # Runs after chem/vina so reused (SMILES-keyed) rows already carry any prior
+    # pose blocks; only rows missing them for the requested `pose` are scored.
+    pose_error: str | None = None
+    if pose != "none":
+        pose_receptor = receptor_pdb or find_pocket_pdb(target_dir)
+        if pose_receptor is None:
+            pose_error = f"pose={pose!r} needs a *_pocket10.pdb in {target_dir}"
+        else:
+            needed_pose: list[tuple[int, Chem.Mol]] = [
+                (i, valid_mols[i]) for i, row in enumerate(sample_rows)
+                if not _has_pose_for_mode(row, pose)
+            ]
+            if ref_mol is not None and not _has_pose_for_mode(reference, pose):
+                needed_pose.append((-1, ref_mol))
+            if needed_pose:
+                if progress_cb is not None:
+                    progress_cb(0, len(needed_pose), "Pose-checking molecules")
+                pose_results = run_pose_eval(
+                    [m for _, m in needed_pose], pose_receptor, mode=pose,
+                    tmp_dir=cache_dir,
+                )
+                blocks = _pose_blocks(pose)
+                for (slot, _), res in zip(needed_pose, pose_results):
+                    dst = reference if slot == -1 else sample_rows[slot]
+                    for blk in blocks:
+                        if blk in res:
+                            dst[blk] = res[blk]
+                if progress_cb is not None:
+                    progress_cb(len(needed_pose), len(needed_pose),
+                                "Pose-checking molecules")
+
     # ── aggregate metrics (vina_* means see every docked sample) ─────────────
     if sample_rows:
         smiles_list = [s["smiles"] for s in sample_rows]
@@ -751,6 +949,8 @@ def compute_target_metrics(
             aggregates["sim_to_ref_mean"] = float(np.mean(sim_vals))
         if dock_on:
             aggregates.update(_aggregate_vina(sample_rows, reference))
+        if pose != "none":
+            aggregates.update(_aggregate_pose(sample_rows))
     else:
         aggregates = {
             "n_total": n_raw,
@@ -762,10 +962,13 @@ def compute_target_metrics(
         "version": METRICS_VERSION,
         "computed_at": datetime.now().isoformat(timespec="seconds"),
         "docking": docking,
+        "pose": pose,
         "reference": reference,
         "samples": sample_rows,
         "aggregates": aggregates,
     }
+    if pose_error:
+        data["pose_error"] = pose_error
     # When docking was requested but the receptor-prep step failed, every
     # sample ended up with a downstream "pocket10.pdbqt does not exist" error
     # — the root cause (pdb2pqr30 gap, missing dep, ...) only lived inside the
@@ -894,14 +1097,18 @@ def _iter_target_dirs(root: Path):
 
 def _cli() -> None:
     ap = argparse.ArgumentParser(
-        description="Compute metrics.json (optionally with Vina docking) for a "
-                    "target_XX/ dir or a run dir of target_* folders.",
+        description="Compute metrics.json (optionally with Vina docking and/or "
+                    "PoseCheck+PoseBusters pose eval) for a target_XX/ dir or a "
+                    "run dir of target_* folders.",
     )
     ap.add_argument("path", type=Path,
                     help="a target_XX/ dir, or a run dir containing target_* dirs")
     ap.add_argument("--docking", choices=DOCKING_MODES, default="none",
                     help="none | vina_score (score) | vina_min (+minimize) | "
                          "vina_dock (+full dock)")
+    ap.add_argument("--pose", choices=POSE_MODES, default="none",
+                    help="none | posecheck (clashes/strain/interactions) | "
+                         "posebusters (validity) | all — runs in the moleval env")
     ap.add_argument("--exhaustiveness", type=int, default=8,
                     help="Vina exhaustiveness for dock mode (higher = slower)")
     ap.add_argument("--cpu", type=int, default=8,
@@ -909,7 +1116,8 @@ def _cli() -> None:
     ap.add_argument("--workers", type=int, default=None,
                     help="parallel docking workers (default: cpu_count // cpu)")
     ap.add_argument("--skip-existing", action="store_true",
-                    help="skip targets whose metrics.json already has docking results")
+                    help="skip targets whose metrics.json already satisfies the "
+                         "requested docking AND pose modes")
     args = ap.parse_args()
 
     root = args.path.resolve()
@@ -924,19 +1132,35 @@ def _cli() -> None:
               "AutoDockTools_py3.git")
         print("         proceeding anyway — each sample will record a vina.error.\n")
 
+    if args.pose != "none" and not pose_eval_available():
+        print(f"WARNING: pose toolchain unavailable ({_POSE_IMPORT_ERROR}).")
+        print("         build the env, e.g.:")
+        print("           conda create -n moleval python=3.10 -y")
+        print("           conda run -n moleval pip install posecheck posebusters "
+              "'pandas>=2.2.3'")
+        print("           conda install -n moleval -c bioconda reduce -y")
+        print("         proceeding anyway — each sample will record a pose error.\n")
+
     targets = list(_iter_target_dirs(root))
     if not targets:
         ap.error(f"no samples.sdf and no target_* dirs under {root}")
 
-    print(f"{len(targets)} target(s)  |  docking={args.docking}  "
+    print(f"{len(targets)} target(s)  |  docking={args.docking}  pose={args.pose}  "
           f"exhaustiveness={args.exhaustiveness}  cpu={args.cpu}  "
           f"workers={args.workers if args.workers else 'auto'}")
     for i, tdir in enumerate(targets, 1):
         tag = f"[{i}/{len(targets)}] {tdir.name}"
         if args.skip_existing:
             existing = load_metrics(tdir)
-            if existing and existing.get("docking", "none") != "none":
-                print(f"{tag}: already docked — skipped")
+            dock_ok = (args.docking == "none") or (
+                existing is not None
+                and existing.get("docking", "none") != "none")
+            pose_ok = (args.pose == "none") or (
+                existing is not None and bool(existing.get("samples"))
+                and all(_has_pose_for_mode(s, args.pose)
+                        for s in existing["samples"]))
+            if existing and dock_ok and pose_ok:
+                print(f"{tag}: already computed — skipped")
                 continue
         pdb = find_pocket_pdb(tdir)
         if pdb is None:
@@ -949,7 +1173,7 @@ def _cli() -> None:
                 tdir, coords, elems,
                 docking=args.docking, receptor_pdb=pdb,
                 exhaustiveness=args.exhaustiveness, cpu=args.cpu,
-                workers=args.workers,
+                workers=args.workers, pose=args.pose,
             )
         except Exception as e:  # noqa: BLE001
             print(f"{tag}: FAILED — {type(e).__name__}: {e}")
@@ -969,6 +1193,17 @@ def _cli() -> None:
             if isinstance(ref_vina, dict) and isinstance(
                     ref_vina.get("score_only"), (int, float)):
                 msg += f"  ref_score={ref_vina['score_only']:.2f}"
+        if args.pose != "none":
+            sm = agg.get("strain_median"); cm = agg.get("clashes_median")
+            if isinstance(cm, (int, float)):
+                msg += f"  clash_med={cm:.1f}"
+            if isinstance(sm, (int, float)):
+                msg += f"  strain_med={sm:.0f}"
+            pv = agg.get("pb_valid_rate")
+            if isinstance(pv, (int, float)):
+                msg += f"  PB-valid={pv * 100:.0f}%"
+            if data.get("pose_error"):
+                msg += f"  pose:ERR({data['pose_error']})"
         print(f"{msg}  [{time.time() - t0:.1f}s]")
 
 

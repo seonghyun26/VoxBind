@@ -1501,6 +1501,29 @@ def run(cfg: DictConfig, method: str) -> None:
     if is_main:
         logger.info(f"start {spec.label} pre-training...")
 
+    # ── Opt-in optimizer-LR schedule (warmup + cosine decay). Default 'constant' keeps
+    #    the constant cfg.lr behavior BIT-IDENTICAL (all prior runs unaffected). Applied
+    #    per-epoch to every optimizer param group. Knobs (all via Hydra, no yaml edit):
+    #      cfg.lr_schedule : 'constant' (default) | 'cosine'
+    #      cfg.lr_warmup_epochs : linear 0 -> cfg.lr over N epochs (default 0)
+    #      cfg.lr_min : cosine floor (default 0.0);  peak = cfg.lr
+    #    On resume the cosine spans [start_epoch, start_epoch+num_epochs) so extend-runs
+    #    decay over their own window.
+    _lr_sched = str(cfg.get("lr_schedule", "constant"))
+    _lr_warmup = int(cfg.get("lr_warmup_epochs", 0))
+    _lr_min = float(cfg.get("lr_min", 0.0))
+    _lr_base = float(cfg.lr)
+    _lr_total = start_epoch + int(cfg.num_epochs)
+
+    def _lr_at_epoch(ep):
+        if _lr_sched == "constant":
+            return _lr_base
+        if _lr_warmup > 0 and ep < start_epoch + _lr_warmup:
+            return _lr_base * float(ep - start_epoch + 1) / float(_lr_warmup)   # linear warmup
+        prog = float(ep - start_epoch - _lr_warmup) / float(max(1, _lr_total - start_epoch - _lr_warmup))
+        prog = min(1.0, max(0.0, prog))
+        return _lr_min + 0.5 * (_lr_base - _lr_min) * (1.0 + math.cos(math.pi * prog))  # cosine
+
     epochs_iter = tqdm(
         range(start_epoch, start_epoch + cfg.num_epochs),
         desc="Epochs", disable=not is_main,
@@ -1509,6 +1532,14 @@ def run(cfg: DictConfig, method: str) -> None:
 
     for epoch in epochs_iter:
         t0 = time.time()
+        if _lr_sched != "constant":
+            _cur_lr = _lr_at_epoch(epoch)
+            for _pg in optimizer.param_groups:
+                _pg["lr"] = _cur_lr
+            if is_main:
+                logger.info(f"[epoch {epoch}] lr={_cur_lr:.3e} "
+                            f"(schedule={_lr_sched}, warmup={_lr_warmup}ep, "
+                            f"peak={_lr_base:.2e}, min={_lr_min:.1e})")
         if hasattr(loader_train.sampler, "set_epoch"):
             loader_train.sampler.set_epoch(epoch)
 

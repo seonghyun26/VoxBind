@@ -75,7 +75,11 @@ def _load_quality_frame() -> pd.DataFrame:
     lp["mtype"] = (lp["kd/ki"].astype(str)
                    .str.extract(r"^\s*(Kd|Ki|IC50)", expand=False, flags=re.IGNORECASE)
                    .str.lower())
-    q = q.merge(lp[["pid", "year", "mtype"]], on="pid", how="left")
+    # LP-PDBBind per-complex cleaning-level flags (nested: CL3 ⊆ CL2 ⊆ CL1),
+    # stored as the strings "True"/"False" in the CSV → coerce to bool.
+    for c in ("CL1", "CL2", "CL3"):
+        lp[c] = lp[c].astype(str).str.strip().str.lower().isin(["true", "1"])
+    q = q.merge(lp[["pid", "year", "mtype", "CL1", "CL2", "CL3"]], on="pid", how="left")
     return q
 
 
@@ -110,6 +114,57 @@ def build_lp_edrscc_v2(q: pd.DataFrame) -> tuple[list, dict]:
         "generalization": "novel-target (sequence-dedup); Kd/Ki-only affinity labels (no assay-dependent IC50)",
         "inputs": {"ed_rscc_split": ED_RSCC.name, "lp_pdbbind": LP_CSV.name,
                    "rscc_threshold": RSCC_THRESHOLD, "measurement_types": ["Kd", "Ki"]},
+    }
+    return pairs, prov
+
+
+def build_lp_edrscc_v2_cl(q: pd.DataFrame, n_levels: int) -> tuple[list, dict]:
+    """lp_edrscc_v2 further restricted to LP-PDBBind cleaning level(s) CL1..CLn.
+
+    LP-PDBBind ships three nested, per-complex "cleaning levels" (CL3 ⊆ CL2 ⊆ CL1)
+    that flag structural / annotation quality with progressively stricter criteria.
+    These variants apply the filter to ALL splits (train/val/test), so each is a
+    self-contained, progressively-cleaner benchmark that is an EXACT SUBSET of the
+    frozen lp_edrscc_v2 partition (identical split assignments — a pid keeps its v2
+    bucket). ``n_levels`` ∈ {1,2,3} requires CL1 (and CL2, and CL3) to be True.
+
+    Diverse-split trial: measures how binding-affinity generalization moves as the
+    benchmark is cleaned to LP-PDBBind's stricter quality tiers.
+    """
+    if n_levels not in (1, 2, 3):
+        raise ValueError(f"n_levels must be 1, 2 or 3 (got {n_levels})")
+    cl_cols = ["CL1", "CL2", "CL3"][:n_levels]
+    mask = (q["new_split"].astype(str).str.lower().isin(SPLIT_NAMES)
+            & q["mtype"].isin(["kd", "ki"]))
+    for c in cl_cols:
+        mask = mask & q[c].fillna(False).astype(bool)
+    sub = q[mask]
+    pairs = [(p, s.lower()) for p, s in zip(sub["pid"], sub["new_split"].astype(str))]
+
+    # Invariant: a CL variant MUST be an exact subset of the frozen v2 manifest
+    # (same pids, same split). Guards against any drift in the quality frame vs the
+    # committed v2 CSV — if this trips, v2 itself changed and must be re-frozen first.
+    v2_csv = SPLITS_DIR / "lp_edrscc_v2.csv"
+    if v2_csv.exists():
+        v2 = pd.read_csv(v2_csv)
+        v2map = dict(zip(v2["pid"].astype(str).str.lower(), v2["split"].astype(str).str.lower()))
+        for p, s in pairs:
+            if v2map.get(p) != s:
+                raise AssertionError(
+                    f"CL variant pid {p!r} (split {s!r}) is not in frozen lp_edrscc_v2 "
+                    f"with the same split (v2 has {v2map.get(p)!r}) — re-freeze v2 first."
+                )
+
+    tag = "+".join(cl_cols)
+    prov = {
+        "description": f"lp_edrscc_v2 ∩ LP-PDBBind cleaning level(s) {tag} (applied to all splits); "
+                       f"ED-available ∩ (lig & poc RSCC ≥ 0.8) ∩ (Kd or Ki), non-covalent",
+        "partition": "LP_PDBBind 'new_split' column (sequence-identity clustered)",
+        "generalization": f"novel-target (sequence-dedup); Kd/Ki-only; LP cleaning {tag} — a "
+                          f"progressively-cleaner subset of lp_edrscc_v2 (all splits filtered)",
+        "inputs": {"ed_rscc_split": ED_RSCC.name, "lp_pdbbind": LP_CSV.name,
+                   "rscc_threshold": RSCC_THRESHOLD, "measurement_types": ["Kd", "Ki"],
+                   "cleaning_levels": cl_cols},
     }
     return pairs, prov
 
@@ -231,8 +286,9 @@ def _write_manifest_csv(pairs, path: Path) -> None:
 def main() -> int:
     ap = argparse.ArgumentParser(description="Regenerate frozen PDBbind split manifests.")
     ap.add_argument("--scheme", default="all",
-                    choices=["all", "lp_edrscc_v1", "lp_edrscc_v2", "time_v1", "misato_md_v1",
-                             "clean_ed_v1", "clean_ed_v1_indep"])
+                    choices=["all", "lp_edrscc_v1", "lp_edrscc_v2",
+                             "lp_edrscc_v2_cl1", "lp_edrscc_v2_cl12", "lp_edrscc_v2_cl123",
+                             "time_v1", "misato_md_v1", "clean_ed_v1", "clean_ed_v1_indep"])
     ap.add_argument("--test_from", type=int, default=2018, help="time_v1: first test year (>=)")
     ap.add_argument("--val_year", type=int, default=2017, help="time_v1: validation year")
     args = ap.parse_args()
@@ -244,11 +300,15 @@ def main() -> int:
                         "MANIFEST.json pins counts+sha256. Regenerate via make_splits.py.")
     manifest.setdefault("schemes", {})
 
-    want = (["lp_edrscc_v1", "lp_edrscc_v2", "time_v1", "misato_md_v1",
-             "clean_ed_v1", "clean_ed_v1_indep"] if args.scheme == "all" else [args.scheme])
+    want = (["lp_edrscc_v1", "lp_edrscc_v2",
+             "lp_edrscc_v2_cl1", "lp_edrscc_v2_cl12", "lp_edrscc_v2_cl123",
+             "time_v1", "misato_md_v1", "clean_ed_v1", "clean_ed_v1_indep"]
+            if args.scheme == "all" else [args.scheme])
 
     # the quality frame is only needed for the pdbbind-derived schemes
-    _pdbbind_schemes = ("lp_edrscc_v1", "lp_edrscc_v2", "time_v1", "clean_ed_v1", "clean_ed_v1_indep")
+    _pdbbind_schemes = ("lp_edrscc_v1", "lp_edrscc_v2",
+                        "lp_edrscc_v2_cl1", "lp_edrscc_v2_cl12", "lp_edrscc_v2_cl123",
+                        "time_v1", "clean_ed_v1", "clean_ed_v1_indep")
     q = _load_quality_frame() if any(s in want for s in _pdbbind_schemes) else None
 
     for scheme in want:
@@ -258,6 +318,15 @@ def main() -> int:
         elif scheme == "lp_edrscc_v2":
             pairs, prov = build_lp_edrscc_v2(q)
             fname = "lp_edrscc_v2.csv"
+        elif scheme == "lp_edrscc_v2_cl1":
+            pairs, prov = build_lp_edrscc_v2_cl(q, 1)
+            fname = "lp_edrscc_v2_cl1.csv"
+        elif scheme == "lp_edrscc_v2_cl12":
+            pairs, prov = build_lp_edrscc_v2_cl(q, 2)
+            fname = "lp_edrscc_v2_cl12.csv"
+        elif scheme == "lp_edrscc_v2_cl123":
+            pairs, prov = build_lp_edrscc_v2_cl(q, 3)
+            fname = "lp_edrscc_v2_cl123.csv"
         elif scheme == "time_v1":
             pairs, prov = build_time(q, args.test_from, args.val_year)
             fname = "time_v1.csv"
