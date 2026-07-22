@@ -1,0 +1,103 @@
+defaults:
+  - dset: crossdocked_xray
+  - model: density_vit_mae_40m
+  - vox: default
+  - override hydra/job_logging: custom
+  - _self_
+
+# 6-case PLINDER campaign — cell [density+gradmag × ChannelViT].
+# 2-channel (density + ‖∇ρ‖) with ChannelViT per-channel-group patch embed
+# (channel_groups=[1,1] → density and gradmag tokenized in SEPARATE groups, the
+# regime where ChannelViT differs from a fused ViT). Downstream: probe lp_edrscc_v2.
+
+debug: False
+wandb: True
+wandb_tags: [pretrain, density_gradmag, channelvit, 40m, plinder, v2clean, covgate]
+num_workers: 16
+prefetch_factor: 8
+resume: null
+resume_epoch: null
+exp_dir: exps
+exp_name: density_gradmag_channelvit_40m_plinder
+output_dir: null
+
+seed: 42
+num_epochs: 100
+aug: True
+bsz: 32
+accum_steps: 1
+lr: 1e-4
+wd: 5e-2
+
+amp:
+  enabled: true
+  dtype: bf16
+channels_last: false
+optimizer:
+  fused: false
+ema:
+  foreach: false
+compile:
+  enabled: false
+  backend: inductor
+  mode: default
+  fullgraph: false
+  dynamic: false
+
+input_mode: density      # density + trailing gradmag → 2 channels
+with_gradmag: true
+
+dset:
+  data_file: data_train_plinder_v2clean.pt
+  crops_dir: /home1/irteam/VoxBind/voxbind/dataset/data/xray_crops_aligned_plinder_v2clean
+  resample_dir: ""
+  normalize: false
+  ligand_radius: -1
+  use_xray: true
+  subset_xray_only: true
+  subset_n: null                   # launcher sets = n_train-100 from _v2clean/stats.json
+  subset_val_n: 100
+
+model:
+  n_in_channels: 2                 # density + gradmag
+  input_mode: density              # mirror top-level (density_vit_mae_40m sets concrete defaults that else win)
+  with_gradmag: true
+  patch_embed_mode: channel_group  # ChannelViT
+  channel_groups: [1, 1]           # density group + gradmag group (sum = n_in_channels)
+  pos_encoding: learnable           # REQUIRED for channel_group
+
+mae:
+  pretext_style: mae
+  density_source: xray
+  sigma_blur_a_lo: 0.30          # unused (xray source) — read for schema consistency
+  sigma_blur_a_hi: 0.80
+  sigma_noise: 0.0
+  block_size: 8
+  mask_ratio: 0.60
+  mask_strategy: atom_biased
+  mask_atom_tau: 1.0
+  gradmag_reconstruct: true
+  gradmag_noise: false
+  lambda_dens: 1.0
+  lambda_str: 1.0
+  struct_pos_weight: 100.0
+  struct_pos_thresh: 0.05
+  ema_decay: 0.999
+  grad_clip: 1.0
+  val_every: 5          # 33s/133-batch epochs: rank-0 val every epoch stalls ranks 1-3 → ~15% util loss; validate 5x less
+  ckpt_every: 20
+
+hydra:
+  run:
+    dir: ./${exp_dir}/${exp_name}
+  job:
+    config:
+      override_dirname:
+        kv_sep: ""
+        item_sep: "_"
+        exclude_keys: [
+            "exp_dir", "lr", vox.grid_dim, "wd", "resume", "resume_epoch", "wandb",
+            "num_workers", "exp_name", "output_dir", "out_dir",
+            "bsz", "accum_steps", "seed", "num_epochs", "aug", "pocket_radius",
+            "grid_dim", "debug"
+]

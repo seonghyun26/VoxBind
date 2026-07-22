@@ -1,0 +1,112 @@
+defaults:
+  - dset: crossdocked_xray
+  - model: atomblob_density_vit_mae_4m
+  - vox: default
+  - override hydra/job_logging: custom
+  - _self_
+
+# ENCODER-SIZE SCALING LADDER — 4M arm.
+# Exact twin of config_train_atomblob_density_gradmag_vit_mae_40m_invfreq.yaml
+# (the canonical frozen-crop C+D+G baseline, Table 1's combined encoder, test ρ 0.595),
+# the ONLY change being the encoder size via `model: atomblob_density_vit_mae_4m`
+# (dim 512→128, depth 12→8, heads 8→4 → 3.56M encoder vs 45.7M). Same data
+# (frozen v5 crops), same inv_freq recipe, same 100-ep schedule, same eff-batch 128.
+# amp+compile DISABLED to match this box (no C compiler → torch.compile crashes;
+# fp32 eager) and the chain also exports TORCHDYNAMO_DISABLE=1.
+# 13 input channels: 7 lig + 4 poc (vdW radii) + 1 v5 density + 1 gradmag.
+
+debug: False
+wandb: True
+wandb_tags: [pretrain, atomblob_density_gradmag, 4m, scaling, invfreq, v5, ligvdw, clip30, crossdocked_xray]
+num_workers: 16
+prefetch_factor: 8
+resume: null
+resume_epoch: null
+exp_dir: exps
+exp_name: atomblob_density_gradmag_vit_mae_4m_v5_pretrain
+output_dir: null
+
+seed: 42
+num_epochs: 100
+aug: True
+bsz: 32
+accum_steps: 1
+lr: 1e-4
+wd: 5e-2
+
+# ── Throughput knobs DISABLED — this box has NO C compiler (inductor/Triton needs
+# cc → torch.compile crashes); fp32 eager matches the baseline numerical regime.
+amp:
+  enabled: false
+  dtype: bf16
+channels_last: false
+optimizer:
+  fused: false
+ema:
+  foreach: false
+compile:
+  enabled: false
+  backend: inductor
+  mode: default
+  fullgraph: false
+  dynamic: false
+
+input_mode: atomblob_density
+with_gradmag: true                 # + gradmag → 13 channels
+
+dset:
+  crops_dir: /home1/irteam/VoxBind/voxbind/dataset/data/xray_crops_aligned_v5
+  normalize: false                 # v5 crops pre-normalized on disk
+  ligand_radius: -1                # element-wise vdW radii (lig + poc)
+  subset_xray_only: true
+  subset_n: 78428
+  subset_val_n: 100
+  use_xray: true
+
+model:
+  n_in_channels: 13                # 11 atoms + density + gradmag
+  head_style: patch_mlp            # per-patch 2-layer MLP recon head
+  head_hidden_dim: 24              # scaled with the encoder (40m used 67)
+  head_depth: 2
+
+mae:
+  pretext_style: mae
+  density_source: xray
+  sigma_blur_a_lo: 0.30
+  sigma_blur_a_hi: 0.80
+  sigma_noise: 0.0
+  block_size: 8
+  mask_ratio: 0.60
+  mask_strategy: atom_biased
+  mask_atom_tau: 1.0
+  channel_weighting: inv_freq
+  channel_weight_clip_ratio: 30.0
+  density_channel_weight: 0.1
+  gradmag_channel_weight: 0.1
+  gradmag_reconstruct: true
+  gradmag_noise: false
+  atom_pos_weight: 10.0
+  atom_pos_thresh: 0.05
+  lambda_dens: 1.0
+  lambda_str: 1.0
+  struct_pos_weight: 100.0
+  struct_pos_thresh: 0.05
+  ema_decay: 0.999
+  grad_clip: 1.0
+  val_every: 1
+  ckpt_every: 50
+
+hydra:
+  run:
+    dir: ./${exp_dir}/${exp_name}
+  job:
+    config:
+      override_dirname:
+        kv_sep: ""
+        item_sep: "_"
+        exclude_keys: [
+            "exp_dir", "lr", vox.grid_dim, "wd", "resume", "resume_epoch", "wandb",
+            "num_workers", "exp_name", "output_dir", "out_dir",
+            "bsz", "accum_steps", "seed", "num_epochs", "aug", "pocket_radius",
+            "grid_dim", "debug"
+]

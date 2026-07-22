@@ -5,6 +5,7 @@ from typing import Tuple, Union, List
 
 from voxbind.constants import N_POCKET_ELEMENTS, N_LIGAND_ELEMENTS
 from voxbind.models.density_vit import DensityViT
+from voxbind.models.mae_ops import gradient_magnitude3d, per_sample_zscore
 from voxbind.models.unet3d import UNet3D, ResidualBlock
 
 
@@ -34,6 +35,11 @@ class VoxBind(torch.nn.Module):
         density_vit_patch_embed_mode: str = "fused",
         density_vit_channel_groups=None,
         density_vit_n_memory_tokens: int = 0,
+        density_vit_n_in_channels: int = None,
+        density_mask_ligand: bool = False,
+        density_mask_threshold: float = 0.2,
+        density_mask_dilate: int = 2,
+        fusion: str = "default",
         verbose: bool = False
     ):
         """
@@ -91,16 +97,49 @@ class VoxBind(torch.nn.Module):
         # density-branch encoder from 1→2 channels (density + gradmag). Matches a
         # 2-ch (input_mode=density, with_gradmag) density-ViT-MAE pretrained encoder.
         self.with_gradmag = with_gradmag
+        # Leak-removal ablation (full-voxel Path B only): blank the density + gradmag
+        # channels inside the CLEAN ligand's footprint so the frozen encoder cannot
+        # read the co-crystal ligand's own electron density (the crop is holo). The
+        # mask region is derived from the ligand coordinates (occupancy of the clean
+        # ligand voxel grid), dilated by `density_mask_dilate` voxels to cover the
+        # x-ray envelope that spills past the atom cores.
+        self.density_mask_ligand = bool(density_mask_ligand)
+        self.density_mask_threshold = float(density_mask_threshold)
+        self.density_mask_dilate = int(density_mask_dilate)
+        # Fusion variant. "default": ligand_encoder + pocket_encoder, with the frozen density
+        # branch added via the zero-init density_proj. "v3": the frozen encoder ENTIRELY replaces
+        # pocket_encoder — pocket + (apo) density are carried by the frozen ViT and fused into the
+        # ligand features via a normal-init context_proj (early fusion). Ligand stream unchanged.
+        self.fusion = str(fusion)
 
         self.ligand_encoder = ResidualBlock(
             n_channels_ligand, n_channels // 2, n_groups=0, dropout=0
         )
-        self.pocket_encoder = ResidualBlock(
-            n_channels_pocket, n_channels // 2, n_groups=0, dropout=0
-        )
+        # v3 removes pocket_encoder entirely (the frozen encoder carries the pocket). Don't even
+        # build it — otherwise its params get no gradient and DDP errors on unused parameters.
+        if self.fusion != "v3":
+            self.pocket_encoder = ResidualBlock(
+                n_channels_pocket, n_channels // 2, n_groups=0, dropout=0
+            )
         if with_density:
             # density-branch input channels: density (+ gradmag when enabled).
-            n_dens_in = 2 if with_gradmag else 1
+            #   default              : 1 (density) or 2 (density+gradmag)  → encodes the FIELD only.
+            #   density_vit_n_in_channels=13 (Path B): the FULL pretrained voxel encoder
+            #     [ n_lig lig-atom, n_poc poc-atom, density, gradmag ] is reused frozen; the
+            #     ligand-atom channels are masked (zeros) at runtime since the ligand is the
+            #     generation target and is unavailable when conditioning. Lets a combined
+            #     atomblob_density_gradmag ViT-MAE (e.g. exps/260616_best) load drop-in.
+            n_dens_in = (int(density_vit_n_in_channels)
+                         if density_vit_n_in_channels is not None
+                         else (2 if with_gradmag else 1))
+            self.density_n_in = n_dens_in
+            # Path B: full-voxel conditioning with the ligand masked.
+            self.density_full_voxel = (n_dens_in == n_channels_ligand + n_channels_pocket + 2)
+            if self.density_full_voxel and density_encoder_type != "vit":
+                raise ValueError(
+                    "density_vit_n_in_channels=13 (full-voxel conditioning) requires "
+                    f"density_encoder_type='vit', got {density_encoder_type!r}"
+                )
             if density_encoder_type == "vit":
                 # Pure 3D ViT — patch_embed (Conv3d k=p s=p) → L pre-LN MHSA+MLP
                 # → Linear(D → C/2·p³) + pixel-shuffle3D back to full resolution.
@@ -149,11 +188,28 @@ class VoxBind(torch.nn.Module):
             # Training grows the density correction from zero, keeping early
             # iterations stable and identical to the baseline. Identical for
             # cnn and vit branches since both output (B, C/2, G, G, G).
-            self.density_proj = torch.nn.Conv3d(
-                n_channels, n_channels // 2, kernel_size=1
+            # v3 uses context_proj instead — don't build density_proj (unused → DDP error).
+            if self.fusion != "v3":
+                self.density_proj = torch.nn.Conv3d(
+                    n_channels, n_channels // 2, kernel_size=1
+                )
+                torch.nn.init.zeros_(self.density_proj.weight)
+                torch.nn.init.zeros_(self.density_proj.bias)
+
+        # v3 fusion: the frozen encoder replaces pocket_encoder entirely. context_proj is a
+        # NORMAL-init ResidualBlock (in==out → identity skip), so the frozen pocket+density
+        # context is present from step 0 — unlike the zero-init density_proj, which would leave
+        # the model blind to the pocket early once pocket_encoder is gone. Requires the full-voxel
+        # (n_in=13) encoder so the pocket channels are actually inside the frozen input.
+        if self.fusion == "v3":
+            if not (self.with_density and getattr(self, "density_full_voxel", False)):
+                raise ValueError(
+                    "fusion='v3' requires with_density=True and full-voxel density encoding "
+                    "(density_vit.n_in_channels=13) so the frozen encoder carries the pocket."
+                )
+            self.context_proj = ResidualBlock(
+                n_channels // 2, n_channels // 2, n_groups=0, dropout=0
             )
-            torch.nn.init.zeros_(self.density_proj.weight)
-            torch.nn.init.zeros_(self.density_proj.bias)
 
         self.final_ligand = torch.nn.Conv3d(
             n_channels, n_channels_ligand, kernel_size=(3, 3, 3), padding=(1, 1, 1)
@@ -163,11 +219,67 @@ class VoxBind(torch.nn.Module):
             n_params = sum(p.numel() for p in self.parameters() if p.requires_grad)
             print(f">> model has {(n_params/1e6):.02f}M parameters")
 
+    @staticmethod
+    def ligand_occupancy_mask(ligand_clean: torch.Tensor,
+                              threshold: float = 0.2,
+                              dilate: int = 2) -> torch.Tensor:
+        """Binary occupancy mask (B, 1, G, G, G) of the CLEAN ligand's footprint.
+
+        Sum the ligand atom-type channels, threshold, then optionally dilate by
+        `dilate` voxels (max-pool) so the mask covers the x-ray density envelope that
+        spills a little beyond the atom-blob cores. Derived from the clean ligand voxel
+        grid (i.e. from the ligand coordinates), NOT the noisy input — the caller must
+        pass the ground-truth/reference ligand.
+        """
+        occ = ligand_clean.sum(dim=1, keepdim=True)            # (B, 1, G, G, G)
+        m = (occ > threshold).float()
+        if dilate and dilate > 0:
+            k = 2 * dilate + 1
+            m = torch.nn.functional.max_pool3d(m, kernel_size=k, stride=1, padding=dilate)
+        return m
+
+    def _density_encoder_input(self, pocket: torch.Tensor,
+                               density: torch.Tensor,
+                               dens_mask: torch.Tensor = None) -> torch.Tensor:
+        """Build the tensor fed to the (frozen) density_encoder.
+
+        Default field mode: the encoder is a density-only / density+gradmag ViT-MAE,
+        so the input IS the density field (passed straight through; the caller already
+        supplies 1 or 2 channels).
+
+        Full-voxel mode (Path B, n_in=13): the encoder is a combined
+        atomblob_density_gradmag ViT-MAE that was pretrained on the full voxel
+        [ lig-atom, poc-atom, density, gradmag ]. We reconstruct that channel layout
+        here — pocket atoms + density + on-the-fly ‖∇ρ‖ (z-scored, exactly as in
+        pretraining), with the LIGAND-atom channels zeroed (masked): the ligand is the
+        generation target and is not available to condition on. The frozen MAE encoder
+        was trained with masked inputs, so an all-zero ligand block is in-distribution.
+
+        Leak-removal (density_mask_ligand): when `dens_mask` (B,1,G,G,G, the clean
+        ligand footprint) is supplied, the density AND gradmag are additionally zeroed
+        inside that region so the encoder cannot read the co-crystal ligand's own
+        electron density. gradmag is computed from the UNMASKED density first (to avoid
+        a spurious sharp edge at the mask boundary) and then blanked in the region.
+        """
+        if not self.density_full_voxel:
+            return density
+        # density: (B, 1, G, G, G) — the v5 (arcsinh+z) pocket density crop.
+        B, _, G, _, _ = density.shape
+        lig0 = density.new_zeros(B, self.n_channels_ligand, G, G, G)   # masked ligand
+        gradmag = per_sample_zscore(gradient_magnitude3d(density))     # (B, 1, G, G, G)
+        if self.density_mask_ligand and dens_mask is not None:
+            keep = 1.0 - dens_mask                                     # 0 inside ligand region
+            density = density * keep
+            gradmag = gradmag * keep
+        # channel order MUST match pretraining: [ lig, poc, density, gradmag ]
+        return torch.cat([lig0, pocket, density, gradmag], dim=1)
+
     def forward(
         self,
         ligand: torch.Tensor,
         pocket: torch.Tensor,
         density: torch.Tensor = None,
+        dens_mask: torch.Tensor = None,
     ) -> torch.Tensor:
         """
         Forward pass of the VoxBind model.
@@ -183,10 +295,18 @@ class VoxBind(torch.nn.Module):
         Returns:
             torch.Tensor: Output tensor of the model.
         """
-        x = self.ligand_encoder(ligand) + self.pocket_encoder(pocket)
-        if self.with_density and density is not None:
-            x_dens = self.density_encoder(density)
-            x = x + self.density_proj(torch.cat([x, x_dens], dim=1))
+        if self.fusion == "v3":
+            # frozen encoder carries pocket + (apo) density; pocket_encoder is gone. Ligand
+            # stream identical. Early fusion: add the projected frozen context to ligand features.
+            enc_in = self._density_encoder_input(pocket, density, dens_mask=dens_mask)
+            x_dens = self.density_encoder(enc_in)
+            x = self.ligand_encoder(ligand) + self.context_proj(x_dens)
+        else:
+            x = self.ligand_encoder(ligand) + self.pocket_encoder(pocket)
+            if self.with_density and density is not None:
+                enc_in = self._density_encoder_input(pocket, density, dens_mask=dens_mask)
+                x_dens = self.density_encoder(enc_in)
+                x = x + self.density_proj(torch.cat([x, x_dens], dim=1))
 
         x = self.unet3d(x, None)
         x = self.unet3d.act(x)
@@ -195,7 +315,8 @@ class VoxBind(torch.nn.Module):
         return x
 
     def score(self, y: torch.Tensor, pocket: torch.Tensor,
-              density: torch.Tensor = None) -> torch.Tensor:
+              density: torch.Tensor = None,
+              dens_mask: torch.Tensor = None) -> torch.Tensor:
         """
         Calculates the score function.
 
@@ -203,11 +324,13 @@ class VoxBind(torch.nn.Module):
             y (torch.Tensor): The y tensor.
             pocket (torch.Tensor): The pocket tensor.
             density (torch.Tensor, optional): X-ray density map (B,1,G,G,G). Defaults to None.
+            dens_mask (torch.Tensor, optional): clean-ligand footprint (B,1,G,G,G) used to
+                blank density+gradmag in the ligand region. Defaults to None.
 
         Returns:
             torch.Tensor: The calculated base score tensor.
         """
-        xhat = self.forward(y, pocket, density=density)
+        xhat = self.forward(y, pocket, density=density, dens_mask=dens_mask)
         return (xhat - y) / (self.smooth_sigma ** 2)
 
     ####################################################################################
@@ -252,7 +375,8 @@ class VoxBind(torch.nn.Module):
 
     @torch.no_grad()
     def wjs_jump_step(self, y: torch.Tensor, pocket: torch.Tensor,
-                      density: torch.Tensor = None) -> torch.Tensor:
+                      density: torch.Tensor = None,
+                      dens_mask: torch.Tensor = None) -> torch.Tensor:
         """
         Performs the jump step of the walk-jump sampling.
 
@@ -260,11 +384,12 @@ class VoxBind(torch.nn.Module):
             y (torch.Tensor): The y tensor.
             pocket (torch.Tensor): The pocket tensor.
             density (torch.Tensor, optional): X-ray density map (B,1,G,G,G). Defaults to None.
+            dens_mask (torch.Tensor, optional): clean-ligand footprint (B,1,G,G,G). Defaults to None.
 
         Returns:
             torch.Tensor: The estimated "clean" samples xhats.
         """
-        return self.forward(y, pocket, density=density)
+        return self.forward(y, pocket, density=density, dens_mask=dens_mask)
 
     @torch.no_grad()
     def wjs_walk_steps(
@@ -277,6 +402,7 @@ class VoxBind(torch.nn.Module):
         friction: float = 1.,
         lipschitz: float = 1.,
         density: torch.Tensor = None,
+        dens_mask: torch.Tensor = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Performs `n_steps` walk steps of the walk-jump sampling.
@@ -304,7 +430,7 @@ class VoxBind(torch.nn.Module):
         for _ in range(n_steps):
             with torch.no_grad():
                 y += delta * v / 2
-            psi = self.score(y, pocket, density=density)
+            psi = self.score(y, pocket, density=density, dens_mask=dens_mask)
             with torch.no_grad():
                 noise = torch.randn_like(y)
                 if mask is not None:
@@ -370,11 +496,20 @@ class VoxBind(torch.nn.Module):
 
         y, v = self.initialize_y_v(pocket, ligand, self.smooth_sigma, chain_init)
 
+        # density-leak mask: blank density+gradmag inside the (rotated) reference-ligand
+        # footprint. Derived from the clean `ligand` grid, which is rotated/repeated in
+        # lockstep with `density`, so it stays spatially aligned. None → no masking.
+        def _dmask(lig_grid):
+            if not (self.density_mask_ligand and density is not None and lig_grid is not None):
+                return None
+            return self.ligand_occupancy_mask(
+                lig_grid, self.density_mask_threshold, self.density_mask_dilate)
+
         # warm up
         if warmup_wjs > 0:
             mask_warmup = get_pocket_mask(pocket, n_channels=N_LIGAND_ELEMENTS)
             y, v = self.wjs_walk_steps(y, v, pocket, mask_warmup, warmup_wjs,
-                                       density=density)
+                                       density=density, dens_mask=_dmask(ligand))
         y, v = y.repeat(n_chains // N, 1, 1, 1, 1), v.repeat(n_chains // N, 1, 1, 1, 1)
         pocket, ligand = pocket.repeat(n_chains // N, 1, 1, 1, 1), ligand.repeat(n_chains // N, 1, 1, 1, 1)
         if density is not None:
@@ -387,14 +522,18 @@ class VoxBind(torch.nn.Module):
         if mask_pocket:
             mask = get_pocket_mask(pocket, n_channels=N_LIGAND_ELEMENTS)
 
+        # density-leak mask at the full n_chains scale (ligand now repeated to n_chains)
+        dens_mask_main = _dmask(ligand)
+
         # sample
         voxels = []
         for _ in range(0, max_steps, steps):
             # walk `steps` steps
-            y, v = self.wjs_walk_steps(y, v, pocket, mask, steps, density=density)
+            y, v = self.wjs_walk_steps(y, v, pocket, mask, steps, density=density,
+                                       dens_mask=dens_mask_main)
 
             # jump step
-            xhats = self.wjs_jump_step(y, pocket, density=density)
+            xhats = self.wjs_jump_step(y, pocket, density=density, dens_mask=dens_mask_main)
 
             nz = (xhats > 0).float().mean().item()
             # quantile() rejects tensors > ~16M elements; subsample for stats.

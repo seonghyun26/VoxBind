@@ -1,0 +1,125 @@
+defaults:
+  - dset: crossdocked_xray
+  - model: atomblob_density_vit_mae_40m
+  - vox: default
+  - override hydra/job_logging: custom
+  - _self_
+
+# ChannelViT + UNIFORM channel weights + ON-THE-FLY RESAMPLE augmentation.
+# Atom-blob (SEPARATE lig+poc) + v5 X-ray density + gradmag → 13 channels
+# grouped (7,4,1,1) = 7 lig-atom / 4 poc-atom / 1 density / 1 gradmag.
+# Three differences vs the channelvit v5 baseline (atomblob_density_gradmag_channelvit_g7411):
+#   1) channel_weighting=uniform AND density/gradmag recon weights = 1.0
+#      → every one of the 13 channels contributes EQUALLY to the loss.
+#   2) on-the-fly density resample: density cropped from the FULL CCP4 map at the
+#      AUGMENTED pose each step (resample_dir set → DatasetCrossDockedDensity).
+#   3) Tier-1 loader knobs (denoiser stopped, 128-core / 2TB box) to keep 4×H200 fed.
+# channel_group requires pos_encoding=learnable (RoPE over grouped tokens not wired).
+
+debug: False
+wandb: True
+wandb_tags: [pretrain, atomblob_density_gradmag, channelvit, g7411, uniform, 40m, v5, ligvdw, crossdocked_xray, resample, on_the_fly_aug]
+# Resample loader is HEAVY (parses full CCP4 maps from a 54GB pool). 32 workers x4 ranks x
+# cache_size 1024 thrashed the box so hard the c10d rendezvous timed out before batch 0
+# (killed the 260616 resample run + the first launch of this one). Safe tier: ~8 workers/rank,
+# shallow prefetch, small per-worker LRU. Verify batch-0 lands in an isolation test before 4-GPU.
+num_workers: 8
+prefetch_factor: 4
+resume: null
+resume_epoch: null
+exp_dir: exps
+exp_name: atomblob_density_gradmag_channelvit_uniform_resample_v5
+output_dir: null
+
+seed: 42
+num_epochs: 100
+aug: True
+bsz: 32
+accum_steps: 1
+lr: 1e-4
+wd: 5e-2
+
+# ── Throughput knobs: bf16 amp ON (biggest GPU-util win + flash SDPA); compile OFF
+# (this box has NO C compiler → inductor/Triton cannot build). ─────────────────
+amp:
+  enabled: true
+  dtype: bf16
+channels_last: false
+optimizer:
+  fused: false
+ema:
+  foreach: false
+compile:
+  enabled: false      # no C compiler on this box → inductor fails; bf16 amp still on
+  backend: inductor
+  mode: default
+  fullgraph: false
+  dynamic: false
+
+input_mode: atomblob_density
+with_gradmag: true                 # + gradmag → 13 channels
+
+dset:
+  crops_dir: /home1/irteam/VoxBind/voxbind/dataset/data/xray_crops_aligned_v5   # (ignored when resample_dir is set)
+  # On-the-fly density: crop from the FULL map at the AUGMENTED pose (s3 --resample output).
+  # Setting this switches the factory to DatasetCrossDockedDensity.
+  resample_dir: /home1/irteam/VoxBind/voxbind/dataset/data/xray_resample_v5
+  normalize: false                 # v5 recipe applied from raw map (no local ±3σ)
+  ligand_radius: -1                # element-wise vdW radii (lig + poc)
+  subset_xray_only: true
+  subset_n: 78428
+  subset_val_n: 100
+  use_xray: true
+  cache_size: 96                   # small raw-CCP4 LRU/worker → caps RAM (8 workers x4 x96 maps)
+
+model:
+  n_in_channels: 13                # 11 atoms + density + gradmag
+  head_style: patch_mlp            # per-patch 2-layer MLP recon head (~1.0M params)
+  head_hidden_dim: 67
+  head_depth: 2
+  # ── ChannelViT: per-channel-group patch embed ──────────────────────────────
+  patch_embed_mode: channel_group
+  channel_groups: [7, 4, 1, 1]     # lig-atoms / poc-atoms / density / gradmag (sum=13)
+  pos_encoding: learnable          # REQUIRED for channel_group (RoPE not wired for grouped tokens)
+
+mae:
+  pretext_style: mae
+  density_source: xray
+  sigma_blur_a_lo: 0.30
+  sigma_blur_a_hi: 0.80
+  sigma_noise: 0.0
+  block_size: 8
+  mask_ratio: 0.60
+  mask_strategy: atom_biased
+  mask_atom_tau: 1.0
+  channel_weighting: uniform       # UNIFORM atom-type weights (was inv_freq)
+  channel_weight_clip_ratio: 30.0  # (inert under uniform — no atom-freq weights)
+  density_channel_weight: 1.0      # density channel equal to atoms (was 0.1)
+  gradmag_channel_weight: 1.0      # gradmag channel equal to atoms (was 0.1)
+  gradmag_reconstruct: true
+  gradmag_noise: false
+  atom_pos_weight: 10.0
+  atom_pos_thresh: 0.05
+  lambda_dens: 1.0
+  lambda_str: 1.0
+  struct_pos_weight: 100.0
+  struct_pos_thresh: 0.05
+  ema_decay: 0.999
+  grad_clip: 1.0
+  val_every: 1
+  ckpt_every: 50
+
+hydra:
+  run:
+    dir: ./${exp_dir}/${exp_name}
+  job:
+    config:
+      override_dirname:
+        kv_sep: ""
+        item_sep: "_"
+        exclude_keys: [
+            "exp_dir", "lr", vox.grid_dim, "wd", "resume", "resume_epoch", "wandb",
+            "num_workers", "exp_name", "output_dir", "out_dir",
+            "bsz", "accum_steps", "seed", "num_epochs", "aug", "pocket_radius",
+            "grid_dim", "debug"
+]

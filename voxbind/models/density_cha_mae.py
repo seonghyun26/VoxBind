@@ -69,6 +69,10 @@ class DensityChaMAE(nn.Module):
         dcp_strategy: str = "alternate",                 # "alternate" | "patch" | "channel"
         channel_mask_min: int = 1,                       # min # groups masked in channel mode
         channel_mask_max: Optional[int] = None,          # max; default nG-1 (keep ≥1 group)
+        force_mask_groups: Tuple[int, ...] = (),         # groups ALWAYS fully masked (predict-only,
+                                                         # e.g. (2,3) = density+gradmag → "predict
+                                                         # density from structure"); the rest are
+                                                         # patch-masked. Encoder never sees these groups.
         # ── loss ──
         lambda_fourier: float = 0.01,
     ):
@@ -101,6 +105,12 @@ class DensityChaMAE(nn.Module):
         self.dcp_strategy = dcp_strategy
         self.channel_mask_min = int(channel_mask_min)
         self.channel_mask_max = cmax
+        self.force_mask_groups = tuple(sorted({int(g) for g in force_mask_groups}))
+        if self.force_mask_groups:
+            assert all(0 <= g < nG for g in self.force_mask_groups), (
+                f"force_mask_groups {self.force_mask_groups} out of range for nG={nG}")
+            assert len(self.force_mask_groups) < nG, (
+                "force_mask_groups must leave ≥1 visible group")
         self.lambda_fourier = float(lambda_fourier)
         # per-group channel offsets into the n_in-channel input: group g = [offs[g]:offs[g+1])
         offs = [0]
@@ -186,6 +196,32 @@ class DensityChaMAE(nn.Module):
         """
         nG, N = self.n_groups, self.n_tokens
         T = nG * N
+        if self.force_mask_groups:
+            # PREDICT-ONLY groups (e.g. density+gradmag): always fully masked → dropped before
+            # the encoder, reconstructed by the decoder. The remaining (free) groups are
+            # patch-masked as usual. V = nFree·keep_n is constant across the batch.
+            forced = set(self.force_mask_groups)
+            free = [g for g in range(nG) if g not in forced]
+            nFree = len(free)
+            keep_n = max(1, round(N * (1.0 - self.patch_mask_ratio)))
+            patch_ar = torch.arange(N, device=device)
+            free_t = torch.tensor(free, device=device)
+            forced_t = torch.tensor(sorted(forced), device=device)
+            noise = torch.rand(B, nFree, N, device=device, generator=generator)
+            ids_sort = torch.argsort(noise, dim=2)                          # (B, nFree, N)
+            keep_idx = ids_sort[:, :, :keep_n]                             # (B, nFree, keep_n)
+            mask_idx_free = ids_sort[:, :, keep_n:]                        # (B, nFree, N-keep_n)
+            goff_free = (free_t.view(1, nFree, 1)) * N                      # (1, nFree, 1)
+            ids_keep = (keep_idx + goff_free).reshape(B, -1)               # visible: free kept patches
+            ids_mask_free = (mask_idx_free + goff_free).reshape(B, -1)
+            goff_forced = (forced_t.view(1, -1, 1)) * N
+            ids_mask_forced = (patch_ar.view(1, 1, N) + goff_forced).reshape(1, -1).expand(B, -1)
+            ids_mask = torch.cat([ids_mask_free, ids_mask_forced], dim=1)  # free masked + ALL forced
+            mask = torch.ones(B, T, device=device)
+            mask.scatter_(1, ids_keep, 0.0)                                # kept → 0
+            ids_shuffle = torch.cat([ids_keep, ids_mask], dim=1)
+            ids_restore = torch.argsort(ids_shuffle, dim=1)
+            return ids_keep, ids_restore, mask, "force"
         if self.dcp_strategy == "patch":
             mode = "patch"
         elif self.dcp_strategy == "channel":

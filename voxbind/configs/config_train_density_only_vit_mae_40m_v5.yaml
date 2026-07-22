@@ -1,0 +1,94 @@
+defaults:
+  - dset: crossdocked_xray
+  - model: density_vit_mae_40m   # ~42.6M ViT (D=512, L=12, H=8), single-channel input
+  - vox: default
+  - override hydra/job_logging: custom
+  - _self_
+
+# Single-channel DENSITY-ONLY ViT-MAE on v5 X-ray density crops.
+#
+# One of a 4-run ablation { density-only , gradmag-only } x { learnable , rope3d }:
+# the encoder sees a SINGLE input channel (z-scored v5 2Fo-Fc density). Pretext is
+# block-masked density reconstruction + the 11-channel atom-structure aux head
+# (atoms are NOT in the input, so the struct head is retained). Recipe mirrors the
+# v5 ablation baseline (config_train_atomblob_density_vit_mae_40m_invfreq_v5) at
+# eff-batch 128, minus the atom input channels and atom-channel inv_freq weighting
+# (no atom input channels to rebalance).
+#
+# pos_encoding (learnable | rope3d) is the RoPE toggle — override at launch:
+#   model.pos_encoding=rope3d   (3D RoPE)  |  model.pos_encoding=learnable (default)
+
+debug: False
+wandb: True
+wandb_tags: [pretrain, density_only, 40m, v5, crossdocked_xray]
+num_workers: 16
+prefetch_factor: 8
+resume: null
+resume_epoch: null
+exp_dir: exps
+exp_name: density_only_vit_mae_40m_v5
+output_dir: null
+
+seed: 42
+num_epochs: 100
+aug: True
+bsz: 16                  # 4 GPU x 16 x accum 2 = eff-batch 128 (matches v5 ablation)
+accum_steps: 2
+lr: 1e-4
+wd: 5e-2
+
+# ── Input composition ────────────────────────────────────────────────────────
+input_mode: density      # single z-scored density channel
+with_gradmag: false
+
+# ── Dataset ──────────────────────────────────────────────────────────────────
+dset:
+  crops_dir: /home1/irteam/VoxBind/voxbind/dataset/data/xray_crops_aligned_v5
+  normalize: false                 # v5 crops are pre-normalized on disk
+  ligand_radius: -1                # element-wise vdW radii (struct head / atom-biased mask)
+  subset_xray_only: true
+  subset_n: 78428
+  subset_val_n: 100
+  use_xray: true
+
+# ── Model ────────────────────────────────────────────────────────────────────
+model:
+  n_in_channels: 1                 # density-only
+  pos_encoding: learnable          # override model.pos_encoding=rope3d at launch (RoPE toggle)
+  # Struct aux head (n_struct_channels=11) retained from density_vit_mae_40m.
+
+# ── MAE knobs ────────────────────────────────────────────────────────────────
+mae:
+  pretext_style: mae
+  density_source: xray
+  sigma_blur_a_lo: 0.30            # unused (xray source); kept for schema consistency
+  sigma_blur_a_hi: 0.80
+  sigma_noise: 0.0
+  block_size: 8
+  mask_ratio: 0.60
+  mask_strategy: atom_biased
+  mask_atom_tau: 1.0
+  lambda_dens: 1.0
+  lambda_str: 1.0
+  struct_pos_weight: 100.0
+  struct_pos_thresh: 0.05
+  ema_decay: 0.999
+  grad_clip: 1.0
+  val_every: 1
+  ckpt_every: 20
+
+# Hydra
+hydra:
+  run:
+    dir: ./${exp_dir}/${exp_name}
+  job:
+    config:
+      override_dirname:
+        kv_sep: ""
+        item_sep: "_"
+        exclude_keys: [
+            "exp_dir", "lr", vox.grid_dim, "wd", "resume", "resume_epoch", "wandb",
+            "num_workers", "exp_name", "output_dir", "out_dir",
+            "bsz", "accum_steps", "seed", "num_epochs", "aug", "pocket_radius",
+            "grid_dim", "debug"
+]

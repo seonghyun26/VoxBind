@@ -75,14 +75,25 @@ def pdbqt_to_sdf(pose):
         return None
 
 
-def gen_poses(sdf, receptor, tmp, tag, tname):
+def gen_poses(sdf, receptor, tmp, tag, tname, only_indices=None, modes=None):
     mols = valid_mols(sdf)
+    if only_indices is None:
+        only_indices = set(range(len(mols)))
+    else:
+        only_indices = set(only_indices)
+    if modes is None:
+        modes = {"minimize", "dock"}
     out = {}
     t_start = time.time()
+    n_done = 0
     for i, mol in enumerate(mols):
+        if i not in only_indices:
+            continue
         rec = {"min_aff": None, "dock_aff": None, "min_sdf": None, "dock_sdf": None}
         for mode, aff_key, sdf_key in (("minimize", "min_aff", "min_sdf"),
                                        ("dock", "dock_aff", "dock_sdf")):
+            if mode not in modes:
+                continue
             try:
                 task = VinaDockingTask(protein_path=receptor, ligand_rdmol=mol, tmp_dir=tmp)
                 r = task.run(mode=mode, exhaustiveness=EXH)
@@ -91,9 +102,11 @@ def gen_poses(sdf, receptor, tmp, tag, tname):
             except Exception as e:  # noqa: BLE001
                 pass
         out[str(i)] = rec
-        if (i + 1) % 20 == 0 or i == len(mols) - 1:
+        n_done += 1
+        if n_done % 20 == 0 or n_done == len(only_indices):
             el = time.time() - t_start
-            print(f"    {tname} {tag}: {i+1}/{len(mols)}  ({el:.0f}s, {el/(i+1):.1f}s/mol)", flush=True)
+            print(f"    {tname} {tag}: {n_done}/{len(only_indices)}  "
+                  f"({el:.0f}s, {el/n_done:.1f}s/mol)", flush=True)
     return out
 
 
@@ -102,9 +115,18 @@ def main():
     ap.add_argument("targets", nargs="+", help="frozen-enc target indices, e.g. 58 74")
     ap.add_argument("--models", default=",".join(t for t, _ in RUNS),
                     help="comma list of tags to (re)pose; default all three")
+    ap.add_argument("--indices", default=None,
+                    help="comma list of valid-molecule indices; default all")
+    ap.add_argument("--modes", default="minimize,dock",
+                    help="comma list chosen from minimize,dock; default both")
     ap.add_argument("--force", action="store_true", help="overwrite existing poses_<tag>.json")
     args = ap.parse_args()
     want = set(args.models.split(","))
+    only_indices = None if args.indices is None else {int(x) for x in args.indices.split(",")}
+    modes = set(args.modes.split(","))
+    unknown_modes = modes - {"minimize", "dock"}
+    if unknown_modes:
+        ap.error(f"unknown --modes value(s): {','.join(sorted(unknown_modes))}")
 
     runs = {tag: load_run(root) for tag, root in RUNS}
     root_of = dict(RUNS)
@@ -131,7 +153,8 @@ def main():
             tdir = os.path.join(VOXBIND, root, t["target"])
             rec_pdb = glob.glob(os.path.join(tdir, "*_pocket10.pdb"))[0]
             tmp = os.path.join(tdir, ".pose_tmp"); os.makedirs(tmp, exist_ok=True)
-            poses = gen_poses(os.path.join(tdir, "samples.sdf"), rec_pdb, tmp, tag, tname)
+            poses = gen_poses(os.path.join(tdir, "samples.sdf"), rec_pdb, tmp, tag, tname,
+                              only_indices=only_indices, modes=modes)
             json.dump(poses, open(outpath, "w"))
             done = sum(1 for v in poses.values() if v["dock_sdf"])
             print(f"    {tag}: wrote {outpath}  ({done}/{len(poses)} docked poses)", flush=True)

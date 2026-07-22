@@ -1,0 +1,85 @@
+defaults:
+  - dset: crossdocked_xray          # need xray_density for the conditioning encoder
+  - model: voxbind
+  - vox: default
+  - wjs: training
+  - override hydra/job_logging: custom
+  - _self_
+
+# GENERATIVE VoxBind conditioned on a FROZEN pretrained density encoder (Path B), using the
+# atomblob7 v2.1 ChannelViT (PLINDER v2.1, 107k clean, C+D+G, groups [7,4,1,1]) as the encoder:
+#   exps/260701_plinder_v2p1_box_atomblob7_cdg_channelvit_full_pretrain/checkpoint_e0099.pth.tar
+# Loaded frozen and fed the FULL voxel [ligand=0, pocket, density, gradmag] (13 ch):
+#   - the 7 ligand channels are masked (zeros) — the ligand is the generation target, unavailable
+#     when conditioning; the MAE encoder is robust to masked input.
+#   - gradmag (‖∇ρ‖, z-scored) is derived in-model from the density (no dataloader change).
+# Only the UNet3D + density_proj fusion (zero-init) train; the encoder stays fixed.
+# DIFF vs config_train_voxbind_frozenenc_plinder.yaml: encoder ckpt + patch_embed_mode=channel_group
+# + channel_groups=[7,4,1,1] (260616_best was a FUSED-patch ViT; v2.1 is a per-group ChannelViT).
+# Geometry (patch8/dim512/depth12/heads8) is identical, so the rest is unchanged.
+# Baseline VoxBind recipe (sig=0.9, lr=1e-5); bsz=32/rank (eff 128).
+
+debug: False
+wandb: True
+wandb_tags: [voxbind, density_cond, frozen_encoder, channelvit, plinder, atomblob7, v2p1, cdg, full13_ligmasked]
+num_workers: 16
+prefetch_factor: 8
+resume: null
+resume_epoch: null
+exp_dir: exps
+exp_name: voxbind_frozenenc_atomblob7_v2p1_sig${smooth_sigma}
+output_dir: null
+
+seed: 42
+num_epochs: 350
+aug: True
+bsz: 32                              # per-rank → eff 128 across 4 GPUs
+accum_steps: 1
+lr: 1e-5
+wd: 1e-2
+smooth_sigma: 0.9
+
+# density passed to the model as 1-ch (v5 arcsinh+z); gradmag derived in-model (Path B),
+# so the dataloader stays 1-ch — keep top-level with_gradmag off.
+with_gradmag: false
+
+dset:
+  # v5 density crops (arcsinh soft-squash + z-score) — MUST match the encoder's pretraining
+  # distribution. normalize:false because the v5 crops are pre-normalized on disk.
+  crops_dir: /home1/irteam/VoxBind/voxbind/dataset/data/xray_crops_aligned_v5
+  normalize: false
+  pocket_radius: -1                 # element-wise vdW pocket atoms — matches the encoder
+  ligand_radius: 0.5                # generation-target representation (encoder never sees the ligand)
+  use_xray: true
+  subset_xray_only: true            # condition only on xray-available complexes (encoder pretraining pool)
+  cache_size: 32
+
+model:
+  with_density: true
+  density_encoder_type: vit
+  density_freeze: true              # requires_grad=False, eval, dropout off
+  density_pretrained_path: /home1/irteam/VoxBind/voxbind/exps/260701_plinder_v2p1_box_atomblob7_cdg_channelvit_full_pretrain/checkpoint_e0099.pth.tar
+  density_vit:                      # MUST match the v2.1 encoder geometry
+    patch: 8
+    dim: 512
+    depth: 12
+    heads: 8
+    mlp_ratio: 4
+    dropout: 0.1
+    n_in_channels: 13               # full-voxel conditioning (Path B): 7 lig + 4 poc + density + gradmag
+    patch_embed_mode: channel_group # v2.1 is a per-group ChannelViT (NOT fused)
+    channel_groups: [7, 4, 1, 1]    # lig / poc / density / gradmag
+
+hydra:
+  run:
+    dir: ./${exp_dir}/${exp_name}
+  job:
+    config:
+      override_dirname:
+        kv_sep: ""
+        item_sep: "_"
+        exclude_keys: [
+            "exp_dir", "smooth_sigma", "lr", vox.grid_dim, "wd", "resume", "resume_epoch", "wandb",
+            "num_workers", "exp_name", "output_dir", "pretrained_path", "out_dir",
+            "bsz", "accum_steps", "seed", "num_epochs", "aug", "pocket_radius", "grid_dim"
+]

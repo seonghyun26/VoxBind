@@ -1,0 +1,113 @@
+defaults:
+  - dset: crossdocked_xray
+  - model: atomblob_density_vit_mae_40m
+  - vox: default
+  - override hydra/job_logging: custom
+  - _self_
+
+# ── PLINDER v2 FULL — role-split DIVERSE C+D+G, ChannelViT, PRECOMPUTED 96³ BOXES ──
+# Same model/data as ..._v2_full.yaml, but density is resampled (64³ at the augmented pose)
+# from a precomputed 96³ canonical box (dataset/plinder/05_make_boxes.py via dset.box_path)
+# instead of the full ccp4 map every step. Identical aug semantics (verified corr≈0.995 vs
+# OTF); removes the per-step full-map read+parse that pinned OTF util at ~40% → ~85% target.
+# Box loads are cheap, so fewer dataloader workers are needed.
+
+debug: False
+wandb: True
+wandb_tags: [pretrain, roleblob, diverse, density_gradmag, 40m, plinder, v2, full, box96, cdg, channelvit, h200]
+num_workers: 16
+prefetch_factor: 6
+resume: null
+resume_epoch: null
+exp_dir: exps
+exp_name: 260629_plinder_v2_box_roleblob_diverse_cdg_channelvit_full_pretrain
+output_dir: null
+
+seed: 42
+num_epochs: 100
+aug: True
+bsz: 32
+accum_steps: 1
+lr: 1e-4
+wd: 5e-2
+
+amp:
+  enabled: true
+  dtype: bf16
+channels_last: false
+optimizer:
+  fused: false
+ema:
+  foreach: false
+compile:
+  enabled: true
+  backend: inductor
+  mode: default
+  fullgraph: false
+  dynamic: false
+
+input_mode: roleblob_density       # 2 role atom channels [ligand, pocket] + density
+with_gradmag: true                 # + gradmag → 4 channels total
+
+dset:
+  data_dir: ${oc.env:VOXBIND_DATA_ROOT,dataset/data}
+  crops_dir: ""
+  resample_dir: ${oc.env:VOXBIND_DATA_ROOT,dataset/data}/pretrain/xray_resample_plinder_v2
+  box_path: ${oc.env:VOXBIND_DATA_ROOT,dataset/data}/pretrain/xray_resample_plinder_v2/box96.dat
+  data_file: pretrain/data_train_plinder_v2.pt
+  normalize: false
+  ligand_radius: -1
+  pocket_radius: -1
+  subset_xray_only: true
+  subset_n: 112000                 # PLACEHOLDER — launcher overrides from the manifest (n-100)
+  subset_val_n: 100
+  use_xray: true
+
+model:
+  n_in_channels: 4                 # [ligand, pocket, density, gradmag]
+  head_style: patch_mlp
+  head_hidden_dim: 67
+  head_depth: 2
+  patch_embed_mode: channel_group  # ChannelViT
+  channel_groups: [1, 1, 1, 1]
+
+mae:
+  pretext_style: mae
+  density_source: xray
+  sigma_blur_a_lo: 0.30
+  sigma_blur_a_hi: 0.80
+  sigma_noise: 0.0
+  block_size: 8
+  mask_ratio: 0.50
+  mask_strategy: uniform
+  mask_atom_tau: 1.0
+  channel_weighting: uniform
+  density_channel_weight: 0.1
+  gradmag_channel_weight: 0.1
+  gradmag_reconstruct: true
+  gradmag_noise: false
+  atom_pos_weight: 10.0
+  atom_pos_thresh: 0.05
+  lambda_dens: 1.0
+  lambda_str: 1.0
+  struct_pos_weight: 100.0
+  struct_pos_thresh: 0.05
+  ema_decay: 0.999
+  grad_clip: 1.0
+  val_every: 5
+  ckpt_every: 20
+
+hydra:
+  run:
+    dir: ./${exp_dir}/${exp_name}
+  job:
+    config:
+      override_dirname:
+        kv_sep: ""
+        item_sep: "_"
+        exclude_keys: [
+            "exp_dir", "lr", vox.grid_dim, "wd", "resume", "resume_epoch", "wandb",
+            "num_workers", "exp_name", "output_dir", "out_dir",
+            "bsz", "accum_steps", "seed", "num_epochs", "aug", "pocket_radius",
+            "grid_dim", "debug"
+]

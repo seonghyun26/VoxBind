@@ -9,44 +9,48 @@
   body{margin:0;background:var(--bg);color:var(--ink);
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
     font-size:16px;line-height:1.55;-webkit-font-smoothing:antialiased;}
-  .page{max-width:1120px;margin:0 auto;padding:48px 24px 96px;}
+  .page{max-width:1280px;margin:0 auto;padding:48px 24px 96px;}
   header.doc{border-bottom:2px solid var(--ink);padding-bottom:18px;margin-bottom:40px;}
   header.doc .date{font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:6px;}
   header.doc h1{font-size:28px;font-weight:650;margin:0;letter-spacing:-0.01em;}
   header.doc .lead{font-size:14.5px;color:var(--ink-soft);margin:10px 0 0;max-width:1000px;}
-  .doc-section{margin-bottom:60px;}
-  .section-head{font-size:22px;font-weight:660;letter-spacing:-0.01em;margin:0 0 18px;padding-bottom:12px;
+  .doc-section{margin-bottom:64px;}
+  .section-head{font-size:22px;font-weight:660;letter-spacing:-0.01em;margin:0 0 30px;padding-bottom:12px;
     border-bottom:2px solid var(--line-strong);display:flex;align-items:center;gap:14px;}
   .section-head .sec-num{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;
     border-radius:8px;background:var(--accent);color:#fff;font-size:15px;font-weight:700;flex:0 0 auto;}
-  .section-intro{font-size:13.5px;color:var(--ink-soft);margin:-2px 0 22px;max-width:1000px;line-height:1.6;}
+  .section-intro{font-size:13.5px;color:var(--ink-soft);margin:-6px 0 22px;max-width:1080px;line-height:1.6;}
   .table-title{font-size:19px;font-weight:620;margin:0 0 4px;}
-  .table-sub{font-size:13.5px;color:var(--ink-soft);margin:0 0 18px;max-width:1000px;}
+  .table-sub{font-size:13.5px;color:var(--ink-soft);margin:0 0 18px;max-width:1080px;}
   .table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:var(--card);
     box-shadow:0 1px 2px rgba(20,30,50,.04),0 8px 24px rgba(20,30,50,.05);}
   table.results{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums;}
-  table.results th,table.results td{padding:11px 12px;text-align:center;white-space:nowrap;}
+  table.results th,table.results td{padding:11px 9px;text-align:center;white-space:nowrap;}
   table.results thead th{font-weight:600;background:#fafbfc;border-bottom:1px solid var(--line);font-size:12.5px;}
+  table.results thead tr.grp th{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-soft);font-weight:600;padding-top:13px;padding-bottom:6px;}
+  table.results thead tr.sub th{font-size:11px;font-weight:500;color:var(--ink-soft);letter-spacing:.02em;padding-top:0;padding-bottom:11px;}
   .col-method{text-align:left !important;min-width:210px;}
   td.col-method{font-weight:560;}
   td.col-method .sub{display:block;font-size:11px;color:#7a8699;font-weight:400;white-space:normal;}
+  .div-major{border-left:2.5px solid var(--line-strong);}.div-minor{border-left:1px dashed var(--line-strong);}
   table.results tbody tr{border-top:1px solid var(--line);}
+  table.results tbody tr.grp-top{border-top:2px solid var(--line-strong);}
   table.results tbody tr:hover{background:#fbfcfd;}
   .val{font-weight:600;} .sd{color:#9aa3b2;font-size:11px;font-weight:400;}
   td.hi .val{color:#1d5a3a;} td.hi{background:var(--best-bg);}
   .na{color:#c2c8d2;}
   .tag{display:inline-block;font-size:10.5px;font-weight:600;letter-spacing:.04em;padding:2px 8px;border-radius:999px;margin-left:7px;vertical-align:middle;}
   .tag.gen{background:#fdecdb;color:#b45c17;} .tag.data{background:#e7eefb;color:#38559b;}
-  .fig{margin:8px 0 4px;text-align:center;} .fig img{max-width:100%;height:auto;}
+  .fig{margin:8px 0 4px;text-align:center;} .fig img{display:block;max-width:100%;height:auto;margin:0 auto;image-rendering:auto;}
   .fig-cap{font-size:12.5px;color:var(--ink-soft);margin:6px 0 0;text-align:center;}
   .two-col{display:flex;gap:28px;flex-wrap:wrap;align-items:flex-start;}
   .two-col > div{flex:1 1 380px;min-width:340px;}
-  .notes{margin-top:18px;font-size:13px;color:var(--ink-soft);line-height:1.6;max-width:1000px;}
+  .notes{margin-top:18px;font-size:13px;color:var(--ink-soft);line-height:1.6;max-width:1080px;}
   .notes b{color:var(--ink);font-weight:600;}
   .notes ul{margin:6px 0 0;padding-left:20px;} .notes li{margin-bottom:6px;}
   .notes code,.section-intro code,.table-sub code{background:#f0f2f5;padding:1px 5px;border-radius:4px;font-size:12.5px;}
   .callout{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--accent);
-    border-radius:8px;padding:14px 18px;margin:6px 0 0;font-size:13.5px;line-height:1.6;max-width:1000px;}
+    border-radius:8px;padding:14px 18px;margin:6px 0 0;font-size:13.5px;line-height:1.6;max-width:1080px;}
   .callout b{color:var(--ink);}
   .pill{display:inline-block;padding:1px 9px;border-radius:999px;font-size:12px;font-weight:600;}
   .pill.ns{background:#eef1f6;color:#5b6678;} .pill.sig{background:var(--best-bg);color:#1d5a3a;}
@@ -57,6 +61,17 @@
   .placeholder h4{margin:0 0 8px;font-size:15px;font-weight:640;color:var(--ink);}
   .placeholder ul{margin:4px 0 16px;padding-left:20px;} .placeholder ul:last-child{margin-bottom:0;}
   .placeholder li{margin-bottom:5px;} .placeholder .todo{color:var(--tbd);font-weight:600;}
+  /* compact variant for the wide 12-column results tables (Tables 4 & 5) */
+  table.results.sm th,table.results.sm td{padding:6px 9px;font-size:11px;}
+  table.results.sm thead th{font-size:11px;}
+  table.results.sm .col-method{min-width:150px;}
+  table.results.sm td.col-method .sub{font-size:10px;}
+  /* let horizontally-long tables extend rather than scroll inside a box */
+  .table-wrap.wide{overflow-x:visible;}
+  /* standalone chart in its own white box, centred with side margins */
+  .chart-card{background:var(--card);border:1px solid var(--line);border-radius:12px;
+    padding:20px 24px;margin-top:22px;box-shadow:0 1px 2px rgba(20,30,50,.04),0 8px 24px rgba(20,30,50,.05);}
+  .chart-card .fig{max-width:820px;margin:0 auto;}
 </style></head>
 <body><div class="page">
 
@@ -66,7 +81,7 @@
   <div class="lead">Agenda
     <ol style="margin:6px 0 0;padding-left:22px;">
       <li>Macrocycles in VoxBind generations vs. CrossDocked &amp; PLINDER ligands</li>
-      <li>De novo drug design — fusion choices</li>
+      <li>De novo drug design — the frozen-encoder generator</li>
       <li>Reproducibility issue</li>
       <li>Binding-affinity regression — baselines to be added</li>
     </ol>
@@ -76,8 +91,8 @@
 <section class="doc-section">
   <h2 class="section-head"><span class="sec-num">1</span>Macrocycles</h2>
   <p class="section-intro">Do the ligands VoxBind generates contain macrocycles, how does their rate
-  compare to the training/reference corpora (CrossDocked, PLINDER), and does being a macrocycle
-  correlate with a better Vina docking score? A macrocycle = any ring of <b>≥ 12 atoms</b>
+  compare to the training/reference corpora (CrossDocked, PLINDER), and how are macrocycle status,
+  molecular size, and Vina docking score related? A macrocycle = any ring of <b>≥ 12 atoms</b>
   (largest SSSR ring); ring ≥ 8 shown as a looser "large-ring" cut.</p>
   <h3 class="subsection-head"><span class="sub-lab">1a</span>Prevalence</h3>
   <p class="section-intro">Largest ring size per ligand computed with RDKit
@@ -99,64 +114,68 @@
   </table></div>
 
   <div class="fig" style="margin-top:26px;">
-    <img src="fig_macrocycle_fraction.svg" alt="macrocycle fraction per source">
+    <img src="fig_macrocycle_fraction.png" alt="macrocycle fraction per source">
   </div>
   <p class="fig-cap">Figure 1 · Macrocycle (ring ≥ 12) and large-ring (ring ≥ 8) rate per population.</p>
 
-  <div class="callout" style="margin-top:22px;">
-    <b>Read-out.</b> Macrocycles are <b>rare everywhere</b>. VoxBind generates them at
-    <b>1.62%</b> (10/618 samples; ring sizes 12, 12, 12, 12, 15, 16, 18, 19, 21, 23),
-    versus <b>1.63%</b> of unique CrossDocked ligands and
-    <b>1.63%</b> of unique PLINDER-v2 ligands. The generator neither invents
-    nor strongly suppresses macrocycles relative to its training distribution.
+  <div class="fig" style="margin-top:26px;">
+    <img src="fig_macrocycle_size_distribution.png" alt="frequency distribution of macrocycle ring sizes for ours, vanilla sigma 0.9, and reference ligands">
   </div>
-
-  <h3 class="subsection-head" style="margin-top:44px;"><span class="sub-lab">1b</span>Macrocycle vs. docking score</h3>
-  <p class="section-intro">Restricted to the two populations that carry per-molecule Vina scores
-  (from <code>metrics.json</code>): the 618 VoxBind samples and the 62 CrossDocked test-set
-  reference ligands. Vina is reported in kcal/mol where <b>lower (more negative) = stronger predicted binding</b>.
-  Δ = mean(macro) − mean(non-macro); a <b>negative Δ</b> means macrocycles dock better.
-  Point-biserial <i>r</i> correlates the macrocycle flag (1/0) with the score.</p>
-
-  <div class="two-col">
-    <div>
-      <p class="table-title">Table 2 · Docking by macrocycle status</p>
-      <p class="table-sub">p = Mann–Whitney U (two-sided); * = p&lt;0.05.</p>
-      <div class="table-wrap"><table class="results">
-        <thead><tr>
-          <th class="col-method">Population · metric</th>
-          <th>n<br>macro</th><th>n<br>non</th>
-          <th>mean<br>macro</th><th>mean<br>non</th>
-          <th>Δ</th><th>pt-bis<br><i>r</i></th><th>p</th>
-        </tr></thead>
-        <tbody><tr><td class="col-method">VoxBind generated · dock<span class="sub">618 samples · full Vina re-dock</span></td><td>10</td><td>608</td><td><span class="val">-9.98</span> <span class="sd">±1.90</span></td><td><span class="val">-7.32</span> <span class="sd">±2.10</span></td><td><span class="val">-2.66</span></td><td><span class="val">-0.158</span></td><td><span class="pill sig">0.000 *</span></td></tr>
-<tr><td class="col-method">VoxBind generated · minimize<span class="sub">618 samples · Vina local minimize</span></td><td>10</td><td>608</td><td><span class="val">-9.23</span> <span class="sd">±2.08</span></td><td><span class="val">-6.31</span> <span class="sd">±2.52</span></td><td><span class="val">-2.92</span></td><td><span class="val">-0.145</span></td><td><span class="pill sig">0.000 *</span></td></tr>
-<tr><td class="col-method">VoxBind generated · score_only<span class="sub">618 samples · Vina score of generated pose</span></td><td>10</td><td>608</td><td><span class="val">-8.78</span> <span class="sd">±2.04</span></td><td><span class="val">-5.28</span> <span class="sd">±6.14</span></td><td><span class="val">-3.50</span></td><td><span class="val">-0.072</span></td><td><span class="pill sig">0.000 *</span></td></tr>
-<tr><td class="col-method">CrossDocked refs · dock<span class="sub">62 test-set reference ligands · full Vina re-dock</span></td><td>3</td><td>59</td><td><span class="val">-7.33</span> <span class="sd">±1.75</span></td><td><span class="val">-6.91</span> <span class="sd">±1.98</span></td><td><span class="val">-0.42</span></td><td><span class="val">-0.047</span></td><td><span class="pill ns">0.757</span></td></tr></tbody>
-      </table></div>
-    </div>
-    <div>
-      <div class="fig">
-        <img src="fig_dock_macro.svg" alt="dock score by macrocycle status">
-      </div>
-      <p class="fig-cap">Figure 2 · Vina dock score of VoxBind samples, macrocycle vs. non-macrocycle
-      (box = IQR/median; points = individual samples; better at top).</p>
-    </div>
-  </div>
+  <p class="fig-cap">Figure 1b · Macrocycle-size frequency in the 79-pocket full evaluation.
+  x = largest macrocycle ring size; bars (left axis) = molecule count for the generated / reference groups;
+  the <b style="color:#7a5195">purple line (right axis)</b> is the <b>CrossDocked training set</b>
+  (n=3,048 macrocycle ligands), which carries ~15× more macrocycles so is shown on its own scale for a shape
+  comparison. Ours: n=198, sizes 12–30; vanilla σ&nbsp;0.9: n=131, sizes 12–27; reference: n=4, sizes 14, 16,
+  18, 21. The training set peaks at ring&nbsp;13, whereas <b>Ours skews larger</b> (mode 15, a longer tail to 30).</p>
 
   <div class="callout" style="margin-top:22px;">
-    <b>Raw correlation.</b> On the generated set, macrocycles (10 of 618)
-    dock better by Δ = <b>-2.66 kcal/mol</b>
-    (mean -9.98 vs -7.32), point-biserial
-    <i>r</i> = <b>-0.158</b>, Mann–Whitney
-    <b>p = 0.0001</b> → strongly significant. <b>But read §3 before believing it</b> — macrocycles are
-    large by construction and Vina scores track molecular size, so this is almost certainly a size artefact.
+    <b>Why measure prevalence.</b> Macrocycle counts establish how much support each population provides
+    for the later score comparison. At the ≥12-atom definition, the legacy generated sample contains
+    10/618 macrocycles; the unique CrossDocked and PLINDER-v2 sets contain 190/11,685 and 360/22,050.
+    Figure 1b then shows the ring-size composition of the separate 79-pocket full evaluation.
   </div>
 
-  <h3 class="subsection-head" style="margin-top:44px;"><span class="sub-lab">1c</span>Is it real, or just molecular size?</h3>
+  <h3 class="subsection-head" style="margin-top:44px;"><span class="sub-lab">1b</span>Macrocycle Vina Dock score</h3>
+  <p class="section-intro">Full 79-pocket evaluation. Generated groups include every molecule whose largest
+  SSSR ring has ≥ 12 atoms: <b>198 ours</b> and <b>131 vanilla σ&nbsp;0.9</b>. The reference group contains one
+  redocked crystal ligand for each of the <b>43 unique pockets</b> where either model generated a macrocycle,
+  providing a pocket-matched baseline. Vina is in kcal/mol; <b>lower (more negative) = stronger predicted binding</b>.</p>
+
+  <p class="table-title">Table 2 · Vina Dock score for generated macrocycles vs. matched reference</p>
+  <p class="table-sub">Per-molecule scores for generated macrocycles; one redocked crystal ligand per
+  macrocycle-bearing pocket for the reference. IQR = 25th–75th percentile.</p>
+  <div class="table-wrap"><table class="results">
+    <thead><tr>
+      <th class="col-method">Population</th><th>N</th><th>Pockets</th>
+      <th>Mean↓</th><th>Median↓</th><th>Std</th><th>IQR</th><th>Min–Max</th>
+    </tr></thead>
+    <tbody>
+      <tr><td class="col-method"><b style="color:#1d5a3a">Ours — frozen C+D+G</b> <span class="tag gen">ours</span><span class="sub">macrocycles · σ 0.9 · ep350</span></td><td>198</td><td>30</td><td><span class="val">−11.165</span></td><td><span class="val">−11.156</span></td><td>3.131</td><td>−13.249 to −9.271</td><td>−19.765 to 7.107</td></tr>
+      <tr><td class="col-method">Vanilla VoxBind σ 0.9 <span class="tag data">baseline</span><span class="sub">macrocycles · reproduced · ep350</span></td><td>131</td><td>38</td><td><span class="val">−10.682</span></td><td><span class="val">−10.680</span></td><td>2.365</td><td>−12.245 to −8.838</td><td>−16.477 to −5.139</td></tr>
+      <tr class="grp-top"><td class="col-method">Reference <span class="tag data">crystal</span><span class="sub">one redocked ligand per union pocket</span></td><td>43</td><td>43</td><td><span class="val">−7.236</span></td><td><span class="val">−7.255</span></td><td>2.152</td><td>−8.858 to −5.472</td><td>−14.629 to −3.223</td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="fig" style="margin-top:26px;">
+    <img src="fig_dock_macro.png" alt="macrocycle Vina Dock scores for ours, vanilla sigma 0.9, and matched reference ligands">
+  </div>
+  <p class="fig-cap">Figure 2 · Macrocycle Vina Dock score for ours and vanilla σ&nbsp;0.9, with the
+  pocket-matched crystal reference. Boxes = IQR and median; points = individual generated macrocycles or
+  one reference ligand per pocket; lower = stronger predicted binding.</p>
+
+  <div class="callout" style="margin-top:22px;">
+    <b>Why compare these groups.</b> Figure 2 places the two generated macrocycle distributions beside a
+    pocket-matched crystal baseline. The generated observations are individual macrocycles (198 ours and
+    131 vanilla σ&nbsp;0.9); the reference observations are one crystal ligand from each of 43 union pockets.
+    Because the groups differ in count and ring-size composition, the plot is descriptive; §1c records the
+    heavy-atom analysis needed to interpret differences in Vina score.
+  </div>
+
+  <h3 class="subsection-head" style="margin-top:44px;"><span class="sub-lab">1c</span>Controlling for molecular size</h3>
   <p class="section-intro">A macrocycle contributes 12–23 ring atoms on its own, so macrocyclic ligands are
   necessarily heavy — and Vina scores grow more negative with heavy-atom count regardless of binding.
-  Before attributing the §2 gap to macrocyclicity we control for size two ways: (a) an OLS with
+  Before attributing the historical macrocycle-vs-non-macrocycle gap to macrocyclicity we control for size
+  in the 618-sample screen two ways: (a) an OLS with
   <code>n_atoms</code> + macrocycle flag as predictors, and (b) a size-matched comparison against only the
   large non-macrocycles.</p>
 
@@ -182,7 +201,7 @@
     </div>
     <div>
       <div class="fig">
-        <img src="fig_dock_natoms.svg" alt="dock vs heavy-atom count">
+        <img src="fig_dock_natoms.png" alt="dock vs heavy-atom count">
       </div>
       <p class="fig-cap">Figure 3 · Dock score vs. heavy-atom count. Macrocycles (green) sit at the
       heavy / strong-dock end of the general size trend (dashed).</p>
@@ -190,13 +209,11 @@
   </div>
 
   <div class="callout" style="margin-top:22px;">
-    <b>Verdict.</b> Docking is dominated by size (Pearson corr(dock, atoms) = <b>-0.656</b>;
-    macrocycles average <b>36</b> vs <b>22</b> heavy atoms).
-    After adjusting for atom count the macrocycle-specific effect is <b>-0.41 ± 0.52 kcal/mol</b>
-    (p = 0.437, not significant), and against size-matched
-    large non-macrocycles the gap is Δ = <b>-0.87 kcal/mol</b>
-    (p = 0.153, not significant).
-    → <b>The apparent macrocycle→better-dock correlation is largely a molecular-size effect, not a macrocycle-specific one.</b>
+    <b>Why include the size control.</b> Macrocycles in this 618-sample screen average 36.5 heavy atoms,
+    compared with 22.3 for non-macrocycles, while dock score and heavy-atom count have Pearson correlation
+    -0.656. Table 3 therefore reports both an atom-count-adjusted macrocycle coefficient
+    (-0.41 ± 0.52 kcal/mol; p=0.437) and a size-matched comparison
+    (Δ=-0.87 kcal/mol; p=0.153), alongside the unadjusted visualization.
   </div>
 
   <div class="notes">
@@ -206,9 +223,12 @@
       bridged macrocycle into smaller rings, so this is a mild <i>under</i>-count; the ≥ 8 column bounds it above.</li>
       <li><b>Docking sign.</b> Vina scores are negative; "lower = better". A <i>negative</i> Δ / point-biserial
       <i>r</i> means macrocycles bind more favourably.</li>
-      <li><b>Power.</b> Only 10 generated macrocycles, so every docking test on them is low-powered;
-      the size confound (§3) is the dominant caveat, mirroring the size-confound seen in the DSMBind baseline.</li>
-      <li><b>Provenance.</b> Generated set = <code>voxbind/exps/260518_voxbind_10k_noise/samples/res_ep99_test</code>;
+      <li><b>Power.</b> The legacy size-control screen contains only 10 generated macrocycles, so its
+      macrocycle-specific tests are low-powered; the size confound (§1c) is the dominant caveat.</li>
+      <li><b>Provenance.</b> Figure 1, Table 1, and §1c use the legacy generated set =
+      <code>voxbind/exps/260518_voxbind_10k_noise/samples/res_ep99_test</code>;
+      Figures 1b–2 and Table 2 use the 79-pocket full evaluations for
+      <code>voxbind_frozenenc_atomblob7_v2p1_sig0.9</code> and <code>exp_sig0.9_v2</code>;
       CrossDocked = <code>voxbind/dataset/data/crossdocked_pocket10</code> (unique ligands);
       PLINDER = <code>voxbind/splits/plinder/v2/plinder_selected.csv</code>.</li>
     </ul>
@@ -216,18 +236,277 @@
 </section>
 
 <section class="doc-section">
-  <h2 class="section-head"><span class="sec-num">2</span>De novo drug design — fusion choices</h2>
-  <p class="section-intro">How the conditioning signal (pocket / density / gradmag) is fused into the
-  generative backbone — options, trade-offs, and the choice we'll run.</p>
-  <div class="placeholder">
-    <span class="ph-tag">Placeholder</span>
-    <h4>To fill in</h4>
+  <h2 class="section-head"><span class="sec-num">2</span>De novo drug design — the frozen-encoder generator</h2>
+  <p class="section-intro">The fusion choice we ran: condition VoxBind's walk-jump generator on the
+  pretrained density MAE. The frozen <b>C+D+G</b> ChannelViT-MAE encoder (atomblob7 v2.1, 45.7M, PLINDER
+  40M) reads the full 13-channel voxel <b>with the ligand channel masked</b> — the only channels present at
+  sampling time — and its features are fused into the UNet3D denoiser through a <b>zero-initialised additive
+  path</b>, so training starts exactly at baseline VoxBind and grows the density signal from there. Below:
+  how it plugs in (2a), how it generates vs. reproduced vanilla VoxBind (2b), an in-progress variant that
+  force-masks the ligand density (2c), and the size distribution of what it generates (2d).</p>
+
+  <h3 class="subsection-head"><span class="sub-lab">2a</span>How the frozen encoder plugs in</h3>
+  <p class="section-intro">Early channel-concat into a frozen encoder, followed by additive fusion.
+  The configuration uses fewer added parameters than cross-attention or FiLM injection and
+  <b>reduces to baseline VoxBind at initialisation</b>: the zero-initialized fusion contributes zero before
+  its weights begin to change during training.</p>
+
+  <style>
+    #cflow .cflow{display:flex;align-items:center;justify-content:center;gap:9px;flex-wrap:nowrap;font-size:12.5px;color:#1c2433;min-width:760px}
+    #cflow .ccol{display:flex;flex-direction:column;gap:16px}
+    #cflow .cbx{border-radius:10px;padding:13px 15px;text-align:center;line-height:1.35;min-width:120px}
+    #cflow .cin{background:#fff;border:1px solid #d0d7de}
+    #cflow .cfroz{background:#eef1f6;border:1.6px solid #9aa3b2;font-weight:600}
+    #cflow .ctr{background:#eaf5ee;border:1.6px solid #2f6f4f;font-weight:600}
+    #cflow .cfuse{background:#fbe9ec;border:1.6px solid #c0392b;font-weight:700}
+    #cflow .cout{background:#fff7e6;border:1.6px solid #b07a17;font-weight:700}
+    #cflow .carr{color:#aeb6c4;font-size:22px;font-weight:700}
+    #cflow small{display:block;font-size:10.5px;font-weight:500;color:#7a8699;margin-top:2px}
+  </style>
+  <div id="cflow" style="border:1px solid var(--line);border-radius:12px;background:var(--card);padding:26px 18px;box-shadow:0 1px 2px rgba(20,30,50,.04);overflow-x:auto">
+    <div class="cflow">
+      <div class="ccol">
+        <div class="cbx cin">pocket&nbsp;+&nbsp;X-ray density</div>
+        <div class="cbx cin">noisy ligand&nbsp;+&nbsp;pocket</div>
+      </div>
+      <div class="carr">&rarr;</div>
+      <div class="ccol">
+        <div class="cbx cfroz">frozen C+D+G<br>ChannelViT-MAE<small>45.7M &middot; PLINDER</small></div>
+        <div class="cbx ctr">ligand&nbsp;+&nbsp;pocket<br>encoders</div>
+      </div>
+      <div class="carr">&rarr;</div>
+      <div class="cbx cfuse">&oplus;&nbsp;fuse<small>zero-init</small></div>
+      <div class="carr">&rarr;</div>
+      <div class="cbx ctr">UNet3D<br>denoiser</div>
+      <div class="carr">&rarr;</div>
+      <div class="cbx cout">generated<br>molecule</div>
+    </div>
+  </div>
+  <p style="font-size:12px;color:#7a8699;margin-top:13px;line-height:1.6;max-width:1000px">
+    <span style="display:inline-block;width:10px;height:10px;background:#eef1f6;border:1.4px solid #9aa3b2;border-radius:3px;vertical-align:middle"></span> frozen &nbsp;&nbsp;
+    <span style="display:inline-block;width:10px;height:10px;background:#eaf5ee;border:1.4px solid #2f6f4f;border-radius:3px;vertical-align:middle"></span> trainable &nbsp;&middot;&nbsp;
+    the <b>&oplus;&nbsp;fuse</b> is <b>zero-initialised</b> (starts by adding 0 &rarr; training begins exactly at baseline VoxBind, then grows the density signal). The encoder input must be <b>v5 density</b> (arcsinh+z, <code>xray_crops_aligned_v5</code>) to match pretraining. Source: <code>voxbind/models/voxbind.py</code>.
+  </p>
+
+  <h3 class="subsection-head" style="margin-top:44px;"><span class="sub-lab">2b</span>Generation results</h3>
+  <p class="section-intro">Conditional de novo generation on the held-out CrossDocked test set. Each reproduced
+  run generates 100 ligands for the <b>79 test pockets that carry x-ray density</b> (~7,870 valid mols),
+  scored by full <code>vina_dock</code>. Vina in kcal/mol, <b>lower = stronger</b>; every metric split into
+  per-pocket <b>Avg</b> / <b>Med</b>. <b>Ours</b> = the frozen-encoder generator; vanilla σ&nbsp;0.9&nbsp;/&nbsp;1.0
+  are reproduced walk-jump baselines on the same 79 pockets.</p>
+
+  <p class="table-title">Table 4 · Frozen-encoder generator vs. reproduced vanilla VoxBind</p>
+  <p class="table-sub">Vina Dock is the primary binding metric reported here. Reference = the redocked
+  crystal ligand on the same 79 pockets. High aff. = % of generated ligands with a lower Vina Dock score
+  than that pocket's reference.</p>
+  <div class="table-wrap wide"><table class="results sm">
+    <thead><tr>
+      <th class="col-method">Method</th>
+      <th>Dock↓<br>Avg</th><th>Dock↓<br>Med</th>
+      <th>Min↓<br>Avg</th><th>Min↓<br>Med</th>
+      <th>Score↓<br>Avg</th><th>Score↓<br>Med</th>
+      <th>High aff↑<br>Avg</th><th>High aff↑<br>Med</th>
+      <th>QED↑</th><th>SA↑</th><th>Div↑</th>
+    </tr></thead>
+    <tbody>
+      <tr>
+        <td class="col-method">Reference <span class="tag data">crystal</span><span class="sub">redocked crystal ligand · 79 density pockets</span></td>
+        <td><span class="val">-7.18</span></td><td><span class="val">-6.91</span></td>
+        <td class="na">—</td><td class="na">—</td><td class="na">—</td><td class="na">—</td>
+        <td class="na">—</td><td class="na">—</td>
+        <td class="na">—</td><td class="na">—</td><td class="na">—</td>
+      </tr>
+      <tr>
+        <td class="col-method">VoxBind σ&nbsp;0.9 <span class="tag data">baseline</span><span class="sub">walk-jump · reproduced · 79 density</span></td>
+        <td><span class="val">-7.98</span></td><td><span class="val">-8.02</span></td>
+        <td><span class="val">-6.84</span></td><td><span class="val">-7.01</span></td>
+        <td><span class="val">-5.26</span></td><td><span class="val">-6.60</span></td>
+        <td><span class="val">65.3%</span></td><td><span class="val">70.0%</span></td>
+        <td><span class="val">0.56</span></td><td><span class="val">0.69</span></td><td><span class="val">0.74</span></td>
+      </tr>
+      <tr>
+        <td class="col-method">VoxBind σ&nbsp;1.0 <span class="tag data">baseline</span><span class="sub">walk-jump · reproduced · 79 density</span></td>
+        <td><span class="val">-7.80</span></td><td><span class="val">-8.07</span></td>
+        <td><span class="val">-6.76</span></td><td><span class="val">-6.88</span></td>
+        <td><span class="val">-5.35</span></td><td><span class="val">-6.51</span></td>
+        <td><span class="val">63.5%</span></td><td><span class="val">69.3%</span></td>
+        <td><span class="val">0.54</span></td><td><span class="val">0.68</span></td><td><span class="val">0.75</span></td>
+      </tr>
+      <tr>
+        <td class="col-method"><b style="color:#1d5a3a">Ours — frozen C+D+G</b> <span class="tag gen">ours</span><span class="sub">frozen encoder · σ&nbsp;0.9 · ep350 · 79 density</span></td>
+        <td><span class="val">-8.24</span></td><td><span class="val">-8.75</span></td>
+        <td><span class="val">-7.09</span></td><td><span class="val">-8.04</span></td>
+        <td><span class="val">-5.51</span></td><td><span class="val">-7.53</span></td>
+        <td><span class="val">67.5%</span></td><td><span class="val">74.0%</span></td>
+        <td><span class="val">0.52</span></td><td><span class="val">0.68</span></td><td><span class="val">0.71</span></td>
+      </tr>
+    </tbody>
+  </table></div>
+
+  <div class="callout" style="margin-top:22px;">
+    <b>Why compare these runs.</b> Table 4 places the frozen-encoder generator and two reproduced vanilla
+    runs on the same 79 density pockets and reports per-pocket averages and medians. Vina Dock, local
+    minimization, score-only, reference-relative frequency, QED, SA, and diversity are shown together so
+    changes in docking can be read alongside molecule quality and diversity. The crystal row supplies the
+    pocket-specific docking baseline; mean ECFP4 similarity to that ligand is approximately 0.10 for all runs.
+  </div>
+
+  <p class="table-title" style="margin-top:34px;">Table 5 · Same results, two outlier pockets removed</p>
+  <p class="table-sub">The Vina <b>Score</b> average is inflated by two pockets whose generated poses carry severe
+  steric clashes (physically implausible positive scores): <b>target_92</b> (CHIB_SERMA / 4z2g, Vina Score
+  ≈ +72, still +20 to +25 after minimisation) and <b>target_58</b> (NPD_THEMA / 3pdh, ≈ +14). Dropping them
+  leaves <b>77 pockets</b>. Same columns as Table 4.</p>
+  <div class="table-wrap wide"><table class="results sm">
+    <thead><tr>
+      <th class="col-method">Method <span class="sd">· 77 pockets</span></th>
+      <th>Dock↓<br>Avg</th><th>Dock↓<br>Med</th>
+      <th>Min↓<br>Avg</th><th>Min↓<br>Med</th>
+      <th>Score↓<br>Avg</th><th>Score↓<br>Med</th>
+      <th>High aff↑<br>Avg</th><th>High aff↑<br>Med</th>
+      <th>QED↑</th><th>SA↑</th><th>Div↑</th>
+    </tr></thead>
+    <tbody>
+      <tr>
+        <td class="col-method">Reference <span class="tag data">crystal</span><span class="sub">redocked crystal ligand · 77 pockets</span></td>
+        <td><span class="val">-7.21</span></td><td><span class="val">-6.91</span></td>
+        <td><span class="val">-6.65</span></td><td><span class="val">-6.22</span></td>
+        <td><span class="val">-6.28</span></td><td><span class="val">-6.04</span></td>
+        <td class="na">—</td><td class="na">—</td>
+        <td class="na">—</td><td class="na">—</td><td class="na">—</td>
+      </tr>
+      <tr>
+        <td class="col-method">VoxBind σ&nbsp;0.9 <span class="tag data">baseline</span><span class="sub">walk-jump · reproduced · 77 pockets</span></td>
+        <td><span class="val">-8.01</span></td><td><span class="val">-8.02</span></td>
+        <td><span class="val">-7.28</span></td><td><span class="val">-7.19</span></td>
+        <td><span class="val">-6.62</span></td><td><span class="val">-6.84</span></td>
+        <td><span class="val">64.9%</span></td><td><span class="val">66.5%</span></td>
+        <td><span class="val">0.56</span></td><td><span class="val">0.69</span></td><td><span class="val">0.74</span></td>
+      </tr>
+      <tr>
+        <td class="col-method">VoxBind σ&nbsp;1.0 <span class="tag data">baseline</span><span class="sub">walk-jump · reproduced · 77 pockets</span></td>
+        <td><span class="val">-7.83</span></td><td><span class="val">-8.07</span></td>
+        <td><span class="val">-7.15</span></td><td><span class="val">-7.14</span></td>
+        <td><span class="val">-6.53</span></td><td><span class="val">-6.53</span></td>
+        <td><span class="val">62.9%</span></td><td><span class="val">65.3%</span></td>
+        <td><span class="val">0.55</span></td><td><span class="val">0.68</span></td><td><span class="val">0.74</span></td>
+      </tr>
+      <tr>
+        <td class="col-method"><b style="color:#1d5a3a">Ours — frozen C+D+G</b> <span class="tag gen">ours</span><span class="sub">frozen encoder · σ&nbsp;0.9 · ep350 · 77 pockets</span></td>
+        <td><span class="val">-8.26</span></td><td><span class="val">-8.75</span></td>
+        <td><span class="val">-7.59</span></td><td><span class="val">-8.11</span></td>
+        <td><span class="val">-6.75</span></td><td><span class="val">-7.61</span></td>
+        <td><span class="val">66.9%</span></td><td><span class="val">73.0%</span></td>
+        <td><span class="val">0.52</span></td><td><span class="val">0.68</span></td><td><span class="val">0.71</span></td>
+      </tr>
+    </tbody>
+  </table></div>
+
+  <div class="callout" style="margin-top:22px;">
+    <b>Why include the 77-pocket table.</b> Targets 92 and 58 contain large positive score-only values
+    associated with steric clashes, so Table 5 repeats the aggregation without them. For the frozen-encoder
+    run, Score Avg changes from -5.51 to -6.75, Min Avg from -7.09 to -7.59, and Dock Avg from -8.24 to
+    -8.26. Reporting both tables separates sensitivity to those two pockets from the full 79-pocket summary.
+  </div>
+
+  <h3 class="subsection-head" style="margin-top:44px;"><span class="sub-lab">2c</span>Force-masking the ligand density — in progress</h3>
+  <p class="section-intro">The MAE was pretrained on <i>masked clean</i> voxels, so a variant force-masks the
+  ligand's own density in the encoder input (<code>density_mask_ligand</code>, threshold 0.2, dilate 2) —
+  the frozen encoder then only ever sees a masked ligand, closer to its pretraining diet. Snapshot at
+  <b>ep100</b> on the 10-pocket probe set (test ids 2–12, 10 samples each = 100 mols).</p>
+
+  <div class="two-col">
+    <div>
+      <p class="table-title">Table 6 · Ligand-masked variant (10-pocket probe)</p>
+      <p class="table-sub">Same 10 density pockets as the earlier frozen-enc probes, so directly comparable to them.</p>
+      <div class="table-wrap"><table class="results">
+        <thead><tr>
+          <th class="col-method">Run · 10 pockets</th>
+          <th>Dock↓</th><th>Min↓</th><th>Score↓</th><th>High aff↑</th><th>QED↑</th><th>SA↑</th><th>Div↑</th>
+        </tr></thead>
+        <tbody>
+          <tr>
+            <td class="col-method"><b style="color:#1d5a3a">Ligmask ep100</b> <span class="tag gen">ours · new</span><span class="sub">force-masked ligand density · σ 0.9</span></td>
+            <td><span class="val">-9.05</span></td><td><span class="val">-8.37</span></td><td><span class="val">-7.82</span></td>
+            <td><span class="val">78%</span></td><td><span class="val">0.58</span></td><td><span class="val">0.61</span></td><td><span class="val">0.63</span></td>
+          </tr>
+          <tr>
+            <td class="col-method">Frozen-enc ep99 <span class="tag data">prior probe</span><span class="sub">full-13ch, lig=0 · σ 0.9</span></td>
+            <td><span class="val">-8.65</span></td><td><span class="val">-7.77</span></td><td><span class="val">-7.10</span></td>
+            <td><span class="val">63%</span></td><td><span class="val">0.57</span></td><td><span class="val">0.63</span></td><td><span class="val">0.67</span></td>
+          </tr>
+          <tr>
+            <td class="col-method">Frozen-enc ep71 <span class="tag data">prior probe</span><span class="sub">full-13ch, lig=0 · σ 0.9</span></td>
+            <td><span class="val">-8.60</span></td><td><span class="val">-7.65</span></td><td><span class="val">-6.96</span></td>
+            <td><span class="val">64%</span></td><td><span class="val">0.53</span></td><td><span class="val">0.60</span></td><td><span class="val">0.64</span></td>
+          </tr>
+          <tr>
+            <td class="col-method">Vanilla σ 0.9 <span class="tag data">baseline</span><span class="sub">no density · ep923</span></td>
+            <td><span class="val">-8.66</span></td><td class="na">—</td><td class="na">—</td>
+            <td><span class="val">64%</span></td><td><span class="val">0.57</span></td><td><span class="val">0.72</span></td><td><span class="val">0.73</span></td>
+          </tr>
+        </tbody>
+      </table></div>
+    </div>
+    <div>
+      <div class="callout" style="margin-top:0;">
+        <b>Why include this probe.</b> The experiment tests whether force-masking ligand density makes the
+        frozen encoder's sampling input more similar to its masked pretraining input. Table 6 records the
+        ep100 snapshot (-9.05 Dock; 78% reference-relative frequency) beside the earlier ep71/ep99 probes
+        and vanilla run on the same 10 pockets. It is a 100-molecule diagnostic, not a 79-pocket full evaluation.
+      </div>
+      <div class="callout" style="margin-top:16px;border-left-color:#b07a17;">
+        <b>Next fusion direction — splat-and-mask.</b> Represent the ligand as an explicit set of
+        atom-Gaussians, differentiably splat it into the voxel field the MAE expects, and generate by
+        <b>iterative unmasking</b> (MaskGIT/MAE-style) instead of Gaussian denoising — keeping the frozen
+        encoder in-distribution end-to-end (design note <code>splat_masked_generation.html</code>).
+      </div>
+    </div>
+  </div>
+
+  <h3 class="subsection-head" style="margin-top:44px;"><span class="sub-lab">2d</span>Heavy-atom count distribution</h3>
+  <p class="section-intro">Per-molecule heavy-atom counts across the ~7,870 generated ligands per run
+  (79 density pockets × 100), against two <b>CrossDocked</b> baselines: the <b>training set</b> (99,981
+  ligands, mean 23.6 / median 24) and the <b>test-pocket reference ligands</b> (79, mean 22.8 / median 21;
+  shown in the Mean/Median headers). Figure 4 is included because heavy-atom count is associated with Vina
+  score (§1c), so differences in molecular-size distributions are relevant context for comparing the runs.
+  The log-density scale keeps the low-frequency 40–70-atom region visible.</p>
+
+  <p class="table-title">Table 7 · Heavy-atom count per run</p>
+  <p class="table-sub">Over every generated molecule (not per-pocket means). IQR = 25th–75th percentile.</p>
+  <div class="table-wrap"><table class="results">
+        <thead><tr>
+          <th class="col-method">Run</th><th>N mols</th><th>Mean<br><span class="sd">test ref 22.8</span></th><th>Median<br><span class="sd">test ref 21</span></th><th>Std</th><th>IQR</th><th>Min–Max</th>
+        </tr></thead>
+        <tbody>
+          <tr><td class="col-method">VoxBind σ 0.9 <span class="tag data">baseline</span></td><td>7,879</td><td><span class="val">23.4</span></td><td><span class="val">24</span></td><td>9.0</td><td>16–29</td><td>2–66</td></tr>
+          <tr><td class="col-method">VoxBind σ 1.0 <span class="tag data">baseline</span></td><td>7,870</td><td><span class="val">22.2</span></td><td><span class="val">23</span></td><td>8.9</td><td>14–29</td><td>1–64</td></tr>
+          <tr><td class="col-method"><b style="color:#1d5a3a">Ours — frozen C+D+G</b> <span class="tag gen">ours</span></td><td>7,873</td><td><span class="val">24.9</span></td><td><span class="val">25</span></td><td>10.3</td><td>17–32</td><td>2–69</td></tr>
+        </tbody>
+  </table></div>
+  <div class="chart-card">
+    <div class="fig"><img src="fig_natoms_dist.png" alt="heavy-atom count distribution per run"></div>
+    <p class="fig-cap">Figure 4 · Heavy-atom count distribution (<b>log-scale y</b>, to expose the long right
+    tail) for the three generation runs, over two dataset baselines: the <b>CrossDocked training set</b>
+    (99,981 ligands, grey solid KDE) and the <b>test-pocket reference ligands</b> (79, black dashed KDE);
+    median values are listed in the legend above the plotting area.</p>
+  </div>
+
+  <div class="notes">
+    <b>Notes &amp; provenance.</b>
     <ul>
-      <li><span class="todo">TODO —</span> the fusion options under consideration (early channel-concat vs.
-        cross-attention conditioning vs. adapter / FiLM injection).</li>
-      <li><span class="todo">TODO —</span> at which stage each signal enters the denoiser, and why.</li>
-      <li><span class="todo">TODO —</span> compute / memory trade-offs per choice.</li>
-      <li><span class="todo">TODO —</span> recommended choice + the experiment that decides it.</li>
+      <li><b>Encoder.</b> Frozen C+D+G = <code>260701_plinder_v2p1_box_atomblob7_cdg_channelvit_full_pretrain</code>
+        (<code>checkpoint_e0099</code>, ChannelViT MAE, 45.7M, 13ch: 7 lig + 4 poc + density + gradmag), loaded
+        strict, 0 trainable params.</li>
+      <li><b>Runs.</b> Ours (2b, 2d) = <code>voxbind_frozenenc_atomblob7_v2p1_sig0.9</code> ep350; vanilla
+        σ0.9 = <code>exp_sig0.9_v2</code> ep350, σ1.0 = <code>exp_sig1.0_350ep</code> ep349; ligmask (2c) =
+        <code>voxbind_frozenenc_atomblob7_v2p1_ligmask_sig0.9</code> ep100. Table 4 numbers from
+        <code>voxbind_results.html</code>; Tables 6–7 &amp; Figure 4 from each run's
+        <code>eval_docking_results.json</code>. The <b>CrossDocked baselines</b> in Figure 4 =
+        training-set ligand heavy-atoms (<code>data_train.pt</code>, 99,981, grey KDE) and the 79 test-pocket
+        reference crystal ligands (<code>crossdocked_pocket10/</code>, dashed KDE; also the Table 7
+        Mean/Median header baseline).</li>
+      <li><b>Caveats.</b> Frozen-enc is a small generator on a frozen encoder (ep350) vs. long-trained vanilla;
+        not a matched-compute comparison. High-affinity is measured against each pocket's own reference dock.</li>
     </ul>
   </div>
 </section>
@@ -266,7 +545,8 @@
 </section>
 
 <footer style="border-top:1px solid var(--line);padding-top:14px;color:#9aa3b2;font-size:12px;">
-  §1 generated by <code>notebook/html/260723/build_macrocycle.py</code> (numbers cached in
-  <code>macrocycle_data.json</code>). §2–4 are hand-authored placeholders — fill in before the meeting.
+  Figures are regenerated as high-resolution PNGs by <code>notebook/html/260723/build_meeting_figures.py</code>.
+  §1 legacy numbers are cached in <code>macrocycle_data.json</code>; §2 imports the frozen-generation results from
+  <code>voxbind_results.html</code> &amp; <code>exps/frozenenc_probes/</code>; §3–4 are hand-authored placeholders — fill in before the meeting.
 </footer>
 </div></body></html>

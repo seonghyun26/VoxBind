@@ -1,0 +1,122 @@
+defaults:
+  - dset: crossdocked_xray
+  - model: atomblob_density_vit_mae_40m
+  - vox: default
+  - override hydra/job_logging: custom
+  - _self_
+
+# ON-THE-FLY RESAMPLE ABLATION — exact twin of
+# config_train_atomblob_density_gradmag_vit_mae_40m_invfreq.yaml
+# (exps/260606_atomblob_density_gradmag_vit_mae_40m_invfreq_v5_pretrain), with the ONLY
+# change being the density-augmentation method:
+#   baseline : frozen v5 64^3 crop, rotated/translated at train time by scipy
+#              (affine_transform, cval=0 -> zero-filled corners; double interpolation).
+#   this run : density cropped from the FULL CCP4 map at the AUGMENTED pose each step
+#              (DatasetCrossDockedDensity, dset.resample_dir set) -> single interpolation,
+#              no edge zero-fill. Same v5 arcsinh+z recipe, same 78,428 samples, same model.
+# Verified at identity aug: resample == frozen crop (corr/cos = 1.00000).
+# 13 input channels: 7 lig + 4 poc (vdW radii) + 1 v5 density + 1 gradmag.
+
+debug: False
+wandb: True
+wandb_tags: [pretrain, atomblob_density_gradmag, 40m, invfreq, v5, ligvdw, clip30, crossdocked_xray, resample, on_the_fly_aug]
+num_workers: 28          # Tier-1: 128-core box (denoiser stopped) → more parallel resample workers
+prefetch_factor: 16      # Tier-1: deeper prefetch queue to ride out per-sample resample stalls
+resume: null
+resume_epoch: null
+exp_dir: exps
+exp_name: atomblob_density_gradmag_vit_mae_40m_v5_resample
+output_dir: null
+
+seed: 42
+num_epochs: 100
+aug: True
+bsz: 32
+accum_steps: 1
+lr: 1e-4
+wd: 5e-2
+
+# ── Throughput knobs DISABLED to exactly match the fp32-eager baseline (260606, Jun 7,
+# which predates the amp/compile block added Jun 11) AND because this box has NO C compiler
+# (inductor/Triton needs cc → torch.compile crashes here). fp32 eager: ~3.7h/100ep, same as
+# the baseline; isolates ONLY the density-aug method. amp also off so the numerical regime
+# matches the baseline exactly (not a confound vs the resample ablation).
+amp:
+  enabled: false      # fp32 (baseline regime); bf16 would differ from the fp32 baseline
+  dtype: bf16
+channels_last: false
+optimizer:
+  fused: false
+ema:
+  foreach: false
+compile:
+  enabled: false      # no C compiler on this box → inductor cannot build Triton kernels
+  backend: inductor
+  mode: default
+  fullgraph: false
+  dynamic: false
+
+input_mode: atomblob_density
+with_gradmag: true                 # + gradmag → 13 channels
+gradmag_on_gpu: true               # derive ‖∇ρ‖ on-GPU in the train step (off the CPU dataloader)
+
+dset:
+  crops_dir: /home1/irteam/VoxBind/voxbind/dataset/data/xray_crops_aligned_v5   # (ignored when resample_dir is set)
+  # On-the-fly density: crop from the FULL map at the AUGMENTED pose (s3 --resample output).
+  # Empty -> frozen-crops path. Setting this switches the factory to DatasetCrossDockedDensity.
+  resample_dir: /home1/irteam/VoxBind/voxbind/dataset/data/xray_resample_v5
+  normalize: false                 # v5 recipe applied from raw map (no local ±3σ); matches baseline
+  ligand_radius: -1                # element-wise vdW radii (lig + poc)
+  subset_xray_only: true
+  subset_n: 78428
+  subset_val_n: 100
+  use_xray: true
+  cache_size: 1024                 # Tier-1: large raw-CCP4 LRU/worker (~a worker's map working set) → kills re-parsing (2TB RAM)
+
+model:
+  n_in_channels: 13                # 11 atoms + density + gradmag
+  head_style: patch_mlp            # per-patch 2-layer MLP recon head (~1.0M params)
+  head_hidden_dim: 67
+  head_depth: 2
+
+mae:
+  pretext_style: mae
+  density_source: xray
+  sigma_blur_a_lo: 0.30
+  sigma_blur_a_hi: 0.80
+  sigma_noise: 0.0
+  block_size: 8
+  mask_ratio: 0.60
+  mask_strategy: atom_biased
+  mask_atom_tau: 1.0
+  channel_weighting: inv_freq
+  channel_weight_clip_ratio: 30.0
+  density_channel_weight: 0.1
+  gradmag_channel_weight: 0.1
+  gradmag_reconstruct: true
+  gradmag_noise: false
+  atom_pos_weight: 10.0
+  atom_pos_thresh: 0.05
+  lambda_dens: 1.0
+  lambda_str: 1.0
+  struct_pos_weight: 100.0
+  struct_pos_thresh: 0.05
+  ema_decay: 0.999
+  grad_clip: 1.0
+  val_every: 1
+  ckpt_every: 50
+
+hydra:
+  run:
+    dir: ./${exp_dir}/${exp_name}
+  job:
+    config:
+      override_dirname:
+        kv_sep: ""
+        item_sep: "_"
+        exclude_keys: [
+            "exp_dir", "lr", vox.grid_dim, "wd", "resume", "resume_epoch", "wandb",
+            "num_workers", "exp_name", "output_dir", "out_dir",
+            "bsz", "accum_steps", "seed", "num_epochs", "aug", "pocket_radius",
+            "grid_dim", "debug"
+]

@@ -1,0 +1,29 @@
+model_name: atomblob_density_vit_mae_4m
+# ~4M-param ViT — width/depth-scaled SMALL twin of atomblob_density_vit_mae_40m
+# for the encoder-size scaling ladder (0.4M / 4M / 40M). Same patch embed
+# (13 in-channels: 7 lig + 4 poc vdW + 1 v5 density + 1 gradmag, set in the
+# train config), same recipe — ONLY the transformer is shrunk:
+#   dim 512 -> 128 (÷4),  depth 12 -> 8,  heads 8 -> 4 (head_dim 64 -> 32).
+# Measured (n_in=13, head_hidden_dim=24): encoder 3,560,832 / total 3,923,864
+#   → 12.8x smaller encoder than the 40M (45,702,656). The patch embed
+#   (13×128×8³ = 1.06M) is the dominant fixed cost at this width.
+n_channels: 32
+patch_size: 8
+n_in_channels: 12       # overridden to 13 in the train config (+ gradmag)
+dim: 128
+depth: 8
+heads: 4
+mlp_ratio: 4
+dropout: 0.1
+pos_encoding: learnable
+rope_fast: false
+n_struct_channels: 0    # disabled: atoms ARE part of the input
+
+# ── MAE head knobs (overridden per run) ────────────────────────────────────────
+dual_head: false
+head_hidden_dim: 0      # 0 → defaults to c_half; train config sets the scaled value
+head_depth: 2
+
+# ── ChannelViT patch embed (no-op default = fused) ─────────────────────────────
+patch_embed_mode: fused
+channel_groups: null

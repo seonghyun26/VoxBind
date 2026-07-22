@@ -440,6 +440,11 @@ def train(
     accum_steps = max(1, int(cfg.get("accum_steps", 1)))
 
     with_density = bool(cfg.model.get("with_density", False))
+    # Leak-removal mask config (read off the model so it tracks the checkpoint).
+    _mdl = _unwrap(model)
+    mask_lig = bool(getattr(_mdl, "density_mask_ligand", False))
+    mask_thr = float(getattr(_mdl, "density_mask_threshold", 0.2))
+    mask_dil = int(getattr(_mdl, "density_mask_dilate", 2))
     prefetcher = VoxelPrefetcher(
         loader, voxelizer, cfg.smooth_sigma,
         training=True, with_density=with_density,
@@ -460,7 +465,9 @@ def train(
         if not is_step and hasattr(model, "no_sync"):
             sync_ctx = model.no_sync()
         with sync_ctx:
-            pred = model(smooth_voxels_lig, voxels_poc, density=density)
+            dens_mask = (_mdl.ligand_occupancy_mask(voxels_lig, mask_thr, mask_dil)
+                         if (mask_lig and density is not None) else None)
+            pred = model(smooth_voxels_lig, voxels_poc, density=density, dens_mask=dens_mask)
             loss = criterion(pred, voxels_lig)
             loss.backward()
 
@@ -495,6 +502,9 @@ def val(
     model.eval()
     device = next(model.parameters()).device
     with_density = bool(cfg.model.get("with_density", False))
+    mask_lig = bool(getattr(model, "density_mask_ligand", False))
+    mask_thr = float(getattr(model, "density_mask_threshold", 0.2))
+    mask_dil = int(getattr(model, "density_mask_dilate", 2))
 
     with torch.no_grad():
         if val_cache is not None:
@@ -507,7 +517,9 @@ def val(
                 voxels_poc = voxels_poc_all[start:start + cfg.bsz].to(device)
                 density = density_all[start:start + cfg.bsz].to(device) if density_all is not None else None
                 smooth_voxels_lig = add_noise_vox(voxels_lig, cfg.smooth_sigma)
-                pred = model(smooth_voxels_lig, voxels_poc, density=density)
+                dens_mask = (model.ligand_occupancy_mask(voxels_lig, mask_thr, mask_dil)
+                             if (mask_lig and density is not None) else None)
+                pred = model(smooth_voxels_lig, voxels_poc, density=density, dens_mask=dens_mask)
                 loss = criterion(pred, voxels_lig)
                 metrics.update(loss, pred, voxels_lig)
                 if cfg.debug and i == 10:
@@ -518,7 +530,9 @@ def val(
                 training=False, with_density=with_density,
             )
             for i, (voxels_lig, smooth_voxels_lig, voxels_poc, density) in enumerate(prefetcher):
-                pred = model(smooth_voxels_lig, voxels_poc, density=density)
+                dens_mask = (model.ligand_occupancy_mask(voxels_lig, mask_thr, mask_dil)
+                             if (mask_lig and density is not None) else None)
+                pred = model(smooth_voxels_lig, voxels_poc, density=density, dens_mask=dens_mask)
                 loss = criterion(pred, voxels_lig)
                 metrics.update(loss, pred, voxels_lig)
                 if cfg.debug and i == 10:

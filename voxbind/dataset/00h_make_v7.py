@@ -139,7 +139,7 @@ def build_pdbbind_pairs(data_dir: Path, stage_dir: Path, norm, limit: int = 0):
             if not (sdf.exists() and pdb.exists() and ccp4.exists()):
                 skipped[pid] = "missing_files"; continue
 
-            lig_xyz, lig_ch, _all_heavy_centroid, _lig_unsup = PDBB.parse_ligand_sdf(sdf)
+            lig_xyz, lig_ch, _all_heavy_centroid, _lig_unsup, _lig_rad = PDBB.parse_ligand_sdf(sdf)
             poc_xyz, poc_ch, _poc_unsup = PDBB.parse_pocket_pdb(pdb)
             if lig_xyz.numel() == 0 or poc_xyz.numel() == 0:
                 skipped[pid] = "empty_supported_atoms"; continue

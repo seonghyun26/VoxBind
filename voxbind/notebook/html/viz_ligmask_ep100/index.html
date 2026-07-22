@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Ligand-masked frozen-enc (#29 ep100) — leak-removal samples</title>
+<script src="3Dmol-min.js"></script>
+<style>
+  :root{--bg:#0f1117;--pan:#181b24;--line:#2a2f3a;--txt:#e6e9ef;--mut:#9aa3b2;--acc:#5ac8fa;--good:#3ddc97;--warn:#ffcf5c;}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--txt);font:13px/1.5 -apple-system,Segoe UI,Roboto,sans-serif}
+  #wrap{display:flex;height:100vh}
+  #side{width:360px;min-width:360px;background:var(--pan);border-right:1px solid var(--line);overflow-y:auto;padding:16px}
+  #view{flex:1;position:relative}
+  h1{font-size:15px;margin:0 0 2px}
+  .sub{color:var(--mut);font-size:12px;margin-bottom:14px}
+  .card{background:#12151d;border:1px solid var(--line);border-radius:8px;padding:11px 12px;margin-bottom:12px}
+  .card h2{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--mut);margin:0 0 8px}
+  select{width:100%;background:#12151d;color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:6px}
+  .stat{display:flex;justify-content:space-between;padding:3px 0;font-variant-numeric:tabular-nums}
+  .stat .k{color:var(--mut)} .good{color:var(--good)} .warn{color:var(--warn)}
+  .big{font-size:20px;font-weight:700;font-variant-numeric:tabular-nums}
+  .nav{display:flex;gap:6px;align-items:center;margin:6px 0}
+  button{background:#232838;color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:6px 10px;cursor:pointer;font-size:13px}
+  button:hover{background:#2c3346}
+  .smi{word-break:break-all;font-family:ui-monospace,Menlo,monospace;font-size:11px;color:#cdd3de;background:#0c0e13;border-radius:6px;padding:7px;margin-top:6px;max-height:80px;overflow:auto}
+  .tog{display:flex;flex-wrap:wrap;gap:6px}
+  .tog label{display:flex;align-items:center;gap:6px;background:#12151d;border:1px solid var(--line);border-radius:6px;padding:5px 8px;cursor:pointer;font-size:12px}
+  #hud{position:absolute;left:12px;top:12px;background:rgba(15,17,23,.82);border:1px solid var(--line);border-radius:8px;padding:8px 12px;font-variant-numeric:tabular-nums;pointer-events:none}
+  #hud .t{font-size:12px;color:var(--mut)} #hud .v{font-size:17px;font-weight:700}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="side">
+    <h1>Ligand-masked frozen-enc <span style="color:var(--acc)">#29 · ep100</span></h1>
+    <div class="sub">Leak-removal probe — density carved out of the ligand region. 10 pockets ×10 mols, Vina-docked.</div>
+
+    <div class="card">
+      <h2>Pocket (sorted by dock)</h2>
+      <select id="pocksel"></select>
+      <div id="pocksum" style="margin-top:8px"></div>
+    </div>
+
+    <div class="card">
+      <h2>Molecule <span id="rank" style="color:var(--mut);font-weight:400"></span></h2>
+      <div class="nav">
+        <button id="prev">◀ prev</button><button id="next">next ▶</button>
+        <span style="margin-left:auto;color:var(--mut);font-size:11px">sorted: best dock</span>
+      </div>
+      <select id="molsel"></select>
+      <div style="margin-top:10px">
+        <div class="stat"><span class="k">Vina dock</span><span id="m_dock" class="big good"></span></div>
+        <div class="stat"><span class="k">Vina min</span><span id="m_min"></span></div>
+        <div class="stat"><span class="k">Vina score</span><span id="m_score"></span></div>
+      </div>
+      <div class="smi" id="m_smi"></div>
+    </div>
+
+    <div class="card">
+      <h2>Display</h2>
+      <div class="tog">
+        <label><input type="checkbox" id="t_ref" checked> reference ligand</label>
+        <label><input type="checkbox" id="t_cart" checked> protein cartoon</label>
+        <label><input type="checkbox" id="t_atoms"> protein atoms</label>
+        <label><input type="checkbox" id="t_surf"> pocket surface</label>
+        <label><input type="checkbox" id="t_spin"> spin</label>
+      </div>
+      <div class="nav" style="margin-top:8px"><button id="reset">recenter</button></div>
+    </div>
+    <div class="sub">Green = native reference · cyan = generated (leak-removal model)</div>
+  </div>
+  <div id="view"><div id="hud"><div class="t">Vina dock (selected)</div><div class="v" id="hud_v">—</div></div></div>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+let viewer, pocketMdl, refMdl, molMdls=[], surf=null;
+let MAN=null, P=null, BLOCKS=[], ORDER=[], POS=0, CACHE={};
+
+async function boot(){
+  viewer=$3Dmol.createViewer($("view"),{backgroundColor:"#0f1117"});
+  MAN=await fetch("manifest.json").then(r=>r.json());
+  const sel=$("pocksel");
+  MAN.pockets.forEach((p,i)=>{
+    const o=document.createElement("option"); o.value=i;
+    o.textContent=`${p.prot}  ·  dock ${p.dock.toFixed(2)}  ·  HA ${(100*p.high_aff).toFixed(0)}%`;
+    sel.appendChild(o);
+  });
+  sel.onchange=()=>setPocket(+sel.value);
+  wire();
+  await setPocket(0);
+}
+function applyPocketStyle(){
+  const s={};
+  if($("t_cart").checked)  s.cartoon={color:"#8b93a7",opacity:.9};
+  if($("t_atoms").checked) s.stick={colorscheme:"grayCarbon",radius:.09};
+  pocketMdl.setStyle({}, s); viewer.render();
+}
+async function setPocket(i){
+  P=MAN.pockets[i];
+  const id=P.id;
+  if(!CACHE[id]){
+    const [pdb,ref,sdf]=await Promise.all([
+      fetch(`${id}_pocket.pdb`).then(r=>r.text()),
+      fetch(`${id}_ref.sdf`).then(r=>r.ok?r.text():"").catch(()=>""),
+      fetch(`${id}_samples.sdf`).then(r=>r.text())]);
+    CACHE[id]={pdb,ref,blocks:sdf.split(/\$\$\$\$\r?\n/).filter(b=>b.includes("M  END"))};
+  }
+  const c=CACHE[id];
+  viewer.clear(); molMdls=[]; surf=null;
+  pocketMdl=viewer.addModel(c.pdb,"pdb"); applyPocketStyle();
+  refMdl=viewer.addModel(c.ref||"","sdf");
+  if($("t_ref").checked) refMdl.setStyle({},{stick:{colorscheme:"greenCarbon",radius:.16}});
+  BLOCKS=c.blocks;
+  // order mols by dock (best first)
+  ORDER=BLOCKS.map((_,k)=>k).sort((a,b)=>{
+    const da=(P.mols[a]&&P.mols[a].dock!=null)?P.mols[a].dock:1e9, db=(P.mols[b]&&P.mols[b].dock!=null)?P.mols[b].dock:1e9;
+    return da-db;});
+  const ms=$("molsel"); ms.innerHTML="";
+  ORDER.forEach((idx,rank)=>{
+    const d=(P.mols[idx]&&P.mols[idx].dock!=null)?P.mols[idx].dock.toFixed(2):"n/a";
+    const o=document.createElement("option"); o.value=rank; o.textContent=`#${rank+1}  ·  mol ${idx}  ·  dock ${d}`; ms.appendChild(o);
+  });
+  ms.onchange=()=>showMol(+ms.value);
+  // summary
+  const f=(x,d=2)=>x==null?"–":x.toFixed(d);
+  $("pocksum").innerHTML=[
+    ["protein",P.prot,""],["mean dock",f(P.dock),P.dock<P.ref_dock?"good":""],
+    ["reference dock",f(P.ref_dock),""],["high-affinity",(100*P.high_aff).toFixed(0)+"%","good"],
+    ["QED",f(P.qed,3),""]
+  ].map(([k,v,c])=>`<div class="stat"><span class="k">${k}</span><span class="${c}">${v}</span></div>`).join("");
+  viewer.zoomTo({model:refMdl}); viewer.zoom(0.75);
+  showMol(0);
+}
+function showMol(pos){
+  POS=Math.max(0,Math.min(ORDER.length-1,pos)); $("molsel").value=POS;
+  const idx=ORDER[POS], sc=P.mols[idx]||{};
+  molMdls.forEach(m=>viewer.removeModel(m)); molMdls=[];
+  const m=viewer.addModel(BLOCKS[idx],"sdf"); m.setStyle({},{stick:{colorscheme:"cyanCarbon",radius:.14}}); molMdls.push(m);
+  const f=(x)=>x==null?"–":x.toFixed(2);
+  $("rank").textContent=`#${POS+1} of ${ORDER.length} (mol ${idx})`;
+  $("m_dock").textContent=f(sc.dock); $("m_min").textContent=f(sc.min); $("m_score").textContent=f(sc.score);
+  $("m_smi").textContent=sc.smi||"(smiles n/a)";
+  $("hud_v").textContent=f(sc.dock)+" kcal/mol";
+  $("hud_v").className="v "+(sc.dock!=null&&sc.dock<(P.ref_dock??0)?"good":"warn");
+  viewer.render();
+}
+function wire(){
+  $("prev").onclick=()=>showMol(POS-1); $("next").onclick=()=>showMol(POS+1);
+  $("reset").onclick=()=>{viewer.zoomTo({model:refMdl});viewer.zoom(0.75);viewer.render();};
+  $("t_ref").onchange=e=>{refMdl.setStyle({},e.target.checked?{stick:{colorscheme:"greenCarbon",radius:.16}}:{});viewer.render();};
+  $("t_cart").onchange=applyPocketStyle; $("t_atoms").onchange=applyPocketStyle;
+  $("t_surf").onchange=e=>{ if(e.target.checked){surf=viewer.addSurface($3Dmol.SurfaceType.VDW,{opacity:.6,color:"#3a4256"},{model:pocketMdl});} else {viewer.removeAllSurfaces();} viewer.render(); };
+  $("t_spin").onchange=e=>viewer.spin(e.target.checked?"y":false);
+  document.addEventListener("keydown",ev=>{if(ev.key==="ArrowLeft")showMol(POS-1);if(ev.key==="ArrowRight")showMol(POS+1);});
+}
+boot();
+</script>
+</body>
+</html>

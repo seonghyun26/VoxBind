@@ -107,7 +107,12 @@ from tqdm import tqdm
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-from voxbind.constants import ELEMENTS_HASH_CROSSDOCKED, RADIUS_PER_ATOM
+from voxbind.constants import (
+    ELEMENTS_HASH_CROSSDOCKED,
+    RADIUS_PER_ATOM,
+    is_diverse_role_atom,
+    vdw_radius,
+)
 from voxbind.voxelizer import Voxelizer
 from voxbind.dataset.crossdocked_xray import _crop_density, normalize_crop
 
@@ -222,6 +227,10 @@ def _is_heavy_element(element: str) -> bool:
 
 def expected_voxelize_metadata(args: argparse.Namespace) -> dict:
     """Metadata that defines whether an atom/density voxel cache is reusable."""
+    other_channel = getattr(args, "other_channel", False)
+    ligand_channels = (
+        LIGAND_CHANNEL_ELEMENTS + ["other"] if other_channel else LIGAND_CHANNEL_ELEMENTS
+    )
     return {
         "metadata_version": VOXELIZE_METADATA_VERSION,
         "kind": "pdbbind_voxelize",
@@ -229,7 +238,7 @@ def expected_voxelize_metadata(args: argparse.Namespace) -> dict:
         "grid_dim": GRID_DIM,
         "resolution": RESOLUTION,
         "cubes_around": CUBES_AROUND,
-        "ligand_channels": LIGAND_CHANNEL_ELEMENTS,
+        "ligand_channels": ligand_channels,
         "pocket_channels": POCKET_CHANNEL_ELEMENTS,
         "element_filter": args.element_filter,
         "ligand_vdw": bool(args.ligand_vdw),
@@ -310,20 +319,32 @@ def parse_pocket_pdb(path: Path) -> tuple[torch.Tensor, torch.Tensor, list[str]]
     )
 
 
-def parse_ligand_sdf(path: Path) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, list[str]]:
+def parse_ligand_sdf(
+    path: Path,
+    other_channel: bool = False,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, list[str], torch.Tensor]:
     """Supported ligand voxels plus all-heavy-atom centroid from SDF V2000.
 
     Returns
     -------
     coords, channels
-        Only atoms represented by the 7-channel CrossDocked ligand vocabulary
-        (C/O/N/S/F/Cl/P), used for voxelization.
+        Atoms used for voxelization. By default only the 7-channel CrossDocked
+        ligand vocabulary (C/O/N/S/F/Cl/P). When ``other_channel`` is True, every
+        OTHER heavy ligand atom (Br/I/B/metals; not H, not a noble-gas/dummy
+        artifact) is additionally kept and routed to channel ``N_LIG_CH`` (idx 7),
+        mirroring 03c_plinder_preprocess.parse_cif_system(other_channel=True).
     all_heavy_centroid
         Geometric centroid of every non-H ligand atom in the SDF. This is used
         as the PDBbind grid center so unsupported heavy atoms (Br/I/metals) do
         not move the atom and density crops relative to the physical ligand.
+    radii
+        Per-KEPT-atom vdW radius (Å). Channels 0..6 receive the same element-wise
+        vdW radii as ``_VDW_RADIUS_LUT``; channel 7 (the "other" channel) receives
+        the true per-element vdW radius. Always returned (a 7-ch caller can ignore
+        it); use it via ``voxelize_complex(..., lig_rad_override=radii)`` when
+        feeding an 8-channel encoder.
     """
-    coords, channels, all_heavy_coords, heavy_elements = [], [], [], set()
+    coords, channels, radii, all_heavy_coords, heavy_elements = [], [], [], [], set()
     with path.open() as f:
         lines = f.readlines()
     n_atoms = int(lines[3][:3])
@@ -335,9 +356,15 @@ def parse_ligand_sdf(path: Path) -> tuple[torch.Tensor, torch.Tensor, torch.Tens
             all_heavy_coords.append([float(line[0:10]), float(line[10:20]), float(line[20:30])])
         ch = _channel_of(el, N_LIG_CH)
         if ch is None:
-            continue
+            # Out-of-vocab heavy atom (Br/I/B/metals). Default: drop (7-ch path).
+            # other_channel: route to the 8th channel, gated like 03c on
+            # is_diverse_role_atom (drops noble-gas / dummy artifacts).
+            if not (other_channel and is_diverse_role_atom(el)):
+                continue
+            ch = N_LIG_CH                          # "other" channel = idx 7
         coords.append([float(line[0:10]), float(line[10:20]), float(line[20:30])])
         channels.append(ch)
+        radii.append(vdw_radius(_normalise_element(el)))
     if not all_heavy_coords:
         raise ValueError(f"{path} contains no non-H ligand atoms")
     return (
@@ -345,6 +372,7 @@ def parse_ligand_sdf(path: Path) -> tuple[torch.Tensor, torch.Tensor, torch.Tens
         torch.tensor(channels, dtype=torch.long),
         torch.tensor(all_heavy_coords, dtype=torch.float32).mean(dim=0),
         _unsupported_heavy(heavy_elements, LIGAND_SUPPORTED_HEAVY),
+        torch.tensor(radii, dtype=torch.float32),
     )
 
 
@@ -355,11 +383,19 @@ def voxelize_complex(
     device: str,
     ligand_vdw: bool = False,
     ligand_center: "torch.Tensor | None" = None,
+    n_lig_ch: int = N_LIG_CH,
+    lig_rad_override: "torch.Tensor | None" = None,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Return ((11,G,G,G) atom voxels, (3,) ligand centroid in deposited frame).
+    """Return (((n_lig_ch+N_POC_CH),G,G,G) atom voxels, (3,) ligand centroid in deposited frame).
 
     ligand_vdw=True gives ligand atoms element-wise vdW radii (instead of the
     uniform LIGAND_RAD blob), matching an encoder trained with ligand_radius<=0.
+
+    n_lig_ch selects the number of ligand voxelizer channels (default 7; pass 8 to
+    match an 8-channel "other"-channel encoder — the pocket always stays N_POC_CH).
+    lig_rad_override, if given, is used as the per-atom ligand radius directly
+    (so the channel-7 "other" atoms get their true per-element vdW radius rather
+    than a per-channel LUT constant); it overrides the ligand_vdw/uniform path.
     """
     # Heavy-atom centroid in deposited frame (used later for density cropping).
     lig_com = ligand_center if ligand_center is not None else lig_xyz.mean(dim=0)
@@ -368,7 +404,9 @@ def voxelize_complex(
     lig_xyz_c = (lig_xyz - lig_com).clamp(-25, 25)
     poc_xyz_c = (poc_xyz - lig_com).clamp(-25, 25)
 
-    if ligand_vdw:
+    if lig_rad_override is not None:
+        lig_rad = lig_rad_override                       # per-atom radii (incl. ch-7 "other")
+    elif ligand_vdw:
         lig_rad = _VDW_RADIUS_LUT[lig_ch]                # element-wise vdW (ligand_radius<=0 path)
     else:
         lig_rad = torch.full_like(lig_ch, LIGAND_RAD, dtype=torch.float32)
@@ -386,9 +424,9 @@ def voxelize_complex(
         "radius":        poc_rad.unsqueeze(0),
     }
 
-    v_lig = voxelizer(lig_dict, num_channels=N_LIG_CH)   # (1, 7, G, G, G)
+    v_lig = voxelizer(lig_dict, num_channels=n_lig_ch)   # (1, n_lig_ch, G, G, G)
     v_poc = voxelizer(poc_dict, num_channels=N_POC_CH)   # (1, 4, G, G, G)
-    v_atom = torch.cat([v_lig, v_poc], dim=1)             # (1, 11, G, G, G)
+    v_atom = torch.cat([v_lig, v_poc], dim=1)             # (1, n_lig_ch+4, G, G, G)
     return v_atom.squeeze(0).cpu().numpy(), lig_com.numpy()
 
 
@@ -434,6 +472,8 @@ def run_voxelize(args: argparse.Namespace) -> None:
     atom_dir   = out_dir / "atoms"
     dens_dir   = out_dir / "density"
     avail_csv  = out_dir / "availability.csv"
+    other_channel = getattr(args, "other_channel", False)
+    n_lig_ch   = N_LIG_CH + 1 if other_channel else N_LIG_CH
 
     atom_dir.mkdir(parents=True, exist_ok=True)
     if not args.no_density:
@@ -447,6 +487,7 @@ def run_voxelize(args: argparse.Namespace) -> None:
     print(f"  device     : {args.device}")
     print(f"  no_density : {args.no_density}")
     print(f"  ligand_vdw : {args.ligand_vdw}")
+    print(f"  other_chan : {other_channel} (n_lig_ch={n_lig_ch})")
     print(f"  elem_filter: {args.element_filter}")
     print(f"  overwrite  : {args.overwrite}")
     print(f"  cache_check: {'warn only' if args.allow_stale_cache else 'strict'}")
@@ -505,7 +546,8 @@ def run_voxelize(args: argparse.Namespace) -> None:
 
         try:
             cdir = struct_dir / pid
-            lig_xyz, lig_ch, lig_center, lig_unsupported = parse_ligand_sdf(cdir / f"{pid}_ligand.sdf")
+            lig_xyz, lig_ch, lig_center, lig_unsupported, lig_rad = parse_ligand_sdf(
+                cdir / f"{pid}_ligand.sdf", other_channel=other_channel)
             poc_xyz, poc_ch, poc_unsupported = parse_pocket_pdb(cdir / f"{pid}_pocket.pdb")
             filter_reason = should_filter_complex(
                 args.element_filter,
@@ -539,6 +581,8 @@ def run_voxelize(args: argparse.Namespace) -> None:
                 lig_xyz, lig_ch, poc_xyz, poc_ch, voxelizer, args.device,
                 ligand_vdw=args.ligand_vdw,
                 ligand_center=lig_center,
+                n_lig_ch=n_lig_ch,
+                lig_rad_override=lig_rad if other_channel else None,
             )
             if wants_atom:
                 np.save(str(atom_path), v_atom.astype(np.float16))
@@ -714,7 +758,7 @@ def run_poolnorm(args: argparse.Namespace) -> None:
     # of the FINAL normalized density — exactly as the training/probe pipeline derives it.
     gmag_roots, gmag_dens, _gmag = {}, {}, None
     if args.save_gradmag:
-        from voxbind.models.density_mae import gradient_magnitude3d, per_sample_zscore
+        from voxbind.models.mae_ops import gradient_magnitude3d, per_sample_zscore
         gmag_roots = {v: d.with_name(d.name + "_gradmag")
                       for v, d in (("v2", v2_dir), ("v3", v3_dir), ("v4", v4_dir), ("v5", v5_dir))}
         gmag_dens = {v: r / "density" for v, r in gmag_roots.items()}
@@ -1001,6 +1045,9 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Element-wise vdW ligand radii (mirrors crossdocked_xray "
                          "ligand_radius<=0) instead of the uniform 0.5 A blob. Match "
                          "to a gradmag/ligvdw encoder; write to a separate --out_dir.")
+    pv.add_argument("--other_channel", action="store_true",
+                    help="ligand: route out-of-vocab heavy atoms to an 8th channel "
+                         "(matches an 8-ch encoder)")
     pv.add_argument("--element_filter", choices=["none", "ligand", "all"], default="none",
                     help="Drop complexes with unsupported non-H atom types. none = keep "
                          "and ignore unsupported channels; ligand = drop Br/I/etc in "

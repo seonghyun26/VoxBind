@@ -399,12 +399,11 @@ def make_figures(data):
             w.set(color=col, lw=1.4)
         for md in bp["medians"]:
             md.set(color=col, lw=2.2)
-        # y-axis is inverted (better/more negative at top); place label above the box
-        ax.text(i, min(vals) - 0.7, f"n={len(vals)}", ha="center", fontsize=9, color=col, fontweight="bold")
+        # y-axis not inverted (better/more negative at bottom); place label above the box
+        ax.text(i, max(vals) + 0.7, f"n={len(vals)}", ha="center", fontsize=9, color=col, fontweight="bold")
     ax.set_xticks([0, 1])
     ax.set_xticklabels([g[0] for g in groups], fontsize=9.5)
     ax.set_ylabel("Vina dock score (kcal/mol) · lower = better", fontsize=10)
-    ax.invert_yaxis()  # better (more negative) at top
     ax.spines[["top", "right"]].set_visible(False)
     ax.grid(axis="y", color="#e3e7ee", lw=.8)
     ax.set_axisbelow(True)
@@ -433,7 +432,6 @@ def make_figures(data):
                     label="size trend", zorder=3)
         ax.set_xlabel("heavy-atom count", fontsize=10.5)
         ax.set_ylabel("Vina dock score (kcal/mol)", fontsize=10)
-        ax.invert_yaxis()
         ax.spines[["top", "right"]].set_visible(False)
         ax.grid(color="#e3e7ee", lw=.8)
         ax.set_axisbelow(True)

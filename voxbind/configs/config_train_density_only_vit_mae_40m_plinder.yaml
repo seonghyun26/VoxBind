@@ -1,0 +1,107 @@
+defaults:
+  - dset: crossdocked_xray
+  - model: density_vit_mae_40m   # ~42.6M ViT (D=512 L=12 H=8), single-channel input
+  - vox: default
+  - override hydra/job_logging: custom
+  - _self_
+
+# ════════════════════════════════════════════════════════════════════════════════
+# 6-case PLINDER campaign — cell [density-only × ViT].
+# Single-channel DENSITY-ONLY ViT-MAE on the coverage-gated PLINDER set (~17,530,
+# _v2clean: pdbbind-only downstream exclusion + lig/poc 2Fo-Fc coverage gate).
+# Pretext = block-masked density reconstruction + 11-ch atom-structure aux head.
+# Downstream: frozen-encoder probe on lp_edrscc_v2.
+# ════════════════════════════════════════════════════════════════════════════════
+
+debug: False
+wandb: True
+wandb_tags: [pretrain, density_only, vit, 40m, plinder, v2clean, covgate]
+num_workers: 16
+prefetch_factor: 8
+resume: null
+resume_epoch: null
+exp_dir: exps
+exp_name: density_only_vit_mae_40m_plinder
+output_dir: null
+
+seed: 42
+num_epochs: 100
+aug: True
+bsz: 32                  # 4 GPU x 32 x accum 1 = eff-batch 128
+accum_steps: 1
+lr: 1e-4
+wd: 5e-2
+
+# ── Throughput (no-C-compiler box: bf16 amp on, compile OFF) ─────────────────────
+amp:
+  enabled: true
+  dtype: bf16
+channels_last: false
+optimizer:
+  fused: false
+ema:
+  foreach: false
+compile:
+  enabled: false
+  backend: inductor
+  mode: default
+  fullgraph: false
+  dynamic: false
+
+# ── Input composition ────────────────────────────────────────────────────────
+input_mode: density      # single z-scored density channel
+with_gradmag: false
+
+# ── Dataset: coverage-gated PLINDER (_v2clean) frozen crops ──────────────────────
+dset:
+  data_file: data_train_plinder_v2clean.pt
+  crops_dir: /home1/irteam/VoxBind/voxbind/dataset/data/xray_crops_aligned_plinder_v2clean
+  resample_dir: ""                 # frozen crops (not on-the-fly resample)
+  normalize: false                 # v5 arcsinh+z already applied on disk by 03c
+  ligand_radius: -1                # element-wise vdW radii (struct head / atom-biased mask)
+  use_xray: true
+  subset_xray_only: true           # val carved from the train-crop pool
+  subset_n: null                   # launcher sets = n_train-100 from _v2clean/stats.json
+  subset_val_n: 100
+
+# ── Model ────────────────────────────────────────────────────────────────────
+model:
+  n_in_channels: 1                 # density-only
+  input_mode: density              # mirror top-level (model defaults else win under @hydra.main)
+  with_gradmag: false
+  pos_encoding: learnable
+
+# ── MAE knobs ────────────────────────────────────────────────────────────────
+mae:
+  pretext_style: mae
+  density_source: xray
+  sigma_blur_a_lo: 0.30          # unused (xray source) — read for schema consistency
+  sigma_blur_a_hi: 0.80
+  sigma_noise: 0.0
+  block_size: 8
+  mask_ratio: 0.60
+  mask_strategy: atom_biased
+  mask_atom_tau: 1.0
+  lambda_dens: 1.0
+  lambda_str: 1.0
+  struct_pos_weight: 100.0
+  struct_pos_thresh: 0.05
+  ema_decay: 0.999
+  grad_clip: 1.0
+  val_every: 1
+  ckpt_every: 20
+
+hydra:
+  run:
+    dir: ./${exp_dir}/${exp_name}
+  job:
+    config:
+      override_dirname:
+        kv_sep: ""
+        item_sep: "_"
+        exclude_keys: [
+            "exp_dir", "lr", vox.grid_dim, "wd", "resume", "resume_epoch", "wandb",
+            "num_workers", "exp_name", "output_dir", "out_dir",
+            "bsz", "accum_steps", "seed", "num_epochs", "aug", "pocket_radius",
+            "grid_dim", "debug"
+]

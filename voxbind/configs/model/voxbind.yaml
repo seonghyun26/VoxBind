@@ -15,5 +15,18 @@ density_vit:                     # vit-only knobs (ignored for cnn); load the 26
   heads: 6                       # attention heads
   mlp_ratio: 4                   # MLP hidden = dim × mlp_ratio
   dropout: 0.1
+  n_in_channels: null            # null → density FIELD only (1ch, or 2ch when with_gradmag).
+                                 # 13 → full-voxel conditioning (Path B): reuse a combined
+                                 # atomblob_density_gradmag ViT-MAE (e.g. exps/260616_best) frozen,
+                                 # fed [ligand=0, pocket, density, gradmag]; gradmag derived in-model.
 density_pretrained_path: null    # path to a density-MAE checkpoint (cnn or vit, must match density_encoder_type)
 density_freeze: false            # freeze the density_encoder branch (requires_grad=False, dropout off)
+density_mask_ligand: false       # Path B leak-removal: blank density+gradmag inside the CLEAN ligand
+                                 # footprint (mask region from the ligand coords) so the frozen encoder
+                                 # can't read the co-crystal ligand's own density. Requires n_in_channels=13.
+density_mask_threshold: 0.2      # occupancy threshold on the summed clean-ligand voxel grid
+density_mask_dilate: 2           # voxels to dilate the mask (0.25Å grid → 2 = 0.5Å) to cover the x-ray envelope
+fusion: default                  # default: ligand_encoder + pocket_encoder, frozen density via zero-init density_proj.
+                                 # v3: frozen encoder REPLACES pocket_encoder (pocket + apo density carried by the
+                                 # frozen ViT), fused into the ligand features via a normal-init context_proj (early
+                                 # fusion). Requires with_density + full-voxel n_in_channels=13. Ligand stream unchanged.

@@ -1,0 +1,99 @@
+defaults:
+  - dset: crossdocked_xray
+  - model: atomblob_density_vit_mae_40m   # 12ch = 7 lig + 4 poc atoms + 1 density; n_struct=0
+  - vox: default
+  - override hydra/job_logging: custom
+  - _self_
+
+# 5th case (coordinates + density) — cell [atomblob_density × ViT].
+# 12-channel coords+density ViT-MAE on the coverage-gated PLINDER _v2clean set (~17,407).
+# Atoms ARE the input (struct aux head disabled). Same recipe as the 4-case campaign
+# (bf16 amp, compile off, eff-batch 128, val_every=5). Downstream: probe lp_edrscc_v2.
+
+debug: False
+wandb: True
+wandb_tags: [pretrain, atomblob_density, coords_density, vit, 40m, plinder, v2clean, covgate]
+num_workers: 16
+prefetch_factor: 8
+resume: null
+resume_epoch: null
+exp_dir: exps
+exp_name: atomblob_density_vit_mae_40m_plinder
+output_dir: null
+
+seed: 42
+num_epochs: 100
+aug: True
+bsz: 64                  # 2 GPU x 64 x accum 1 = eff-batch 128 (higher per-GPU util)
+accum_steps: 1
+lr: 1e-4
+wd: 5e-2
+
+amp:
+  enabled: true
+  dtype: bf16
+channels_last: false
+optimizer:
+  fused: false
+ema:
+  foreach: false
+compile:
+  enabled: false
+  backend: inductor
+  mode: default
+  fullgraph: false
+  dynamic: false
+
+input_mode: atomblob_density   # 11 atoms (7 lig + 4 poc) + 1 density
+with_gradmag: false
+
+dset:
+  data_file: data_train_plinder_v2clean.pt
+  crops_dir: /home1/irteam/VoxBind/voxbind/dataset/data/xray_crops_aligned_plinder_v2clean
+  resample_dir: ""
+  normalize: false
+  ligand_radius: -1
+  use_xray: true
+  subset_xray_only: true
+  subset_n: null                 # launcher sets = n_train-100 from _v2clean/stats.json
+  subset_val_n: 100
+
+model:
+  n_in_channels: 12              # 11 atoms + 1 density
+  input_mode: atomblob_density   # mirror top-level (belt-and-suspenders for @hydra.main)
+  with_gradmag: false
+  pos_encoding: learnable
+
+mae:
+  pretext_style: mae
+  density_source: xray
+  sigma_blur_a_lo: 0.30          # unused (xray source) — schema parity
+  sigma_blur_a_hi: 0.80
+  sigma_noise: 0.0
+  block_size: 8
+  mask_ratio: 0.60
+  mask_strategy: atom_biased
+  mask_atom_tau: 1.0
+  lambda_dens: 1.0
+  lambda_str: 1.0
+  struct_pos_weight: 100.0
+  struct_pos_thresh: 0.05
+  ema_decay: 0.999
+  grad_clip: 1.0
+  val_every: 5
+  ckpt_every: 20
+
+hydra:
+  run:
+    dir: ./${exp_dir}/${exp_name}
+  job:
+    config:
+      override_dirname:
+        kv_sep: ""
+        item_sep: "_"
+        exclude_keys: [
+            "exp_dir", "lr", vox.grid_dim, "wd", "resume", "resume_epoch", "wandb",
+            "num_workers", "exp_name", "output_dir", "out_dir",
+            "bsz", "accum_steps", "seed", "num_epochs", "aug", "pocket_radius",
+            "grid_dim", "debug"
+]

@@ -63,6 +63,18 @@ def create_model(cfg, device="cuda") -> VoxBind:
         density_vit_channel_groups=(tuple(vit_cfg.channel_groups)
                                     if vit_cfg.get("channel_groups", None) else None),
         density_vit_n_memory_tokens=int(vit_cfg.get("n_memory_tokens", 0)),
+        # None → field mode (1/2 ch). 13 → full-voxel conditioning (Path B): reuse a
+        # combined atomblob_density_gradmag ViT-MAE frozen, with the ligand masked.
+        density_vit_n_in_channels=(int(vit_cfg["n_in_channels"])
+                                   if vit_cfg.get("n_in_channels", None) is not None else None),
+        # Leak-removal ablation (Path B): blank density+gradmag inside the clean ligand
+        # footprint so the frozen encoder cannot read the co-crystal ligand's density.
+        density_mask_ligand=bool(cfg.model.get("density_mask_ligand", False)),
+        density_mask_threshold=float(cfg.model.get("density_mask_threshold", 0.2)),
+        density_mask_dilate=int(cfg.model.get("density_mask_dilate", 2)),
+        # "default": pocket_encoder + zero-init density_proj. "v3": frozen encoder replaces
+        # pocket_encoder (pocket + apo density), fused via normal-init context_proj (early fusion).
+        fusion=str(cfg.model.get("fusion", "default")),
     )
 
     # Optionally load + freeze the pretrained density encoder

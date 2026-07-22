@@ -1,0 +1,134 @@
+defaults:
+  - dset: crossdocked_xray
+  - model: atomblob_density_vit_mae_40m
+  - vox: default
+  - override hydra/job_logging: custom
+  - _self_
+
+# ════════════════════════════════════════════════════════════════════════════════
+# ChannelViT (channel-group patch embed) pretrained on the BIG PLINDER density set.
+# ════════════════════════════════════════════════════════════════════════════════
+# Combines two things the project had only separately before:
+#   • ChannelViT encoder  — per-channel-GROUP tokenization (patch_embed_mode=channel_group,
+#     groups [7,4,1,1] = 7 lig-atom / 4 poc-atom / 1 density / 1 gradmag). Same recipe as
+#     config_train_atomblob_density_gradmag_channelvit_40m_v5 (which OVERFIT on the 78k
+#     CrossDocked set: val ρ≈0.573 but test ρ≈0.456 < fused 0.477).
+#   • A much BIGGER, cleaner PLINDER corpus  — 03a relaxed to maximum coverage (all PLINDER
+#     splits via our own leakage filter, no dedup, multi-ligand) + ligand atoms restricted
+#     to the 7 VoxBind channels + a per-complex 2Fo-Fc density-coverage gate on BOTH the
+#     ligand AND the pocket (03c). ~3x the old 20k PLINDER build.
+# Hypothesis: ChannelViT's extra patch-embed capacity needs more/cleaner data than 78k
+# CrossDocked to generalize; the big PLINDER set should close (or beat) the fused gap.
+#
+# Frozen precomputed crops (NOT on-the-fly resample): the resample loader parses full CCP4
+# maps per step and previously timed out the c10d rendezvous; frozen crops + bf16 amp is the
+# proven path to >80% GPU util on this box (the v5 ChannelViT run sustained it).
+
+debug: False
+wandb: True
+wandb_tags: [pretrain, atomblob_density_gradmag, channelvit, g7411, 40m, plinder, big,
+             covgate, ligvocab, invfreq, ligvdw, clip30, frozen_crops]
+num_workers: 16          # util-ceiling memory: 16/pf8 optimal; 24 + channels_last REGRESSED util
+prefetch_factor: 8
+resume: null
+resume_epoch: null
+exp_dir: exps
+exp_name: 260620_plinder_big_channelvit_cdg_40m_pretrain
+output_dir: null
+
+seed: 42
+num_epochs: 100
+aug: True
+bsz: 32                  # eff-batch 128 (4 GPU x 32 x accum 1), matches the v5 references
+accum_steps: 1
+lr: 1e-4
+wd: 5e-2
+
+# ── Throughput knobs (the >80% util target) ──────────────────────────────────────
+# bf16 amp is the single biggest util win (memory: ~92% util / ~110s/epoch). compile OFF
+# (this box has NO C compiler → inductor/Triton cannot build). channels_last + fused
+# optimizer REGRESSED util on these Conv3d patch-embeds — leave them off.
+amp:
+  enabled: true
+  dtype: bf16
+channels_last: false
+optimizer:
+  fused: false
+ema:
+  foreach: false
+compile:
+  enabled: false
+  backend: inductor
+  mode: default
+  fullgraph: false
+  dynamic: false
+
+input_mode: atomblob_density
+with_gradmag: true                 # + gradmag → 13 channels
+
+dset:
+  # PLINDER big frozen-crop corpus (03c precompute --tag _big). Frozen crops → light loader.
+  data_file: data_train_plinder_big.pt
+  crops_dir: /home1/irteam/VoxBind/voxbind/dataset/data/xray_crops_aligned_plinder_big
+  resample_dir: ""                 # frozen crops (NOT on-the-fly resample)
+  normalize: false                 # v5 arcsinh+z already applied on disk by 03c
+  ligand_radius: -1                # element-wise vdW radii (lig + poc)
+  use_xray: true
+  subset_xray_only: true           # required: val is carved from the train-crop pool
+  # subset_n is set AT LAUNCH = (n_train - 100) from xray_crops_aligned_plinder_big/stats.json
+  # (val=last 100 of the train-crop pool, disjoint from train). Leaving it null here would
+  # make val overlap train — the launcher MUST pass dset.subset_n=<n_train-100>.
+  subset_n: null
+  subset_val_n: 100
+
+model:
+  n_in_channels: 13                # 11 atoms + density + gradmag
+  head_style: patch_mlp            # per-patch 2-layer MLP recon head (~1.0M params)
+  head_hidden_dim: 67
+  head_depth: 2
+  # ── ChannelViT: per-channel-group patch embed ──────────────────────────────────
+  patch_embed_mode: channel_group
+  channel_groups: [7, 4, 1, 1]     # lig-atoms / poc-atoms / density / gradmag (sum=13)
+  pos_encoding: learnable          # REQUIRED for channel_group (RoPE not wired for grouped tokens)
+
+mae:
+  pretext_style: mae
+  density_source: xray
+  sigma_blur_a_lo: 0.30
+  sigma_blur_a_hi: 0.80
+  sigma_noise: 0.0
+  block_size: 8
+  mask_ratio: 0.60
+  mask_strategy: atom_biased
+  mask_atom_tau: 1.0
+  channel_weighting: inv_freq
+  channel_weight_clip_ratio: 30.0
+  density_channel_weight: 0.1
+  gradmag_channel_weight: 0.1
+  gradmag_reconstruct: true
+  gradmag_noise: false
+  atom_pos_weight: 10.0
+  atom_pos_thresh: 0.05
+  lambda_dens: 1.0
+  lambda_str: 1.0
+  struct_pos_weight: 100.0
+  struct_pos_thresh: 0.05
+  ema_decay: 0.999
+  grad_clip: 1.0
+  val_every: 1
+  ckpt_every: 20
+
+hydra:
+  run:
+    dir: ./${exp_dir}/${exp_name}
+  job:
+    config:
+      override_dirname:
+        kv_sep: ""
+        item_sep: "_"
+        exclude_keys: [
+            "exp_dir", "lr", vox.grid_dim, "wd", "resume", "resume_epoch", "wandb",
+            "num_workers", "exp_name", "output_dir", "out_dir",
+            "bsz", "accum_steps", "seed", "num_epochs", "aug", "pocket_radius",
+            "grid_dim", "debug"
+]

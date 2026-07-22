@@ -2,6 +2,7 @@ import torch
 
 from voxbind.dataset.crossdocked import DatasetCrossdocked
 from voxbind.dataset.crossdocked_density import DatasetCrossDockedDensity
+from voxbind.dataset.crossdocked_density_box import DatasetCrossDockedDensityBox
 from voxbind.dataset.crossdocked_xray import DatasetCrossDockedXray
 
 
@@ -24,7 +25,7 @@ def _make_dataset(cfg, split: str, aug: bool):
         # loading frozen crops; atoms still voxelize on-GPU. Empty → legacy precomputed-crops path.
         resample_dir = cfg.dset.get("resample_dir", "")
         if resample_dir:
-            return DatasetCrossDockedDensity(
+            density_kwargs = dict(
                 resample_dir=resample_dir,
                 data_dir=cfg.dset.data_dir,
                 split=split,
@@ -46,6 +47,13 @@ def _make_dataset(cfg, split: str, aug: bool):
                 small=cfg.debug,
                 cache_size=cfg.dset.get("cache_size", 32),
             )
+            # Fast precomputed-box path (opt-in): when dset.box_path is set, resample the 64³
+            # from a precomputed 96³ canonical box instead of the full ccp4 map — identical aug
+            # semantics, ~85% util vs OTF's ~40%. n_lig_ch/n_poc_ch flow through unchanged.
+            box_path = cfg.dset.get("box_path", "")
+            if box_path:
+                return DatasetCrossDockedDensityBox(box_path=box_path, **density_kwargs)
+            return DatasetCrossDockedDensity(**density_kwargs)
         return DatasetCrossDockedXray(
             data_dir=cfg.dset.data_dir,
             crops_dir=cfg.dset.get("crops_dir", ""),

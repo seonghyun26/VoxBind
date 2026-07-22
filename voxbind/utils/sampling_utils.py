@@ -3,6 +3,7 @@ from copy import deepcopy
 from rdkit import Chem
 import shutil
 import torch
+import numpy as np
 from omegaconf import OmegaConf
 from pyuul import utils
 from rdkit import RDLogger
@@ -271,6 +272,7 @@ def sample_from_file(
     steps: int = 100,
     max_steps: int = 100,
     mask_pocket: int = 0,
+    density_npy: str = None,
 ):
 
     makedir(save_dirname)
@@ -300,6 +302,12 @@ def sample_from_file(
     ligands_gt_vox = voxelizer.forward(ligands_gt, num_channels=7)
     pockets_vox = voxelizer.forward(pockets, num_channels=4)
 
+    # optional x-ray density conditioning (frozen-enc model): a precomputed
+    # (G,G,G) v5 crop -> (1,1,G,G,G); model.sample repeats+rotates it per chain.
+    density = None
+    if density_npy is not None:
+        density = torch.from_numpy(np.load(density_npy).astype(np.float32))[None, None].to(device)
+
     n_valid_mol, n_mol = 0, 0
     rdkmols, list_smiles = [], []
     while n_valid_mol < n_samples and n_mol < 500:
@@ -314,6 +322,7 @@ def sample_from_file(
             chain_init=chain_init,
             mask_pocket=mask_pocket > 0,
             n_chains=n_chains,
+            density=density,
         )
         mols = voxelizer.vox2mol(gen_vox_mols, center_coords=pocket["center_coords"])
 

@@ -1,0 +1,114 @@
+defaults:
+  - dset: crossdocked_xray
+  - model: atomblob_density_vit_mae_40m
+  - vox: default
+  - override hydra/job_logging: custom
+  - _self_
+
+# 40M ViT-MAE on PLINDER with ON-THE-FLY (resample) augmentation — reproduces shpark's
+# config_train_atomblob_density_gradmag_vit_mae_40m_invfreq_plinder_otf_p100, but THIS-BOX-SAFE
+# (amp+compile OFF — no C compiler here → inductor crashes; fp32 eager).
+# Built locally by scripts/build_plinder_otf.sh (03a select → 03b acquire → 03c precompute+resample),
+# reusing seonghyun's 66k maps; v5 stats as the canonical density scale.
+# 13 input channels: 7 lig + 4 poc (vdW radii) + 1 density + 1 gradmag. Density cropped from the
+# FULL deposited 2Fo-Fc map at the AUGMENTED pose each step (no Kabsch — PLINDER is deposited-frame).
+
+debug: False
+wandb: True
+wandb_tags: [pretrain, atomblob_density_gradmag, 40m, invfreq, plinder, otf, resample, on_the_fly_aug, ligvdw, clip30]
+num_workers: 28
+prefetch_factor: 16
+resume: null
+resume_epoch: null
+exp_dir: exps
+exp_name: 260617_plinder_otf_cdg_invfreq_p100_pretrain
+output_dir: null
+
+seed: 42
+num_epochs: 100
+aug: True
+bsz: 32
+accum_steps: 1
+lr: 1e-4
+wd: 5e-2
+
+# ── No C compiler on this box → torch.compile crashes; fp32 eager (matches the local resample run). ──
+amp:
+  enabled: false
+  dtype: bf16
+channels_last: false
+optimizer:
+  fused: false
+ema:
+  foreach: false
+compile:
+  enabled: false
+  backend: inductor
+  mode: default
+  fullgraph: false
+  dynamic: false
+
+input_mode: atomblob_density
+with_gradmag: true                 # + gradmag → 13 channels
+gradmag_on_gpu: true               # derive ‖∇ρ‖ on-GPU in the train step (off the CPU dataloader)
+
+dset:
+  # PLINDER on-the-fly: crop density from the FULL map at the augmented pose (DatasetCrossDockedDensity).
+  resample_dir: /home1/irteam/VoxBind/voxbind/dataset/data/xray_resample_plinder
+  data_file: data_train_plinder.pt                                   # PLINDER structures index (03c)
+  crops_dir: /home1/irteam/VoxBind/voxbind/dataset/data/xray_crops_aligned_plinder  # (ignored when resample_dir set; fallback)
+  normalize: false                 # resample.json recipe applied from raw map (v5 arcsinh+z); no local ±3σ
+  ligand_radius: -1                # element-wise vdW radii (lig + poc)
+  subset_xray_only: true
+  subset_n: null                   # null = full PLINDER train pool (p100); confirm vs build's reported sizing
+  subset_val_n: 100
+  use_xray: true
+  cache_size: 1024                 # large raw-CCP4 LRU/worker (2TB RAM) → avoid re-parsing maps
+
+model:
+  n_in_channels: 13                # 11 atoms + density + gradmag
+  head_style: patch_mlp
+  head_hidden_dim: 67
+  head_depth: 2
+
+mae:
+  pretext_style: mae
+  density_source: xray
+  sigma_blur_a_lo: 0.30
+  sigma_blur_a_hi: 0.80
+  sigma_noise: 0.0
+  block_size: 8
+  mask_ratio: 0.60
+  mask_strategy: atom_biased
+  mask_atom_tau: 1.0
+  channel_weighting: inv_freq
+  channel_weight_clip_ratio: 30.0
+  density_channel_weight: 0.1
+  gradmag_channel_weight: 0.1
+  gradmag_reconstruct: true
+  gradmag_noise: false
+  atom_pos_weight: 10.0
+  atom_pos_thresh: 0.05
+  lambda_dens: 1.0
+  lambda_str: 1.0
+  struct_pos_weight: 100.0
+  struct_pos_thresh: 0.05
+  ema_decay: 0.999
+  grad_clip: 1.0
+  val_every: 1
+  ckpt_every: 50
+
+hydra:
+  run:
+    dir: ./${exp_dir}/${exp_name}
+  job:
+    config:
+      override_dirname:
+        kv_sep: ""
+        item_sep: "_"
+        exclude_keys: [
+            "exp_dir", "lr", vox.grid_dim, "wd", "resume", "resume_epoch", "wandb",
+            "num_workers", "exp_name", "output_dir", "out_dir",
+            "bsz", "accum_steps", "seed", "num_epochs", "aug", "pocket_radius",
+            "grid_dim", "debug"
+]

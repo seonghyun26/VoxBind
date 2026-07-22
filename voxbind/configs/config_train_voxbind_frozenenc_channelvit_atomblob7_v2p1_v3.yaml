@@ -1,0 +1,94 @@
+defaults:
+  - dset: crossdocked_xray          # need xray_density for the conditioning encoder
+  - model: voxbind
+  - vox: default
+  - wjs: training
+  - override hydra/job_logging: custom
+  - _self_
+
+# v3 FUSION ablation of the frozen-encoder VoxBind (apo density).
+# Identical to config_train_voxbind_frozenenc_channelvit_atomblob7_v2p1_ligmask.yaml (apo,
+# density_mask_ligand=true) EXCEPT the FUSION: the frozen encoder ENTIRELY replaces the
+# trainable pocket_encoder. Pocket geometry + apo pocket-density are both carried by the frozen
+# ViT ([lig0, pocket, apo-density, apo-gradmag]); its output is fused into the ligand features via
+# a NORMAL-init context_proj (early fusion). The ligand stream is untouched.
+#
+# WHY: the pocket is currently encoded twice — by a tiny trainable pocket_encoder AND by the
+# frozen ViT (which already sees the pocket channels). v3 removes that redundancy: the rich frozen
+# representation carries the pocket, and a trainable context_proj adapts it. context_proj is
+# normal-init (ResidualBlock, identity skip) so the pocket+density context is present from step 0
+# — unlike the zero-init density_proj, which would leave the model blind to the pocket early once
+# pocket_encoder is gone.
+#
+# CLEAN A/B: vs #29 (config ..._ligmask, apo + default fusion) this changes ONLY the fusion — same
+# apo density, same σ, same frozen encoder, same ligand stream, same data, 350 ep. Ladder:
+# original (holo, default fusion) → #29 (apo, default fusion) → v3 (apo, frozen-replaces-pocket).
+#
+# Encoder: atomblob7 v2.1 ChannelViT (PLINDER v2.1, 107k, C+D+G, groups [7,4,1,1]), frozen.
+
+debug: False
+wandb: True
+wandb_tags: [voxbind, density_cond, frozen_encoder, channelvit, plinder, atomblob7, v2p1, cdg, full13_ligmasked, leak_removal, density_mask_ligand, fusion_v3, pocket_replaced]
+num_workers: 16
+prefetch_factor: 8
+resume: null
+resume_epoch: null
+exp_dir: exps
+exp_name: voxbind_frozenenc_atomblob7_v2p1_v3_sig${smooth_sigma}
+output_dir: null
+
+seed: 42
+num_epochs: 350
+aug: True
+bsz: 32                              # per-rank → eff 128 across 4 GPUs
+accum_steps: 1
+lr: 1e-5
+wd: 1e-2
+smooth_sigma: 0.9                    # matches #29 / frozen-enc baseline — clean A/B on fusion only
+
+with_gradmag: false
+
+dset:
+  crops_dir: /home1/irteam/VoxBind/voxbind/dataset/data/xray_crops_aligned_v5
+  normalize: false
+  pocket_radius: -1                 # element-wise vdW pocket atoms — matches the encoder
+  ligand_radius: 0.5
+  use_xray: true
+  subset_xray_only: true
+  cache_size: 32
+
+model:
+  with_density: true
+  density_encoder_type: vit
+  density_freeze: true              # frozen encoder (requires_grad=False, eval, dropout off)
+  density_pretrained_path: /home1/irteam/VoxBind/voxbind/exps/260701_plinder_v2p1_box_atomblob7_cdg_channelvit_full_pretrain/checkpoint_e0099.pth.tar
+  # apo density (leak-removed): ligand region blanked from density + gradmag
+  density_mask_ligand: true
+  density_mask_threshold: 0.2
+  density_mask_dilate: 2
+  # v3 fusion: frozen encoder replaces pocket_encoder (early fusion via normal-init context_proj)
+  fusion: v3
+  density_vit:
+    patch: 8
+    dim: 512
+    depth: 12
+    heads: 8
+    mlp_ratio: 4
+    dropout: 0.1
+    n_in_channels: 13               # full-voxel: 7 lig + 4 poc + density + gradmag (pocket is IN the frozen input)
+    patch_embed_mode: channel_group
+    channel_groups: [7, 4, 1, 1]
+
+hydra:
+  run:
+    dir: ./${exp_dir}/${exp_name}
+  job:
+    config:
+      override_dirname:
+        kv_sep: ""
+        item_sep: "_"
+        exclude_keys: [
+            "exp_dir", "smooth_sigma", "lr", vox.grid_dim, "wd", "resume", "resume_epoch", "wandb",
+            "num_workers", "exp_name", "output_dir", "pretrained_path", "out_dir",
+            "bsz", "accum_steps", "seed", "num_epochs", "aug", "pocket_radius", "grid_dim"
+]

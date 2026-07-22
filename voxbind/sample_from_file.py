@@ -41,6 +41,7 @@ def main(cfg: DictConfig) -> None:
         steps=cfg.wjs.steps,
         max_steps=cfg.wjs.max_steps,
         mask_pocket=cfg.wjs.mask_pocket,
+        density_npy=cfg.get("density_npy", None),
     )
     logger.info(f"| sampling took {(time.time() - t0):.2f}s")
 

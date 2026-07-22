@@ -1,0 +1,102 @@
+defaults:
+  - dset: crossdocked_xray
+  - model: atomblob_density_gradmag_cha_mae_40m
+  - vox: default
+  - override hydra/job_logging: custom
+  - _self_
+
+# ChA-MAEViT (arXiv:2503.19331) + ON-THE-FLY RESAMPLE augmentation.
+# Atom-blob + v5 X-ray density + gradmag (13 ch). Token-drop MAE: DCP masking +
+# the channel-aware decoder live INSIDE the model; the prefetcher only assembles
+# the clean 13-channel input. The ChA recon loss averages UNIFORMLY over masked
+# (group, patch) tokens — it has no inv_freq / per-channel weighting knobs, so the
+# "all channels uniform" requirement is the model's native behavior (no override
+# needed; the mae.channel_* knobs below are inert for this trainer).
+# Two differences vs the cha_mae v5 baseline (260612_cha_mae_gradmag_v5_pretrain):
+#   1) on-the-fly density resample (resample_dir → DatasetCrossDockedDensity).
+#   2) Tier-1 loader knobs (denoiser stopped, 128-core / 2TB box) to feed 4×H200.
+
+debug: False
+wandb: True
+wandb_tags: [pretrain, cha_mae, atomblob_density_gradmag, uniform, 40m, v5, ligvdw, crossdocked_xray, channelvit, memory_tokens, dcp, resample, on_the_fly_aug]
+# Resample loader is HEAVY (parses full CCP4 maps from a 54GB pool). 32 workers x4 ranks x
+# cache_size 1024 thrashed the box so hard the c10d rendezvous timed out before batch 0.
+# Safe tier: ~8 workers/rank, shallow prefetch, small per-worker LRU. Verify in isolation first.
+num_workers: 8
+prefetch_factor: 4
+resume: null
+resume_epoch: null
+exp_dir: exps
+exp_name: atomblob_density_gradmag_cha_mae_uniform_resample_v5
+output_dir: null
+
+seed: 42
+num_epochs: 100
+aug: True
+bsz: 32
+accum_steps: 1
+lr: 1e-4
+wd: 5e-2
+
+# ── Throughput knobs ──────────────────────────────────────────────────────────
+# amp (bf16) ON — the recon loss casts to fp32 internally, so it is safe. compile
+# is OFF: the channel-aware decoder uses torch.fft.rfftn (Fourier loss) which
+# graph-breaks under torch.compile, and this box has no C compiler anyway.
+amp:
+  enabled: true
+  dtype: bf16
+channels_last: false
+optimizer:
+  fused: false
+ema:
+  foreach: false
+compile:
+  enabled: false
+  backend: inductor
+  mode: default
+  fullgraph: false
+  dynamic: false
+
+input_mode: atomblob_density
+with_gradmag: true                 # + gradmag → 13 channels
+
+dset:
+  crops_dir: /home1/irteam/VoxBind/voxbind/dataset/data/xray_crops_aligned_v5   # (ignored when resample_dir is set)
+  # On-the-fly density: crop from the FULL map at the AUGMENTED pose (s3 --resample output).
+  resample_dir: /home1/irteam/VoxBind/voxbind/dataset/data/xray_resample_v5
+  normalize: false                 # v5 recipe applied from raw map (no local ±3σ)
+  ligand_radius: -1                # element-wise vdW radii (lig + poc)
+  subset_xray_only: true
+  subset_n: 78428
+  subset_val_n: 100
+  use_xray: true
+  cache_size: 96                   # small raw-CCP4 LRU/worker → caps RAM (8 workers x4 x96 maps)
+
+mae:
+  density_source: xray
+  sigma_blur_a_lo: 0.30            # synthetic-density blur range (unused on xray source)
+  sigma_blur_a_hi: 0.80
+  sigma_noise: 0.0
+  block_size: 8                    # MAEPrefetcher API (ChA ignores its block-mask output)
+  mask_ratio: 0.60                #   ″
+  mask_strategy: atom_biased      #   ″
+  gradmag_reconstruct: true
+  ema_decay: 0.999
+  grad_clip: 1.0
+  val_every: 1
+  ckpt_every: 50
+
+hydra:
+  run:
+    dir: ./${exp_dir}/${exp_name}
+  job:
+    config:
+      override_dirname:
+        kv_sep: ""
+        item_sep: "_"
+        exclude_keys: [
+            "exp_dir", "lr", vox.grid_dim, "wd", "resume", "resume_epoch", "wandb",
+            "num_workers", "exp_name", "output_dir", "out_dir",
+            "bsz", "accum_steps", "seed", "num_epochs", "aug", "pocket_radius",
+            "grid_dim", "debug"
+]

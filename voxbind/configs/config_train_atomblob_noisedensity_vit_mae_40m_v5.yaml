@@ -1,0 +1,106 @@
+defaults:
+  - dset: crossdocked_xray
+  - model: atomblob_density_vit_mae_40m
+  - vox: default
+  - override hydra/job_logging: custom
+  - _self_
+
+# DENSITY-ABLATION control (Exp 1): atoms + NOISE density, NO gradmag.
+# Identical to config_train_atomblob_density_vit_mae_40m_invfreq_v5.yaml (the
+# REAL-density 12ch run probed at 0.414) EXCEPT the density channel is i.i.d. noise
+# drawn from the v5 global empirical value distribution (00e_make_noise_crops),
+# carrying NO spatial signal. 12 channels: 7 lig + 4 poc (vdW) + 1 noise-density.
+# Tests whether real density's spatial CONTENT mattered (beyond its value histogram).
+
+debug: False
+wandb: True
+wandb_tags: [pretrain, atomblob_noisedensity, control, 40m, invfreq, v5, ligvdw, clip30, crossdocked_xray]
+num_workers: 16
+prefetch_factor: 8
+resume: null
+resume_epoch: null
+exp_dir: exps
+exp_name: atomblob_noisedensity_vit_mae_40m_v5
+output_dir: null
+
+seed: 42
+num_epochs: 100
+aug: True
+bsz: 32
+accum_steps: 1
+lr: 1e-4
+wd: 5e-2
+
+# bf16 autocast ON (no C compiler needed); torch.compile OFF (no C compiler on box).
+amp:
+  enabled: true
+  dtype: bf16
+channels_last: false    # channels_last_3d REGRESSED 3D-conv perf here (110s→134s); keep off
+optimizer:
+  fused: false          # keep vendored AdamW (matches the real-density 0.414/0.477 references)
+ema:
+  foreach: false
+compile:
+  enabled: false
+  backend: inductor
+  mode: default
+  fullgraph: false
+  dynamic: false
+
+input_mode: atomblob_density
+with_gradmag: false                # density only → 12 channels
+
+dset:
+  crops_dir: /home1/irteam/VoxBind/voxbind/dataset/data/xray_crops_aligned_v5_noise/density
+  normalize: false                 # noise crops already in v5-normalized value space
+  ligand_radius: -1                # element-wise vdW radii (lig + poc)
+  subset_xray_only: true
+  subset_n: 78428
+  subset_val_n: 100
+  use_xray: true
+
+model:
+  n_in_channels: 12                # 11 atoms + noise-density
+  head_style: patch_mlp
+  head_hidden_dim: 67
+  head_depth: 2
+
+mae:
+  pretext_style: mae
+  density_source: xray
+  sigma_blur_a_lo: 0.30
+  sigma_blur_a_hi: 0.80
+  sigma_noise: 0.0
+  block_size: 8
+  mask_ratio: 0.60
+  mask_strategy: atom_biased
+  mask_atom_tau: 1.0
+  channel_weighting: inv_freq
+  channel_weight_clip_ratio: 30.0
+  density_channel_weight: 0.1
+  gradmag_reconstruct: false       # no gradmag channel
+  atom_pos_weight: 10.0
+  atom_pos_thresh: 0.05
+  lambda_dens: 1.0
+  lambda_str: 1.0
+  struct_pos_weight: 100.0
+  struct_pos_thresh: 0.05
+  ema_decay: 0.999
+  grad_clip: 1.0
+  val_every: 1
+  ckpt_every: 20
+
+hydra:
+  run:
+    dir: ./${exp_dir}/${exp_name}
+  job:
+    config:
+      override_dirname:
+        kv_sep: ""
+        item_sep: "_"
+        exclude_keys: [
+            "exp_dir", "lr", vox.grid_dim, "wd", "resume", "resume_epoch", "wandb",
+            "num_workers", "exp_name", "output_dir", "out_dir",
+            "bsz", "accum_steps", "seed", "num_epochs", "aug", "pocket_radius",
+            "grid_dim", "debug"
+]
