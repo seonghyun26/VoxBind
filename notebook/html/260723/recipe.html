@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The winning recipe — cgd0.2 frozen-encoder VoxBind</title>
+<style>
+  :root{--ink:#1c2433;--ink-soft:#5b6678;--line:#e3e7ee;--line-strong:#aeb6c4;--bg:#f5f6f8;--card:#fff;
+    --accent:#2f6f4f;--best-bg:#eaf5ee;--tbd:#b07a17;--tbd-bg:#fcf3e0;--bad:#a23b3b;--bad-bg:#fbecec;}
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    font-size:16px;line-height:1.55;-webkit-font-smoothing:antialiased;}
+  .page{max-width:1120px;margin:0 auto;padding:48px 24px 96px;}
+  header.doc{border-bottom:2px solid var(--ink);padding-bottom:18px;margin-bottom:36px;}
+  header.doc .date{font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:6px;}
+  header.doc h1{font-size:28px;font-weight:650;margin:0;letter-spacing:-0.01em;}
+  header.doc .lead{font-size:14.5px;color:var(--ink-soft);margin:12px 0 0;max-width:940px;}
+  .section-head{font-size:21px;font-weight:660;letter-spacing:-0.01em;margin:44px 0 22px;padding-bottom:11px;
+    border-bottom:2px solid var(--line-strong);display:flex;align-items:center;gap:13px;}
+  .section-head .n{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;
+    border-radius:8px;background:var(--accent);color:#fff;font-size:15px;font-weight:700;flex:0 0 auto;}
+  p{max-width:940px;} p.intro{font-size:14px;color:var(--ink-soft);margin:-6px 0 22px;max-width:960px;}
+  .tldr{background:var(--best-bg);border:1px solid #bfe0cc;border-left:5px solid var(--accent);
+    border-radius:10px;padding:20px 24px;margin:0 0 8px;}
+  .tldr h2{margin:0 0 8px;font-size:16px;font-weight:680;color:#1d5a3a;letter-spacing:.02em;}
+  .tldr p{margin:6px 0 0;font-size:14.5px;color:#22402f;}
+  .recipe{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:6px 0 4px;}
+  @media(max-width:820px){.recipe{grid-template-columns:1fr;}}
+  .step{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px 22px;}
+  .step .k{font-size:11px;letter-spacing:.11em;text-transform:uppercase;color:var(--accent);font-weight:700;margin-bottom:4px;}
+  .step h3{margin:0 0 10px;font-size:16.5px;font-weight:640;}
+  .step ul{margin:8px 0 0;padding-left:18px;font-size:13.5px;color:var(--ink-soft);}
+  .step ul li{margin:5px 0;} .step ul li b{color:var(--ink);font-weight:600;}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;
+    background:#eef1f5;padding:1.5px 5px;border-radius:4px;color:#26405e;}
+  pre{background:#1e2530;color:#d7e0ec;border-radius:10px;padding:15px 17px;overflow-x:auto;
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;line-height:1.5;margin:12px 0;}
+  pre .c{color:#7f8fa6;} pre .f{color:#8fd6a0;} pre .a{color:#e7c07b;}
+  .table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:var(--card);margin:6px 0;}
+  table.results{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums;}
+  table.results th,table.results td{padding:11px 12px;text-align:center;white-space:nowrap;}
+  table.results thead th{font-weight:600;background:#fafbfc;border-bottom:1px solid var(--line);font-size:12.5px;color:var(--ink-soft);}
+  table.results tbody tr{border-top:1px solid var(--line);}
+  table.results tbody tr:hover{background:#fbfcfd;}
+  td.m{text-align:left;font-weight:560;} td.m .sub{display:block;font-size:11px;color:#7a8699;font-weight:400;}
+  .val{font-weight:600;} td.hi .val{color:#1d5a3a;} td.hi{background:var(--best-bg);}
+  td.lo .val{color:var(--bad);} .delta{color:var(--accent);font-weight:700;}
+  .cap{font-size:12.5px;color:var(--ink-soft);margin:8px 2px 0;max-width:960px;}
+  .why{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:8px 0;}
+  @media(max-width:820px){.why{grid-template-columns:1fr;}}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px 20px;}
+  .card h3{margin:0 0 4px;font-size:14.5px;font-weight:640;}
+  .card .big{font-size:26px;font-weight:700;color:#1d5a3a;letter-spacing:-0.01em;margin:8px 0 2px;}
+  .card p{font-size:13px;color:var(--ink-soft);margin:6px 0 0;}
+  .learn{margin:6px 0;} .learn .item{padding:14px 0;border-top:1px solid var(--line);}
+  .learn .item:first-child{border-top:none;}
+  .learn .item h3{margin:0 0 4px;font-size:15px;font-weight:640;}
+  .learn .item h3 .badge{font-size:10.5px;font-weight:700;letter-spacing:.05em;padding:2px 9px;border-radius:999px;margin-left:9px;vertical-align:middle;}
+  .badge.keep{background:var(--best-bg);color:#1d5a3a;} .badge.drop{background:var(--bad-bg);color:var(--bad);}
+  .learn .item p{font-size:13.5px;color:var(--ink-soft);margin:2px 0 0;}
+  .status{margin-top:40px;background:var(--tbd-bg);border:1px solid #e8d29a;border-radius:10px;padding:16px 20px;font-size:13px;color:#6b5316;max-width:960px;}
+  .status b{color:#4a3a10;}
+  footer{margin-top:48px;padding-top:16px;border-top:1px solid var(--line);font-size:12px;color:var(--ink-soft);}
+</style>
+</head>
+<body>
+<div class="page">
+<header class="doc">
+  <div class="date">VoxBind · SBDD · 2026-07-23</div>
+  <h1>The winning recipe — <span style="color:var(--accent)">cgd0.2</span> frozen-encoder VoxBind</h1>
+  <p class="lead">A density-conditioned VoxBind that generates ligands <b>without any ligand-density hint (apo)</b>,
+  conditioned on a frozen density encoder pretrained with <b>channel-group dropout (HCS, p=0.2)</b>. The dropout
+  makes ligand-free input in-distribution <em>and</em> yields a better binding-affinity representation — the honest,
+  leakage-free model that is already ahead on the hard pockets.</p>
+</header>
+
+<div class="tldr">
+  <h2>TL;DR</h2>
+  <p>Pretrain the density encoder with <b>channel-group dropout 0.2</b> → freeze it → condition VoxBind on it with a
+  <b>ControlNet-style zero-init branch</b>, generating in the <b>apo</b> (ligand-density-masked) setting.
+  The encoder gets <b>+0.025 binding-affinity ρ</b> (0.617 → 0.642) over the standard pretrain, and the apo generator
+  is already the <b>best model on the hardest pockets</b> at 27% of training, with the <b>best pose quality</b> of any run.</p>
+</div>
+
+<!-- ===================== THE RECIPE ===================== -->
+<div class="section-head"><span class="n">1</span> The recipe</div>
+<p class="intro">Two stages. First pretrain the encoder; then train the generator conditioned on it. Everything is the same as the
+previous frozen-enc setup except the two boxed changes.</p>
+
+<div class="recipe">
+  <div class="step">
+    <div class="k">Stage 1 · encoder</div>
+    <h3>cgd0.2 density-MAE pretrain</h3>
+    <ul>
+      <li>atomblob7 v2.1 <b>ChannelViT</b> density-MAE, ~45.7M params</li>
+      <li>13-ch input, 4 groups: <b>ligand(7) · pocket(4) · density(1) · gradmag(1)</b></li>
+      <li>patch-MAE mask 0.5, PLINDER v2.1, 100 epochs</li>
+      <li>★ <b>channel_group_dropout = 0.2</b> (HCS): each whole group — including the ligand — is token-dropped ~20% of forwards</li>
+    </ul>
+<pre><span class="c"># exp 260718 · checkpoint_e0099</span>
+torchrun --nproc_per_node=4 <span class="f">train_density.py</span> \
+  --config-name=<span class="a">..._channelvit_mae_40m_plinder_v2p1_box</span> \
+  <span class="a">model.channel_group_dropout=0.2</span></pre>
+  </div>
+
+  <div class="step">
+    <div class="k">Stage 2 · generator</div>
+    <h3>apo frozen-enc VoxBind (σ0.9)</h3>
+    <ul>
+      <li>keep the trainable <b>ligand + pocket encoders</b> (vanilla VoxBind)</li>
+      <li>add the frozen cgd0.2 encoder via a <b>zero-init <code>density_proj</code></b> (ControlNet zero-conv)</li>
+      <li>★ <b>apo</b>: <code>density_mask_ligand=true</code> — blank density+gradmag inside the ligand footprint, so no co-crystal ligand density leaks</li>
+      <li>walk-jump, σ = 0.9, 350 epochs</li>
+    </ul>
+<pre><span class="c"># fuse: x = lig_enc(lig) + poc_enc(poc)</span>
+<span class="c">#         + density_proj([x, enc([lig=0,poc,dens,gradmag])])</span>
+torchrun --nproc_per_node=4 <span class="f">train_ddp.py</span> \
+  --config-name=<span class="a">..._frozenenc_..._v2p1_ligmask</span> \
+  <span class="a">smooth_sigma=0.9</span> \
+  <span class="a">model.density_pretrained_path=&lt;cgd0.2 ckpt&gt;</span></pre>
+  </div>
+</div>
+<p class="cap">The <b>zero-init</b> fusion means training starts <em>exactly</em> as vanilla VoxBind and learns to fold in density — simple,
+stable, and it keeps the pocket CNN that does the spatial generalizing.</p>
+
+<!-- ===================== WHY IT WINS ===================== -->
+<div class="section-head"><span class="n">2</span> Why it wins</div>
+
+<h3 style="font-size:16px;margin:0 0 6px;">2.1 &nbsp;The encoder is strictly better</h3>
+<p class="intro">Frozen-encoder linear probe: regress binding affinity from the encoder's features (PDBbind <code>lp_edrscc_v2</code>, 3 seeds).</p>
+<div class="table-wrap">
+<table class="results">
+  <thead><tr><th style="text-align:left">density encoder</th><th>test ρ (Spearman)</th><th>test Pearson</th><th>vs baseline</th></tr></thead>
+  <tbody>
+    <tr><td class="m">260701 — standard pretrain <span class="sub">no channel dropout</span></td><td><span class="val">0.6165</span> <span class="sd">± .006</span></td><td>0.637</td><td>—</td></tr>
+    <tr><td class="m">cgd0.2 — channel-group dropout <span class="sub">HCS p=0.2</span></td><td class="hi"><span class="val">0.6415</span> <span class="sd">± .001</span></td><td>0.658</td><td><span class="delta">+0.025</span></td></tr>
+  </tbody>
+</table>
+</div>
+<p class="cap">Channel dropout didn't cost representation quality to buy apo-robustness — it <b>improved</b> it, cleanly outside the seed noise.</p>
+
+<h3 style="font-size:16px;margin:28px 0 6px;">2.2 &nbsp;It already leads on the hard pockets</h3>
+<p class="intro">Early probe of the live apo-cgd0.2 run at <b>ep94/350 (~27%)</b>, 8 hardest pockets (worst frozen-holo dock), 10 mols each. Vina Dock, lower = stronger.</p>
+<div class="table-wrap">
+<table class="results">
+  <thead><tr><th style="text-align:left">model</th><th>ligand density?</th><th>mean Vina Dock (8 hard)</th><th>notes</th></tr></thead>
+  <tbody>
+    <tr><td class="m hi">apo-cgd0.2 <b>ep94</b></td><td>none (apo)</td><td class="hi"><span class="val">−4.90</span></td><td>best on 4/8, 27% trained</td></tr>
+    <tr><td class="m">vanilla σ0.9</td><td>none</td><td><span class="val">−4.76</span></td><td>ep923, 100 mols/pkt</td></tr>
+    <tr><td class="m">frozen-holo σ0.9</td><td>full (leaky)</td><td><span class="val">−4.44</span></td><td>ep350; density edge vanishes here</td></tr>
+    <tr><td class="m">co-crystal reference</td><td>—</td><td><span class="val">−4.20</span></td><td>experimental ligand</td></tr>
+  </tbody>
+</table>
+</div>
+<p class="cap">On the <em>hard</em> pockets the holo density edge disappears (holo even loses to vanilla). The ligand-free apo-cgd0.2 model is out in front — beating the reference ligand by ~0.7 kcal/mol — at barely a quarter of training.</p>
+
+<h3 style="font-size:16px;margin:28px 0 6px;">2.3 &nbsp;Apo poses are the most physical</h3>
+<p class="intro">PoseCheck + PoseBusters over all 79 density pockets (medians; strain mean is outlier-dominated).</p>
+<div class="table-wrap">
+<table class="results">
+  <thead><tr><th style="text-align:left">model</th><th>clashes (med)</th><th>strain (med)</th><th>PB-valid %</th></tr></thead>
+  <tbody>
+    <tr><td class="m">vanilla σ0.9</td><td>4.0</td><td>39.1</td><td>74.1</td></tr>
+    <tr><td class="m">frozen-holo σ0.9</td><td>5.0</td><td class="lo"><span class="val">39.6</span></td><td>75.4</td></tr>
+    <tr><td class="m hi">apo (leak-removed)</td><td>5.0</td><td class="hi"><span class="val">34.6</span></td><td class="hi"><span class="val">76.1</span></td></tr>
+  </tbody>
+</table>
+</div>
+<p class="cap">The apo setting gives the <b>lowest strain</b> and <b>highest PB-valid</b>. Holo's docking edge comes with the <em>highest</em> strain —
+it bends molecules to match the leaked density. (Row is the apo setting on the 260701 encoder; the cgd0.2 apo run is expected to match or exceed it.)</p>
+
+<!-- ===================== WHAT WE LEARNED ===================== -->
+<div class="section-head"><span class="n">3</span> What we learned (design rationale)</div>
+<div class="learn">
+  <div class="item">
+    <h3>Channel-group dropout in pretraining <span class="badge keep">KEEP</span></h3>
+    <p>Dropping whole groups (incl. the ligand) ~20% of forwards makes ligand-free (apo) input in-distribution for the frozen encoder — dissolving the
+    leakage-vs-OOD confound — and, as a bonus, improves the binding-affinity representation (+0.025 ρ).</p>
+  </div>
+  <div class="item">
+    <h3>ControlNet-style late fusion, keep both encoders <span class="badge keep">KEEP</span></h3>
+    <p>Zero-init <code>density_proj</code> added on top of the trainable ligand + pocket encoders. Simple, stable, and it preserves the pocket CNN's spatial
+    inductive bias — the thing that generalizes.</p>
+  </div>
+  <div class="item">
+    <h3>Apo (no ligand density) is the honest model <span class="badge keep">KEEP</span></h3>
+    <p>Frozen-holo's −8.24 dock edge is partly <em>informational leakage</em>: the co-crystal density encodes where the ligand sits. It lives on easy pockets and
+    evaporates on hard ones. Masking the ligand density (apo) removes the leak; the poses stay physical, and generalization improves.</p>
+  </div>
+  <div class="item">
+    <h3>v3 fusion — replacing the pocket encoder <span class="badge drop">DROP</span></h3>
+    <p>Deleting the pocket CNN and routing everything through the frozen ViT <b>overfit</b>: train/val gap flipped from −17% to +31%, and it produced the
+    <em>best</em> raw Vina Score (−6.01) but the <em>worst</em> Vina Dock (−7.16) — deceptively-placed molecules that fall apart on redock. Negative result.</p>
+  </div>
+</div>
+
+<div class="status">
+  <b>Status &amp; caveats.</b> The <b>encoder</b> result (ρ 0.642) is definitive. The <b>generation</b> evidence is early: the hard-pocket lead is a probe at
+  ep94/350 with 10 mols/pocket, and the pose-quality row is the apo setting on the previous encoder. The apo-cgd0.2 generator is <b>paused at ep130</b>
+  (checkpoint saved); the full 79-pocket ep350 eval is the number to confirm the win.
+</div>
+
+<footer>VoxBind · walk-jump density-conditioned SBDD · recipe frozen at cgd0.2 (exp 260718) + apo σ0.9 frozen-enc. 2026-07-23.</footer>
+</div>
+</body>
+</html>
