@@ -74,6 +74,44 @@ def add_atom_column(table):
     return head + body
 
 
+# Our reference-free DecompDiff reproduction (svr9, subpocket + num_atoms_mode=prior, N=100, Vina full).
+# Added as a NEW row right after the paper DecompDiff row (paper values kept). High aff./Diversity/
+# Sim.ref were not emitted by DecompDiff's eval script → "—". #Atoms 16.1/15.0 (small → weak docking).
+_DECOMP_REPRO_ROW = """
+          <tr>
+            <td class="col-method">DecompDiff <span class="tag repro">reproduced</span><span style="display:block;font-size:11px;color:#7a8699">ref-free &middot; subpocket-prior &middot; our run &middot; N=100</span></td>
+            <td class="metric div-major"><span class="val">&minus;2.48</span></td>
+            <td class="metric"><span class="val">&minus;3.51</span></td>
+            <td class="metric div-minor"><span class="val">&minus;4.44</span></td>
+            <td class="metric"><span class="val">&minus;4.70</span></td>
+            <td class="metric div-minor"><span class="val">&minus;5.83</span></td>
+            <td class="metric"><span class="val">&minus;6.02</span></td>
+            <td class="metric div-major"><span class="sd">&mdash;</span></td>
+            <td class="metric"><span class="sd">&mdash;</span></td>
+            <td class="metric div-minor"><span class="val">0.52</span></td>
+            <td class="metric"><span class="val">0.51</span></td>
+            <td class="metric div-minor"><span class="val">0.68</span></td>
+            <td class="metric"><span class="val">0.68</span></td>
+            <td class="metric div-minor"><span class="sd">&mdash;</span></td>
+            <td class="metric"><span class="sd">&mdash;</span></td>
+            <td class="metric div-major"><span class="sd">&mdash;</span></td>
+            <td class="metric"><span class="sd">&mdash;</span></td>
+            <td class="metric div-major"><span class="val">16.1</span></td>
+            <td class="metric"><span class="val">15.0</span></td>
+          </tr>"""
+
+
+def inject_decompdiff_repro(table):
+    """Insert our reproduced-DecompDiff row right after the paper DecompDiff row (idempotent)."""
+    if "tag repro" in table:
+        return table
+    i = table.find("DecompDiff")
+    if i < 0:
+        return table
+    j = table.index("</tr>", i) + len("</tr>")
+    return table[:j] + _DECOMP_REPRO_ROW + table[j:]
+
+
 sys.path.insert(0, os.path.join(HERE, "260715"))
 import build_appendixB_bar as bar                                 # noqa: E402  (METHODS, svg(), legend())
 import build_regression_baseline as reg                           # noqa: E402  (read_cheapnet())
@@ -89,21 +127,53 @@ SPLITS = [
     ("lp_edrscc_v2_cl123", "+CL1+CL2+CL3",    733),
 ]
 
+# train / val / test counts per scheme (from splits/MANIFEST.json) — shown in the Table 1 caption.
+COUNTS = {
+    "lp_edrscc_v2":       (3850, 817, 1320),
+    "lp_edrscc_v2_cl1":   (2721, 680, 1166),
+    "lp_edrscc_v2_cl12":  (2643, 659, 1149),
+    "lp_edrscc_v2_cl123": (1559, 410,  733),
+}
+
 # ── method metadata (v2 values + colors from bar.METHODS; + HonestAffinity) ───
 V2 = {name: {"r": r, "rho": rho, "rmse": rmse}
       for (name, color, flag, r, rho, rmse) in bar.METHODS}
 COLOR = {name: color for (name, color, *_ ) in bar.METHODS}
 FLAG = {name: flag for (name, color, flag, *_ ) in bar.METHODS}
-COLOR["HonestAffinity"] = "#00b894"
+COLOR["HonestAffinity"] = bar.PALETTE[11]     # distinct cyan from the shared palette
 FLAG["HonestAffinity"] = "new"
+COLOR["IPNet (frozen)"] = bar.PALETTE[13]      # lavender — IPDiff BAPNet, frozen (leaked)
+COLOR["IPNet (scratch)"] = bar.PALETTE[14]     # pink — IPDiff BAPNet, from scratch (clean)
+COLOR["Nesso-1"] = "#00838f"                   # teal — Nesso-1 cofolding (leaked: PDBbind-trained)
 
 TYPE = {  # display tag per method — three categories, distinctly colored
     "HBGSA": "supervised", "EGNN": "supervised", "EGNN + TargetDiff": "supervised",
     "GET": "supervised", "ProFSA": "pretrained", "CheapNet": "supervised", "BindNet": "supervised",
     "HonestAffinity": "supervised", "AEV-PLIG": "supervised", "DSMBind": "zero-shot",
+    "IPNet (frozen)": "pretrained", "IPNet (scratch)": "supervised", "Nesso-1": "zero-shot",
     "C": "pretrained", "C+D+G": "pretrained",
 }
 TAGCLASS = {"supervised": "supervised", "pretrained": "pretrained", "zero-shot": "zeroshot"}
+
+# Methods trained on affinity data that OVERLAPS our PDBbind test set → their scores are a
+# leaked ceiling, not clean generalization. Flagged with a "leaked" badge AND excluded from the
+# best/second ranking (they'd otherwise win on memorization). Nesso-1: trained on PDBbind+BindingDB+
+# ChEMBL (all of lp_edrscc_v2 is in it). IPNet (frozen): BAPNet supervised on PDBbind-v2016 affinity.
+LEAKED = {"Nesso-1", "IPNet (frozen)"}
+
+# Frozen pretrained model each method leans on (orthogonal to the supervised/pretrained/zero-shot
+# TYPE tag — e.g. HonestAffinity is supervised-trained but on top of a frozen ESM backbone).
+# ESM users get a highlighted badge; other frozen pretrained backbones a neutral one. Methods
+# trained from scratch on our data (GET/CheapNet/AEV-PLIG/HBGSA/BindNet/EGNN/IPNet-scratch) → none.
+BACKBONE = {
+    "HonestAffinity": ("ESM-2 650M",   "esm"),       # frozen per-residue ESM-2-650M seq embeddings
+    "DSMBind":        ("ESM-2 3B",     "esm"),        # frozen per-residue ESM-2-3B pocket embeddings
+    "ProFSA":         ("ProFSA-pre",   "backbone"),   # frozen pretrained pocket encoder
+    "IPNet (frozen)": ("affinity-pre", "backbone"),   # BAPNet supervised-pretrained on PDBbind affinity
+    "C":              ("voxel-MAE",    "backbone"),    # our SSL-pretrained voxel ViT (frozen)
+    "C+D+G":          ("voxel-MAE",    "backbone"),
+    "Nesso-1":        ("ESM-2",        "esm"),         # cofolding trunk on ESM-2 protein embeddings
+}
 
 # Methods whose CL cells are literature/external numbers we do NOT reproduce per-split
 # → render "—" instead of "running". Empty: the whole grid is being reproduced this campaign.
@@ -113,20 +183,18 @@ EXTERNAL = set()
 # suppress it (show "running") until we train them on our splits (base/get, model_type EGNN).
 PAPER_ONLY = {"EGNN", "EGNN + TargetDiff"}
 
-# method render order: bar order, with HonestAffinity inserted after BindNet
-ORDER = []
-for (name, *_ ) in bar.METHODS:
-    ORDER.append(name)
-    if name == "BindNet":
-        ORDER.append("HonestAffinity")
+# method render order = bar.METHODS order (now the full 15: HonestAffinity, IPNet frozen/scratch and
+# Nesso-1 are first-class entries in bar.METHODS so Table 1 and the bar charts share ONE source).
+ORDER = [name for (name, *_ ) in bar.METHODS]
 
 # ── CASF-2016 evaluation columns (all methods trained on lp_edrscc_v2 TRAIN, tested on CASF) ──
 # leaky = full CASF-2016 core (214 ED-avail, 90 in v2-train → inflated); nontrain = the 124 held out.
 # Results in base/_casf/{key}.json with {"leaky":{pearson:{mean,std},...}, "nontrain":{...}}.
 CASF_COLS = [("leaky", "CASF-2016", 214), ("nontrain", "CASF-2016 &minus;train", 124)]
-CASF_KEY = {"C": "C", "C+D+G": "CDG", "DSMBind": "DSMBind", "GET": "GET", "EGNN": "EGNN",
+CASF_KEY = {"C": "C_100m_mask075_coords", "C+D+G": "CDG_100m_mask075", "DSMBind": "DSMBind", "GET": "GET", "EGNN": "EGNN",
             "EGNN + TargetDiff": "EGNN_TD", "CheapNet": "CheapNet", "BindNet": "BindNet",
-            "AEV-PLIG": "AEV", "HBGSA": "HBGSA", "ProFSA": "ProFSA", "HonestAffinity": "HonestAffinity"}
+            "AEV-PLIG": "AEV", "HBGSA": "HBGSA", "ProFSA": "ProFSA", "HonestAffinity": "HonestAffinity",
+            "IPNet (frozen)": "IPNet_frozen", "IPNet (scratch)": "IPNet_retrain", "Nesso-1": "Nesso"}
 
 
 def load_casf(method, which):
@@ -150,20 +218,23 @@ def load_casf(method, which):
 
 _RESULTS_DIR = os.path.join(REPO, "voxbind", "dataset", "data", "pdbbind", "results")
 
-# VoxBind frozen-encoder probe CSVs per (method, split) — C = coords ViT (otf_coords_mask050),
-# C+D+G = ChannelViT[7,4,2] (260623_ar_cvit_c1_g742). v2 = canonical CSVs; CL = this campaign.
+# VoxBind frozen-encoder probe CSVs per (method, split) — C = coords-only 100M ChannelViT MATCHED to
+# C+D+G (260723_ar_cvit_100m_v2_mask075_coords, e49): same 100M/PLINDER-v2/mask075 recipe, density
+# channels dropped → C vs C+D+G is now an apples-to-apples density ablation (Δρ +0.048 on v2),
+# C+D+G = best recipe: 100M ChannelViT, PLINDER-v2 pretrain, 75% mask (260705_ar_cvit_100m_v2_mask075,
+# epoch 49) — ρ 0.644 on v2, re-probed consistently on all CL tiers + CASF (supersedes g742 0.637).
 PROBE_CSV = {
     "C": {
-        "lp_edrscc_v2":       "probe_results_e99_v5_lp_edrscc_v2split_otf_coords_mask050.csv",
-        "lp_edrscc_v2_cl1":   "probe_results_e99_v5_lp_edrscc_v2_cl1split_c_coords.csv",
-        "lp_edrscc_v2_cl12":  "probe_results_e99_v5_lp_edrscc_v2_cl12split_c_coords.csv",
-        "lp_edrscc_v2_cl123": "probe_results_e99_v5_lp_edrscc_v2_cl123split_c_coords.csv",
+        "lp_edrscc_v2":       "probe_results_e49_v5_lp_edrscc_v2split_260723_ar_cvit_100m_v2_mask075_coords.csv",
+        "lp_edrscc_v2_cl1":   "probe_results_e49_v5_lp_edrscc_v2_cl1split_260723_ar_cvit_100m_v2_mask075_coords.csv",
+        "lp_edrscc_v2_cl12":  "probe_results_e49_v5_lp_edrscc_v2_cl12split_260723_ar_cvit_100m_v2_mask075_coords.csv",
+        "lp_edrscc_v2_cl123": "probe_results_e49_v5_lp_edrscc_v2_cl123split_260723_ar_cvit_100m_v2_mask075_coords.csv",
     },
     "C+D+G": {
-        "lp_edrscc_v2":       "probe_results_e99_v5_lp_edrscc_v2split_260623_ar_cvit_c1_g742.csv",
-        "lp_edrscc_v2_cl1":   "probe_results_e99_v5_lp_edrscc_v2_cl1split_cdg_g742.csv",
-        "lp_edrscc_v2_cl12":  "probe_results_e99_v5_lp_edrscc_v2_cl12split_cdg_g742.csv",
-        "lp_edrscc_v2_cl123": "probe_results_e99_v5_lp_edrscc_v2_cl123split_cdg_g742.csv",
+        "lp_edrscc_v2":       "probe_results_e49_v5_lp_edrscc_v2split_260705_ar_cvit_100m_v2_mask075.csv",
+        "lp_edrscc_v2_cl1":   "probe_results_e49_v5_lp_edrscc_v2_cl1split_260705_ar_cvit_100m_v2_mask075.csv",
+        "lp_edrscc_v2_cl12":  "probe_results_e49_v5_lp_edrscc_v2_cl12split_260705_ar_cvit_100m_v2_mask075.csv",
+        "lp_edrscc_v2_cl123": "probe_results_e49_v5_lp_edrscc_v2_cl123split_260705_ar_cvit_100m_v2_mask075.csv",
     },
 }
 
@@ -183,6 +254,9 @@ METHOD_PATH = {
     "HBGSA":             lambda s: f"base/hbgsa/results/hbgsa_{SHORT[s]}.json",
     "HonestAffinity":    lambda s: f"base/honestaffinity/results/results_{s}.json",
     "DSMBind":           lambda s: f"base/dsmbind/results/dsmbind_probe_{s}.json",
+    "IPNet (frozen)":    lambda s: f"base/ipdiff/_edrscc/results_IPNet_frozen_{s}.json",
+    "IPNet (scratch)":   lambda s: f"base/ipdiff/_edrscc/results_IPNet_retrain_{s}.json",
+    "Nesso-1":           lambda s: f"base/nesso/_edrscc/results_Nesso_{s}.json",
 }
 
 
@@ -260,22 +334,91 @@ def load(method, split):
     return None                                               # CL cells: pending this campaign
 
 
+# ── % within N log units (|pred − exp pK| < N) — a TerraBind/Nesso-style success-rate metric,
+# computed from per-complex predictions on the v2 TEST set. Only methods with saved pK-scale
+# predictions are covered; others store only summary metrics (GET/CheapNet/HBGSA/BindNet/
+# HonestAffinity/IPNet/EGNN) or an uncalibrated energy (DSMBind) → shown as "—" (need a pred dump).
+# Probe rows (C, C+D+G) are single-seed (scatter seed 0); the others are their reported predictor.
+PRED_FILES = {  # method: (relpath, true_col, pred_col)
+    "C":        ("voxbind/dataset/data/pdbbind/results/scatter/scatter_c_100m_mask075_coords_v2.csv", "y_true", "y_pred"),
+    "C+D+G":    ("voxbind/dataset/data/pdbbind/results/scatter/scatter_cdg_100m_mask075_v2.csv", "y_true", "y_pred"),
+    "Nesso-1":  ("base/nesso/_edrscc/predictions_v2.csv", "pK", "pred_pIC50"),
+    "AEV-PLIG": ("base/aevplig/results/aevplig_edrscc_preds.csv", "truth", "pred_ensemble"),
+}
+
+
+def pct_within(method, thresh=2.0):
+    """Percent of v2 test points with |pred − exp pK| < thresh (and N), or None if no preds."""
+    import csv as _csv
+    spec = PRED_FILES.get(method)
+    if not spec:
+        return None
+    path = os.path.join(REPO, spec[0])
+    if not os.path.exists(path):
+        return None
+    tc, pc = spec[1], spec[2]
+    n = w = 0
+    for r in _csv.DictReader(open(path)):
+        try:
+            t, p = float(r[tc]), float(r[pc])
+        except (KeyError, ValueError, TypeError):
+            continue
+        n += 1
+        w += abs(p - t) < thresh
+    return (100.0 * w / n, n) if n else None
+
+
+def within_table():
+    """Compact TerraBind-style table: % of v2 test within 2 (and 1) log units, methods with preds."""
+    rows = []
+    for m in ORDER:
+        w2 = pct_within(m, 2.0)
+        if not w2:
+            continue
+        w1 = pct_within(m, 1.0)
+        rows.append((m, w2[0], w1[0] if w1 else None, w2[1]))
+    rows.sort(key=lambda x: -x[1])
+    best2 = max((r[1] for r in rows), default=None)
+    body = []
+    for m, p2, p1, n in rows:
+        b = ' style="font-weight:700"' if p2 == best2 else ""
+        p1s = f"{p1:.1f}" if p1 is not None else "&mdash;"
+        body.append(f'<tr>{method_cell(m)}'
+                    f'<td class="metric"{b}>{p2:.1f}</td><td class="metric">{p1s}</td>'
+                    f'<td class="metric"><span class="sd">{n}</span></td></tr>')
+    return "\n          ".join(body)
+
+
 def best_per_col():
     """best method per column among present values (r/ρ max, RMSE min); LP splits + CASF."""
     best = {}
     for split, _, _ in SPLITS:
         for metric, hi in (("r", True), ("rho", True), ("rmse", False)):
             vals = [(m, load(m, split)[metric][0]) for m in ORDER
-                    if load(m, split) and load(m, split).get(metric) and load(m, split)[metric][0] is not None]
+                    if m not in LEAKED and load(m, split) and load(m, split).get(metric) and load(m, split)[metric][0] is not None]
             if vals:
                 best[(split, metric)] = (max if hi else min)(vals, key=lambda x: x[1])[0]
     for which, _, _ in CASF_COLS:
         for metric, hi in (("r", True), ("rho", True), ("rmse", False)):
             vals = [(m, load_casf(m, which)[metric][0]) for m in ORDER
-                    if load_casf(m, which) and load_casf(m, which).get(metric) and load_casf(m, which)[metric][0] is not None]
+                    if m not in LEAKED and load_casf(m, which) and load_casf(m, which).get(metric) and load_casf(m, which)[metric][0] is not None]
             if vals:
                 best[("casf", which, metric)] = (max if hi else min)(vals, key=lambda x: x[1])[0]
     return best
+
+
+def rank_per_col():
+    """{(split, metric): (best_method, second_method)} over the LP split columns.
+    r/ρ higher = better, RMSE lower = better. second is None if <2 values present."""
+    out = {}
+    for split, _, _ in SPLITS:
+        for metric, hi in (("r", True), ("rho", True), ("rmse", False)):
+            vals = [(m, load(m, split)[metric][0]) for m in ORDER
+                    if m not in LEAKED and load(m, split) and load(m, split).get(metric) and load(m, split)[metric][0] is not None]
+            vals.sort(key=lambda x: x[1], reverse=hi)
+            if vals:
+                out[(split, metric)] = (vals[0][0], vals[1][0] if len(vals) > 1 else None)
+    return out
 
 
 def slice_between(text, start, end, frm=0, include_end=True):
@@ -313,9 +456,13 @@ def pending_cell(external, div=False):
     return f'<td class="{cls}">{inner}</td>'
 
 
-def metric_cell(v, best, divcls):
-    """One metric td with an explicit divider class ('' | 'div-major' | 'div-block')."""
-    cls = "metric" + (f" {divcls}" if divcls else "") + (" best" if best else "")
+def metric_cell(v, rank, divcls):
+    """One metric td. rank: True|'best' → best (bold), 'second' → underline, else none."""
+    cls = "metric" + (f" {divcls}" if divcls else "")
+    if rank is True or rank == "best":
+        cls += " best"
+    elif rank == "second":
+        cls += " second"
     if v is None or v[0] is None:
         return f'<td class="{cls}"><span class="na">&mdash;</span></td>'
     m, sd = v
@@ -336,7 +483,13 @@ def method_cell(name):
     border = ";border:2px solid #000" if flag is True else ""   # best marker only; new rows not highlighted
     sw = (f'<span style="display:inline-block;width:10px;height:10px;border-radius:3px;'
           f'background:{color};margin-right:7px;vertical-align:middle{border}"></span>')
-    return f'<td class="col-method">{sw}{name}<span class="tag {tagc}">{typ}</span></td>'
+    bb = BACKBONE.get(name)
+    bb_html = (f'<span class="tag {bb[1]}" title="frozen pretrained backbone">{bb[0]}</span>'
+               if bb else "")
+    leak_html = ('<span class="tag leaked" title="trained on affinity data overlapping our PDBbind '
+                 'test set &mdash; leaked ceiling, excluded from best/second ranking">leaked</span>'
+                 if name in LEAKED else "")
+    return f'<td class="col-method">{sw}{name}<span class="tag {tagc}">{typ}</span>{bb_html}{leak_html}</td>'
 
 
 def affinity_table_head():
@@ -352,7 +505,7 @@ def affinity_table_head():
 
 
 def affinity_rows():
-    best = best_per_col()
+    rank = rank_per_col()
     rows = []
     for name in ORDER:
         external = name in EXTERNAL
@@ -362,9 +515,11 @@ def affinity_rows():
             for k, metric in enumerate(("r", "rho", "rmse")):
                 divcls = "div-major" if k == 0 else ""
                 if d is None or d.get(metric) is None or d[metric][0] is None:
-                    tds.append(pending2(divcls) if not external else metric_cell(None, False, divcls))
+                    tds.append(pending2(divcls) if not external else metric_cell(None, None, divcls))
                 else:
-                    tds.append(metric_cell(d[metric], best.get((split, metric)) == name, divcls))
+                    bm, sm = rank.get((split, metric), (None, None))
+                    rk = "best" if name == bm else ("second" if name == sm else None)
+                    tds.append(metric_cell(d[metric], rk, divcls))
         rowcls = ' class="grp-top"' if name == "C" else ""     # divider before probe group; no new-row highlight
         rows.append(f"<tr{rowcls}>" + "".join(tds) + "</tr>")
     return "\n          ".join(rows)
@@ -443,11 +598,65 @@ def casf_leakage_svg():
     return "\n      ".join(o)
 
 
+# ── per-tier (CL) bar charts — Figure-1 style, values from load() ─────────────
+# Widened common axes shared across the three tiers (so the lowest baselines aren't
+# clipped and tiers stay visually comparable); reuses bar.svg()'s exact rendering.
+CL_PANELS = [
+    dict(idx=0, key=0, title="Test Pearson r",      vmin=0.40, vmax=0.72, ticks=[0.40, 0.45, 0.50, 0.55, 0.60, 0.65, 0.70]),
+    dict(idx=1, key=1, title="Test Spearman &rho;", vmin=0.40, vmax=0.72, ticks=[0.40, 0.45, 0.50, 0.55, 0.60, 0.65, 0.70]),
+    dict(idx=2, key=2, title="Test RMSE",           vmin=1.30, vmax=1.70, ticks=[1.30, 1.40, 1.50, 1.60, 1.70]),
+]
+
+
+def cl_bar_svg(split):
+    """Figure-1-style 3-panel (r/ρ/RMSE) bar chart for one CL tier, values from load().
+
+    Same 11 chart methods/colors as Figure 1; renders via bar.svg() with bar.METHODS and
+    bar.PANELS temporarily swapped (restored in finally so Figure 1 is unaffected)."""
+    methods = []
+    for (name, color, flag, *_) in bar.METHODS:
+        d = load(name, split)
+        if not d:
+            continue
+
+        def val(k):
+            t = d.get(k)
+            if not t or t[0] is None:
+                return (0.0, 0.0)
+            return (t[0], t[1] if t[1] is not None else 0.0)
+
+        methods.append((name, color, flag, val("r"), val("rho"), val("rmse")))
+    save_m, save_p = bar.METHODS, bar.PANELS
+    try:
+        bar.METHODS, bar.PANELS = methods, CL_PANELS
+        return bar.svg(rank_labels=True)
+    finally:
+        bar.METHODS, bar.PANELS = save_m, save_p
+
+
+def cl_charts_block():
+    """Stacked per-tier bar charts (+CL1, +CL1+CL2, +CL1+CL2+CL3) with a labelled header each."""
+    tiers = [("lp_edrscc_v2_cl1", "+CL1"),
+             ("lp_edrscc_v2_cl12", "+CL1+CL2"),
+             ("lp_edrscc_v2_cl123", "+CL1+CL2+CL3")]
+    parts = []
+    for scheme, label in tiers:
+        tr, va, te = COUNTS[scheme]
+        parts.append(
+            f'<p class="figure-cap" style="text-align:left;font-weight:700;color:#1c2433;'
+            f'margin:16px 0 2px;font-size:13px;">{label} '
+            f'<span style="font-weight:400;color:#9aa3b2;">&mdash; test N = {te} '
+            f'(train {tr} / val {va})</span></p>')
+        parts.append(cl_bar_svg(scheme))
+    return "\n      ".join(parts)
+
+
 def build():
     css, table2, sub2, vina_img = extract_from_715()
     table2 = add_atom_column(table2)
+    table2 = inject_decompdiff_repro(table2)
     casf_chart = casf_leakage_svg()
-    chart = bar.svg()
+    chart = bar.svg(rank_labels=True)                     # bold best value / underline second, per panel
     legend = bar.legend()
 
     html = f"""<!DOCTYPE html>
@@ -460,6 +669,10 @@ def build():
   table.results td.col-method .tag.supervised{{background:#eef1f6;color:#5b6678;}}
   table.results td.col-method .tag.pretrained{{background:#e7eefb;color:#38559b;}}
   table.results td.col-method .tag.zeroshot{{background:#f3eefb;color:#6b4b9b;}}
+  table.results td.col-method .tag.esm{{background:#ffe3c2;color:#b25a10;font-weight:600;border:1px solid #eec39a;}}
+  table.results td.col-method .tag.backbone{{background:#eef0f2;color:#7a8290;font-style:italic;}}
+  table.results td.col-method .tag.leaked{{background:#fbe0e0;color:#b03030;font-weight:600;border:1px solid #eeb8b8;}}
+  table.results td.col-method .tag.repro{{background:#d8f0e4;color:#1a7a4f;font-weight:600;border:1px solid #a9dcc4;}}
   .lead{{font-size:14px;color:var(--ink-soft);margin:10px 0 0;max-width:1000px;}}
   table.results thead tr.grp th .nsub{{display:block;font-size:9.5px;font-weight:500;letter-spacing:.02em;
     text-transform:none;color:#9aa3b2;margin-top:2px;}}
@@ -469,6 +682,11 @@ def build():
   table.results thead .div-block{{background:#f4f7fb;}}
   table.results td.metric,table.results th{{padding-left:7px;padding-right:7px;}}
   .metric .val{{font-weight:560;}} .metric .sd{{color:#9aa3b2;font-size:10px;font-weight:400;}}
+  /* Table 1 ranking: best = bold (via .best), second = underline */
+  table.results td.second .val{{text-decoration:underline;text-underline-offset:2px;text-decoration-thickness:1.5px;}}
+  .split-notes{{font-size:13px;color:var(--ink-soft);margin:12px 0 0;max-width:1000px;line-height:1.55;padding-left:20px;}}
+  .split-notes li{{margin-bottom:4px;}} .split-notes b{{color:var(--ink);}}
+  .split-notes code{{background:#f0f2f5;padding:1px 5px;border-radius:4px;font-size:12.5px;}}
 </style>
 </head><body><div class="page">
 
@@ -480,13 +698,19 @@ def build():
 
   <div class="doc-section">
     <h2 class="section-head"><span class="sec-num">1</span> Binding-affinity regression</h2>
-    <p class="section-intro">Method comparison across four progressively-cleaner LP-PDBBind splits
-      (<code>lp_edrscc_v2</code> &rarr; <code>+CL1</code> &rarr; <code>+CL1+CL2</code> &rarr; <code>+CL1+CL2+CL3</code>),
-      the nested no-leak cleaning tiers (CL3&nbsp;&sub;&nbsp;CL2&nbsp;&sub;&nbsp;CL1) applied to all of train/val/test
-      &mdash; each an exact subset of <code>lp_edrscc_v2</code> (Kd/Ki, 3 seeds). Supervised structure baselines +
-      <b>CheapNet</b>/<b>BindNet</b> + <b>HonestAffinity</b> (new; ESM-2 leak-aware sequence baseline, arXiv&nbsp;2606.03422)
-      vs. the frozen density probe (<b>C</b> coords, <b>C+D+G</b> coords+density+gradmag). 3 seeds, all trained &amp; tested
-      per tier on our ED+RSCC data.</p>
+    <p class="section-intro">Binding-affinity (pKd/pKi) regression, comparing supervised structure baselines,
+      CheapNet/BindNet/HonestAffinity, and the frozen density probe across four progressively-cleaner dataset splits.</p>
+    <ul class="split-notes">
+      <li><b>Data:</b> LP-PDBBind &cap; electron-density &cap; RSCC&nbsp;&ge;&nbsp;0.8, Kd/Ki only; 3 seeds.</li>
+      <li><b>Four splits, progressively cleaner:</b> <code>lp_edrscc_v2</code> &rarr; <code>+CL1</code> &rarr;
+        <code>+CL1+CL2</code> &rarr; <code>+CL1+CL2+CL3</code>.</li>
+      <li><b>CL1/CL2/CL3</b> = LP-PDBBind nested no-leak cleaning tiers (CL3&nbsp;&sub;&nbsp;CL2&nbsp;&sub;&nbsp;CL1),
+        applied to <b>all</b> of train/val/test.</li>
+      <li>Each tier is an <b>exact subset</b> of <code>lp_edrscc_v2</code> &mdash; a complex keeps its train/val/test bucket.</li>
+      <li><b>Sequence-clustered</b> (novel-target) partition; every method is trained &amp; tested within each tier.</li>
+      <li><b>Methods:</b> supervised baselines + CheapNet/BindNet/HonestAffinity vs. the density probe
+        (<b>C</b> = coords, <b>C+D+G</b> = coords+density+gradmag).</li>
+    </ul>
 
     <section class="block">
       <p class="table-title">Figure 1 &nbsp;&middot;&nbsp; Test Pearson r / Spearman &rho; / RMSE &mdash; <code>lp_edrscc_v2</code></p>
@@ -494,17 +718,34 @@ def build():
       {chart}
       {legend}
       <p class="figure-cap">Headline <code>lp_edrscc_v2</code> chart. Whiskers&nbsp;=&nbsp;&plusmn;1&nbsp;std (3 seeds).
-        Per-split (CL) breakdown in Table&nbsp;1. <b>C+D+G</b> (green, bold border) = best.</p>
+        Per-tier (CL) breakdown in Table&nbsp;1 and Figure&nbsp;2. Per panel, the <b>best</b> value is <b>bold</b> and the
+        <span style="text-decoration:underline">second</span> is underlined.</p>
       </div>
     </section>
 
     <section class="block">
       <p class="table-title">Table 1 &nbsp;&middot;&nbsp; Test metrics across cleaning tiers &mdash; mean &plusmn; std (3 seeds)</p>
-      <p class="table-sub">The four <b>LP-PDBBind</b> groups are the nested no-leak cleaning tiers (CL3&nbsp;&sub;&nbsp;CL2&nbsp;&sub;&nbsp;CL1),
-        each an exact subset of <code>lp_edrscc_v2</code> <b>trained &amp; tested on that tier</b> (test N 1320&nbsp;&rarr;&nbsp;733).
-        These are sequence-clustered novel-target splits, so this reads generalization to unseen targets &mdash; <b>not</b> a
-        same-test comparison across columns. <b>best</b> = best value in each (split&nbsp;&times;&nbsp;metric) column.
-        A held-out <b>CASF-2016</b> evaluation of the same methods (canonical vs. leak-controlled) is in <b>Appendix&nbsp;A</b>.</p>
+      <p class="table-sub">Test-set metrics per tier (Pearson&nbsp;<i>r</i> / Spearman&nbsp;&rho; / RMSE), mean&nbsp;&plusmn;&nbsp;std
+        over 3 seeds. Per (tier&nbsp;&times;&nbsp;metric) column the <b>best</b> is <b>bold</b> and the
+        <span style="text-decoration:underline">second-best</span> underlined.<br>
+        <b>Samples per tier &mdash; train / val / test:</b>
+        <code>lp_edrscc_v2</code> 3850&nbsp;/&nbsp;817&nbsp;/&nbsp;1320 &nbsp;&middot;&nbsp;
+        <code>+CL1</code> 2721&nbsp;/&nbsp;680&nbsp;/&nbsp;1166 &nbsp;&middot;&nbsp;
+        <code>+CL1+CL2</code> 2643&nbsp;/&nbsp;659&nbsp;/&nbsp;1149 &nbsp;&middot;&nbsp;
+        <code>+CL1+CL2+CL3</code> 1559&nbsp;/&nbsp;410&nbsp;/&nbsp;733.<br>
+        Held-out <b>CASF-2016</b> evaluation of the same methods in <b>Appendix&nbsp;A</b>.<br>
+        <b>Badges:</b> the <span class="tag supervised">supervised</span>&nbsp;/&nbsp;<span class="tag pretrained">pretrained</span>&nbsp;/&nbsp;<span class="tag zeroshot">zero-shot</span>
+        tag is the training regime; a <i>second</i> badge marks a <b>frozen pretrained backbone</b> &mdash;
+        <span class="tag esm">ESM-2</span> = ESM protein-language-model embeddings (HonestAffinity: 650M per-residue
+        sequence; DSMBind: 3B per-residue pocket), <span class="tag backbone">voxel-MAE</span> /
+        <span class="tag backbone">ProFSA-pre</span> / <span class="tag backbone">affinity-pre</span> = other frozen
+        pretrained encoder. Rows with no second badge are trained from scratch on our data.<br>
+        A <span class="tag leaked">leaked</span> badge marks methods trained on affinity data that <b>overlaps our test set</b>
+        &mdash; <b>Nesso-1</b> (cofolding; trained on PDBbind+BindingDB+ChEMBL, which contains all of <code>lp_edrscc_v2</code>)
+        and <b>IPNet&nbsp;(frozen)</b> (BAPNet supervised on PDBbind-v2016 affinity). Their cells are a <b>leaked ceiling</b>,
+        not clean generalization, so they are shown for reference but <b>excluded from the best/second highlighting</b>
+        (the <b>bold</b> marks the best <i>non-leaked</i> method). Nesso-1's &rho;&nbsp;0.66 &gt; every clean method precisely
+        because it memorized these complexes; its RMSE is on a pIC50 scale (Nesso predicts IC50-like potency, our labels are Kd/Ki).</p>
       <div class="table-wrap"><table class="results">
         <thead>
           {affinity_table_head()}
@@ -514,16 +755,55 @@ def build():
         </tbody>
       </table></div>
     </section>
+
+    <section class="block">
+      <p class="table-title">Table 1b &nbsp;&middot;&nbsp; % within N log units &mdash; success rate (v2 test)</p>
+      <p class="table-sub">Fraction of the <code>lp_edrscc_v2</code> test complexes whose predicted affinity is within
+        <b>2</b> (and <b>1</b>) log units of the experimental pK &mdash; a TerraBind-style hit/near-miss rate that
+        complements the correlation metrics. Only methods with saved per-complex <i>pK-scale</i> predictions are shown;
+        the rest store summary metrics only (GET, CheapNet, HBGSA, BindNet, HonestAffinity, IPNet, EGNN) or an
+        uncalibrated energy (DSMBind), so their %-within needs a prediction dump (TBD). Probe rows (C, C+D+G) are
+        single-seed (scatter seed&nbsp;0). Best <b>%&nbsp;|err|&lt;2</b> in <b>bold</b>.</p>
+      <div class="table-wrap"><table class="results">
+        <thead>
+          <tr class="grp"><th class="col-method" rowspan="2">Method</th>
+            <th class="div-major" colspan="3">Prediction accuracy &mdash; v2 test</th></tr>
+          <tr class="sub"><th class="div-major">%&nbsp;|err|&nbsp;&lt;&nbsp;2</th><th>%&nbsp;|err|&nbsp;&lt;&nbsp;1</th><th>N</th></tr>
+        </thead>
+        <tbody>
+          {within_table()}
+        </tbody>
+      </table></div>
+    </section>
+
+    <section class="block">
+      <p class="table-title">Figure 2 &nbsp;&middot;&nbsp; Per-tier test metrics &mdash; CL cleaning tiers</p>
+      <p class="table-sub">The same 11 methods as Figure&nbsp;1, on each cleaner tier (Table&nbsp;1 columns&nbsp;2&ndash;4):
+        <b>+CL1</b>, <b>+CL1+CL2</b>, <b>+CL1+CL2+CL3</b>. Bars&nbsp;=&nbsp;mean, whiskers&nbsp;=&nbsp;&plusmn;1&nbsp;std (3 seeds);
+        per panel the <b>best</b> value is <b>bold</b> and the <span style="text-decoration:underline">second</span> underlined.
+        Axes are shared across tiers (slightly wider than Figure&nbsp;1) for cross-tier comparison.</p>
+      <div class="table-wrap" style="padding:16px 18px 12px;">
+      {legend}
+      {cl_charts_block()}
+      </div>
+    </section>
   </div>
 
   <div class="doc-section">
     <h2 class="section-head"><span class="sec-num">2</span> De novo drug design</h2>
     <p class="section-intro">Conditional de novo ligand generation on the CrossDocked test pockets, scored by
       AutoDock&nbsp;Vina + drug-likeness. <b>Ours</b> = frozen-encoder generator; &sigma;&nbsp;0.9&nbsp;/&nbsp;1.0 =
-      reproduced VoxBind; prior-SBDD rows = VoxBind paper (100 pockets).</p>
+      reproduced VoxBind; prior-SBDD rows = VoxBind paper (100 pockets).
+      The <span class="tag repro">reproduced</span> <b>DecompDiff</b> row is our own run (svr9, 100 pockets &times; 10 mols,
+      Vina&nbsp;full): <b>reference-free</b> (<code>subpocket</code>&nbsp;prior + <code>num_atoms_mode=prior</code>), so it is
+      the fair pocket-only analog to VoxBind &mdash; and expectedly weaker than the <b>DecompDiff&dagger;</b> paper row, which
+      uses <i>reference</i> priors that leak the reference ligand's decomposition &amp; size. It is also a <i>conservative</i>
+      lower bound: the reference-free size sampling undershot (~16 vs ~21 heavy atoms), which weakens docking, and the
+      stronger <code>beta_prior</code> reference-free mode wasn't obtainable (priors 50&ndash;99 gated). High&nbsp;aff. /
+      Diversity / Sim.ref were not emitted by DecompDiff's eval script (&mdash;).</p>
 
     <section class="block">
-      <p class="table-title">Figure 2 &nbsp;&middot;&nbsp; Vina Score / Min / Dock &mdash; average &amp; median</p>
+      <p class="table-title">Figure 3 &nbsp;&middot;&nbsp; Vina Score / Min / Dock &mdash; average &amp; median</p>
       <div class="table-wrap" style="padding:16px">{vina_img}</div>
       <p class="figure-cap">AutoDock Vina (kcal/mol, lower better). Source: <code>260715_meeting.html</code> &sect;2.</p>
     </section>
@@ -567,7 +847,15 @@ def build():
       <p class="figure-cap">Each method: honest <b>non-train</b> &rho; (filled dot) &rarr; <b>leaky</b> &rho; (open dot, includes
         the 90 train-overlap complexes). Line length = leakage inflation, sorted top-to-bottom.
         <span style="color:#d64545;font-weight:600">Memorization-prone methods</span> (HonestAffinity, CheapNet, AEV-PLIG)
-        inflate ~0.15; structure-geometry methods (C, C+D+G, GET, EGNN, ProFSA, DSMBind) stay ~0.07.</p>
+        inflate ~0.15; structure-geometry methods (C, C+D+G, GET, EGNN, ProFSA, DSMBind) stay ~0.07.
+        The two <b>IPNet</b> rows isolate the effect within one architecture: the affinity-supervised
+        <i>frozen</i> encoder inflates more (gap&nbsp;+0.09) than the <i>from-scratch</i> retrain (+0.06)
+        &mdash; IPNet's supervised pretraining is what leaks.
+        <b>Note on <span style="color:#00838f">Nesso-1</span>:</b> its gap here is ~0 (&rho; 0.67&nbsp;leaky&nbsp;&asymp;&nbsp;0.70&nbsp;non-train)
+        &mdash; but that does <i>not</i> mean it is unleaked. Nesso-1 is fully zero-shot on our split, so the v2-train/non-train
+        boundary is invisible to it; it trained on <i>all</i> of PDBbind (both subsets equally), which is why its Table-1 &rho;
+        (0.66) tops every clean method. A small leaky&minus;non-train gap only rules out <i>our-split</i> memorization, not
+        global training overlap.</p>
       </div>
       <div class="notes">
         <b>Caveat &mdash; "non-train" is not the same as "out-of-distribution."</b> CASF-2016&nbsp;&minus;train removes only
@@ -578,6 +866,46 @@ def build():
         CASF-leaky&nbsp;&gt;&nbsp;CASF-&minus;train&nbsp;&gt;&nbsp;LP no-leak tiers.
       </div>
     </section>
+  </div>
+
+  <div class="doc-section">
+    <h2 class="section-head"><span class="sec-num" style="background:#566072">B</span> Appendix &mdash; Data processing: density normalization</h2>
+    <p class="section-intro">The <b>density</b> channel (used by the <b>C+D+G</b> encoders) is the experimental
+      <b>2F<sub>o</sub>&minus;F<sub>c</sub></b> electron-density map, resampled at the ligand pose and voxelized alongside the
+      atom blobs. Raw 2F<sub>o</sub>&minus;F<sub>c</sub> is strongly <b>heavy-tailed</b> &mdash; bright atom peaks sitting on a
+      near-zero, occasionally <i>negative</i> noise floor &mdash; so a plain z-score lets a handful of peaks dominate the input.
+      We apply an <b>arcsinh soft-squash + z-score</b> before voxelization.</p>
+
+    <section class="block">
+      <p class="table-title">Normalization recipe</p>
+      <p class="table-sub" style="font-size:15px;color:var(--ink);margin-bottom:10px;">
+        <code>x&prime; = ( arcsinh(x / s) &minus; &mu;<sub>a</sub> ) / &sigma;<sub>a</sub></code>
+        &nbsp;&nbsp;with&nbsp;&nbsp;<code>s = 0.5</code>,&nbsp; <code>&mu;<sub>a</sub> = &minus;0.0154</code>,&nbsp;
+        <code>&sigma;<sub>a</sub> = 0.508</code> &nbsp;(PLINDER pooled stats, fit on raw crops).</p>
+      <p class="table-sub"><code>arcsinh</code> is &asymp;&nbsp;linear for |x|&nbsp;&#8810;&nbsp;s (preserves the low-contrast
+        bulk faithfully) and &asymp;&nbsp;log for |x|&nbsp;&#8811;&nbsp;s (compresses the bright-atom tail); unlike log it admits
+        zeros and negatives with <b>no clip and no pile-up spike</b>. The scale <code>s</code> sits just above the noise floor
+        (voxel std&nbsp;&asymp;&nbsp;0.29), so only genuine peaks are squashed.</p>
+      <p class="table-sub" style="margin-bottom:0;">On 2.56M sampled PLINDER voxels the tail collapses: skew
+        <b>2.22&nbsp;&rarr;&nbsp;0.92</b>, excess kurtosis <b>18.8&nbsp;&rarr;&nbsp;1.1</b> (near-Gaussian); the brightest voxel
+        moves from raw&nbsp;+11 to <b>+7.5&sigma;</b>, whereas a plain z-score would place it at <b>+38&sigma;</b>. Only 0.64% of
+        voxels remain beyond &plusmn;3&sigma;.</p>
+    </section>
+
+    <div class="notes">
+      <b>Precedent.</b> The arcsinh soft-squash is the standard high-dynamic-range imaging transform: astronomy's
+      <i>asinh &ldquo;luptitude&rdquo; magnitudes</i>
+      (<a href="https://iopscience.iop.org/article/10.1086/301004/pdf">Lupton, Gunn &amp; Szalay 1999</a> &mdash; the softening
+      parameter is our <code>s</code>), cytometry's <i>arcsinh-with-cofactor</i>
+      (<a href="https://bioconductor.org/packages/devel/bioc/vignettes/CATALYST/inst/doc/preprocessing.html">CyTOF / flow</a>,
+      cofactor&nbsp;=&nbsp;<code>s</code>), and the statistical <i>inverse-hyperbolic-sine (IHS)</i> transform. Recent
+      ML-for-biology work uses the same trick: <a href="https://arxiv.org/abs/2602.04585">ImmuVis (2026)</a>, a
+      self-supervised imaging-mass-cytometry foundation model, applies <i>per-pixel arcsinh-cofactor</i> to image-channel data;
+      and an <a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC10835705/">electron-density affinity model (RSC&nbsp;Adv.&nbsp;2024)</a>
+      independently reports that density-derived values &ldquo;rendered common input normalization strategies unsuitable,
+      prompting the use of a custom scaling method.&rdquo; Standard normalization in density-ML is median-divide or linear&nbsp;[0,1];
+      applying arcsinh to 2F<sub>o</sub>&minus;F<sub>c</sub> as a self-supervised input channel is a deliberate cross-domain borrow.
+    </div>
   </div>
 
 </div></body></html>"""

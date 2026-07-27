@@ -24,7 +24,13 @@ def rho(m, key):
 
 methods = sorted(br.ORDER, key=lambda m: -np.nanmean([rho(m, c) for c, _ in COLS[:4]]))
 M = np.array([[rho(m, c) for c, _ in COLS] for m in methods])
-best = {j: methods[int(np.nanargmax(M[:, j]))] for j in range(M.shape[1])}
+# "best" per column excludes leaked methods (Nesso-1, IPNet-frozen) — same as the HTML table
+_leak = np.array([m in br.LEAKED for m in methods])
+best = {}
+for j in range(M.shape[1]):
+    col = M[:, j].copy(); col[_leak] = np.nan
+    if not np.all(np.isnan(col)):
+        best[j] = methods[int(np.nanargmax(col))]
 
 fig = plt.figure(figsize=(11.6, 11.4))
 gs = fig.add_gridspec(2, 1, height_ratios=[1.32, 1.0], hspace=0.20)
@@ -33,7 +39,20 @@ gs = fig.add_gridspec(2, 1, height_ratios=[1.32, 1.0], hspace=0.20)
 ax = fig.add_subplot(gs[0])
 im = ax.imshow(M, cmap="RdYlGn", vmin=0.43, vmax=0.72, aspect="auto")
 ax.set_xticks(range(len(COLS))); ax.set_xticklabels([l for _, l in COLS], fontsize=10.5)
-ax.set_yticks(range(len(methods))); ax.set_yticklabels(methods, fontsize=10.5)
+# y-labels: annotate each method's frozen pretrained backbone + a leaked marker
+def _ylab(m):
+    s = m + (f"  [{br.BACKBONE[m][0]}]" if m in br.BACKBONE else "")
+    return s + ("  ⚠leaked" if m in br.LEAKED else "")
+ax.set_yticks(range(len(methods))); ax.set_yticklabels([_ylab(m) for m in methods], fontsize=10.5)
+for tick, m in zip(ax.get_yticklabels(), methods):
+    if m in br.LEAKED:
+        tick.set_color("#b03030"); tick.set_fontweight("bold")   # leaked (PDBbind-trained) — red
+        continue
+    bb = br.BACKBONE.get(m)
+    if bb and bb[1] == "esm":
+        tick.set_color("#b25a10"); tick.set_fontweight("bold")   # ESM users pop
+    elif bb:
+        tick.set_color("#5b6678")                                 # other pretrained backbone
 ax.set_title("Binding-affinity Spearman ρ  —  LP-PDBBind no-leak tiers  |  CASF-2016 (trained on v2)",
              fontsize=12.5, fontweight="bold", pad=12)
 for i in range(len(methods)):
@@ -41,7 +60,7 @@ for i in range(len(methods)):
         v = M[i, j]
         if np.isnan(v):
             ax.text(j, i, "–", ha="center", va="center", fontsize=10, color="#888"); continue
-        isbest = best[j] == methods[i]
+        isbest = best.get(j) == methods[i]
         ax.text(j, i, f"{v:.3f}", ha="center", va="center", fontsize=10.5,
                 fontweight="bold" if isbest else "normal", color="#0a0a0a")
         if isbest:

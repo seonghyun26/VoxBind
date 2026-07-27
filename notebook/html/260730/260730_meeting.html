@@ -1,0 +1,1405 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>De novo drug design QC and CrossDocked2020 split audit · 260730</title>
+<style>
+  :root {
+    --ink: #1c2433;
+    --ink-soft: #5b6678;
+    --ink-faint: #7a8699;
+    --line: #e3e7ee;
+    --line-strong: #aeb6c4;
+    --bg: #f5f6f8;
+    --card: #ffffff;
+    --accent: #2f6f4f;
+    --accent-2: #3f7f5e;
+    --accent-bg: #eaf5ee;
+    --blue: #38559b;
+    --blue-bg: #e7eefb;
+    --warn: #9a6112;
+    --warn-bg: #fcf3e0;
+    --danger: #a33f39;
+    --danger-bg: #faeceb;
+    --shadow: 0 1px 2px rgba(20,30,50,.04), 0 8px 24px rgba(20,30,50,.05);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 16px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page {
+    display: flex;
+    flex-direction: column;
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 48px 24px 96px;
+  }
+
+  header.doc {
+    order: 0;
+    border-bottom: 2px solid var(--ink);
+    padding-bottom: 20px;
+    margin-bottom: 40px;
+  }
+
+  .eyebrow {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 8px;
+    color: var(--ink-soft);
+    font-size: 13px;
+    letter-spacing: .11em;
+    text-transform: uppercase;
+  }
+
+  .status {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 3px 10px;
+    border-radius: 999px;
+    background: var(--accent-bg);
+    color: #1d5a3a;
+    font-size: 11px;
+    font-weight: 720;
+    letter-spacing: .07em;
+  }
+
+  .status::before {
+    content: "";
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--accent);
+  }
+
+  header.doc h1 {
+    margin: 0;
+    max-width: 1050px;
+    font-size: clamp(28px, 4vw, 42px);
+    line-height: 1.13;
+    font-weight: 680;
+    letter-spacing: -.025em;
+  }
+
+  header.doc .lead {
+    max-width: 1040px;
+    margin: 13px 0 0;
+    color: var(--ink-soft);
+    font-size: 15px;
+    line-height: 1.65;
+  }
+
+  .doc-section { margin-bottom: 68px; }
+  .dataset-audit { order: 1; }
+  .denovo-generation { order: 2; }
+  .structural-quality { order: 3; }
+
+  .section-head {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin: 0 0 28px;
+    padding-bottom: 12px;
+    border-bottom: 2px solid var(--line-strong);
+    font-size: 23px;
+    line-height: 1.25;
+    font-weight: 680;
+    letter-spacing: -.015em;
+  }
+
+  .sec-num {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    width: 31px;
+    height: 31px;
+    border-radius: 8px;
+    background: var(--accent);
+    color: #fff;
+    font-size: 15px;
+    font-weight: 760;
+  }
+
+  .section-intro {
+    max-width: 1100px;
+    margin: -5px 0 24px;
+    color: var(--ink-soft);
+    font-size: 13.7px;
+    line-height: 1.65;
+  }
+
+  .subsection-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 36px 0 9px;
+    font-size: 17px;
+    font-weight: 680;
+  }
+
+  .sub-lab {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 29px;
+    height: 23px;
+    padding: 0 8px;
+    border-radius: 6px;
+    background: #eef1f6;
+    color: var(--ink-soft);
+    font-size: 11px;
+    font-weight: 760;
+  }
+
+  .summary-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 13px;
+    margin: 0 0 26px;
+  }
+
+  .summary-card {
+    min-height: 118px;
+    padding: 17px 18px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--card);
+    box-shadow: var(--shadow);
+  }
+
+  .summary-card.primary {
+    border-color: #b9d5c3;
+    background: linear-gradient(145deg, #f8fcf9, var(--accent-bg));
+  }
+
+  .summary-card .label {
+    color: var(--ink-soft);
+    font-size: 11px;
+    line-height: 1.35;
+    font-weight: 710;
+    letter-spacing: .075em;
+    text-transform: uppercase;
+  }
+
+  .summary-card .value {
+    margin-top: 7px;
+    font-size: 27px;
+    line-height: 1.08;
+    font-weight: 730;
+    letter-spacing: -.02em;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .summary-card .note {
+    margin-top: 7px;
+    color: var(--ink-faint);
+    font-size: 11.7px;
+    line-height: 1.4;
+  }
+
+  .down { color: #1d5a3a; }
+
+  .table-title {
+    margin: 0 0 4px;
+    font-size: 19px;
+    font-weight: 650;
+  }
+
+  .table-sub {
+    max-width: 1100px;
+    margin: 0 0 17px;
+    color: var(--ink-soft);
+    font-size: 13.3px;
+    line-height: 1.6;
+  }
+
+  .table-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--card);
+    box-shadow: var(--shadow);
+  }
+
+  table.results {
+    width: 100%;
+    border-collapse: collapse;
+    font-variant-numeric: tabular-nums;
+  }
+
+  table.results th,
+  table.results td {
+    padding: 10px 8px;
+    text-align: center;
+    white-space: nowrap;
+  }
+
+  table.results thead th {
+    border-bottom: 1px solid var(--line);
+    background: #fafbfc;
+    color: var(--ink-soft);
+    font-size: 10.7px;
+    line-height: 1.35;
+    font-weight: 650;
+    letter-spacing: .025em;
+  }
+
+  table.results tbody tr { border-top: 1px solid var(--line); }
+  table.results tbody tr:first-child { border-top: 0; }
+  table.results tbody tr:hover { background: #fbfcfd; }
+  table.results tbody tr.ours { background: #f6fbf8; }
+  table.results tbody tr.grp-top { border-top: 2px solid var(--line-strong); }
+
+  .col-method {
+    min-width: 194px;
+    text-align: left !important;
+  }
+
+  td.col-method {
+    font-size: 12.3px;
+    font-weight: 620;
+  }
+
+  td.col-method .sub {
+    display: block;
+    margin-top: 2px;
+    color: var(--ink-faint);
+    font-size: 10.2px;
+    line-height: 1.35;
+    font-weight: 430;
+    white-space: normal;
+  }
+
+  .tag {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 2px 7px;
+    border-radius: 999px;
+    vertical-align: middle;
+    font-size: 9.5px;
+    font-weight: 720;
+    letter-spacing: .04em;
+  }
+
+  .tag.ours { background: var(--accent-bg); color: #1d5a3a; }
+  .tag.base { background: var(--blue-bg); color: var(--blue); }
+  .tag.ref { background: #eef1f6; color: var(--ink-soft); }
+
+  .val { font-size: 12.5px; font-weight: 610; }
+  .best { background: var(--accent-bg); }
+  .best .val { color: #1d5a3a; font-weight: 760; }
+  .na { color: #bec5d0; }
+  .metric-status {
+    display: inline-block;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: #f5f0e5;
+    color: #8b641d;
+    font-size: 9.5px;
+    font-weight: 760;
+    letter-spacing: .035em;
+    text-transform: uppercase;
+  }
+
+  .callout {
+    max-width: 1120px;
+    margin: 20px 0 0;
+    padding: 15px 18px;
+    border: 1px solid var(--line);
+    border-left: 4px solid var(--accent);
+    border-radius: 9px;
+    background: var(--card);
+    font-size: 13.3px;
+    line-height: 1.65;
+  }
+
+  .callout strong { font-weight: 700; }
+
+  .two-col {
+    display: grid;
+    grid-template-columns: minmax(0, .96fr) minmax(0, 1.04fr);
+    gap: 22px;
+    align-items: stretch;
+  }
+
+  .card {
+    padding: 20px 22px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--card);
+    box-shadow: var(--shadow);
+  }
+
+  .card h4 {
+    margin: 0 0 10px;
+    font-size: 15px;
+    font-weight: 690;
+  }
+
+  .formula {
+    margin: 14px 0 16px;
+    padding: 17px 18px;
+    border: 1px solid #c8dccc;
+    border-radius: 10px;
+    background: var(--accent-bg);
+    text-align: center;
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+    font-size: clamp(13px, 1.5vw, 16px);
+    line-height: 1.5;
+  }
+
+  .formula .cut {
+    display: block;
+    margin-top: 7px;
+    color: #1d5a3a;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 12px;
+    font-weight: 720;
+  }
+
+  .steps {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    counter-reset: step;
+  }
+
+  .steps li {
+    position: relative;
+    margin: 0 0 10px;
+    padding-left: 34px;
+    color: var(--ink-soft);
+    font-size: 12.5px;
+    line-height: 1.55;
+  }
+
+  .steps li:last-child { margin-bottom: 0; }
+
+  .steps li::before {
+    counter-increment: step;
+    content: counter(step);
+    position: absolute;
+    left: 0;
+    top: 1px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 23px;
+    height: 23px;
+    border-radius: 50%;
+    background: #eef1f6;
+    color: var(--ink-soft);
+    font-size: 11px;
+    font-weight: 760;
+  }
+
+  .steps b { color: var(--ink); font-weight: 650; }
+
+  .audit-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 9px;
+    margin-top: 15px;
+  }
+
+  .audit-pocket {
+    position: relative;
+    overflow: hidden;
+    padding: 13px 13px 12px;
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    background: #fbfcfd;
+  }
+
+  .audit-pocket.flagged {
+    border-color: #e4b7b4;
+    background: var(--danger-bg);
+  }
+
+  .audit-pocket .target {
+    font-family: "SFMono-Regular", Consolas, monospace;
+    font-size: 11px;
+    font-weight: 720;
+  }
+
+  .audit-pocket .score {
+    margin-top: 5px;
+    font-size: 19px;
+    line-height: 1.1;
+    font-weight: 730;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .audit-pocket .mz {
+    margin-top: 4px;
+    color: var(--ink-faint);
+    font-size: 10.5px;
+  }
+
+  .decision {
+    position: absolute;
+    right: 8px;
+    top: 8px;
+    padding: 2px 6px;
+    border-radius: 999px;
+    background: #eef1f6;
+    color: var(--ink-soft);
+    font-size: 8.5px;
+    font-weight: 780;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+  }
+
+  .flagged .decision {
+    background: #f2cfcc;
+    color: var(--danger);
+  }
+
+  .threshold-chart {
+    position: relative;
+    height: 119px;
+    margin: 16px 0 3px;
+    padding: 0 7px;
+  }
+
+  .axis {
+    position: absolute;
+    left: 7px;
+    right: 7px;
+    top: 57px;
+    height: 2px;
+    background: var(--line-strong);
+  }
+
+  .safe-zone {
+    position: absolute;
+    left: 7px;
+    top: 43px;
+    width: 31.05%;
+    height: 30px;
+    border-radius: 7px 0 0 7px;
+    background: var(--accent-bg);
+  }
+
+  .threshold {
+    position: absolute;
+    left: 31.05%;
+    top: 18px;
+    bottom: 20px;
+    width: 0;
+    border-left: 2px dashed var(--danger);
+  }
+
+  .threshold span {
+    position: absolute;
+    top: -1px;
+    left: 7px;
+    width: 150px;
+    color: var(--danger);
+    font-size: 9.5px;
+    font-weight: 720;
+  }
+
+  .point {
+    position: absolute;
+    top: 51px;
+    width: 14px;
+    height: 14px;
+    margin-left: -7px;
+    border: 2px solid #fff;
+    border-radius: 50%;
+    background: var(--accent-2);
+    box-shadow: 0 0 0 1px rgba(47,111,79,.25);
+  }
+
+  .point.flagged {
+    background: var(--danger);
+    box-shadow: 0 0 0 1px rgba(163,63,57,.25);
+  }
+
+  .point label {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 80px;
+    text-align: center;
+    color: var(--ink-soft);
+    font-size: 9px;
+    line-height: 1.25;
+  }
+
+  .point.above label { bottom: 16px; }
+  .point.below label { top: 17px; }
+  .point.edge label { transform: translateX(-78%); }
+
+  .axis-label {
+    position: absolute;
+    top: 77px;
+    transform: translateX(-50%);
+    color: var(--ink-faint);
+    font-size: 9px;
+  }
+
+  .mini-table th,
+  .mini-table td { padding: 10px 11px !important; }
+  .mini-table td { font-size: 12px; }
+  .mini-table .delta { color: #1d5a3a; font-weight: 680; }
+
+  code {
+    padding: 1px 5px;
+    border-radius: 4px;
+    background: #f0f2f5;
+    font-family: "SFMono-Regular", Consolas, monospace;
+    font-size: .92em;
+  }
+
+  .protocol {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+    margin-top: 18px;
+  }
+
+  .protocol-item {
+    padding: 14px 15px;
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    background: var(--card);
+    color: var(--ink-soft);
+    font-size: 11.8px;
+    line-height: 1.5;
+  }
+
+  .protocol-item b {
+    display: block;
+    margin-bottom: 3px;
+    color: var(--ink);
+    font-size: 12.3px;
+  }
+
+  .notes {
+    max-width: 1120px;
+    margin-top: 18px;
+    color: var(--ink-soft);
+    font-size: 12.3px;
+    line-height: 1.62;
+  }
+
+  .notes ul { margin: 6px 0 0; padding-left: 20px; }
+  .notes li { margin-bottom: 6px; }
+  .notes b { color: var(--ink); font-weight: 650; }
+
+  .figure-card {
+    margin: 0 0 22px;
+    padding: 16px 16px 13px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--card);
+    box-shadow: var(--shadow);
+  }
+
+  .figure-card img {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+
+  .figure-card figcaption {
+    margin-top: 10px;
+    padding: 10px 5px 0;
+    border-top: 1px solid var(--line);
+    color: var(--ink-soft);
+    font-size: 11.8px;
+    line-height: 1.55;
+  }
+
+  .shift {
+    color: var(--danger);
+    font-weight: 720;
+  }
+
+  .positive-details {
+    margin-top: 18px;
+    padding: 14px 16px;
+    border: 1px solid #e4b7b4;
+    border-radius: 10px;
+    background: #fffafa;
+  }
+
+  .positive-details summary {
+    cursor: pointer;
+    color: var(--danger);
+    font-size: 12.7px;
+    font-weight: 700;
+  }
+
+  .positive-details p {
+    margin: 9px 0 11px;
+    color: var(--ink-soft);
+    font-size: 11.8px;
+  }
+
+  .positive-details a { color: var(--danger); }
+
+  footer {
+    order: 4;
+    margin-top: 62px;
+    padding-top: 18px;
+    border-top: 1px solid var(--line-strong);
+    color: var(--ink-faint);
+    font-size: 10.8px;
+    line-height: 1.6;
+  }
+
+  @media (max-width: 930px) {
+    .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .two-col { grid-template-columns: 1fr; }
+    .protocol { grid-template-columns: 1fr; }
+  }
+
+  @media (max-width: 620px) {
+    .page { padding: 30px 14px 70px; }
+    .summary-grid { grid-template-columns: 1fr; }
+    .audit-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    header.doc h1 { font-size: 29px; }
+  }
+
+  @media print {
+    body { background: #fff; }
+    .page { max-width: none; padding: 20px; }
+    .summary-card, .table-wrap, .card, .figure-card { box-shadow: none; }
+    table.results tbody tr:hover { background: inherit; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="doc">
+    <div class="eyebrow">
+      <span>Meeting note · 2026-07-30</span>
+      <span class="status">sampled split audit complete</span>
+    </div>
+    <h1>De novo drug design QC and CrossDocked2020 split audit</h1>
+  </header>
+
+  <section class="doc-section denovo-generation">
+    <h2 class="section-head"><span class="sec-num">2</span>De novo generation — two outlier pockets excluded</h2>
+    <p class="section-intro">
+      Conditional generation on the held-out CrossDocked density subset. Each reproduced run generates
+      100 ligands per pocket and is evaluated with full AutoDock Vina docking. Metrics are aggregated
+      <b>within pocket first</b>, then across the 77 retained pockets so every pocket has equal weight.
+      Vina is in kcal/mol; <b>lower is stronger</b>. “Ours” is the frozen C+D+G encoder generator.
+    </p>
+
+    <div class="summary-grid">
+      <div class="summary-card">
+        <div class="label">Quality-controlled set</div>
+        <div class="value">77 / 79</div>
+        <div class="note">97.5% retained · one shared pocket mask</div>
+      </div>
+      <div class="summary-card primary">
+        <div class="label">Ours · Dock average</div>
+        <div class="value down">−8.26</div>
+        <div class="note">best of the three generated runs</div>
+      </div>
+      <div class="summary-card">
+        <div class="label">Dock vs. best vanilla</div>
+        <div class="value down">−0.25</div>
+        <div class="note">kcal/mol vs. VoxBind σ 0.9</div>
+      </div>
+      <div class="summary-card">
+        <div class="label">Success rate · DecompDiff</div>
+        <div class="value">Q ∩ S ∩ V</div>
+        <div class="note">QED &gt; 0.25 · SA &gt; 0.59 · Dock &lt; −8.18</div>
+      </div>
+    </div>
+
+    <h3 class="table-title">Table 2 · Quality-controlled de novo results</h3>
+    <p class="table-sub">
+      Reference = redocked crystal ligand on the same retained pockets. High aff. = percentage of generated
+      ligands with a lower Vina Dock score than that pocket’s reference. Success = joint percentage with
+      QED &gt; 0.25, SA &gt; 0.59, and Vina Dock &lt; −8.18 kcal/mol, following
+      <a href="https://arxiv.org/pdf/2403.07902">DecompDiff</a>. Avg / Med are across pockets.
+    </p>
+    <div class="table-wrap">
+      <table class="results">
+        <thead>
+          <tr>
+            <th class="col-method">Method · 77 pockets</th>
+            <th>Dock↓<br>Avg</th>
+            <th>Dock↓<br>Med</th>
+            <th>Min↓<br>Avg</th>
+            <th>Min↓<br>Med</th>
+            <th>Score↓<br>Avg</th>
+            <th>Score↓<br>Med</th>
+            <th>High aff↑<br>Avg</th>
+            <th>High aff↑<br>Med</th>
+            <th>QED↑</th>
+            <th>SA↑</th>
+            <th>Success↑</th>
+            <th>Div↑</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="col-method">
+              Reference <span class="tag ref">crystal</span>
+              <span class="sub">redocked crystal ligand · shared QC set</span>
+            </td>
+            <td><span class="val">−7.21</span></td>
+            <td><span class="val">−6.91</span></td>
+            <td><span class="val">−6.65</span></td>
+            <td><span class="val">−6.22</span></td>
+            <td><span class="val">−6.28</span></td>
+            <td><span class="val">−6.04</span></td>
+            <td class="na">—</td>
+            <td class="na">—</td>
+            <td class="na">—</td>
+            <td class="na">n/a</td>
+            <td class="na">—</td>
+            <td class="na">—</td>
+          </tr>
+          <tr class="grp-top">
+            <td class="col-method">
+              VoxBind σ 0.9 <span class="tag base">baseline</span>
+              <span class="sub">walk-jump · reproduced · 100 samples/pocket</span>
+            </td>
+            <td><span class="val">−8.01</span></td>
+            <td><span class="val">−8.02</span></td>
+            <td><span class="val">−7.28</span></td>
+            <td><span class="val">−7.19</span></td>
+            <td><span class="val">−6.62</span></td>
+            <td><span class="val">−6.84</span></td>
+            <td><span class="val">64.9%</span></td>
+            <td><span class="val">66.5%</span></td>
+            <td class="best"><span class="val">0.56</span></td>
+            <td class="best"><span class="val">0.69</span></td>
+            <td><span class="metric-status">pending</span></td>
+            <td class="best"><span class="val">0.74</span></td>
+          </tr>
+          <tr>
+            <td class="col-method">
+              VoxBind σ 1.0 <span class="tag base">baseline</span>
+              <span class="sub">walk-jump · reproduced · 100 samples/pocket</span>
+            </td>
+            <td><span class="val">−7.83</span></td>
+            <td><span class="val">−8.07</span></td>
+            <td><span class="val">−7.15</span></td>
+            <td><span class="val">−7.14</span></td>
+            <td><span class="val">−6.53</span></td>
+            <td><span class="val">−6.53</span></td>
+            <td><span class="val">62.9%</span></td>
+            <td><span class="val">65.3%</span></td>
+            <td><span class="val">0.55</span></td>
+            <td><span class="val">0.68</span></td>
+            <td><span class="metric-status">pending</span></td>
+            <td class="best"><span class="val">0.74</span></td>
+          </tr>
+          <tr class="ours">
+            <td class="col-method">
+              Ours — frozen C+D+G <span class="tag ours">ours</span>
+              <span class="sub">frozen encoder · σ 0.9 · ep350 · 100 samples/pocket</span>
+            </td>
+            <td class="best"><span class="val">−8.26</span></td>
+            <td class="best"><span class="val">−8.75</span></td>
+            <td class="best"><span class="val">−7.59</span></td>
+            <td class="best"><span class="val">−8.11</span></td>
+            <td class="best"><span class="val">−6.75</span></td>
+            <td class="best"><span class="val">−7.61</span></td>
+            <td class="best"><span class="val">66.9%</span></td>
+            <td class="best"><span class="val">73.0%</span></td>
+            <td><span class="val">0.52</span></td>
+            <td><span class="val">0.68</span></td>
+            <td><span class="metric-status">pending</span></td>
+            <td><span class="val">0.71</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout">
+      <strong>Result.</strong> On the shared 77-pocket set, the frozen-encoder generator is strongest on all
+      six Vina summaries. Relative to the better vanilla Dock average (σ 0.9), it improves Dock by
+      <b>0.25 kcal/mol</b>, Min by <b>0.31 kcal/mol</b>, and Score by <b>0.13 kcal/mol</b>; the median
+      high-affinity rate increases by <b>6.5 percentage points</b>. The trade-off is lower QED
+      (0.52 vs. 0.56) and diversity (0.71 vs. 0.74).
+      <b>Success-rate values remain pending:</b> this metric is a per-molecule intersection and cannot be
+      reconstructed from the marginal QED, SA, and Dock averages. The joint evaluation records are not
+      retained in the cleaned workspace, and no new Vina run was launched.
+    </div>
+
+    <h3 class="subsection-head"><span class="sub-lab">2b</span>A concrete pocket-exclusion standard</h3>
+    <p class="section-intro">
+      Outlier detection is based only on the <b>redocked reference ligand’s Vina score-only value</b>,
+      which diagnoses pocket/receptor preparation before any generated molecule is inspected. We use the
+      conventional one-sided modified Z-score cutoff of 3.5, together with a positive-energy gate.
+      This is resistant to the extreme value it is designed to detect because both its center and scale use medians.
+    </p>
+
+    <div class="two-col">
+      <div class="card">
+        <h4>Reference-only robust rule</h4>
+        <div class="formula">
+          M<sub>i</sub> = 0.6745 · (s<sub>i</sub> − median(s)) / MAD(s)
+          <span class="cut">Exclude when M<sub>i</sub> &gt; 3.5 AND s<sub>i</sub> &gt; 0 kcal/mol</span>
+        </div>
+        <ol class="steps">
+          <li><b>Score the crystallographic reference pose</b> once with the same receptor and Vina
+            <code>score_only</code> setup used by every run.</li>
+          <li><b>Estimate center and scale across pockets:</b> median = −5.94 and MAD = 2.31 kcal/mol
+            for the 79-pocket density subset.</li>
+          <li><b>Apply the dual gate.</b> Require both a robust upper-tail outlier and a physically
+            unfavorable positive score. Here the robust condition is stricter, so the rule is equivalent to
+            <code>reference score &gt; +6.05</code> kcal/mol.</li>
+          <li><b>Freeze the resulting pocket mask</b> and apply it unchanged to the reference and every
+            generated method. Do not remove individual generated molecules.</li>
+        </ol>
+      </div>
+
+      <div class="card">
+        <h4>Decision audit · upper tail of the reference distribution</h4>
+        <div class="threshold-chart" aria-label="Reference Vina score upper-tail decision chart">
+          <div class="safe-zone"></div>
+          <div class="axis"></div>
+          <div class="threshold"><span>cutoff +6.05 · M = 3.5</span></div>
+
+          <div class="point below" style="left:23.66%">
+            <label>target_87<br>+0.80</label>
+          </div>
+          <div class="point above" style="left:27.13%">
+            <label>target_91<br>+3.26</label>
+          </div>
+          <div class="point flagged below" style="left:32.7%">
+            <label>target_58<br>+7.24</label>
+          </div>
+          <div class="point flagged above edge" style="left:96.23%">
+            <label>target_92<br>+52.32</label>
+          </div>
+
+          <span class="axis-label" style="left:1.2%">−16</span>
+          <span class="axis-label" style="left:22.9%">0</span>
+          <span class="axis-label" style="left:36.1%">10</span>
+          <span class="axis-label" style="left:50.6%">20</span>
+          <span class="axis-label" style="left:65.1%">30</span>
+          <span class="axis-label" style="left:79.6%">40</span>
+          <span class="axis-label" style="left:94.1%">50</span>
+        </div>
+
+        <div class="audit-grid">
+          <div class="audit-pocket flagged">
+            <span class="decision">exclude</span>
+            <div class="target">target_92</div>
+            <div class="score">+52.32</div>
+            <div class="mz">modified Z = 17.01</div>
+          </div>
+          <div class="audit-pocket flagged">
+            <span class="decision">exclude</span>
+            <div class="target">target_58</div>
+            <div class="score">+7.24</div>
+            <div class="mz">modified Z = 3.85</div>
+          </div>
+          <div class="audit-pocket">
+            <span class="decision">keep</span>
+            <div class="target">target_91</div>
+            <div class="score">+3.26</div>
+            <div class="mz">modified Z = 2.69</div>
+          </div>
+          <div class="audit-pocket">
+            <span class="decision">keep</span>
+            <div class="target">target_87</div>
+            <div class="score">+0.80</div>
+            <div class="mz">modified Z = 1.97</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="protocol">
+      <div class="protocol-item">
+        <b>Model-independent</b>
+        The exclusion variable comes from the crystal reference, not from Ours or either VoxBind baseline.
+      </div>
+      <div class="protocol-item">
+        <b>One mask for all methods</b>
+        A pocket cannot be kept for one method and dropped for another; all 77-pocket rows use the same IDs.
+      </div>
+      <div class="protocol-item">
+        <b>Full-set sensitivity retained</b>
+        The unfiltered 79-pocket table remains part of the record so readers can see exactly what filtering changes.
+      </div>
+    </div>
+
+    <h3 class="subsection-head"><span class="sub-lab">2c</span>Sensitivity to the QC mask</h3>
+    <p class="section-intro">
+      The exclusion primarily corrects score-only and local-minimization summaries, which are directly
+      contaminated by the clashing input poses. Fully redocked Dock averages move by at most
+      0.03 kcal/mol, and the method ordering is unchanged.
+    </p>
+
+    <div class="table-wrap">
+      <table class="results mini-table">
+        <thead>
+          <tr>
+            <th class="col-method" rowspan="2">Method</th>
+            <th colspan="3">Dock Avg↓</th>
+            <th colspan="3">Min Avg↓</th>
+            <th colspan="3">Score Avg↓</th>
+          </tr>
+          <tr>
+            <th>79</th><th>QC 77</th><th>Δ</th>
+            <th>79</th><th>QC 77</th><th>Δ</th>
+            <th>79</th><th>QC 77</th><th>Δ</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="col-method">VoxBind σ 0.9</td>
+            <td>−7.98</td><td>−8.01</td><td class="delta">−0.03</td>
+            <td>−6.84</td><td>−7.28</td><td class="delta">−0.44</td>
+            <td>−5.26</td><td>−6.62</td><td class="delta">−1.36</td>
+          </tr>
+          <tr>
+            <td class="col-method">VoxBind σ 1.0</td>
+            <td>−7.80</td><td>−7.83</td><td class="delta">−0.03</td>
+            <td>−6.76</td><td>−7.15</td><td class="delta">−0.39</td>
+            <td>−5.35</td><td>−6.53</td><td class="delta">−1.18</td>
+          </tr>
+          <tr class="ours">
+            <td class="col-method">Ours — frozen C+D+G</td>
+            <td>−8.24</td><td>−8.26</td><td class="delta">−0.02</td>
+            <td>−7.09</td><td>−7.59</td><td class="delta">−0.50</td>
+            <td>−5.51</td><td>−6.75</td><td class="delta">−1.24</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="notes">
+      <b>Reporting specification.</b>
+      <ul>
+        <li><b>Primary estimand:</b> equal-weight mean across the 77 retained pockets, after computing each
+          pocket’s metric from its valid generated molecules.</li>
+        <li><b>Success rate:</b> for each pocket, compute
+          <code>mean(QED &gt; 0.25 AND SA &gt; 0.59 AND Vina Dock &lt; −8.18)</code> over molecules with all
+          three finite values, then average the pocket rates equally across the QC 77 set. The inequalities
+          are strict, matching <a href="https://arxiv.org/pdf/2403.07902">DecompDiff</a>.</li>
+        <li><b>Directionality:</b> the outlier rule is one-sided because abnormally high positive
+          <code>score_only</code> values are the pocket-preparation failure mode; unusually favorable negative
+          values are not treated as failures.</li>
+        <li><b>Finite-score guard:</b> a pocket whose reference cannot be scored is a separate reference-QC
+          failure and must be listed explicitly. All 79 reference scores used here were finite.</li>
+        <li><b>Excluded pockets:</b> <code>target_92</code> (CHIB_SERMA / 4z2g) and
+          <code>target_58</code> (NPD_THEMA / 3pdh). The next-highest reference score,
+          <code>target_91</code>, remains below the robust cutoff.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- CROSSDOCKED_AUDIT_START -->
+  <section class="doc-section dataset-audit">
+    <h2 class="section-head"><span class="sec-num">1</span>CrossDocked2020 train–test Vina distributions</h2>
+    <p class="section-intro">
+      Crystal ligands were evaluated against their paired CrossDocked2020 pocket10 receptors with one
+      fixed Vina pipeline. All 100 test instances and a deterministic simple-random sample of 500 of
+      the 99,881 training instances are complete. Densities are normalized within split because sample
+      sizes differ.
+      <b>No pocket or score outliers were removed for this split audit.</b>
+    </p>
+
+    <figure class="figure-card">
+      <img src="fig_crossdocked_vina_train_test.svg"
+           alt="Normalized train and test distributions of Vina score-only, minimized, and docked energies for CrossDocked2020 crystal ligands">
+      <figcaption>
+        <b>Figure 1 · CrossDocked2020 reference-ligand energy distributions.</b>
+        Solid curves and translucent histograms show normalized density; dashed vertical lines show
+        split medians. Each panel uses a pooled central 1st–99th percentile display window, with every
+        observation outside that window counted in the panel annotation rather than silently discarded.
+        Lower, more negative Vina energy is more favorable.
+      </figcaption>
+    </figure>
+
+    <h3 class="table-title">Table 1 · Vina distribution summary</h3>
+    <p class="table-sub">
+      All values are in kcal/mol. Test rows cover the full test split; train rows summarize the
+      deterministic 500-instance sample. “Positive” means Vina energy &gt; 0 kcal/mol.
+    </p>
+    <div class="table-wrap">
+      <table class="results mini-table">
+        <thead>
+          <tr>
+            <th class="col-method">Vina stage</th>
+            <th>Split</th>
+            <th>n</th>
+            <th>Minimum</th>
+            <th>Maximum</th>
+            <th>Average</th>
+            <th>Median</th>
+            <th>Positive pockets</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="col-method" rowspan="2">Score-only</td>
+            <td>Train · sampled</td>
+            <td>500</td>
+            <td>−13.442</td>
+            <td class="shift">+53.872</td>
+            <td>−6.280</td>
+            <td>−7.557</td>
+            <td class="shift">24 · 4.8%</td>
+          </tr>
+          <tr>
+            <td>Test · complete</td>
+            <td>100</td>
+            <td>−15.541</td>
+            <td class="shift">+52.319</td>
+            <td>−5.644</td>
+            <td>−6.400</td>
+            <td class="shift">4 · 4.0%</td>
+          </tr>
+          <tr class="grp-top">
+            <td class="col-method" rowspan="2">Minimized</td>
+            <td>Train · sampled</td>
+            <td>500</td>
+            <td>−14.106</td>
+            <td class="shift">+46.688</td>
+            <td>−7.145</td>
+            <td>−7.665</td>
+            <td class="shift">10 · 2.0%</td>
+          </tr>
+          <tr>
+            <td>Test · complete</td>
+            <td>100</td>
+            <td>−15.516</td>
+            <td class="shift">+2.015</td>
+            <td>−6.546</td>
+            <td>−6.434</td>
+            <td class="shift">1 · 1.0%</td>
+          </tr>
+          <tr class="grp-top">
+            <td class="col-method" rowspan="2">Docked</td>
+            <td>Train · sampled</td>
+            <td>500</td>
+            <td>−14.383</td>
+            <td>−1.718</td>
+            <td>−8.090</td>
+            <td>−8.247</td>
+            <td>0 · 0.0%</td>
+          </tr>
+          <tr>
+            <td>Test · complete</td>
+            <td>100</td>
+            <td>−15.876</td>
+            <td class="shift">+2.048</td>
+            <td>−7.206</td>
+            <td>−7.077</td>
+            <td class="shift">1 · 1.0%</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout">
+      <strong>Sampling design.</strong>
+      The train tensor contains exactly <b>99,881 unique pocket–ligand instances</b>, so there is no
+      useful deduplication shortcut. Table 1 therefore reports a fixed 500-instance random sample
+      (seed 260730) and the complete 100-instance test split.
+    </div>
+
+    <details class="positive-details" open>
+      <summary>Positive Vina pockets · full test split (highlighted)</summary>
+      <p>
+        Five unique test pockets have at least one positive stage; CHIB_SERMA / 4z2g is positive at
+        both score-only and minimization. The red region in each distribution panel marks energy
+        above zero. <a href="crossdocked_vina_positive_scores.csv">Open the pocket-level positive-score CSV</a>.
+      </p>
+      <div class="table-wrap">
+        <table class="results mini-table">
+          <thead>
+            <tr>
+              <th>Stage</th><th>Test index</th><th>Protein family</th><th>Pocket</th><th>Vina</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>Score-only</td><td>92</td><td>CHIB_SERMA</td><td>4z2g</td><td class="shift">+52.319</td></tr>
+            <tr><td>Score-only</td><td>58</td><td>NPD_THEMA</td><td>3pdh</td><td class="shift">+7.243</td></tr>
+            <tr><td>Score-only</td><td>91</td><td>CHIB_SERMA</td><td>1h0i</td><td class="shift">+3.256</td></tr>
+            <tr><td>Score-only</td><td>87</td><td>CDK6_HUMAN</td><td>4aua</td><td class="shift">+0.800</td></tr>
+            <tr><td>Minimized</td><td>92</td><td>CHIB_SERMA</td><td>4z2g</td><td class="shift">+2.015</td></tr>
+            <tr><td>Docked</td><td>61</td><td>PA2B8_DABRR</td><td>2gns</td><td class="shift">+2.048</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </details>
+
+    <div class="protocol">
+      <div class="protocol-item">
+        <b>Split coverage</b>
+        Test: 100 / 100 instances from 93 protein families. Train: 500 / 99,881 sampled instances
+        across 238 protein families; sampling seed 260730.
+      </div>
+      <div class="protocol-item">
+        <b>Identical Vina protocol</b>
+        Paired pocket10 receptor; score-only → local minimize → dock; exhaustiveness 8, Vina seed 1,
+        and four Vina CPUs per complex.
+      </div>
+      <div class="protocol-item">
+        <b>Raw tails retained</b>
+        Positive score-only tails occur in both splits. Every energy &gt; 0 is retained, shaded red
+        in the figure, counted in Table 1, and exported with its pocket and ligand identifiers.
+      </div>
+    </div>
+
+    <div class="notes">
+      <b>Interpretation and reproducibility.</b>
+      <ul>
+        <li>The project split is reproduced by shuffling the 99,981-item training tensor with seed
+          1234 and reserving the final 100 instances for validation. The supplied 100-item test tensor
+          is evaluated in full.</li>
+        <li>The exhaustive train tensor contains 99,881 unique pocket paths, 99,881 unique ligand paths,
+          and 99,881 unique pocket–ligand pairs; there are no duplicated instances to collapse.</li>
+        <li>The CSV contains all 500 sampled train and 100 test energies and identifiers. The included
+          script, checkpoint, positive-pocket CSV, and summary reproduce the reported evaluation.</li>
+      </ul>
+    </div>
+  </section>
+  <!-- CROSSDOCKED_AUDIT_END -->
+
+  <section class="doc-section structural-quality">
+    <h2 class="section-head"><span class="sec-num">3</span>PoseCheck + PoseBusters structural quality</h2>
+    <p class="section-intro">
+      Placeholder for the matched structural-quality evaluation of the three de novo methods in Section 2.
+      No numerical result is reported here yet: the previous values came from a different VoxBind
+      pipeline-validation run and were not a valid comparison for σ 0.9, σ 1.0, and Ours.
+    </p>
+
+    <h3 class="table-title">Table 3 · Structural-quality evaluation — pending</h3>
+    <p class="table-sub">
+      Each method must be evaluated on the same retained 77-pocket mask, with the same generated-ligand
+      count, receptor preparation, PoseCheck settings, PoseBusters checks, timeout policy, and
+      within-pocket-first aggregation. Dashes are intentional placeholders, not missing published results.
+    </p>
+    <div class="table-wrap">
+      <table class="results">
+        <thead>
+          <tr>
+            <th class="col-method">Method · matched 77 pockets</th>
+            <th>Clashes↓<br>Med</th>
+            <th>Clashes↓<br>Mean</th>
+            <th>Strain↓<br>Med</th>
+            <th>Interact.<br>Mean</th>
+            <th>PB-valid↑</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="col-method">
+              VoxBind σ 0.9 <span class="tag base">pending</span>
+              <span class="sub">matched structural-quality evaluation not yet run</span>
+            </td>
+            <td class="na">—</td>
+            <td class="na">—</td>
+            <td class="na">—</td>
+            <td class="na">—</td>
+            <td class="na">—</td>
+          </tr>
+          <tr>
+            <td class="col-method">
+              VoxBind σ 1.0 <span class="tag base">pending</span>
+              <span class="sub">matched structural-quality evaluation not yet run</span>
+            </td>
+            <td class="na">—</td>
+            <td class="na">—</td>
+            <td class="na">—</td>
+            <td class="na">—</td>
+            <td class="na">—</td>
+          </tr>
+          <tr class="ours">
+            <td class="col-method">
+              Ours — frozen C+D+G <span class="tag ours">pending</span>
+              <span class="sub">matched structural-quality evaluation not yet run</span>
+            </td>
+            <td class="na">—</td>
+            <td class="na">—</td>
+            <td class="na">—</td>
+            <td class="na">—</td>
+            <td class="na">—</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout">
+      <strong>Status: evaluation pending.</strong>
+      Populate this table only after all three methods have been scored through the same structural-quality
+      pipeline. The earlier VoxBind-only validation numbers have been removed because they do not support
+      a method comparison.
+    </div>
+
+    <div class="notes">
+      <b>Required reporting specification.</b>
+      <ul>
+        <li><b>Methods:</b> VoxBind σ 0.9, VoxBind σ 1.0, and the frozen Ours C+D+G checkpoint only.</li>
+        <li><b>Pocket mask:</b> use the same 77 retained pockets from Section 2 for every method.</li>
+        <li><b>Metrics:</b> PoseCheck clash median/mean, UFF strain median, mean interaction count,
+          and the fraction passing every PoseBusters check.</li>
+        <li><b>Aggregation:</b> compute each metric within pocket first, then average or take the median
+          across pockets so every pocket has equal weight.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="doc-section uncertainty" style="order:4">
+    <h2 class="section-head"><span class="sec-num">4</span>Uncertainty &amp; readout &mdash; beyond a plain MLP probe</h2>
+    <p class="section-intro">
+      Inspired by <a href="https://arxiv.org/pdf/2602.07735">TerraBind</a>, whose affinity module reads binding
+      strength from a rich <b>pair / distogram representation</b> through a pairformer and adds an
+      <b>epinet</b> for calibrated affinity uncertainty. Our winning champion probes affinity far more simply:
+      it <b>mean-pools all patch tokens</b> of the frozen C+D+G encoder into one 640-D vector and regresses with a
+      2-layer MLP &mdash; a strong point estimate, but a blended average with <b>no interaction structure and no
+      uncertainty</b>. This section tests richer readouts on the <b>same frozen champion</b> (100M · v2 · mask0.75;
+      no re-pretraining): split the tokens into ligand-region vs pocket-region pools by input occupancy, and make
+      affinity an explicit <b>ligand&times;pocket interaction</b> (TerraBind's pair-rep idea), plus an
+      <b>epinet uncertainty head</b>. All rows share the identical frozen features, split
+      (<code>lp_edrscc_v2</code>, 3850/817/1320), and 3-seed protocol; only the head differs.
+    </p>
+
+    <h3 class="table-title">Table 4 · Affinity-regression heads on the frozen champion</h3>
+    <p class="table-sub">
+      Head applied to the frozen 100M v2 mask0.75 encoder. <b>Champion</b> = the current probe (mean-pool &rarr; MLP).
+      Metrics are test Pearson&nbsp;r / Spearman&nbsp;ρ / RMSE (pK), mean over 3 probe seeds; higher r/ρ and lower
+      RMSE are better. <b>Uncert.</b> = does the head emit a calibrated per-prediction uncertainty (TerraBind-style),
+      which the point-estimate MLP does not.
+    </p>
+    <div class="table-wrap">
+      <table class="results">
+        <thead>
+          <tr>
+            <th class="col-method">Head · frozen champion features</th>
+            <th>Feature<br>dim</th>
+            <th>Test r↑</th>
+            <th>Test ρ↑</th>
+            <th>RMSE↓</th>
+            <th>Uncert.</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="ours">
+            <td class="col-method">
+              Champion · mean-pool &rarr; MLP <span class="tag ours">current</span>
+              <span class="sub">all patch tokens averaged → 2-layer MLP · the winning probe</span>
+            </td>
+            <td><span class="val">640</span></td>
+            <td class="best"><span class="val">0.660</span></td>
+            <td class="best"><span class="val">0.644</span></td>
+            <td class="best"><span class="val">1.349</span></td>
+            <td class="na">—</td>
+            <td><span class="val">baseline</span></td>
+          </tr>
+          <tr class="grp-top">
+            <td class="col-method">
+              Split-pool concat &rarr; MLP <span class="tag base">A·concat</span>
+              <span class="sub">[g<sub>lig</sub>, g<sub>poc</sub>] · does separating ligand/pocket alone help?</span>
+            </td>
+            <td><span class="val">1280</span></td>
+            <td class="na">—</td>
+            <td class="na">—</td>
+            <td class="na">—</td>
+            <td class="na">—</td>
+            <td><span class="metric-status">running</span></td>
+          </tr>
+          <tr>
+            <td class="col-method">
+              Bilinear interaction &rarr; MLP <span class="tag base">A·bilinear</span>
+              <span class="sub">[g<sub>lig</sub>, g<sub>poc</sub>, g<sub>lig</sub>⊙g<sub>poc</sub>, |g<sub>lig</sub>−g<sub>poc</sub>|] · TerraBind pair-rep analog</span>
+            </td>
+            <td><span class="val">2560</span></td>
+            <td class="na">—</td>
+            <td class="na">—</td>
+            <td class="na">—</td>
+            <td class="na">—</td>
+            <td><span class="metric-status">running</span></td>
+          </tr>
+          <tr>
+            <td class="col-method">
+              Cross-attention pooling <span class="tag ref">C·planned</span>
+              <span class="sub">ligand tokens attend pocket tokens · TerraBind pairformer-lite</span>
+            </td>
+            <td class="na">—</td>
+            <td class="na">—</td>
+            <td class="na">—</td>
+            <td class="na">—</td>
+            <td class="na">—</td>
+            <td><span class="metric-status">planned</span></td>
+          </tr>
+          <tr>
+            <td class="col-method">
+              Epinet uncertainty head <span class="tag ref">D·planned</span>
+              <span class="sub">epistemic NN on pooled g · calibrated affinity σ (TerraBind epinet)</span>
+            </td>
+            <td class="na">—</td>
+            <td class="na">—</td>
+            <td class="na">—</td>
+            <td class="na">—</td>
+            <td><span class="val">yes</span></td>
+            <td><span class="metric-status">planned</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout">
+      <strong>Design rationale &amp; the key caveat.</strong> Binding affinity is fundamentally a
+      <b>ligand&ndash;pocket interaction</b>, yet the champion collapses it into one averaged vector. Heads A/C inject
+      that interaction as an explicit inductive bias; the epinet head (D) adds the calibrated uncertainty TerraBind
+      highlights &mdash; directly useful for the generation / screening use case even if the point estimate is
+      unchanged. <b>Caveat:</b> TerraBind trains its pairformer+epinet head on <b>millions</b> of affinity labels;
+      our probe has <b>3,850</b>. Our own evidence (attention-pool &lt; mean-pool; end-to-end fine-tune hurt) shows a
+      high-capacity head overfits at this label count &mdash; so the bet is <b>interaction inductive bias with near-zero
+      added parameters</b>, not TerraBind's capacity.
+    </div>
+
+    <div class="notes">
+      <b>Method &amp; status.</b>
+      <ul>
+        <li><b>Frozen, shared features:</b> every head reads the identical 100M v2 mask0.75 encoder; per-patch tokens
+          are soft-pooled into ligand-region (<code>g_lig</code>) and pocket-region (<code>g_poc</code>) vectors by
+          input occupancy (ligand channels 0&ndash;6, pocket 7&ndash;10). No encoder retraining &mdash; extract once,
+          train many heads.</li>
+        <li><b>Champion is the bar to beat:</b> mean-pool &rarr; MLP at r 0.660 / ρ 0.644 / RMSE 1.349. A head is only
+          adopted if it clears this on test <i>and</i> holds on validation (no val-only gains).</li>
+        <li><b>A·concat / A·bilinear</b> land shortly (frozen-feature head training); <b>C (cross-attention)</b> and
+          <b>D (epinet uncertainty)</b> are queued and fire based on whether the interaction bias (A) moves ρ.</li>
+        <li><b>Uncertainty is the portable win:</b> regardless of whether A/C raise ρ, the epinet head gives a
+          calibrated per-ligand affinity σ for ranking/triage in de novo screening &mdash; the capability the plain
+          MLP cannot provide.</li>
+      </ul>
+    </div>
+  </section>
+
+  <footer style="order:5">
+    Provenance: Section 2 uses the 2026-07-23 full de novo evaluation and the 79 reference
+    <code>ref_score</code> values in <code>voxbind/log/260524_sample_voxbind_vit_ep379_fulltest.log</code>.
+    Section 1 was evaluated 2026-07-23 from the canonical CrossDocked2020 tensors and paired pocket10
+    receptors using AutoDock Vina 1.2.7. All 600 requested split-audit evaluations completed successfully.
+  </footer>
+
+</div>
+</body>
+</html>

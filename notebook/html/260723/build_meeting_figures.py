@@ -171,7 +171,7 @@ def plot_macrocycle_prevalence():
     save(fig, "fig_macrocycle_fraction.png")
 
 
-def plot_macrocycle_size_distribution(ours_rows, sigma_rows, ref_rings, train_rings):
+def plot_macrocycle_size_distribution(ours_rows, sigma_rows, ref_rings, train_rings, plinder_rings):
     groups = [
         ("Ours — frozen C+D+G", ACC, Counter(r["ring"] for r in ours_rows)),
         ("VoxBind sigma 0.9", BLUE, Counter(r["ring"] for r in sigma_rows)),
@@ -180,7 +180,8 @@ def plot_macrocycle_size_distribution(ours_rows, sigma_rows, ref_rings, train_ri
     sizes = np.arange(MACRO, max(max(c) for _, _, c in groups) + 1)
     x = np.arange(len(sizes))
     width = .27
-    TRAIN = "#7a5195"
+    TRAIN = "#7a5195"       # CrossDocked = the generator's training set
+    PRETRAIN = "#dd7e33"    # PLINDER v2 = the frozen density encoder's pretraining corpus
     fig, ax = plt.subplots(figsize=(8.4, 4.4))
     for offset, (label, color, counts) in zip((-.27, 0, .27), groups):
         values = [counts.get(int(size), 0) for size in sizes]
@@ -191,25 +192,29 @@ def plot_macrocycle_size_distribution(ours_rows, sigma_rows, ref_rings, train_ri
                 if value:
                     ax.text(bar.get_x() + bar.get_width() / 2, value + .55, str(value),
                             ha="center", va="bottom", fontsize=8, color=INK)
-    # the CrossDocked training set carries ~15x more macrocycles than the generated
-    # sets, so show it as a line on a secondary axis (compare shape, not raw counts)
+    # dataset macrocycle-size shapes on a shared secondary axis (compare shape, not the
+    # generated raw counts): CrossDocked = generator training set, PLINDER v2 = the frozen
+    # density encoder's pretraining corpus (instance-level, what the encoder actually sees)
     ax2 = ax.twinx()
     train_values = [train_rings.get(int(size), 0) for size in sizes]
+    plinder_values = [plinder_rings.get(int(size), 0) for size in sizes]
     ax2.plot(x, train_values, color=TRAIN, lw=2, marker="o", ms=4, zorder=5,
-             label=f"CrossDocked train set (n={sum(train_rings.values())})")
-    ax2.set_ylabel("training-set macrocycle count", color=TRAIN)
-    ax2.tick_params(axis="y", colors=TRAIN)
-    ax2.set_ylim(0, max(train_values) * 1.18)
+             label=f"CrossDocked train (n={sum(train_rings.values())})")
+    ax2.plot(x, plinder_values, color=PRETRAIN, lw=2, marker="s", ms=4, zorder=6,
+             label=f"PLINDER v2 pretrain (n={sum(plinder_rings.values())})")
+    ax2.set_ylabel("dataset macrocycle count", color=SOFT)
+    ax2.tick_params(axis="y", colors=SOFT)
+    ax2.set_ylim(0, max(max(train_values), max(plinder_values)) * 1.18)
     ax2.spines["top"].set_visible(False)
-    ax2.spines["right"].set_color(TRAIN)
+    ax2.spines["right"].set_color("#aeb6c4")
     ax.set_xticks(x, sizes, fontsize=8.5)
     ax.set_xlabel("macrocycle size (atoms in largest SSSR ring)")
     ax.set_ylabel("generated / reference count")
     ax.yaxis.set_major_locator(MaxNLocator(integer=True))
     handles1, labels1 = ax.get_legend_handles_labels()
     handles2, labels2 = ax2.get_legend_handles_labels()
-    ax.legend(handles1 + handles2, labels1 + labels2, frameon=False, fontsize=8.5,
-              ncol=2, loc="lower left", bbox_to_anchor=(0, 1.01))
+    ax.legend(handles1 + handles2, labels1 + labels2, frameon=False, fontsize=8.2,
+              ncol=3, loc="lower left", bbox_to_anchor=(0, 1.01))
     ax.spines["top"].set_visible(False)
     ax.grid(axis="y", color=LINE, lw=.8)
     ax.set_axisbelow(True)
@@ -451,8 +456,11 @@ def main():
             ref_rings.append(int(ring))
 
     train_rings = training_macro_rings()
+    with open(os.path.join(HERE, "macrocycle_data.json")) as fh:
+        plinder_rings = Counter(
+            int(v) for v in json.load(fh)["plinder_instances"]["macro_ring_sizes"])
     plot_macrocycle_prevalence()
-    plot_macrocycle_size_distribution(ours_rows, sigma_rows, ref_rings, train_rings)
+    plot_macrocycle_size_distribution(ours_rows, sigma_rows, ref_rings, train_rings, plinder_rings)
     plot_macrocycle_dock(ours_rows, sigma_rows, ref_dock)
     plot_dock_vs_atoms_from_svg()
     ref_atoms = reference_atom_counts(ours, ours_root)

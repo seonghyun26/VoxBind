@@ -29,6 +29,8 @@ METHODS = {
     "C":     dict(path=f"{FD}/atomblob_e99_v5_otf_coords_mask050.pt", key="features"),
     "CDG":   dict(path=f"{FD}/atomblob_density_gradmag_e99_v5_260623_ar_cvit_c1_g742.pt", key="features"),
     "DSMBind": dict(path=f"{REPO}/base/dsmbind/_edrscc/features/lp_edrscc_v2.pt", key="feat"),
+    "CDG_100m_mask075": dict(path=f"{FD}/atomblob_density_gradmag_e49_v5_260705_ar_cvit_100m_v2_mask075.pt", key="features"),
+    "C_100m_mask075_coords": dict(path=f"{FD}/atomblob_e49_v5_260723_ar_cvit_100m_v2_mask075_coords.pt", key="features"),
 }
 HP = dict(hidden=128, dropout=0.1, lr=1e-3, wd=1e-4, epochs=200, patience=30, bs=64, seeds=3)
 

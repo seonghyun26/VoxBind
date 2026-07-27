@@ -40,6 +40,12 @@ RECIPES = {
     "v2p1": dict(min_rscc=0.80, min_pocket_rscc=0.80, max_res=2.5, min_heavy=6, max_heavy=50,
                  single_ligand=False, allow_covalent=False, plinder_splits=[],
                  dedup="pdb_ccd", in_vocab_filter=False),   # 1 per (PDB, ligand CCD)
+    # v3: clean+scaled base. res<=3.0 (vs v2.1's 2.5) for size; dedup="none" here because the
+    # real dedup is DENSITY-AWARE POSE dedup applied at BUILD time (04_build_perelem
+    # --pose_dedup_tau), which keeps density-distinct poses & drops symmetry copies (~73K).
+    "v3":   dict(min_rscc=0.80, min_pocket_rscc=0.80, max_res=3.0, min_heavy=6, max_heavy=50,
+                 single_ligand=False, allow_covalent=False, plinder_splits=[],
+                 dedup="none", in_vocab_filter=False),
 }
 BUILD = dict(shuffle_seed=1234, val_tail=100, max_len=30,
              norm_version="v6_arcsinh_z", pocket_radius=10.0, frame="deposited (transform=None)")

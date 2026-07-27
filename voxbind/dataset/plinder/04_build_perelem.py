@@ -62,6 +62,9 @@ def main():
     ap.add_argument("--version", default="v2", help="selection freeze / output suffix (v2, v2p1, …)")
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--pocket_radius", type=float, default=10.0)
+    ap.add_argument("--pose_dedup_tau", type=float, default=0.0,
+                    help=">0 enables DENSITY-AWARE pose dedup: within each (PDB, ligand) group keep one "
+                         "copy per density cluster (aligned density-crop corr < tau); drops symmetry copies.")
     args = ap.parse_args()
 
     global FREEZE, OUT_TUPLES, OUT_DIR
@@ -72,7 +75,7 @@ def main():
         sel = sel.head(args.limit)
     print(f"=== v2 PER-ELEMENT+other build (8 lig / 4 poc) ===\n  selection: {len(sel):,} rows\n  cifs: {CIF_DIR}")
 
-    tuples, skipped, ch_hist = [], {}, Counter()
+    tuples, meta, skipped, ch_hist = [], [], {}, Counter()
     for r in tqdm(list(sel.itertuples(index=False)), desc="build", unit="cplx"):
         pid = str(r.entry_pdb_id).lower(); key = f"{pid}_{r.ligand_asym_id}"
         cif = CIF_DIR / f"{pid}.cif"
@@ -94,6 +97,7 @@ def main():
                    "atoms_channel": lig_ch.to(torch.uint8), "radius": lig_rad.to(torch.float32),
                    "max_len": max_len}
         tuples.append((pocket_, ligand_))
+        meta.append((pid, str(r.ligand_ccd_code)))
 
     print(f"  built {len(tuples):,} tuples  (skipped {len(skipped):,})")
     for reason, n in Counter(skipped.values()).most_common():
@@ -104,6 +108,47 @@ def main():
         print(f"     ch {c}: {ch_hist.get(c,0):>10,}  ({100*ch_hist.get(c,0)/max(tot,1):5.2f}%)")
     if not tuples:
         raise SystemExit("  [abort] no tuples built.")
+
+    # ── DENSITY-AWARE POSE DEDUP (opt-in, --pose_dedup_tau>0) ────────────────────────────
+    if args.pose_dedup_tau > 0:
+        from collections import defaultdict
+        cdm = load_module(VOX_ROOT / "dataset" / "crossdocked_density.py", "cdm_pd")
+        pdd = load_module(VOX_ROOT / "dataset" / "plinder" / "pose_dedup.py", "pose_dedup")
+        tau = float(args.pose_dedup_tau)
+        # Group by PID → CCD → indices so each CCP4 map is loaded ONCE and FREED before the next
+        # PID (caching every map blows up host RAM → OOM at ~40k PDBs).
+        pid_groups = defaultdict(lambda: defaultdict(list))
+        for i, (pid, ccd) in enumerate(meta):
+            pid_groups[pid][ccd].append(i)
+        keep = np.zeros(len(tuples), dtype=bool)
+        n_nomap = 0
+        for pid, ccd_map in tqdm(pid_groups.items(), desc=f"pose-dedup(t={tau})", unit="pdb"):
+            g = None
+            if any(len(idxs) > 1 for idxs in ccd_map.values()):
+                p = CCP4_DIR / f"{pid}.ccp4"
+                g = cdm._load_raw_grid(p) if p.exists() else None
+            for ccd, idxs in ccd_map.items():
+                if len(idxs) == 1:
+                    keep[idxs[0]] = True; continue
+                if g is None:                               # no map → keep all copies (rare)
+                    keep[idxs] = True; n_nomap += 1; continue
+                arr, fMT, nu, nv, nw = g
+                rf = lambda center, R: cdm._resample_density(arr, fMT, nu, nv, nw, center, R_aug=R, G=40, res=0.35)
+                by_n = defaultdict(list)                     # only equal-atom copies are Kabsch-comparable
+                for i in idxs:
+                    by_n[len(tuples[i][1]["coords"])].append(i)
+                for _n, sub in by_n.items():
+                    if len(sub) == 1:
+                        keep[sub[0]] = True; continue
+                    coords = [tuples[i][1]["coords"].numpy().astype(np.float64) for i in sub]
+                    for k in pdd.pose_dedup_group(coords, rf, tau=tau, cap=16):
+                        keep[sub[k]] = True
+            g = None                                         # free this PID's map before the next
+        tuples = [t for t, k in zip(tuples, keep) if k]
+        print(f"  pose-dedup(tau={tau}): {len(keep):,} → {len(tuples):,} kept "
+              f"({int(keep.sum())} distinct-pose crops; {n_nomap} groups had no map)")
+        if not tuples:
+            raise SystemExit("  [abort] pose-dedup removed everything.")
 
     PRETRAIN.mkdir(parents=True, exist_ok=True)
     torch.save(tuples, str(OUT_TUPLES))

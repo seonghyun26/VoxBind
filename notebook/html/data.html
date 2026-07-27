@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VoxBind — PLINDER dataset versions</title>
+<style>
+  :root {
+    --ink:#1c2433; --ink-soft:#5b6678; --line:#e3e7ee; --line-strong:#aeb6c4;
+    --bg:#f5f6f8; --card:#ffffff; --accent:#2f6f4f; --best-bg:#eaf5ee;
+    --good:#1a7f37; --bad:#c0392b; --warn:#b07a17;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    font-size:16px; line-height:1.55; -webkit-font-smoothing:antialiased; }
+  .page { max-width:1180px; margin:0 auto; padding:48px 24px 96px; }
+  header.doc { border-bottom:2px solid var(--ink); padding-bottom:18px; margin-bottom:40px; }
+  header.doc .date { font-size:13px; letter-spacing:.12em; text-transform:uppercase; color:var(--ink-soft); margin-bottom:6px; }
+  header.doc h1 { font-size:28px; font-weight:650; margin:0; letter-spacing:-0.01em; }
+  header.doc .lead { font-size:14px; color:var(--ink-soft); margin:10px 0 0; max-width:1000px; }
+  .doc-section { margin-bottom:60px; }
+  .section-head { font-size:22px; font-weight:660; letter-spacing:-0.01em; margin:0 0 26px; padding-bottom:12px;
+    border-bottom:2px solid var(--line-strong); display:flex; align-items:center; gap:14px; }
+  .section-head .sec-num { display:inline-flex; align-items:center; justify-content:center; width:30px; height:30px;
+    border-radius:8px; background:var(--accent); color:#fff; font-size:15px; font-weight:700; flex:0 0 auto; }
+  .table-title { font-size:18px; font-weight:620; margin:0 0 4px; }
+  .table-sub { font-size:13.5px; color:var(--ink-soft); margin:0 0 18px; max-width:1080px; }
+  .table-wrap { overflow-x:auto; border:1px solid var(--line); border-radius:12px; background:var(--card);
+    box-shadow:0 1px 2px rgba(20,30,50,.04), 0 8px 24px rgba(20,30,50,.05); }
+  table.results { border-collapse:collapse; width:100%; font-variant-numeric:tabular-nums; }
+  table.results th, table.results td { padding:11px 12px; text-align:center; white-space:nowrap; }
+  table.results thead th { font-weight:600; background:#fafbfc; border-bottom:1px solid var(--line); }
+  .col-method { text-align:left !important; min-width:210px; }
+  td.col-method { font-weight:560; }
+  table.results tbody tr { border-top:1px solid var(--line); }
+  table.results tbody tr:hover { background:#fbfcfd; }
+  tr.grp-label td { background:#f4f7fb; text-align:left; font-size:10.5px; letter-spacing:.1em; text-transform:uppercase;
+    color:var(--ink-soft); font-weight:700; padding:7px 12px; border-top:2px solid var(--line-strong); }
+  .v1 { color:#1a7f37; font-weight:600; } .v2 { color:#bc4c00; font-weight:600; } .v21 { color:#2b5fd0; font-weight:600; }
+  .v22 { color:#8e44ad; font-weight:600; }
+  .yes { color:var(--good); font-weight:600; } .no { color:var(--bad); } .mut { color:var(--ink-soft); font-size:12.5px; }
+  td.best { background:var(--best-bg); } td.best .val, td.best b { color:#1d5a3a; }
+  .metric .val { font-weight:560; } .metric .sd { color:#9aa3b2; font-size:10.5px; }
+  .tag { display:inline-block; font-size:11px; font-weight:600; letter-spacing:.03em; padding:2px 8px; border-radius:999px; }
+  .tag.champ { background:var(--best-bg); color:#1d5a3a; } .tag.run { background:#fcf3e0; color:var(--warn); }
+  .notes { margin-top:18px; font-size:13px; color:var(--ink-soft); line-height:1.6; max-width:1080px; }
+  .notes b { color:var(--ink); font-weight:600; } .notes ul { margin:6px 0 0; padding-left:20px; } .notes li { margin-bottom:5px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px 20px; margin:10px 0;
+    box-shadow:0 1px 2px rgba(20,30,50,.04); }
+  .card p { margin:6px 0; font-size:13.5px; }
+  .pill { display:inline-block; padding:1px 9px; border-radius:999px; font-size:12px; font-weight:600; }
+  .pill.keep { background:var(--best-bg); color:#1d5a3a; } .pill.drop { background:#fdecea; color:var(--bad); }
+  code { background:#f0f2f5; padding:1px 5px; border-radius:4px; font-size:12.5px; }
+  .foot { color:var(--ink-soft); font-size:12px; margin-top:48px; border-top:1px solid var(--line); padding-top:14px; }
+</style>
+</head><body><div class="page">
+
+<header class="doc">
+  <div class="date">2026 · 07 · 22 — Datasets</div>
+  <h1>PLINDER density-pretrain dataset versions</h1>
+  <p class="lead">Ligand-matched X-ray electron-density corpora for VoxBind MAE pretraining. Frozen affinity probe on
+    <code>lp_edrscc_v2</code> (Kd/Ki; 3850/817/1320); all metrics = 3 probe seeds (Pearson&nbsp;r / Spearman&nbsp;&rho; / RMSE).</p>
+</header>
+
+<div class="doc-section">
+  <h2 class="section-head"><span class="sec-num">1</span> Dataset versions &mdash; size &amp; recipe</h2>
+  <section class="block">
+    <p class="table-title">Table 1 &nbsp;&middot;&nbsp; The four built corpora (v3 done)</p>
+    <p class="table-sub">v1 = curated · v2 = max-coverage · v2.1 = curated at scale · <span class="v22">v3</span> = v2.1 recipe but <b>res&le;3.0 + density-aware pose dedup</b> (keep density-distinct poses, drop symmetry copies).</p>
+    <div class="table-wrap">
+    <table class="results">
+      <thead><tr>
+        <th class="col-method">property</th><th class="v1">v1</th><th class="v2">v2</th><th class="v21">v2.1 (clean)</th>
+        <th class="v22">v3</th>
+      </tr></thead>
+      <tbody>
+        <tr class="grp-label"><td colspan="5">Size &amp; composition</td></tr>
+        <tr><td class="col-method">data file</td><td class="mut">plinder.pt</td><td class="mut">…_v2_perelem.pt</td><td class="mut">…_v2p1_perelem.pt</td><td class="mut">…_v3_perelem.pt</td></tr>
+        <tr><td class="col-method">tuples (crops)</td><td>17,720</td><td>113,874</td><td>37,859</td><td>71,694</td></tr>
+        <tr><td class="col-method">unique PDB</td><td>17,720</td><td>41,806</td><td>34,294</td><td>40,007</td></tr>
+        <tr><td class="col-method">unique chemotypes (CCD)</td><td class="mut">~13k</td><td>21,669</td><td>18,478</td><td>20,983</td></tr>
+        <tr><td class="col-method">intent</td><td>curated</td><td>max-coverage</td><td>curated @ scale</td><td>pose-diverse clean</td></tr>
+        <tr class="grp-label"><td colspan="5">Selection recipe</td></tr>
+        <tr><td class="col-method">ligand RSCC &ge; 0.8</td><td class="yes">yes</td><td class="yes">yes</td><td class="yes">yes</td><td class="yes">yes</td></tr>
+        <tr><td class="col-method"><b>pocket</b> RSCC &ge; 0.8</td><td class="no">no</td><td class="no">no</td><td class="yes">yes</td><td class="yes">yes</td></tr>
+        <tr><td class="col-method">resolution cap</td><td class="yes">&le; 2.5 &Aring;</td><td class="no">none</td><td class="yes">&le; 2.5 &Aring;</td><td class="yes">&le; 3.0 &Aring;</td></tr>
+        <tr><td class="col-method">dedup</td><td>by PDB<div class="mut">1 lig / structure</div></td><td class="no">none<div class="mut">all copies kept</div></td><td>by PDB+CCD<div class="mut">1 / (struct, ligand)</div></td><td class="v22">density-pose<div class="mut">&tau; 0.85 · keep distinct poses</div></td></tr>
+        <tr><td class="col-method">multi-ligand / structure</td><td class="no">no (single)</td><td class="yes">yes</td><td class="yes">yes</td><td class="yes">yes</td></tr>
+        <tr><td class="col-method">PLINDER splits</td><td>train only</td><td>all</td><td>all</td><td>all</td></tr>
+        <tr><td class="col-method">element vocab</td><td>in-vocab only<div class="mut">7 lig elements</div></td><td>+ &ldquo;other&rdquo;<div class="mut">Br/I/B/Se/metal</div></td><td>+ &ldquo;other&rdquo;</td><td>+ &ldquo;other&rdquo;</td></tr>
+        <tr><td class="col-method">heavy atoms</td><td colspan="4" class="mut">6 &ndash; 50 · no covalent (all versions)</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <div class="notes">
+      <b>dedup vs multi-ligand are orthogonal.</b> <b>multi-ligand</b> keeps <i>different</i> ligands from one structure
+      (drug + cofactor + fragment). <b>dedup</b> collapses redundant copies of the <i>same</i> ligand (same CCD) in one
+      structure &mdash; homodimer chains / symmetry copies (e.g. PDB <code>4g93</code> had ligand <code>0YP</code> &times;266).
+      v2.1 uses <code>multi-ligand + dedup(PDB,CCD)</code> = every distinct ligand, one copy each.
+      <br><br>
+      <b><span class="v22">v3</span> (ongoing) = density-aware pose dedup.</b> Same v2.1 clean recipe, but instead of
+      collapsing each (PDB, ligand) to ONE crop, it keeps one representative per <i>density cluster</i>: greedily keep a
+      copy iff its aligned density-crop correlation with every kept copy is &lt; &tau; (drop symmetry/near-identical,
+      keep distinct poses). Sizes: <b>~60,871</b> (&tau;&nbsp;0.85) · <b>~54,344</b> (&tau;&nbsp;0.70) &mdash; between
+      v2.1 (37,859, over-collapsed) and clean-no-dedup (87,926). Recovers the ~13% genuinely-distinct-density copies v2.1 threw away.
+      <br><br>
+      <b>Why it matters:</b> of 46,393 unique (PDB, ligand) pairs in v2, <b>26,722 (57.6%)</b> appear more than once
+      <i>within the same structure</i> (multi-chain / symmetry copies, worst <code>4g93</code>/<code>0YP</code> &times;266).
+      Measured density-crop correlation: symmetry copies <b>0.86</b> (10/40 exactly 1.0) vs &gt;1&nbsp;&Aring;-pose copies <b>0.40</b>
+      (cross-ligand baseline 0.005) &mdash; so duplicates are mostly redundant, but a minority are real alternate-pose density.
+    </div>
+  </section>
+</div>
+
+<div class="doc-section">
+  <h2 class="section-head"><span class="sec-num">2</span> Build lineage &amp; the v2 audit</h2>
+  <div class="card">
+    <p><span class="v1">v1 &rarr; v2</span> &nbsp;<span class="pill drop">removed filters</span>&nbsp; 17.7K &rarr; 113.9K by
+      dropping the resolution cap, dedup, single-ligand, in-vocab and train-only restrictions. <b>Cost:</b> 59% of crops
+      are same-ligand-same-structure duplicates, 23% are &gt; 2.5 &Aring;, and pocket density was never checked.</p>
+    <p><span class="v2">v2 &rarr; v2.1</span> &nbsp;<span class="pill keep">re-added quality</span>&nbsp; After the 260718
+      audit: pocket RSCC &ge; 0.8 (&minus;111), resolution &le; 2.5 &Aring; (&minus;25,939), dedup by PDB+CCD
+      (&minus;50,041 redundant copies) &rarr; <b>37,859 clean crops (~2.2&times; v1)</b>. Kept v2's multi-ligand +
+      all-splits + diverse vocab (so 4 recipe axes still differ from v1).</p>
+  </div>
+  <div class="notes"><b>Why v2's &ldquo;6.5&times;&rdquo; was mostly illusory:</b>
+    <ul>
+      <li><b>59% near-duplicates</b> &mdash; 113,976 rows &rarr; only 46,393 unique (PDB, ligand).</li>
+      <li><b>Unique chemistry barely grew</b> &mdash; 22,050 unique SMILES &rArr; real new chemistry &asymp; 1.3&times;, not 6.5&times;.</li>
+      <li><b>+23% low-resolution</b> (25,980 crops &gt; 2.5 &Aring;) and <b>pocket density unfiltered</b> in v1/v2.</li>
+      <li><b>Diverse-vocab noise</b> &mdash; under [7,4,2], 1,735 v2.1 ligands (4.58%) with Br/I/metal train with that atom
+        dropped from input but present in the density target.</li>
+    </ul>
+  </div>
+</div>
+
+<div class="doc-section">
+  <h2 class="section-head"><span class="sec-num">3</span> Probe results per version</h2>
+  <section class="block">
+    <p class="table-title">Table 2 &nbsp;&middot;&nbsp; C+D+G ChannelViT [7,4,2] &mdash; <code>lp_edrscc_v2</code></p>
+    <div class="table-wrap">
+    <table class="results">
+      <thead><tr>
+        <th class="col-method">corpus &amp; recipe</th><th>Pearson r</th><th>Spearman &rho;</th><th>RMSE</th>
+      </tr></thead>
+      <tbody>
+        <tr><td class="col-method"><span class="v1">v1</span> · 40M · mask0.5 · 100ep <span class="tag champ">best · results.html</span></td><td class="best"><b>0.656</b></td><td class="best"><b>0.637</b></td><td class="best"><b>1.353</b></td></tr>
+        <tr><td class="col-method"><span class="v2">v2</span> · 40M · mask0.5 · 100ep</td><td>0.634</td><td>0.620</td><td>1.450</td></tr>
+        <tr><td class="col-method"><span class="v2">v2</span> · 100M · mask0.75 · 50ep <span class="tag run">autoresearch high</span></td><td>0.660</td><td>0.644</td><td>1.349</td></tr>
+        <tr><td class="col-method"><span class="v21">v2.1</span> · 40M · mask0.5 · ema0.999</td><td>0.638</td><td>0.621</td><td>1.426</td></tr>
+        <tr><td class="col-method"><span class="v21">v2.1</span> · 40M · mask0.5 · ema0.9999</td><td>0.652</td><td>0.635</td><td>1.401</td></tr>
+        <tr><td class="col-method mut">&nbsp;&nbsp;&#8627; best seed</td><td class="mut">0.660</td><td class="mut">0.641</td><td class="mut">1.350</td></tr>
+        <tr><td class="col-method"><span class="v21">v2.1</span> · 100M · mask0.75 · 50ep</td><td>0.650</td><td>0.632</td><td>1.366</td></tr>
+        <tr><td class="col-method"><span class="v22">v3</span> · 100M · mask0.75 · 50ep · +HCS0.15</td><td>0.646</td><td>0.632</td><td>1.389</td></tr>
+      </tbody>
+    </table>
+    </div>
+  </section>
+
+  <section class="block" style="margin-top:34px">
+    <p class="table-title">Table 3 &nbsp;&middot;&nbsp; Size ladder &mdash; does size help, recipe held fixed? <span class="pill keep">YES</span></p>
+    <p class="table-sub">Subsamples of the <b>same v2.1 pool</b>, identical recipe (40M · mask0.5 · ema0.9999 · 100ep). Only crop count changes.</p>
+    <div class="table-wrap">
+    <table class="results">
+      <thead><tr><th class="col-method">n crops</th><th>Pearson r</th><th>Spearman &rho;</th><th>RMSE</th></tr></thead>
+      <tbody>
+        <tr><td class="col-method">9,000</td><td>0.605</td><td>0.582</td><td>1.479</td></tr>
+        <tr><td class="col-method">18,000</td><td>0.615</td><td>0.592</td><td>1.434</td></tr>
+        <tr><td class="col-method">37,401 (full)</td><td><b>0.652</b></td><td><b>0.635</b></td><td><b>1.401</b></td></tr>
+      </tbody>
+    </table>
+    </div>
+    <div class="notes">Monotonic in all three metrics: <b>+0.053 &rho; across 4&times;</b>, and <b>not saturating</b>
+      (18K&rarr;38K still +0.043). &rArr; within a fixed recipe, dataset size scales &mdash; the earlier
+      &ldquo;more data doesn't help&rdquo; was a recipe confound (v1-vs-v2 changed recipe <i>and</i> size). A
+      <b>bigger clean corpus</b> is a promising direction.</div>
+  </section>
+</div>
+
+<div class="doc-section">
+  <h2 class="section-head"><span class="sec-num">4</span> Takeaways</h2>
+  <div class="notes">
+    <ul>
+      <li><b>Canonical best (results.html Table 1) = C+D+G, pretrained on <span class="v1">PLINDER v1</span></b> &mdash;
+        r&nbsp;0.656 / &rho;&nbsp;0.637 / RMSE&nbsp;1.353 on <code>lp_edrscc_v2</code>; best method across all four splits.
+        The results.html headline density probe uses the smallest, curated 17.7K corpus.</li>
+      <li><b>Autoresearch high = 0.644 / r&nbsp;0.660</b> (100M · v2 · mask0.75) numerically edges v1 but on the larger
+        noisy corpus, and is not in the results.html table. The mask-0.75 win (+0.030 &rho;) is scale-specific.</li>
+      <li><b>Data does scale</b> (Table 3): same-recipe 9K&rarr;38K = +0.053 &rho;, monotonic, non-saturating.</li>
+      <li><b>&ldquo;More data doesn't help&rdquo; was a recipe confound</b> &mdash; v1-vs-v2 changed recipe + size at once. Both recipe-quality and size matter.</li>
+      <li><b>EMA decay 0.9999</b> is a real but narrow lever (+0.014 &rho; on 40M/v2.1/100ep; hurts the 100M/50ep champion).</li>
+      <li><b>Clean &ne; enough:</b> clean-37K (0.632) &lt; noisy-112K champion (0.644) &mdash; size dominates; the champion's edge is raw scale.</li>
+      <li><b>Pose diversity doesn't help either:</b> v3 (clean pose-diverse 72K, +HCS) = 0.632 &mdash; ties clean-37K despite 2&times; crops.
+        New-structure scaling helps (size ladder +0.053), but extra <i>poses of the same complexes</i> add no probe signal. Champion 0.644 unbeaten.</li>
+    </ul>
+  </div>
+</div>
+
+<p class="foot">VoxBind · PLINDER density pretraining · build <code>dataset/plinder/01_select.py --version {v2,v2p1}</code> +
+  <code>04_build_perelem.py</code> · frozen splits <code>splits/plinder/{v1,v2,v2p1}/</code> · generated 2026-07-22.</p>
+
+</div></body></html>

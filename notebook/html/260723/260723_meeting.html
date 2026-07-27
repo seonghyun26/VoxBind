@@ -122,11 +122,13 @@
     <img src="fig_macrocycle_size_distribution.png" alt="frequency distribution of macrocycle ring sizes for ours, vanilla sigma 0.9, and reference ligands">
   </div>
   <p class="fig-cap">Figure 1b · Macrocycle-size frequency in the 79-pocket full evaluation.
-  x = largest macrocycle ring size; bars (left axis) = molecule count for the generated / reference groups;
-  the <b style="color:#7a5195">purple line (right axis)</b> is the <b>CrossDocked training set</b>
-  (n=3,048 macrocycle ligands), which carries ~15× more macrocycles so is shown on its own scale for a shape
-  comparison. Ours: n=198, sizes 12–30; vanilla σ&nbsp;0.9: n=131, sizes 12–27; reference: n=4, sizes 14, 16,
-  18, 21. The training set peaks at ring&nbsp;13, whereas <b>Ours skews larger</b> (mode 15, a longer tail to 30).</p>
+  x = largest macrocycle ring size; bars (left axis) = molecule count for the generated / reference groups.
+  The two lines (right axis, shared count scale) are the dataset macrocycle-size shapes:
+  <b style="color:#7a5195">CrossDocked train</b> (n=3,048 — the generator's training set) and
+  <b style="color:#dd7e33">PLINDER v2 pretrain</b> (n=1,430 instances — the frozen density encoder's
+  pretraining corpus). Ours: n=198, sizes 12–30; vanilla σ&nbsp;0.9: n=131, sizes 12–27; reference: n=4,
+  sizes 14, 16, 18, 21. Both datasets peak at ring&nbsp;12–13, whereas <b>Ours skews larger</b>
+  (mode 15, a longer tail to 30).</p>
 
   <div class="callout" style="margin-top:22px;">
     <b>Why measure prevalence.</b> Macrocycle counts establish how much support each population provides
