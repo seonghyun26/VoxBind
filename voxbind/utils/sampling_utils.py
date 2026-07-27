@@ -1,4 +1,5 @@
 import os
+import json
 from copy import deepcopy
 from rdkit import Chem
 import shutil
@@ -58,6 +59,7 @@ def sample_molecules(
             density_vox = density_vox.unsqueeze(1)
 
     n_valid_mol, n_mol = 0, 0
+    n_invalid, n_duplicate = 0, 0
     rdkmols, list_smiles = [], []
     while n_valid_mol < cfg.wjs.n_samples_per_pocket and n_mol < 500:
         # sample molecules
@@ -85,6 +87,10 @@ def sample_molecules(
                     list_smiles.append(smiles)
                     n_valid_mol += 1
                     rdkmols.append(mol)
+                else:
+                    n_duplicate += 1  # valid molecule, but SMILES already sampled
+            else:
+                n_invalid += 1  # obabel/rdkit could not build a valid molecule
             n_mol += 1
 
     if n_valid_mol == 0:
@@ -99,6 +105,31 @@ def sample_molecules(
                 print("cannot save", rdkmol)
 
     save_pocket_and_ligand(ligand_gt, pocket, cfg.dset.data_dir, target_dirname)
+
+    # record generation effort: how many voxel->mol attempts were needed to
+    # collect n_valid_mol UNIQUE valid molecules, split into invalid (obabel/rdkit
+    # parse fail) vs duplicate (valid but SMILES already seen). Lets you measure the
+    # true validity / raw-uniqueness and flag pockets that hit the 500-attempt cap.
+    n_target = int(cfg.wjs.n_samples_per_pocket)
+    n_processed = n_mol - n_invalid  # valid molecules seen (unique + duplicate)
+    gen_stats = {
+        "n_generated_total": n_mol,
+        "n_valid_unique": n_valid_mol,
+        "n_invalid": n_invalid,
+        "n_duplicate": n_duplicate,
+        "validity": n_processed / n_mol if n_mol else 0.0,
+        "uniqueness_raw": n_valid_mol / n_processed if n_processed else 0.0,
+        "hit_cap": bool(n_mol >= 500 and n_valid_mol < n_target),
+    }
+    with open(os.path.join(target_dirname, "gen_stats.json"), "w") as fh:
+        json.dump(gen_stats, fh, indent=2)
+    print(
+        f"[gen_stats] {os.path.basename(target_dirname)}: "
+        f"generated={n_mol} kept_unique={n_valid_mol} "
+        f"duplicates={n_duplicate} invalid={n_invalid} "
+        f"validity={gen_stats['validity']:.3f} uniq_raw={gen_stats['uniqueness_raw']:.3f}"
+        + ("  [HIT 500 CAP]" if gen_stats["hit_cap"] else "")
+    )
 
     return n_valid_mol
 
