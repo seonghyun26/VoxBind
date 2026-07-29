@@ -8,7 +8,8 @@ defaults:
 # 40M ViT-MAE on PLINDER with ON-THE-FLY (resample) augmentation — reproduces shpark's
 # config_train_atomblob_density_gradmag_vit_mae_40m_invfreq_plinder_otf_p100, but THIS-BOX-SAFE
 # (amp+compile OFF — no C compiler here → inductor crashes; fp32 eager).
-# Built locally by scripts/build_plinder_otf.sh (03a select → 03b acquire → 03c precompute+resample),
+# Built locally by scripts/archive/workflows/build_plinder_otf.sh
+# (03a select → 03b acquire → 03c precompute+resample),
 # reusing seonghyun's 66k maps; v5 stats as the canonical density scale.
 # 13 input channels: 7 lig + 4 poc (vdW radii) + 1 density + 1 gradmag. Density cropped from the
 # FULL deposited 2Fo-Fc map at the AUGMENTED pose each step (no Kabsch — PLINDER is deposited-frame).

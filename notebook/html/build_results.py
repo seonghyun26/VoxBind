@@ -681,7 +681,7 @@ def build():
     table2 = add_atom_column(table2)
     table2 = inject_decompdiff_repro(table2)
     casf_chart = casf_leakage_svg()
-    chart = bar.svg(rank_labels=True)                     # bold best value / underline second, per panel
+    chart = bar.svg(rank_labels=True, value_decimals=2)   # Figure 1 labels: 0.67, not 0.670
     legend = bar.legend()
 
     html = f"""<!DOCTYPE html>

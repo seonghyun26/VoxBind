@@ -22,4 +22,5 @@ head_hidden_dim: 67     # per-patch 2-layer MLP recon head (~1.0M params)
 head_depth: 2
 patch_embed_mode: fused
 channel_groups: null
+channel_group_dropout: 0.0
 head_style: patch_mlp

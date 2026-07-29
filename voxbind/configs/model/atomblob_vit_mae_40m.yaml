@@ -35,3 +35,4 @@ head_depth: 2
 head_style: patch_mlp
 patch_embed_mode: fused
 channel_groups: null
+channel_group_dropout: 0.0

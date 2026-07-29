@@ -65,7 +65,7 @@ PANEL_X0 = [45.0, 425.0, 805.0]        # plot-left of each panel
 BARW = 14.0                            # narrowed to fit 15 methods (pitch 300/15=20)
 
 
-def svg(rank_labels=False):
+def svg(rank_labels=False, value_decimals=3):
     n = len(METHODS)
     pitch = PLOTW / n
     out = ['<svg viewBox="0 0 1130 256" width="100%" style="max-width:1130px;display:block;margin:0 auto" '
@@ -111,7 +111,7 @@ def svg(rank_labels=False):
             elif rank_labels and i == _second_i:
                 weight, deco, fs = "700", ' text-decoration="underline"', "9.5"   # second → underline + bold + larger
             out.append(f'<text x="{cx:.1f}" y="{yhi-4:.1f}" font-size="{fs}" fill="{lab}" text-anchor="middle" '
-                       f'font-weight="{weight}"{deco}>{m:.3f}</text>')
+                       f'font-weight="{weight}"{deco}>{m:.{value_decimals}f}</text>')
         # baseline
         out.append(f'<line x1="{x0:.1f}" y1="{BASE:.1f}" x2="{x1:.1f}" y2="{BASE:.1f}" stroke="#aeb6c4" stroke-width="1.5"/>')
         if p["key"] == 2:

@@ -1,254 +1,130 @@
-#!/bin/bash
-# pretrain.sh — unified launcher for ViT-MAE encoder pre-training
-# (train_density.py). Replaces the per-variant scripts 31–37 with one
-# parameterized entry point: pick the input modality, data version, weighting
-# recipe and GPU set; the config-name, channel count, use_xray flag, accum_steps,
-# exp name and wandb tags are all derived.
+#!/usr/bin/env bash
+# Hydra-first encoder pretraining launcher.
 #
-# ── Usage ─────────────────────────────────────────────────────────────────────
-#   bash scripts/pretrain.sh --mode MODE --gpus GPUS [options]
+# Recommended:
+#   bash scripts/03_pretrain.sh \
+#     --experiment cha_gradmag \
+#     --gpus 0-3 \
+#     -- num_epochs=200 seed=43
 #
-# Required (one of):
-#   --mode MODE       density | atomblob | atomblob_density | atomblob_merged_density   (generator)
-#   --experiment NAME launch a migrated preset: configs/experiment/NAME.yaml via
-#                     --config-name=pretrain +experiment=NAME (arch auto-dispatched). Skips the
-#                     generator; combine with --gpus / --name / --dry-run / -- <hydra overrides>.
-# And:
-#   --gpus GPUS     comma list or dash range — "1,2,3,4,5" or "4-7" or "4,5"
+# Direct config:
+#   bash scripts/03_pretrain.sh \
+#     --config-name config_train_density_vit_mae \
+#     --name density_smoke \
+#     --gpus 0 \
+#     -- debug=true num_epochs=1
 #
-# Options:
-#   --data VER      v1  pretrain/xray_crops_aligned     (per-crop ±3σ z-score)   [default]
-#                   v2  pretrain/xray_crops_aligned_v2  (pool z-score, no clip; normalize=false)
-#                   v3  pretrain/xray_crops_aligned_v3  (pool max-abs→[−1,1];    normalize=false)
-#                   vN  pretrain/xray_crops_aligned_vN  (any N≥2 → normalize=false; e.g. v4, v5)
-#   --weighted      weighted recipe (atom_biased mask + inv_sqrt_freq
-#                   [+ density downweight]). Required for atomblob_merged_density;
-#                   not available for density (ignored with a warning).
-#   --gradmag       append a gradient-magnitude ‖∇ρ‖ channel to the density input
-#                   (density-bearing modes only). Sets with_gradmag=true, bumps
-#                   n_in by 1, and makes gradmag an MAE reconstruction target
-#                   (gradmag_reconstruct=true → recon width = n_in). Tags +gradmag;
-#                   auto-name +_gradmag.
-#   --epochs N      num_epochs              (default 100)
-#   --bsz N         per-GPU batch size      (default 8)
-#   --target N      target effective batch for accum auto-calc (default 80)
-#   --accum N       force accum_steps (overrides the auto-calc)
-#   --lr V          (default 1e-4)
-#   --wd V          (default 5e-2)
-#   --seed N        (default 42)
-#   --name NAME     exp_name / output dir   (default: <yymmdd>_<auto>_pretrain)
-#   --tags a,b,c    extra wandb tags appended to the auto tags
-#   --dry-run       print the resolved command and exit (no training)
-#   -- ARG ...      everything after a bare "--" is passed to Hydra verbatim
-#                   (e.g. -- resume=exps/foo resume_epoch=100)
-#
-# ── Reproductions (core training args verified byte-identical) ────────────────
-#   31 = --mode density                            --gpus 1,2,3,4,5
-#   32 = --mode atomblob                           --gpus 1,2,3,4,5
-#   33 = --mode atomblob_density                   --gpus 1,2,3,4,5
-#   34 = --mode atomblob            --weighted     --gpus 1,2,3,4,5
-#   35 = --mode atomblob_density    --weighted     --gpus 4,5
-#   36 = --mode atomblob_merged_density --weighted --gpus 4,5,6,7
-#   37 = --mode atomblob_merged_density --weighted --data v2 --gpus 4,5,6,7
-set -u
+# GPU selection may be omitted when VOXBIND_GPUS or CUDA_VISIBLE_DEVICES is
+# inherited from scripts/99_chain.sh.
+set -uo pipefail
 
-# Portable roots (P3): derive the repo from this script's own location; allow env overrides so the
-# launcher runs unchanged on another server / conda env (VOXBIND_ROOT, VOXBIND_PY).
-VOX="${VOXBIND_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/common.sh
+source "$SCRIPT_DIR/lib/common.sh"
+
+VOXBIND_CALLER="03_pretrain.sh"
+VOX="$(voxbind_repo_root)"
 PY="${VOXBIND_PY:-/home/shpark/.conda/envs/voxbind/bin}"
-DATA=$VOX/dataset/data
-LOG=$VOX/log
-ts(){ date "+%Y-%m-%d %H:%M:%S"; }
-die(){ echo "pretrain.sh: $*" >&2; exit 1; }
+CONFIG_NAME="pretrain"
+EXPERIMENT=""
+GPUS="${VOXBIND_GPUS:-${CUDA_VISIBLE_DEVICES:-}}"
+NAME=""
+RUN_LOG=""
+DRY_RUN=0
+HYDRA_ARGS=()
 
-# ── Defaults ──────────────────────────────────────────────────────────────────
-MODE=""; GPUS=""; DATA_VER="v1"; WEIGHTED=0; GRADMAG=0
-EPOCHS=100; BSZ=8; TARGET=80; ACCUM=""; LR=1e-4; WD=5e-2; SEED=42
-NAME=""; EXTRA_TAGS=""; DRYRUN=0; EXPERIMENT=""
-PASSTHRU=()
+# Preserve the old generated-mode interface without keeping its implementation
+# in the stable launcher.
+for arg in "$@"; do
+    if [[ "$arg" == "--mode" ]]; then
+        printf '%s\n' \
+            "[deprecated] --mode uses scripts/archive/launchers/03_pretrain_legacy.sh;" \
+            "             prefer --experiment with a Hydra preset." >&2
+        exec bash "$SCRIPT_DIR/archive/launchers/03_pretrain_legacy.sh" "$@"
+    fi
+done
 
-# ── Arg parse ─────────────────────────────────────────────────────────────────
+usage() {
+    sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'
+    cat <<'EOF'
+
+Options:
+  --experiment NAME   Compose configs/experiment/NAME.yaml into the base
+                      pretrain config.
+  --config-name NAME  Hydra config name (default: pretrain).
+  --name NAME         Override exp_name and the default log filename.
+  --gpus SPEC         Comma list or range, e.g. 0,1 or 4-7. Inherits the GPU
+                      environment selected by 99_chain.sh when omitted.
+  --log FILE          Append stdout/stderr to FILE (default: log/<exp_name>.log).
+  --dry-run           Print the resolved command without launching.
+  -- OVERRIDES...     Hydra overrides, e.g. num_epochs=200 model.depth=24.
+
+Legacy:
+  Commands containing --mode are forwarded to the archived compatibility
+  launcher. New variants should be Hydra experiment presets.
+EOF
+}
+
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --mode)     MODE="$2"; shift 2;;
-        --gpus)     GPUS="$2"; shift 2;;
-        --data)     DATA_VER="$2"; shift 2;;
-        --weighted) WEIGHTED=1; shift;;
-        --gradmag)  GRADMAG=1; shift;;
-        --epochs)   EPOCHS="$2"; shift 2;;
-        --bsz)      BSZ="$2"; shift 2;;
-        --target)   TARGET="$2"; shift 2;;
-        --accum)    ACCUM="$2"; shift 2;;
-        --lr)       LR="$2"; shift 2;;
-        --wd)       WD="$2"; shift 2;;
-        --seed)     SEED="$2"; shift 2;;
-        --name)     NAME="$2"; shift 2;;
-        --experiment) EXPERIMENT="$2"; shift 2;;
-        --tags)     EXTRA_TAGS="$2"; shift 2;;
-        --dry-run)  DRYRUN=1; shift;;
-        --)         shift; PASSTHRU=("$@"); break;;
-        -h|--help)  awk 'NR==1{next} /^#/{print;next} {exit}' "$0"; exit 0;;
-        *)          die "unknown arg: $1  (see --help)";;
+        --experiment)  EXPERIMENT="${2:?--experiment requires a value}"; shift 2;;
+        --config-name|--config)
+                       CONFIG_NAME="${2:?--config-name requires a value}"; shift 2;;
+        --name)        NAME="${2:?--name requires a value}"; shift 2;;
+        --gpus)        GPUS="${2:?--gpus requires a value}"; shift 2;;
+        --log)         RUN_LOG="${2:?--log requires a value}"; shift 2;;
+        --dry-run)     DRY_RUN=1; shift;;
+        -h|--help)     usage; exit 0;;
+        --)            shift; HYDRA_ARGS=("$@"); break;;
+        *)             voxbind_die "unknown argument '$1' (use --help)";;
     esac
 done
 
-[[ -n "$MODE" || -n "$EXPERIMENT" ]] || die "--mode (generator) or --experiment <preset> is required"
-[[ -n "$GPUS" ]] || die "--gpus is required (e.g. 1,2,3,4,5 or 4-7)"
-
-# ── GPU spec → CUDA list + nproc ──────────────────────────────────────────────
-expand_gpus(){
-    local spec="$1" out="" p lo hi i
-    IFS=',' read -ra parts <<< "$spec"
-    for p in "${parts[@]}"; do
-        if [[ "$p" == *-* ]]; then
-            lo=${p%-*}; hi=${p#*-}
-            for ((i=lo; i<=hi; i++)); do out+="${i},"; done
-        else
-            out+="${p},"
-        fi
-    done
-    echo "${out%,}"
-}
-CUDA_LIST=$(expand_gpus "$GPUS")
-NPROC=$(awk -F, '{print NF}' <<< "$CUDA_LIST")
-[[ "$NPROC" -ge 1 ]] || die "could not parse --gpus '$GPUS'"
-
-# ── Preset path (P3): launch a migrated experiment preset via the unified config ──────────────
-# `--experiment NAME` → train_density.py --config-name=pretrain +experiment=NAME. The arch
-# (ViT-MAE vs ChA) is auto-dispatched from cfg.model.arch. This early-returns BEFORE the mode→config
-# generator below, which is left byte-unchanged for the existing --mode launches.
+CONFIG_FILE="$VOX/configs/$CONFIG_NAME.yaml"
+[[ -f "$CONFIG_FILE" ]] || voxbind_die "Hydra config not found: $CONFIG_FILE"
 if [[ -n "$EXPERIMENT" ]]; then
-    EXP="${NAME:-$EXPERIMENT}"
-    CMD=( "$PY/torchrun" --standalone --nproc_per_node="$NPROC" train_density.py
-          --config-name=pretrain "+experiment=$EXPERIMENT" )
-    [[ -n "$NAME" ]] && CMD+=( "exp_name=$NAME" )
-    [[ ${#PASSTHRU[@]} -gt 0 ]] && CMD+=( "${PASSTHRU[@]}" )
-    echo "[$(ts)] pretrain  experiment=$EXPERIMENT  GPUs=$CUDA_LIST  nproc=$NPROC  exp=$EXP"
-    if [[ "$DRYRUN" -eq 1 ]]; then
-        echo "CUDA_VISIBLE_DEVICES=$CUDA_LIST \\"; printf '  %q' "${CMD[@]}"; echo; exit 0
-    fi
-    mkdir -p "$LOG"; cd "$VOX" || die "cd $VOX failed"
-    echo "[$(ts)] launching $EXP  ->  log: $LOG/${EXP}.log"
-    CUDA_VISIBLE_DEVICES="$CUDA_LIST" "${CMD[@]}" >> "$LOG/${EXP}.log" 2>&1
-    echo "[$(ts)] $EXP done (exit $?)  ->  exps/$EXP"
-    exit 0
+    EXPERIMENT_FILE="$VOX/configs/experiment/$EXPERIMENT.yaml"
+    [[ -f "$EXPERIMENT_FILE" ]] ||
+        voxbind_die "experiment preset not found: $EXPERIMENT_FILE"
 fi
+[[ -n "$GPUS" ]] || voxbind_die "--gpus is required unless inherited from scripts/99_chain.sh"
 
-# ── accum_steps: ceil(target / (bsz*nproc)) unless forced ─────────────────────
-PERSTEP=$((BSZ * NPROC))
-if [[ -z "$ACCUM" ]]; then
-    ACCUM=$(( (TARGET + PERSTEP - 1) / PERSTEP ))   # ceil division
+CUDA_LIST="$(voxbind_expand_gpus "$GPUS")" ||
+    voxbind_die "invalid --gpus specification '$GPUS'"
+NPROC="$(voxbind_gpu_count "$CUDA_LIST")"
+
+if [[ -z "$NAME" && -n "$EXPERIMENT" ]]; then
+    NAME="$(awk '$1 == "exp_name:" && $2 != "???" {print $2; exit}' "$EXPERIMENT_FILE")"
 fi
-EFF=$((BSZ * NPROC * ACCUM))
-
-# ── Mode → config / input_mode / use_xray / channels ──────────────────────────
-# Shell-only: each (mode, weighted) maps to an existing config_train_*.yaml; the
-# data version, channels, use_xray and compute knobs ride in as CLI overrides.
-INPUT_MODE=""; USE_XRAY=""; N_IN=""; W_TAG=""
-case "$MODE" in
-    density)
-        CFG=config_train_density_vit_mae_40m_xray
-        USE_XRAY=true
-        # this config has no top-level input_mode key (default 'density'); leave unset
-        [[ "$WEIGHTED" -eq 1 ]] && echo "[warn] --weighted has no effect for --mode density (single channel); ignoring" >&2
-        ;;
-    atomblob)
-        CFG=config_train_atomblob_vit_mae_40m
-        INPUT_MODE=atomblob; USE_XRAY=false
-        if [[ "$WEIGHTED" -eq 1 ]]; then CFG=config_train_atomblob_vit_mae_40m_weighted; W_TAG=weighted; fi
-        ;;
-    atomblob_density)
-        CFG=config_train_atomblob_density_vit_mae_40m
-        INPUT_MODE=atomblob_density; USE_XRAY=true
-        if [[ "$WEIGHTED" -eq 1 ]]; then CFG=config_train_atomblob_density_vit_mae_40m_weighted; W_TAG=weighted; fi
-        ;;
-    atomblob_merged_density)
-        [[ "$WEIGHTED" -eq 1 ]] || die "--mode atomblob_merged_density only has a weighted config; add --weighted"
-        CFG=config_train_atomblob_merged_density_vit_mae_40m_weighted
-        INPUT_MODE=atomblob_merged_density; USE_XRAY=true; N_IN=8; W_TAG=weighted
-        ;;
-    *)
-        die "unknown --mode '$MODE'";;
-esac
-
-# ── Gradmag: append ‖∇ρ‖ channel (density-bearing modes only) ──────────────────
-# Overrides n_in to include the trailing gradmag channel; with_gradmag and
-# gradmag_reconstruct ride in as ++ overrides in the command assembly below.
-# Per-mode n_in = (base atoms + density) + 1: density 1→2, atomblob_density
-# 12→13, atomblob_merged_density 8→9.
-if [[ "$GRADMAG" -eq 1 ]]; then
-    case "$MODE" in
-        density)                 N_IN=2;;
-        atomblob_density)        N_IN=13;;
-        atomblob_merged_density) N_IN=9;;
-        *) die "--gradmag requires a density-bearing --mode (density|atomblob_density|atomblob_merged_density); got '$MODE'";;
-    esac
-fi
-
-# ── Data version → crops_dir / normalize ──────────────────────────────────────
-# v1 = pretrain/xray_crops_aligned (per-crop ±3σ z-score; dset.normalize default true).
-# vN (N≥2) = pretrain/xray_crops_aligned_vN, pre-normalised by 00b_density_preprocess.py → normalize=false.
-# Generic so new versions (v4, v5, …) need no script edit.
-if [[ "$DATA_VER" == v1 ]]; then
-    CROPS=$DATA/pretrain/xray_crops_aligned;          NORMALIZE="";    DV_TAG=""
-elif [[ "$DATA_VER" =~ ^v[0-9]+$ ]]; then
-    CROPS=$DATA/pretrain/xray_crops_aligned_$DATA_VER; NORMALIZE=false; DV_TAG=$DATA_VER
-else
-    die "unknown --data '$DATA_VER' (expected v1, v2, v3, …)"
-fi
-
-# ── exp_name (auto unless --name) ─────────────────────────────────────────────
 if [[ -z "$NAME" ]]; then
-    namebase="$MODE"
-    [[ "$MODE" == density ]] && namebase="density_xray"
-    NAME="$(date +%y%m%d)_${namebase}_vit_mae_40m"
-    [[ -n "$W_TAG"  ]] && NAME="${NAME}_weighted"
-    [[ -n "$DV_TAG" ]] && NAME="${NAME}_${DV_TAG}"
-    [[ "$GRADMAG" -eq 1 ]] && NAME="${NAME}_gradmag"
-    NAME="${NAME}_pretrain"
+    NAME="$(awk '$1 == "exp_name:" && $2 != "???" {print $2; exit}' "$CONFIG_FILE")"
 fi
-EXP="$NAME"
+[[ -n "$NAME" ]] ||
+    voxbind_die "could not derive exp_name from the config; pass --name"
+[[ -n "$RUN_LOG" ]] || RUN_LOG="$VOX/log/$NAME.log"
 
-# ── wandb tags ────────────────────────────────────────────────────────────────
-TAGS="pretrain,${MODE},40m"
-[[ -n "$W_TAG"  ]] && TAGS="${TAGS},weighted"
-[[ -n "$DV_TAG" ]] && TAGS="${TAGS},${DV_TAG}"
-[[ "$GRADMAG" -eq 1 ]] && TAGS="${TAGS},gradmag"
-TAGS="${TAGS},crossdocked_xray"
-[[ -n "$EXTRA_TAGS" ]] && TAGS="${TAGS},${EXTRA_TAGS}"
+CMD=(
+    "$PY/torchrun"
+    --standalone
+    --nproc_per_node="$NPROC"
+    train_density.py
+    --config-name="$CONFIG_NAME"
+)
+[[ -z "$EXPERIMENT" ]] || CMD+=("+experiment=$EXPERIMENT")
+CMD+=("exp_name=$NAME")
+(( ${#HYDRA_ARGS[@]} == 0 )) || CMD+=("${HYDRA_ARGS[@]}")
 
-# ── Assemble command ──────────────────────────────────────────────────────────
-CMD=( "$PY/torchrun" --standalone --nproc_per_node="$NPROC" train_density.py
-      --config-name="$CFG"
-      dset=crossdocked_xray
-      dset.data_dir="$DATA"
-      dset.crops_dir="$CROPS"
-      dset.subset_xray_only=true
-      dset.subset_n=78428
-      dset.subset_val_n=100
-      dset.use_xray="$USE_XRAY" )
-[[ -n "$NORMALIZE"  ]] && CMD+=( dset.normalize="$NORMALIZE" )
-[[ -n "$INPUT_MODE" ]] && CMD+=( input_mode="$INPUT_MODE" )
-[[ -n "$N_IN"       ]] && CMD+=( ++model.n_in_channels="$N_IN" )
-[[ "$GRADMAG" -eq 1 ]] && CMD+=( ++with_gradmag=true ++mae.gradmag_reconstruct=true )
-CMD+=( num_epochs="$EPOCHS" bsz="$BSZ" accum_steps="$ACCUM"
-       "wandb_tags=[${TAGS}]"
-       lr="$LR" wd="$WD" seed="$SEED"
-       exp_name="$EXP" output_dir="$VOX/exps/$EXP" )
-[[ ${#PASSTHRU[@]} -gt 0 ]] && CMD+=( "${PASSTHRU[@]}" )
-
-# ── Report / run ──────────────────────────────────────────────────────────────
-echo "[$(ts)] pretrain  mode=$MODE  data=$DATA_VER  weighted=$WEIGHTED  gradmag=$GRADMAG  config=$CFG"
-echo "          GPUs=$CUDA_LIST  nproc=$NPROC  bsz=$BSZ  accum=$ACCUM  eff_batch=$EFF"
-echo "          exp=$EXP"
-if [[ "$DRYRUN" -eq 1 ]]; then
-    echo "CUDA_VISIBLE_DEVICES=$CUDA_LIST \\"
-    printf '  %q' "${CMD[@]}"; echo
+voxbind_log "pretrain config=$CONFIG_NAME experiment=${EXPERIMENT:-none} run=$NAME"
+voxbind_log "GPUs=$CUDA_LIST nproc=$NPROC log=$RUN_LOG"
+if [[ "$DRY_RUN" -eq 1 ]]; then
+    printf 'CUDA_VISIBLE_DEVICES=%q \\\n' "$CUDA_LIST"
+    voxbind_print_command "${CMD[@]}"
     exit 0
 fi
 
-mkdir -p "$LOG"
-cd "$VOX" || die "cd $VOX failed"
-echo "[$(ts)] launching $EXP  ->  log: $LOG/${EXP}.log"
-CUDA_VISIBLE_DEVICES="$CUDA_LIST" "${CMD[@]}" >> "$LOG/${EXP}.log" 2>&1
-echo "[$(ts)] $EXP done (exit $?)  ->  exps/$EXP"
+mkdir -p "$(dirname "$RUN_LOG")"
+cd "$VOX" || voxbind_die "cannot cd to $VOX"
+CUDA_VISIBLE_DEVICES="$CUDA_LIST" "${CMD[@]}" >> "$RUN_LOG" 2>&1
+RC=$?
+voxbind_log "$NAME finished with exit code $RC"
+exit "$RC"

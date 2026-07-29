@@ -40,7 +40,7 @@
 #   --num_workers N  feature-extraction dataloader workers (default 8)
 #   --max_complexes N  cap complexes for a smoke test      (default 0 = all)
 #   --refresh        re-extract features even if cached
-#   --wait_gpu       wait for --gpu idle (<2GB, 3×60s) before starting (queue behind a run)
+#   --wait_gpu       deprecated compatibility gate; prefer scripts/99_chain.sh
 #   --dry-run        print the resolved commands and exit (no work)
 #   -- ARG ...       everything after a bare "--" is passed verbatim to BOTH probe calls
 #                    (e.g. -- --head softmax --hidden 256)
@@ -57,18 +57,23 @@
 set -u
 
 # Portable roots (match 03_pretrain.sh): derive repo from this script, allow env overrides.
-VOX="${VOXBIND_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/common.sh
+source "$SCRIPT_DIR/lib/common.sh"
+VOXBIND_CALLER="04_probe.sh"
+VOX="$(voxbind_repo_root)"
 PY="${VOXBIND_PY:-/home/shpark/.conda/envs/voxbind/bin}"
 DATA="$VOX/dataset/data"
 FEAT="$DATA/pdbbind/features"
 LOG="$VOX/log"
 PROBE="dataset/01c_pdbbind_probe.py"
-ts(){ date "+%Y-%m-%d %H:%M:%S"; }
-die(){ echo "04_probe.sh: $*" >&2; exit 1; }
+ts(){ voxbind_timestamp; }
+die(){ voxbind_die "$*"; }
 
 # ── Defaults ──────────────────────────────────────────────────────────────────
 EXP=""; COND=""; TASKS_RAW="affinity"; SPLIT="lp_edrscc"; EPOCH=99; VV="v5"
-ATOM="auto"; SEEDS=3; GPU=0; TAG=""; NUM_WORKERS=8; MAXC=0
+INHERITED_GPUS="${VOXBIND_GPUS:-${CUDA_VISIBLE_DEVICES:-0}}"
+ATOM="auto"; SEEDS=3; GPU="${INHERITED_GPUS%%,*}"; TAG=""; NUM_WORKERS=8; MAXC=0
 REFRESH=0; WAIT_GPU=0; DRYRUN=0
 PASSTHRU=()
 
@@ -205,6 +210,7 @@ echo "          log: $RUNLOG"
 
 # ── Optional GPU idle gate (queue behind a running job) ───────────────────────
 if [[ "$WAIT_GPU" -eq 1 ]]; then
+    echo "[deprecated] --wait_gpu is retained for compatibility; use scripts/99_chain.sh" >&2
     echo "[$(ts)] waiting for GPU $GPU idle (<2GB, 3×60s)..." | tee -a "$RUNLOG"
     free=0
     while [[ "$free" -lt 3 ]]; do

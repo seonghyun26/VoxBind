@@ -305,7 +305,7 @@ def _config_block():
       <tr><td>schedule</td><td>100 epochs, lr 1e-4, wd 5e-2, seed 42</td></tr>
     </tbody></table>
     <p class="mut">GPU protocol: the sig=1.0 denoiser is stopped for this run and auto-resumed (+400 ep)
-    on completion via scripts/chain_plinder_big_then_resume.sh.</p>
+    on completion via scripts/archive/chains/chain_plinder_big_then_resume.sh.</p>
     """
 
 
