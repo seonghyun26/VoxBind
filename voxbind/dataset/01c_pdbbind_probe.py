@@ -1561,6 +1561,8 @@ def run_probe(args: argparse.Namespace) -> None:
         tag_parts.append(f"{split_flag}split")          # misatosplit / lp_edrsccsplit / timesplit
     if args.head == "softmax":                           # head/loss variant token, orthogonal to target
         tag_parts.append("softmax")
+    if getattr(args, "leak_test", "none") == "append":   # diagnostic leak — never clobber a clean CSV
+        tag_parts.append("leaktest")
     if args.tag:
         tag_parts.append(args.tag)
     eff_tag = clean_tag("_".join(tag_parts)) if tag_parts else None
@@ -1674,6 +1676,19 @@ def run_probe(args: argparse.Namespace) -> None:
             te["X"], te["y"] = te["X"][idx], te["y"][idx]
             te["pid"] = [te["pid"][i] for i in idx]
             print(f"  [test_affinity={args.test_affinity}] test → {len(idx)} pids")
+
+        # --leak_test append: DIAGNOSTIC upper bound. Fold the test features+labels into
+        # train (test stays intact for eval). The head now sees test labels during fitting,
+        # so test metrics report an optimistic ceiling, not a generalisation estimate.
+        if getattr(args, "leak_test", "none") == "append":
+            tr, te = data["train"], data["test"]
+            n_before = len(tr["pid"])
+            tr["X"] = np.concatenate([tr["X"], te["X"]], axis=0)
+            tr["y"] = np.concatenate([tr["y"], te["y"]], axis=0)
+            tr["pid"] = list(tr["pid"]) + list(te["pid"])
+            print(f"  [leak_test=append] train {n_before:,} → {len(tr['pid']):,} "
+                  f"(+{len(te['pid']):,} test folded in; test still eval'd on itself — "
+                  f"OPTIMISTIC, not a real result)")
 
         for seed in range(args.seeds):
             m = train_one(
@@ -2502,6 +2517,12 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Stratify the TEST set by affinity measurement type (Kd|Ki from LP 'kd/ki'); "
                          "train/val untouched, so it's the SAME combined-trained, val-selected model scored "
                          "on the Kd-only or Ki-only test subset. 'all' = no filter (default).")
+    pr.add_argument("--leak_test", choices=["none", "append"], default="none",
+                    help="DIAGNOSTIC (not a real result): 'append' folds the TEST features+labels "
+                         "INTO the train set, then still evaluates on that same test set. Val-based "
+                         "early stopping is untouched. Reveals the optimistic ceiling — how much the "
+                         "frozen encoder + tiny MLP can memorise/fit test when its labels are seen. "
+                         "Adds a _leaktest token to the CSV name so it never overwrites a clean result.")
     pr.add_argument("--no_covalent_filter", action="store_true",
                     help="Keep covalent complexes (default: drop)")
     pr.add_argument("--cl1_only",      action="store_true",

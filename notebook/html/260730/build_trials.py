@@ -26,6 +26,12 @@ TRIALS = [
     ("v3",   "60M",  "0.75", "HCS.15",           "overfit",  0.563, 0.633, 0.654, 1.423, False, False),
     ("v3",   "60M",  "0.75", "HCS + drop_path.2","overfit",  0.554, 0.639, 0.651, 1.371, False, False),
     ("v3",   "60M",  "0.85", "HCS.15",           "overfit",  0.572, 0.641, 0.661, 1.372, False, False),
+    ("v2",   "60M",  "0.75", "size control",     "size",     0.574, 0.630, 0.647, 1.396, False, False),
+    ("v2",   "100M", "0.85", "champ+mask",       "mask",     0.570, 0.620, 0.629, 1.463, False, False),
+    ("v2",   "100M", "0.90", "champ+mask",       "mask",     0.567, 0.627, 0.645, 1.418, False, False),
+    ("v3",   "100M", "0.85", "mask sweep",       "mask",     0.568, 0.640, 0.658, 1.355, False, False),
+    ("v3",   "100M", "0.90", "mask sweep",       "mask",     0.571, 0.645, 0.660, 1.383, False, False),
+    ("v3",   "100M", "0.95", "mask sweep · best r/RMSE", "mask", 0.584, 0.644, 0.663, 1.334, False, False),
 ]
 DS_COLOR = {"v1":"#1a7f37","v2":"#bc4c00","v2.1":"#2b5fd0","v3":"#8e44ad"}
 def VAL(tr): return tr[5]
@@ -129,8 +135,8 @@ Champion (best recipe) = red ceiling; Δ = vs champion; gold ring = best-so-far.
 &mdash; Pearson r <b>0.660</b> · Spearman ρ <b>0.644</b> · RMSE <b>1.349</b>.</div></div>
 
 <div class="card"><h2>Spearman ρ by trial</h2><p class="csub">Red line = champion ceiling (0.644). Gold ring = best-so-far.</p>{chart('rho','test ρ (Spearman)',0.610,0.660,False)}</div>
-<div class="card"><h2>Pearson r by trial</h2>{chart('r','test r (Pearson)',0.628,0.664,False)}</div>
-<div class="card"><h2>RMSE (pK) by trial — lower is better</h2>{chart('rmse','test RMSE (pK)',1.340,1.460,True)}
+<div class="card"><h2>Pearson r by trial</h2>{chart('r','test r (Pearson)',0.626,0.666,False)}</div>
+<div class="card"><h2>RMSE (pK) by trial — lower is better</h2>{chart('rmse','test RMSE (pK)',1.330,1.470,True)}
 <div class="legend">{''.join(f'<span><span style="width:10px;height:10px;border-radius:50%;background:{c}"></span>{d}</span>' for d,c in DS_COLOR.items())}</div></div>
 
 <div class="card"><h2>Trial table — val + test</h2>
@@ -139,7 +145,10 @@ Champion (best recipe) = red ceiling; Δ = vs champion; gold ring = best-so-far.
 <span class="neg">positive &gt;0.02</span> would flag probe overfitting. <span style="background:#eaf5ee;padding:0 4px;border-radius:3px">Champion ★</span>.</p>
 <table><thead><tr><th>#</th><th>Dataset</th><th>Size</th><th>Mask</th><th>Other</th><th>val ρ</th><th>test ρ (Δ)</th><th>val−test</th><th>test r (Δ)</th><th>RMSE (Δ)</th></tr></thead>
 <tbody>{''.join(rows)}</tbody></table>
-<div class="note" style="margin-top:12px"><b>Verdict:</b> nothing clearly beats the champion; best challengers = <b>60M v3 · mask0.85</b> (ρ 0.641 / r 0.661, ties champion on r) and 60M drop_path (ρ 0.639) &mdash; a smaller model on clean v3 + harder mask. <b>All val−test gaps are negative</b> (test&gt;val) → no probe overfitting; the pretrain-recon overfit does not surface downstream. Ceiling ρ≈0.644 is downstream (probe on 3850 labels).</div></div>
+<div class="note" style="margin-top:12px"><b>Verdict:</b> champion ρ 0.644 not broken, but <b>v3 · 100M · mask0.95 Pareto-beats it</b> (ties ρ 0.644, <b>r 0.663 &gt; 0.660</b>, <b>RMSE 1.334 &lt; 1.349</b>) on a cleaner, 35%-smaller corpus — the best model to adopt.
+<b>Masking × cleanliness interact:</b> clean v3 rises to a peak at mask 0.90–0.95 (0.632→0.640→0.645→0.644), while noisy v2 <i>drops</i> above 0.75 (0.644→0.620→0.627) — clean data absorbs aggressive masking, noisy data cannot.
+<b>Size × corpus interact:</b> 60M ≈ 100M on small v3, but 100M &gt; 60M (+0.014) on large v2 (data rewards capacity).
+All val−test gaps negative (test&gt;val, val n=817 harder subset) → no probe overfitting. Ceiling ρ≈0.644 is downstream (probe on 3850 labels); readout/uncertainty settled in §4 of the meeting doc.</div></div>
 </div></body></html>"""
 out=HERE/"trials.html"; out.write_text(html)
 print(f"wrote {out} ({len(html)} bytes, {len(TRIALS)} trials)")

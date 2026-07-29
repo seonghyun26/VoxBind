@@ -1301,9 +1301,42 @@ def run(cfg: DictConfig, method: str) -> None:
         if is_main:
             logger.info("channels_last_3d memory format enabled")
 
-    # optimizer.fused=true → CUDA-fused multi-tensor AdamW (one kernel for the whole
-    # 45M-param update) instead of the vendored per-parameter Python loop.
-    if bool(cfg.get("optimizer", {}).get("fused", False)):
+    # optimizer.type=muon → Muon (Newton-Schulz orthogonalized momentum) on the transformer
+    # BLOCK weight matrices only (2D params under '.blocks.': attn qkv/proj + mlp), with AdamW
+    # as the auxiliary optimizer for everything else (patch-embed conv, pos/group/memory embeds,
+    # every norm/bias, and the reconstruction head). Correct under DDP: each rank all-reduces
+    # grads in backward, so identical NS on identical grads → identical updates → params stay
+    # in sync (no distributed-Muon code path, which is the buggy part). Constant LR is enforced
+    # for muon (the two groups keep their own base LR; the epoch scheduler would clobber them).
+    _opt_type = str(cfg.get("optimizer", {}).get("type", "adamw")).lower()
+    using_muon = _opt_type == "muon"
+    if using_muon:
+        from voxbind.models.muon import SingleDeviceMuonWithAuxAdam
+        muon_lr  = float(cfg.get("optimizer", {}).get("muon_lr", 0.02))
+        muon_mom = float(cfg.get("optimizer", {}).get("muon_momentum", 0.95))
+        muon_p, adam_p = [], []
+        for _n, _p in model.named_parameters():
+            if not _p.requires_grad:
+                continue
+            # transformer block matrices only: 2D weights whose name contains 'blocks.'
+            # (robust to prefix, e.g. 'encoder.blocks.0.attn.qkv.weight'). Head Linears
+            # (decoder_proj/recon_mlp), embeds, norms, biases, patch-embed conv → AdamW.
+            (muon_p if (_p.ndim == 2 and "blocks." in _n) else adam_p).append(_p)
+        # Fail loud rather than silently training the bulk on AdamW (a classic Muon-integration bug).
+        assert len(muon_p) > 0, ("Muon selected 0 matrices — no 2D param name contains 'blocks.'; "
+                                 "check the model's parameter names before running.")
+        optimizer = SingleDeviceMuonWithAuxAdam([
+            dict(params=muon_p, use_muon=True,  lr=muon_lr, momentum=muon_mom, weight_decay=cfg.wd),
+            dict(params=adam_p, use_muon=False, lr=cfg.lr, betas=(0.9, 0.95), eps=1e-8, weight_decay=cfg.wd),
+        ])
+        if is_main:
+            _nm = sum(p.numel() for p in muon_p) / 1e6
+            _na = sum(p.numel() for p in adam_p) / 1e6
+            logger.info(f"Muon+AuxAdam: {len(muon_p)} block matrices ({_nm:.1f}M) @ muon_lr={muon_lr} "
+                        f"mom={muon_mom}; {len(adam_p)} aux tensors ({_na:.1f}M) @ AdamW lr={cfg.lr}; "
+                        f"wd={cfg.wd}. Constant LR (epoch scheduler skipped for muon).")
+    elif bool(cfg.get("optimizer", {}).get("fused", False)):
+        # CUDA-fused multi-tensor AdamW (one kernel for the whole update).
         # Faithful drop-in for the vendored AdamW: keep its non-standard betas=(0.99,0.999),
         # but use eps=1e-8 instead of its eps=0 — torch's FUSED kernel returns nan at eps=0,
         # and since v_hat >> 1e-8 the change is numerically negligible (Δw ~ 4e-4 over 4 steps,
@@ -1532,7 +1565,7 @@ def run(cfg: DictConfig, method: str) -> None:
 
     for epoch in epochs_iter:
         t0 = time.time()
-        if _lr_sched != "constant":
+        if _lr_sched != "constant" and not using_muon:
             _cur_lr = _lr_at_epoch(epoch)
             for _pg in optimizer.param_groups:
                 _pg["lr"] = _cur_lr

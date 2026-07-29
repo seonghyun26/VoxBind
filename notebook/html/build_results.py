@@ -74,10 +74,35 @@ def add_atom_column(table):
     return head + body
 
 
-# Our reference-free DecompDiff reproduction (svr9, subpocket + num_atoms_mode=prior, N=100, Vina full).
-# Added as a NEW row right after the paper DecompDiff row (paper values kept). High aff./Diversity/
-# Sim.ref were not emitted by DecompDiff's eval script → "—". #Atoms 16.1/15.0 (small → weak docking).
+# Our DecompDiff reproductions (N=100 pockets × 10 mols, Vina full). Two rows added right after the
+# paper DecompDiff row (paper values kept), ordered paper → ref-informed → ref-free:
+#   • ref-informed = ref_prior / golden-prior-from-data (closest analog to the paper's reference priors):
+#     Vina Dock −6.98/−7.07, #atoms 20.9/21 — recovers most of the gap to the paper's −8.39.
+#   • ref-free = subpocket prior + num_atoms_mode=prior (the fair pocket-only comparison to VoxBind):
+#     Vina Dock −5.83/−6.02, #atoms 16.1/15 (undersized → weaker docking).
+# High aff./Diversity/Sim.ref are not emitted by DecompDiff's eval script → "—".
 _DECOMP_REPRO_ROW = """
+          <tr>
+            <td class="col-method">DecompDiff <span class="tag repro">reproduced</span><span style="display:block;font-size:11px;color:#7a8699">ref-informed &middot; golden-prior &middot; our run &middot; N=100</span></td>
+            <td class="metric div-major"><span class="val">&minus;5.02</span></td>
+            <td class="metric"><span class="val">&minus;5.15</span></td>
+            <td class="metric div-minor"><span class="val">&minus;5.89</span></td>
+            <td class="metric"><span class="val">&minus;5.86</span></td>
+            <td class="metric div-minor"><span class="val">&minus;6.98</span></td>
+            <td class="metric"><span class="val">&minus;7.07</span></td>
+            <td class="metric div-major"><span class="sd">&mdash;</span></td>
+            <td class="metric"><span class="sd">&mdash;</span></td>
+            <td class="metric div-minor"><span class="val">0.50</span></td>
+            <td class="metric"><span class="val">0.49</span></td>
+            <td class="metric div-minor"><span class="val">0.66</span></td>
+            <td class="metric"><span class="val">0.65</span></td>
+            <td class="metric div-minor"><span class="sd">&mdash;</span></td>
+            <td class="metric"><span class="sd">&mdash;</span></td>
+            <td class="metric div-major"><span class="sd">&mdash;</span></td>
+            <td class="metric"><span class="sd">&mdash;</span></td>
+            <td class="metric div-major"><span class="val">20.9</span></td>
+            <td class="metric"><span class="val">21.0</span></td>
+          </tr>
           <tr>
             <td class="col-method">DecompDiff <span class="tag repro">reproduced</span><span style="display:block;font-size:11px;color:#7a8699">ref-free &middot; subpocket-prior &middot; our run &middot; N=100</span></td>
             <td class="metric div-major"><span class="val">&minus;2.48</span></td>
@@ -102,7 +127,7 @@ _DECOMP_REPRO_ROW = """
 
 
 def inject_decompdiff_repro(table):
-    """Insert our reproduced-DecompDiff row right after the paper DecompDiff row (idempotent)."""
+    """Insert our reproduced-DecompDiff rows right after the paper DecompDiff row (idempotent)."""
     if "tag repro" in table:
         return table
     i = table.find("DecompDiff")
@@ -794,12 +819,14 @@ def build():
     <p class="section-intro">Conditional de novo ligand generation on the CrossDocked test pockets, scored by
       AutoDock&nbsp;Vina + drug-likeness. <b>Ours</b> = frozen-encoder generator; &sigma;&nbsp;0.9&nbsp;/&nbsp;1.0 =
       reproduced VoxBind; prior-SBDD rows = VoxBind paper (100 pockets).
-      The <span class="tag repro">reproduced</span> <b>DecompDiff</b> row is our own run (svr9, 100 pockets &times; 10 mols,
-      Vina&nbsp;full): <b>reference-free</b> (<code>subpocket</code>&nbsp;prior + <code>num_atoms_mode=prior</code>), so it is
-      the fair pocket-only analog to VoxBind &mdash; and expectedly weaker than the <b>DecompDiff&dagger;</b> paper row, which
-      uses <i>reference</i> priors that leak the reference ligand's decomposition &amp; size. It is also a <i>conservative</i>
-      lower bound: the reference-free size sampling undershot (~16 vs ~21 heavy atoms), which weakens docking, and the
-      stronger <code>beta_prior</code> reference-free mode wasn't obtainable (priors 50&ndash;99 gated). High&nbsp;aff. /
+      The two <span class="tag repro">reproduced</span> <b>DecompDiff</b> rows are our own runs (100 pockets &times; 10 mols,
+      Vina&nbsp;full), bracketing the paper's setting. <b>ref-informed</b> (<code>ref_prior</code> / golden-prior-from-data)
+      is the closest analog to the <b>DecompDiff&dagger;</b> paper row's <i>reference</i> priors &mdash; it samples reference-scale
+      molecules (~21 heavy atoms) and recovers most of the gap (Vina&nbsp;Dock <b>&minus;6.98</b> vs paper &minus;8.39; the
+      residual is no force-field / bond post-processing on our side). <b>ref-free</b> (<code>subpocket</code>&nbsp;prior +
+      <code>num_atoms_mode=prior</code>) leaks nothing from the reference ligand and is the fair pocket-only comparison to
+      VoxBind; it is a <i>conservative</i> lower bound (size sampling undershot, ~16 vs ~21 heavy atoms &rarr; weaker docking,
+      and the stronger <code>beta_prior</code> ref-free mode wasn't obtainable &mdash; priors 50&ndash;99 gated). High&nbsp;aff. /
       Diversity / Sim.ref were not emitted by DecompDiff's eval script (&mdash;).</p>
 
     <section class="block">
@@ -814,7 +841,8 @@ def build():
       <div class="table-wrap">{table2}</div>
       <p class="figure-cap"><b># Atoms</b> = heavy-atom count of generated molecules (Avg&nbsp;/&nbsp;Med).
         Baselines from the VoxBind paper (<a href="https://arxiv.org/abs/2405.03961">arXiv:2405.03961</a>, Table&nbsp;1);
-        our reproduced rows show &mdash; (the full 79-pocket generation output isn't retained in this checkout &mdash; to be filled).</p>
+        the reproduced <b>VoxBind&nbsp;&sigma;</b> rows show &mdash; where the full 79-pocket generation output isn't retained in
+        this checkout (to be filled). The reproduced <b>DecompDiff</b> rows are fully re-scored (Vina Score/Min/Dock, QED, SA, #atoms).</p>
     </section>
   </div>
 

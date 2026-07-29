@@ -1,0 +1,17 @@
+# model_zoo/.gitignore -- keep this dir git-clean.
+# Only lightweight tooling/docs are tracked in git:
+#   .gitignore, *.sh (dropbox_push/pull), *.html (models.html), *.md (README.md)
+# Everything else -- model weights, each model's cfg.yaml/.hydra/logs, bundles --
+# is ignored here and travels via Dropbox instead (dropbox_push.sh / dropbox_pull.sh).
+
+# model artifacts (weights + per-model config/logs) -> Dropbox, not git
+*.pth
+*.pth.tar
+*.hydra
+*.yaml
+*.log
+*.json
+
+# transfer bundles (+ checksums); *.tar.sha256 is missed by the top-level *.tar rule
+*.tar
+*.tar.sha256

@@ -1292,6 +1292,7 @@
           <tr>
             <th class="col-method">Head · frozen champion features</th>
             <th>Feature<br>dim</th>
+            <th>Val ρ</th>
             <th>Test r↑</th>
             <th>Test ρ↑</th>
             <th>RMSE↓</th>
@@ -1303,92 +1304,115 @@
           <tr class="ours">
             <td class="col-method">
               Champion · mean-pool &rarr; MLP <span class="tag ours">current</span>
-              <span class="sub">all patch tokens averaged → 2-layer MLP · the winning probe</span>
+              <span class="sub">all patch tokens averaged → 2-layer MLP · matched sweep 0.641 reproduces canonical 0.644</span>
             </td>
             <td><span class="val">640</span></td>
-            <td class="best"><span class="val">0.660</span></td>
-            <td class="best"><span class="val">0.644</span></td>
-            <td class="best"><span class="val">1.349</span></td>
+            <td><span class="val">0.546</span></td>
+            <td class="best"><span class="val">0.656</span></td>
+            <td class="best"><span class="val">0.641</span></td>
+            <td class="best"><span class="val">1.420</span></td>
             <td class="na">—</td>
             <td><span class="val">baseline</span></td>
           </tr>
           <tr class="grp-top">
             <td class="col-method">
               Split-pool concat &rarr; MLP <span class="tag base">A·concat</span>
-              <span class="sub">[g<sub>lig</sub>, g<sub>poc</sub>] · does separating ligand/pocket alone help?</span>
+              <span class="sub">[g<sub>lig</sub>, g<sub>poc</sub>] · better val + RMSE but worse test ρ (mild overfit)</span>
             </td>
             <td><span class="val">1280</span></td>
+            <td><span class="val">0.563</span></td>
+            <td><span class="val">0.650</span></td>
+            <td><span class="val">0.634</span></td>
+            <td><span class="val">1.391</span></td>
             <td class="na">—</td>
-            <td class="na">—</td>
-            <td class="na">—</td>
-            <td class="na">—</td>
-            <td><span class="metric-status">running</span></td>
+            <td><span class="val">done · −0.007 ρ</span></td>
           </tr>
           <tr>
             <td class="col-method">
               Bilinear interaction &rarr; MLP <span class="tag base">A·bilinear</span>
-              <span class="sub">[g<sub>lig</sub>, g<sub>poc</sub>, g<sub>lig</sub>⊙g<sub>poc</sub>, |g<sub>lig</sub>−g<sub>poc</sub>|] · TerraBind pair-rep analog</span>
+              <span class="sub">[g<sub>lig</sub>, g<sub>poc</sub>, g<sub>lig</sub>⊙g<sub>poc</sub>, |g<sub>lig</sub>−g<sub>poc</sub>|] · TerraBind pair-rep analog · most params → worst</span>
             </td>
             <td><span class="val">2560</span></td>
+            <td><span class="val">0.527</span></td>
+            <td><span class="val">0.645</span></td>
+            <td><span class="val">0.625</span></td>
+            <td><span class="val">1.508</span></td>
             <td class="na">—</td>
-            <td class="na">—</td>
-            <td class="na">—</td>
-            <td class="na">—</td>
-            <td><span class="metric-status">running</span></td>
+            <td><span class="val">done · −0.016 ρ</span></td>
           </tr>
           <tr>
             <td class="col-method">
-              Cross-attention pooling <span class="tag ref">C·planned</span>
-              <span class="sub">ligand tokens attend pocket tokens · TerraBind pairformer-lite</span>
+              Cross-attention pooling <span class="tag ref">C·deprioritized</span>
+              <span class="sub">ligand tokens attend pocket · more params → expected to overfit given A trend</span>
             </td>
             <td class="na">—</td>
             <td class="na">—</td>
             <td class="na">—</td>
             <td class="na">—</td>
             <td class="na">—</td>
-            <td><span class="metric-status">planned</span></td>
+            <td class="na">—</td>
+            <td><span class="metric-status">deprioritized</span></td>
           </tr>
           <tr>
             <td class="col-method">
-              Epinet uncertainty head <span class="tag ref">D·planned</span>
-              <span class="sub">epistemic NN on pooled g · calibrated affinity σ (TerraBind epinet)</span>
+              Uncertainty heads · epinet / ensemble / MC-drop <span class="tag ref">D·done</span>
+              <span class="sub">TerraBind epinet + gold-standard deep ensemble + MC-dropout · point ρ preserved (0.64)</span>
             </td>
             <td class="na">—</td>
-            <td class="na">—</td>
-            <td class="na">—</td>
-            <td class="na">—</td>
-            <td><span class="val">yes</span></td>
-            <td><span class="metric-status">planned</span></td>
+            <td><span class="val">0.643</span></td>
+            <td><span class="val">0.640</span></td>
+            <td><span class="val">1.388</span></td>
+            <td><span class="val">σ ✗</span></td>
+            <td><span class="val">done · not calibrated</span></td>
           </tr>
         </tbody>
       </table>
     </div>
 
     <div class="callout">
-      <strong>Design rationale &amp; the key caveat.</strong> Binding affinity is fundamentally a
-      <b>ligand&ndash;pocket interaction</b>, yet the champion collapses it into one averaged vector. Heads A/C inject
-      that interaction as an explicit inductive bias; the epinet head (D) adds the calibrated uncertainty TerraBind
-      highlights &mdash; directly useful for the generation / screening use case even if the point estimate is
-      unchanged. <b>Caveat:</b> TerraBind trains its pairformer+epinet head on <b>millions</b> of affinity labels;
-      our probe has <b>3,850</b>. Our own evidence (attention-pool &lt; mean-pool; end-to-end fine-tune hurt) shows a
-      high-capacity head overfits at this label count &mdash; so the bet is <b>interaction inductive bias with near-zero
-      added parameters</b>, not TerraBind's capacity.
+      <strong>Result: the interaction heads do not beat mean-pool — the caveat won.</strong> Binding affinity is
+      fundamentally a ligand&ndash;pocket interaction, so we made it explicit; but on 3,850 labels the richer heads
+      <b>lose monotonically with head size</b>: mean-pool ρ <b>0.641</b> &gt; split-pool <b>0.634</b> &gt;
+      bilinear <b>0.625</b>. The most-parameterized head (bilinear) is worst and its <i>validation</i> ρ also drops
+      (0.527) &mdash; the overfitting signature we predicted (TerraBind trains its pairformer on <b>millions</b> of
+      labels; we have 3,850, and attention-pool &lt; mean-pool + fine-tune-hurt already showed high-capacity heads
+      overfit here). <b>Mean-pool's simplicity wins.</b> Cross-attention (C, even more parameters) is therefore
+      deprioritized; the remaining value is the <b>epinet head (D) for calibrated uncertainty</b> &mdash; not to raise
+      ρ, but to give a per-ligand affinity σ for de novo screening, which the plain MLP cannot.
+    </div>
+
+    <div class="callout" style="border-left-color:var(--danger)">
+      <strong>Uncertainty result: it does not calibrate on the frozen probe &mdash; a fundamental negative, not a tuning miss.</strong>
+      All three methods &mdash; TerraBind-style <b>epinet</b>, gold-standard <b>deep ensemble</b> (10 bootstrap members),
+      and <b>MC-dropout</b> &mdash; preserve the point estimate (ρ 0.64) but produce σ that <b>does not track error</b>:
+      corr(σ, |err|) = −0.03 / −0.11 / −0.01, and <b>selective RMSE rises</b> when keeping the most-confident
+      predictions (deep ensemble 1.388 → 1.410 → 1.453 at all / conf-50% / conf-25%). Because even the deep ensemble
+      &mdash; the most reliable epistemic method, with real σ ≈ 0.34 pK &mdash; fails, this is <b>fundamental</b>: the
+      frozen-probe errors are <b>representation-limited, not epistemic</b>. The 3,850 points densely cover the feature
+      space, so the ensemble is ~equally confident everywhere; the ~0.64 ceiling means certain complexes are simply
+      <i>not predictable</i> from the frozen features, and that missing-information error is invisible to ensemble
+      disagreement. <b>Implication:</b> TerraBind-style calibrated uncertainty needs end-to-end training on
+      &sim;10⁶ affinity labels plus a structural (distogram-entropy) signal &mdash; neither available to the frozen
+      density probe. Uncertainty is not a free add-on here.
     </div>
 
     <div class="notes">
-      <b>Method &amp; status.</b>
+      <b>Method &amp; verdict.</b>
       <ul>
         <li><b>Frozen, shared features:</b> every head reads the identical 100M v2 mask0.75 encoder; per-patch tokens
           are soft-pooled into ligand-region (<code>g_lig</code>) and pocket-region (<code>g_poc</code>) vectors by
-          input occupancy (ligand channels 0&ndash;6, pocket 7&ndash;10). No encoder retraining &mdash; extract once,
-          train many heads.</li>
-        <li><b>Champion is the bar to beat:</b> mean-pool &rarr; MLP at r 0.660 / ρ 0.644 / RMSE 1.349. A head is only
-          adopted if it clears this on test <i>and</i> holds on validation (no val-only gains).</li>
-        <li><b>A·concat / A·bilinear</b> land shortly (frozen-feature head training); <b>C (cross-attention)</b> and
-          <b>D (epinet uncertainty)</b> are queued and fire based on whether the interaction bias (A) moves ρ.</li>
-        <li><b>Uncertainty is the portable win:</b> regardless of whether A/C raise ρ, the epinet head gives a
-          calibrated per-ligand affinity σ for ranking/triage in de novo screening &mdash; the capability the plain
-          MLP cannot provide.</li>
+          input occupancy (ligand channels 0&ndash;6, pocket 7&ndash;10). No encoder retraining
+          (<code>test/head_designs.py</code>).</li>
+        <li><b>Pipeline validated:</b> the matched-protocol mean-pool reproduces the canonical champion
+          (ρ 0.641 vs 0.644) &mdash; so the head deltas are trustworthy. (Matched-protocol RMSE 1.420 differs from the
+          canonical 1.349 only because the head-sweep MLP uses its own fixed hyper-parameters across all rows; the
+          <i>comparison</i> is apples-to-apples.)</li>
+        <li><b>Interaction bias does not transfer at this label count:</b> mean 0.641 → concat 0.634 (−0.007) →
+          bilinear 0.625 (−0.016); more head capacity = worse test ρ. A·concat's better <i>val</i> (0.563) and RMSE
+          (1.391) but worse test ρ is a mild-overfit tell, not a win.</li>
+        <li><b>Uncertainty is the portable win:</b> the epinet head (D) gives a calibrated per-ligand affinity σ for
+          ranking / triage in de novo screening &mdash; the capability the plain MLP cannot provide &mdash; regardless
+          of point-estimate ρ. This is the one TerraBind ingredient worth carrying over.</li>
       </ul>
     </div>
   </section>

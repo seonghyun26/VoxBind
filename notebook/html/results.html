@@ -1312,12 +1312,14 @@
     <p class="section-intro">Conditional de novo ligand generation on the CrossDocked test pockets, scored by
       AutoDock&nbsp;Vina + drug-likeness. <b>Ours</b> = frozen-encoder generator; &sigma;&nbsp;0.9&nbsp;/&nbsp;1.0 =
       reproduced VoxBind; prior-SBDD rows = VoxBind paper (100 pockets).
-      The <span class="tag repro">reproduced</span> <b>DecompDiff</b> row is our own run (svr9, 100 pockets &times; 10 mols,
-      Vina&nbsp;full): <b>reference-free</b> (<code>subpocket</code>&nbsp;prior + <code>num_atoms_mode=prior</code>), so it is
-      the fair pocket-only analog to VoxBind &mdash; and expectedly weaker than the <b>DecompDiff&dagger;</b> paper row, which
-      uses <i>reference</i> priors that leak the reference ligand's decomposition &amp; size. It is also a <i>conservative</i>
-      lower bound: the reference-free size sampling undershot (~16 vs ~21 heavy atoms), which weakens docking, and the
-      stronger <code>beta_prior</code> reference-free mode wasn't obtainable (priors 50&ndash;99 gated). High&nbsp;aff. /
+      The two <span class="tag repro">reproduced</span> <b>DecompDiff</b> rows are our own runs (100 pockets &times; 10 mols,
+      Vina&nbsp;full), bracketing the paper's setting. <b>ref-informed</b> (<code>ref_prior</code> / golden-prior-from-data)
+      is the closest analog to the <b>DecompDiff&dagger;</b> paper row's <i>reference</i> priors &mdash; it samples reference-scale
+      molecules (~21 heavy atoms) and recovers most of the gap (Vina&nbsp;Dock <b>&minus;6.98</b> vs paper &minus;8.39; the
+      residual is no force-field / bond post-processing on our side). <b>ref-free</b> (<code>subpocket</code>&nbsp;prior +
+      <code>num_atoms_mode=prior</code>) leaks nothing from the reference ligand and is the fair pocket-only comparison to
+      VoxBind; it is a <i>conservative</i> lower bound (size sampling undershot, ~16 vs ~21 heavy atoms &rarr; weaker docking,
+      and the stronger <code>beta_prior</code> ref-free mode wasn't obtainable &mdash; priors 50&ndash;99 gated). High&nbsp;aff. /
       Diversity / Sim.ref were not emitted by DecompDiff's eval script (&mdash;).</p>
 
     <section class="block">
@@ -1486,6 +1488,27 @@
             <td class="metric"><span class="sd">&mdash;</span></td>
           <td class="metric div-major"><span class="val">20.9</span></td><td class="metric"><span class="val">21.0</span></td></tr>
           <tr>
+            <td class="col-method">DecompDiff <span class="tag repro">reproduced</span><span style="display:block;font-size:11px;color:#7a8699">ref-informed &middot; golden-prior &middot; our run &middot; N=100</span></td>
+            <td class="metric div-major"><span class="val">&minus;5.02</span></td>
+            <td class="metric"><span class="val">&minus;5.15</span></td>
+            <td class="metric div-minor"><span class="val">&minus;5.89</span></td>
+            <td class="metric"><span class="val">&minus;5.86</span></td>
+            <td class="metric div-minor"><span class="val">&minus;6.98</span></td>
+            <td class="metric"><span class="val">&minus;7.07</span></td>
+            <td class="metric div-major"><span class="sd">&mdash;</span></td>
+            <td class="metric"><span class="sd">&mdash;</span></td>
+            <td class="metric div-minor"><span class="val">0.50</span></td>
+            <td class="metric"><span class="val">0.49</span></td>
+            <td class="metric div-minor"><span class="val">0.66</span></td>
+            <td class="metric"><span class="val">0.65</span></td>
+            <td class="metric div-minor"><span class="sd">&mdash;</span></td>
+            <td class="metric"><span class="sd">&mdash;</span></td>
+            <td class="metric div-major"><span class="sd">&mdash;</span></td>
+            <td class="metric"><span class="sd">&mdash;</span></td>
+            <td class="metric div-major"><span class="val">20.9</span></td>
+            <td class="metric"><span class="val">21.0</span></td>
+          </tr>
+          <tr>
             <td class="col-method">DecompDiff <span class="tag repro">reproduced</span><span style="display:block;font-size:11px;color:#7a8699">ref-free &middot; subpocket-prior &middot; our run &middot; N=100</span></td>
             <td class="metric div-major"><span class="val">&minus;2.48</span></td>
             <td class="metric"><span class="val">&minus;3.51</span></td>
@@ -1602,72 +1625,12 @@
             <td class="metric div-major"><span class="val">0.099</span></td>
             <td class="metric"><span class="val">0.098</span></td>
           <td class="metric div-major"><span class="sd">&mdash;</span></td><td class="metric"><span class="sd">&mdash;</span></td></tr>
-          <tr><td colspan="19" style="background:#f0f2f5;color:#5b6678;font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;text-align:left;padding:7px 9px">Outliers removed &middot; 77 pockets (QC) &middot; 260730 audit</td></tr>
-          <tr>
-            <td class="col-method">VoxBind <span class="tag supervised">baseline</span><span style="display:block;font-size:11px;color:#7a8699">walk-jump &middot; &sigma; = 0.9 &middot; 77 QC &middot; outliers removed</span></td>
-            <td class="metric div-major"><span class="val">&minus;6.62</span></td>
-            <td class="metric"><span class="val">&minus;6.84</span></td>
-            <td class="metric div-minor"><span class="val">&minus;7.28</span></td>
-            <td class="metric"><span class="val">&minus;7.19</span></td>
-            <td class="metric div-minor"><span class="val">&minus;8.01</span></td>
-            <td class="metric"><span class="val">&minus;8.02</span></td>
-            <td class="metric div-major"><span class="val">64.9%</span></td>
-            <td class="metric"><span class="val">66.5%</span></td>
-            <td class="metric div-minor"><span class="sd">&mdash;</span></td>
-            <td class="metric"><span class="sd">&mdash;</span></td>
-            <td class="metric div-minor"><span class="sd">&mdash;</span></td>
-            <td class="metric"><span class="sd">&mdash;</span></td>
-            <td class="metric div-minor"><span class="sd">&mdash;</span></td>
-            <td class="metric"><span class="sd">&mdash;</span></td>
-            <td class="metric div-major"><span class="sd">&mdash;</span></td>
-            <td class="metric"><span class="sd">&mdash;</span></td>
-          <td class="metric div-major"><span class="sd">&mdash;</span></td><td class="metric"><span class="sd">&mdash;</span></td></tr>
-          <tr>
-            <td class="col-method">VoxBind <span class="tag supervised">baseline</span><span style="display:block;font-size:11px;color:#7a8699">walk-jump &middot; &sigma; = 1.0 &middot; 77 QC &middot; outliers removed</span></td>
-            <td class="metric div-major"><span class="val">&minus;6.53</span></td>
-            <td class="metric"><span class="val">&minus;6.53</span></td>
-            <td class="metric div-minor"><span class="val">&minus;7.15</span></td>
-            <td class="metric"><span class="val">&minus;7.14</span></td>
-            <td class="metric div-minor"><span class="val">&minus;7.83</span></td>
-            <td class="metric"><span class="val">&minus;8.07</span></td>
-            <td class="metric div-major"><span class="val">62.9%</span></td>
-            <td class="metric"><span class="val">65.3%</span></td>
-            <td class="metric div-minor"><span class="sd">&mdash;</span></td>
-            <td class="metric"><span class="sd">&mdash;</span></td>
-            <td class="metric div-minor"><span class="sd">&mdash;</span></td>
-            <td class="metric"><span class="sd">&mdash;</span></td>
-            <td class="metric div-minor"><span class="sd">&mdash;</span></td>
-            <td class="metric"><span class="sd">&mdash;</span></td>
-            <td class="metric div-major"><span class="sd">&mdash;</span></td>
-            <td class="metric"><span class="sd">&mdash;</span></td>
-          <td class="metric div-major"><span class="sd">&mdash;</span></td><td class="metric"><span class="sd">&mdash;</span></td></tr>
-          <tr>
-            <td class="col-method"><b style="color:#1d5a3a">Ours</b><span style="display:block;font-size:11px;color:#7a8699">frozen CDG (C+D+G) encoder &middot; &sigma; = 0.9 &middot; ep350 &middot; 77 QC &middot; outliers removed</span></td>
-            <td class="metric div-major"><span class="val">&minus;6.75</span></td>
-            <td class="metric"><span class="val">&minus;7.61</span></td>
-            <td class="metric div-minor"><span class="val">&minus;7.59</span></td>
-            <td class="metric"><span class="val">&minus;8.11</span></td>
-            <td class="metric div-minor best"><span class="val">&minus;8.26</span></td>
-            <td class="metric best"><span class="val">&minus;8.75</span></td>
-            <td class="metric div-major best"><span class="val">66.9%</span></td>
-            <td class="metric best"><span class="val">73.0%</span></td>
-            <td class="metric div-minor"><span class="sd">&mdash;</span></td>
-            <td class="metric"><span class="sd">&mdash;</span></td>
-            <td class="metric div-minor"><span class="sd">&mdash;</span></td>
-            <td class="metric"><span class="sd">&mdash;</span></td>
-            <td class="metric div-minor"><span class="sd">&mdash;</span></td>
-            <td class="metric"><span class="sd">&mdash;</span></td>
-            <td class="metric div-major"><span class="sd">&mdash;</span></td>
-            <td class="metric"><span class="sd">&mdash;</span></td>
-          <td class="metric div-major"><span class="sd">&mdash;</span></td><td class="metric"><span class="sd">&mdash;</span></td></tr>
         </tbody>
       </table></div>
       <p class="figure-cap"><b># Atoms</b> = heavy-atom count of generated molecules (Avg&nbsp;/&nbsp;Med).
         Baselines from the VoxBind paper (<a href="https://arxiv.org/abs/2405.03961">arXiv:2405.03961</a>, Table&nbsp;1);
-        our reproduced rows show &mdash; (the full 79-pocket generation output isn't retained in this checkout &mdash; to be filled).
-        The <b>outliers-removed (77 QC)</b> band reports Vina &amp; High&nbsp;aff. on the 77-pocket mask from the
-        <code>260730</code> audit (2 pockets &mdash; <code>target_92</code>, <code>target_58</code> &mdash; dropped by a reference-only
-        modified-Z rule); chemistry columns are pocket-count-invariant and unchanged from the 79-pocket rows, so they are left dashed.</p>
+        the reproduced <b>VoxBind&nbsp;&sigma;</b> rows show &mdash; where the full 79-pocket generation output isn't retained in
+        this checkout (to be filled). The reproduced <b>DecompDiff</b> rows are fully re-scored (Vina Score/Min/Dock, QED, SA, #atoms).</p>
     </section>
   </div>
 

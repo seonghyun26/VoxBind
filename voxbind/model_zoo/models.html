@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VoxBind · Model Zoo</title>
+<style>
+  :root{
+    --bg:#f7f8fa; --card:#ffffff; --ink:#1c2330; --mut:#5b6675; --line:#e3e7ee;
+    --accent:#2f6df6; --gold:#b9902b; --goldbg:#fbf5e4; --good:#1f9d6b; --bad:#d1495b;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+  .wrap{max-width:1080px;margin:0 auto;padding:34px 26px 70px;}
+  h1{font-size:26px;margin:0 0 4px;letter-spacing:-.01em;}
+  h2{font-size:18px;margin:34px 0 10px;letter-spacing:-.01em;}
+  .sub{color:var(--mut);font-size:13.5px;margin:0 0 6px;}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;
+    padding:18px 20px;margin:14px 0;box-shadow:0 1px 2px rgba(20,30,50,.03);}
+  .scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+  table{border-collapse:collapse;width:100%;font-size:13.5px;}
+  th,td{padding:8px 10px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap;}
+  th{color:var(--mut);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.03em;}
+  td.l,th.l{text-align:left;}
+  tr.gold td{background:var(--goldbg);}
+  .name{font-weight:650;}
+  .path{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;color:var(--mut);}
+  .tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:99px;
+    background:#eef2f9;color:#41506a;margin-left:6px;border:1px solid #dde4ef;}
+  .tag.win{background:var(--goldbg);color:var(--gold);border-color:#e7d9ac;}
+  .best{color:var(--good);font-weight:650;}
+  .worse{color:var(--bad);}
+  .note{color:var(--mut);font-size:13px;}
+  .kpi{font-variant-numeric:tabular-nums;}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;
+    background:#eef1f6;padding:1px 5px;border-radius:5px;}
+  .foot{color:var(--mut);font-size:12px;margin-top:30px;border-top:1px solid var(--line);padding-top:12px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>VoxBind · Model Zoo</h1>
+  <p class="sub">Preserved checkpoints for the density-pretrained affinity encoders. Each folder holds
+  <code>checkpoint_e0049.pth.tar</code> + <code>cfg.yaml</code> + <code>.hydra/</code> + training log.
+  All ChannelViT <code>[7,4,2]</code>, ~100M params, PLINDER pretrain → frozen mean-pool MLP probe on
+  <code>lp_edrscc_v2</code> (Kd/Ki, 3850/817/1320), 3 seeds.</p>
+
+  <h2>Kept checkpoints</h2>
+  <div class="card">
+  <div class="scroll">
+  <table>
+    <thead>
+      <tr>
+        <th class="l">folder</th><th class="l">what</th>
+        <th>data</th><th>#pre</th><th>mask</th><th>ema</th>
+        <th>val ρ</th><th>test ρ</th><th>test r</th><th>RMSE</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="l"><span class="name">champion_100m_v2_mask075</span><br><span class="path">exps/260705_ar_cvit_100m_v2_mask075 · e49</span></td>
+        <td class="l">Canonical C+D+G headline <span class="tag win">champion</span></td>
+        <td>v2</td><td>112 K</td><td>0.75</td><td>0.999</td>
+        <td class="kpi">0.546</td><td class="kpi">0.644</td><td class="kpi">0.660</td><td class="kpi">1.349</td>
+      </tr>
+      <tr class="gold">
+        <td class="l"><span class="name">pareto_100m_v3_mask095</span><br><span class="path">exps/260725_ar_cvit_100m_v3_m095 · e49</span></td>
+        <td class="l">Pareto-best: ties ρ, best r &amp; RMSE <span class="tag win">T21</span></td>
+        <td>v3</td><td>71.7 K</td><td>0.95</td><td>0.999</td>
+        <td class="kpi">0.584</td><td class="kpi">0.644</td><td class="kpi best">0.663</td><td class="kpi best">1.334</td>
+      </tr>
+      <tr>
+        <td class="l"><span class="name">v3_100m_mask090</span><br><span class="path">exps/260725_ar_cvit_100m_v3_m090 · e49</span></td>
+        <td class="l">Best raw Spearman on cleaner corpus</td>
+        <td>v3</td><td>71.7 K</td><td>0.90</td><td>0.999</td>
+        <td class="kpi">0.571</td><td class="kpi best">0.645</td><td class="kpi">0.660</td><td class="kpi">1.383</td>
+      </tr>
+      <tr>
+        <td class="l"><span class="name">efficient_60m_v3_mask085</span><br><span class="path">exps/260723_ar_cvit_60m_v3_mask085 · e49 · 65.6M (d512/L18/h8)</span></td>
+        <td class="l">Small encoder that <b>ties the champion at ⅓ fewer params</b> <span class="tag win">efficient</span></td>
+        <td>v3</td><td>71.7 K</td><td>0.85</td><td>0.999</td>
+        <td class="kpi">0.572</td><td class="kpi best">0.641</td><td class="kpi best">0.661</td><td class="kpi">1.372</td>
+      </tr>
+      <tr>
+        <td class="l"><span class="name">coords_100m_v2_mask075</span><br><span class="path">exps/260723_ar_cvit_100m_v2_mask075_coords · e49</span></td>
+        <td class="l">Matched coords-only control (density dropped, <code>[7,4]</code>, n_in 11)</td>
+        <td>v2</td><td>112 K</td><td>0.75</td><td>0.999</td>
+        <td class="kpi">0.519</td><td class="kpi">0.596</td><td class="kpi">0.632</td><td class="kpi">1.381</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+  <p class="note" style="margin:12px 2px 0;">Clean matched density gain (champion − coords) = <b>+0.048 ρ</b> / +0.028 r / −0.032 RMSE.
+  <b>Size is not the lever:</b> the 65.6M encoder ties the 100M champion (ρ 0.641 vs 0.644, gap ≪ seed noise) and even
+  beats it on r/RMSE, while scaling <i>bigger</i> than d640 hurts (d768 → 0.627). So the "100M champion" title is
+  nominal — a well-tuned 60M matches it at ⅓ fewer params. Reinforces the ceiling being downstream/representational,
+  not capacity. All test metrics 3-seed means on lp_edrscc_v2; numbers match
+  <code>notebook/html/260730/trials.html</code> &amp; <code>results.html</code>.</p>
+  </div>
+
+  <p class="foot">Generated 2026-07-28 · VoxBind <code>voxbind/model_zoo/</code> · checkpoints copied from <code>exps/</code>
+  (durable against exps cleanup) · configs are the exact Hydra <code>cfg.yaml</code> each run trained under.</p>
+</div>
+</body>
+</html>

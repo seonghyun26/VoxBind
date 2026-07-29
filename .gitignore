@@ -9,8 +9,16 @@ notebooks/
 
 .vscode
 *.tar.gz
+# model_zoo transfer bundles from pack.sh + their checksums (large, regenerable)
+*.tar
+*.sha256
 *.pt
 *.pkl
+
+# model checkpoints (e.g. voxbind/model_zoo/*/checkpoint_*.pth.tar — keep cfg.yaml/models.html, not weights)
+*.pth
+*.pth.tar
+*.ckpt
 
 # Density data
 *.cif
@@ -31,3 +39,4 @@ CLAUDE.md
 *log*/
 # per-machine path env (idea #1, 260623)
 env.local.sh
+*dropbox-sync.md

@@ -113,13 +113,192 @@ def run_head(bundle, head, lp_df, seeds=(0, 1, 2)):
                 test_r=agg("test_pearson"), test_rmse=agg("test_rmse"))
 
 
+import torch.nn as nn
+
+
+class EpinetHead(nn.Module):
+    """TerraBind-style epinet: point estimate + epistemic residual over an index z~N(0,I).
+    ŷ(g,z) = base(g) + <ε_learn(sg h, z), z> + prior_scale·<ε_prior(sg h, z), z>.
+    prior net is frozen random init (epistemic prior); learnable net cancels its variance
+    where data supports it → residual z-variance = calibrated epistemic uncertainty."""
+    def __init__(self, in_dim, hidden=128, dz=8, prior_scale=1.0, dropout=0.1):
+        super().__init__()
+        self.dz = dz; self.prior_scale = prior_scale
+        self.base = nn.Sequential(nn.Linear(in_dim, hidden), nn.SiLU(), nn.Dropout(dropout))
+        self.base_out = nn.Linear(hidden, 1)
+        def epi(): return nn.Sequential(nn.Linear(hidden + dz, 64), nn.SiLU(), nn.Linear(64, dz))
+        self.learn = epi()
+        self.prior = epi()
+        for p in self.prior.parameters(): p.requires_grad_(False)  # frozen prior
+
+    def forward(self, g, z):                              # g:(B,in) z:(B,dz)
+        h = self.base(g)
+        y0 = self.base_out(h).squeeze(-1)
+        hd = h.detach()                                  # epinet doesn't move base features
+        inp = torch.cat([hd, z], -1)
+        el = (self.learn(inp) * z).sum(-1) / (self.dz ** 0.5)
+        ep = (self.prior(inp) * z).sum(-1) / (self.dz ** 0.5)
+        return y0 + el + self.prior_scale * ep
+
+
+def train_epinet(data, seed, device, max_epochs=300, patience=30, K=200, dz=8, prior_scale=1.0):
+    torch.manual_seed(seed); np.random.seed(seed)
+    def T(s): return (torch.from_numpy(data[s]["X"]).to(device), torch.from_numpy(data[s]["y"]).to(device))
+    Xtr, ytr = T("train"); Xva, yva = T("val"); Xte, yte = T("test")
+    m = EpinetHead(Xtr.shape[1], dz=dz, prior_scale=prior_scale).to(device)
+    opt = torch.optim.Adam([p for p in m.parameters() if p.requires_grad], lr=1e-3, weight_decay=1e-4)
+    mse = nn.MSELoss()
+    def ens(X):                                          # K-sample ensemble → (mean, std) preds
+        with torch.no_grad():
+            m.eval(); ps = []
+            for _ in range(K):
+                z = torch.randn(X.shape[0], dz, device=device)
+                ps.append(m(X, z))
+            P = torch.stack(ps); m.train()
+            return P.mean(0), P.std(0)
+    best_val, best = -1e9, None; since = 0
+    n = Xtr.shape[0]
+    for ep in range(max_epochs):
+        perm = torch.randperm(n, device=device)
+        for i in range(0, n, 128):
+            idx = perm[i:i+128]; xb, yb = Xtr[idx], ytr[idx]
+            z = torch.randn(xb.shape[0], dz, device=device)
+            loss = mse(m(xb, z), yb)
+            opt.zero_grad(); loss.backward(); opt.step()
+        vm, _ = ens(Xva)
+        vr = spearmanr(vm.cpu().numpy(), yva.cpu().numpy()).correlation
+        if vr > best_val: best_val, best, since = vr, {k: v.detach().clone() for k, v in m.state_dict().items()}, 0
+        else: since += 1
+        if since >= patience: break
+    m.load_state_dict(best)
+    mu, sd = ens(Xte)
+    mu, sd, yt = mu.cpu().numpy(), sd.cpu().numpy(), yte.cpu().numpy()
+    err = np.abs(mu - yt)
+    # point-estimate metrics + uncertainty quality
+    rmse = float(np.sqrt(((mu - yt) ** 2).mean()))
+    unc_err_rho = float(spearmanr(sd, err).correlation)               # σ tracks error? (>0 good)
+    order = np.argsort(sd)                                             # ascending σ = most confident first
+    def sel_rmse(frac):
+        k = max(2, int(len(order) * frac)); s = order[:k]
+        return float(np.sqrt(((mu[s] - yt[s]) ** 2).mean()))
+    return dict(val_rho=best_val, test_rho=float(spearmanr(mu, yt).correlation),
+                test_r=float(pearsonr(mu, yt)[0]), rmse=rmse, unc_err_rho=unc_err_rho,
+                rmse_50=sel_rmse(0.5), rmse_25=sel_rmse(0.25), rmse_all=sel_rmse(1.0),
+                sd_mean=float(sd.mean()))
+
+
+class SmallMLP(nn.Module):
+    def __init__(self, d, hidden=128, dropout=0.1):
+        super().__init__()
+        self.net = nn.Sequential(nn.Linear(d, hidden), nn.SiLU(), nn.Dropout(dropout), nn.Linear(hidden, 1))
+    def forward(self, x): return self.net(x).squeeze(-1)
+
+
+def _fit_mlp(Xtr, ytr, Xva, yva, seed, device, dropout=0.1, boot=False, max_epochs=300, patience=30):
+    torch.manual_seed(seed); g = torch.Generator(device="cpu").manual_seed(seed)
+    m = SmallMLP(Xtr.shape[1], dropout=dropout).to(device)
+    opt = torch.optim.Adam(m.parameters(), lr=1e-3, weight_decay=1e-4); mse = nn.MSELoss()
+    n = Xtr.shape[0]
+    if boot:
+        bi = torch.randint(0, n, (n,), generator=g).to(device); Xtr, ytr = Xtr[bi], ytr[bi]
+    best, bv, since = None, -1e9, 0
+    for ep in range(max_epochs):
+        perm = torch.randperm(n, device=device)
+        for i in range(0, n, 128):
+            idx = perm[i:i+128]; loss = mse(m(Xtr[idx]), ytr[idx])
+            opt.zero_grad(); loss.backward(); opt.step()
+        m.eval()
+        with torch.no_grad(): vr = spearmanr(m(Xva).cpu().numpy(), yva.cpu().numpy()).correlation
+        m.train()
+        if vr > bv: bv, best, since = vr, {k: v.clone() for k, v in m.state_dict().items()}, 0
+        else: since += 1
+        if since >= patience: break
+    m.load_state_dict(best); m.eval(); return m, bv
+
+
+def _unc_metrics(mu, sd, yt):
+    err = np.abs(mu - yt); order = np.argsort(sd)
+    def sel(frac):
+        k = max(2, int(len(order) * frac)); s = order[:k]
+        return float(np.sqrt(((mu[s] - yt[s]) ** 2).mean()))
+    return dict(test_rho=float(spearmanr(mu, yt).correlation), test_r=float(pearsonr(mu, yt)[0]),
+                rmse=float(np.sqrt((err ** 2).mean())), unc_err_rho=float(spearmanr(sd, err).correlation),
+                rmse_all=sel(1.0), rmse_50=sel(0.5), rmse_25=sel(0.25), sd_mean=float(sd.mean()))
+
+
+def run_uncertainty(bundle, lp_df, methods=("ensemble", "mcdropout", "epinet")):
+    smap = bundle["smap"]; pk = {p: v for p, v in zip(lp_df["pdb_id"], lp_df["pK"]) if v == v}
+    def T(split):
+        pids = [p for p in smap if smap[p] == split and p in bundle["g_mean"] and p in pk]
+        X = torch.from_numpy(np.stack([bundle["g_mean"][p].numpy() for p in pids]).astype(np.float32)).to(DEVICE)
+        y = np.array([pk[p] for p in pids], dtype=np.float32)
+        return X, torch.from_numpy(y).to(DEVICE), y
+    Xtr, ytr, _ = T("train"); Xva, yva, _ = T("val"); Xte, _, yte = T("test")
+
+    def report(name, mu, sd):
+        m = _unc_metrics(mu, sd, yte)
+        print(f"\n=== {name} ===")
+        print(f"  point : ρ {m['test_rho']:.3f}  r {m['test_r']:.3f}  RMSE {m['rmse']:.3f}")
+        print(f"  σ↔err : corr(σ,|err|) = {m['unc_err_rho']:+.3f}   mean σ {m['sd_mean']:.3f} pK")
+        print(f"  triage: RMSE all {m['rmse_all']:.3f} → conf-50% {m['rmse_50']:.3f} → conf-25% {m['rmse_25']:.3f}")
+        return m
+
+    if "ensemble" in methods:   # deep ensemble (bootstrap + seed diversity) — gold-standard epistemic
+        preds = []
+        for s in range(10):
+            m, _ = _fit_mlp(Xtr, ytr, Xva, yva, seed=100 + s, device=DEVICE, boot=True)
+            with torch.no_grad(): preds.append(m(Xte).cpu().numpy())
+        P = np.stack(preds); report("Deep ensemble (10 members)", P.mean(0), P.std(0))
+    if "mcdropout" in methods:  # MC-dropout: one net, dropout ON at inference
+        m, _ = _fit_mlp(Xtr, ytr, Xva, yva, seed=0, device=DEVICE, dropout=0.2)
+        m.train()  # keep dropout active
+        with torch.no_grad():
+            ps = [m(Xte).cpu().numpy() for _ in range(200)]
+        P = np.stack(ps); report("MC-dropout (p=0.2, 200 samples)", P.mean(0), P.std(0))
+    if "epinet" in methods:     # retuned epinet: harder-to-cancel prior
+        rs = [train_epinet({"train": {"X": Xtr.cpu().numpy(), "y": ytr.cpu().numpy()},
+                            "val": {"X": Xva.cpu().numpy(), "y": yva.cpu().numpy()},
+                            "test": {"X": Xte.cpu().numpy(), "y": yte}}, s, DEVICE, dz=16, prior_scale=5.0)
+              for s in (0, 1, 2)]
+        print(f"\n=== Epinet v2 (dz16, prior×5, 3 seeds) ===")
+        A = lambda k: np.mean([r[k] for r in rs])
+        print(f"  point : ρ {A('test_rho'):.3f}  r {A('test_r'):.3f}  RMSE {A('rmse'):.3f}")
+        print(f"  σ↔err : corr(σ,|err|) = {A('unc_err_rho'):+.3f}   mean σ {A('sd_mean'):.3f} pK")
+        print(f"  triage: RMSE all {A('rmse_all'):.3f} → conf-50% {A('rmse_50'):.3f} → conf-25% {A('rmse_25'):.3f}")
+
+
+def run_epinet(bundle, lp_df, seeds=(0, 1, 2)):
+    smap = bundle["smap"]
+    pk = {p: v for p, v in zip(lp_df["pdb_id"], lp_df["pK"]) if v == v}
+    data = {}
+    for split in ("train", "val", "test"):
+        pids = [p for p in smap if smap[p] == split and p in bundle["g_mean"] and p in pk]
+        data[split] = {"X": np.stack([bundle["g_mean"][p].numpy() for p in pids]).astype(np.float32),
+                       "y": np.array([pk[p] for p in pids], dtype=np.float32)}
+    rs = [train_epinet(data, s, DEVICE) for s in seeds]
+    def agg(k): return float(np.mean([r[k] for r in rs])), float(np.std([r[k] for r in rs]))
+    print("\n=== D · Epinet uncertainty head (mean±std over 3 seeds) ===")
+    print(f"  point estimate : ρ {agg('test_rho')[0]:.3f}  r {agg('test_r')[0]:.3f}  RMSE {agg('rmse')[0]:.3f}   (val ρ {agg('val_rho')[0]:.3f})")
+    print(f"  uncertainty    : corr(σ, |err|) = {agg('unc_err_rho')[0]:+.3f}  (>0 ⇒ σ tracks error)")
+    print(f"  selective RMSE : all {agg('rmse_all')[0]:.3f} → conf-50% {agg('rmse_50')[0]:.3f} → conf-25% {agg('rmse_25')[0]:.3f}   (drop ⇒ σ is useful for triage)")
+    print(f"  mean σ         : {agg('sd_mean')[0]:.3f} pK")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--extract", action="store_true")
     ap.add_argument("--heads", default="mean,A_concat,A_bilinear")
+    ap.add_argument("--epinet", action="store_true", help="run the epinet uncertainty head (D)")
+    ap.add_argument("--uncertainty", action="store_true", help="compare ensemble / MC-dropout / epinet-v2")
     args = ap.parse_args()
     bundle = extract() if (args.extract or not CACHE.exists()) else torch.load(CACHE, weights_only=False)
     lp_df = P.load_lp_index(P.LP_CSV)
+    if args.epinet:
+        run_epinet(bundle, lp_df)
+        return
+    if args.uncertainty:
+        run_uncertainty(bundle, lp_df)
+        return
     print(f"\n{'head':<12}{'dim':>6}{'val ρ':>9}{'test ρ':>10}{'test r':>10}{'RMSE':>10}")
     for head in args.heads.split(","):
         r = run_head(bundle, head, lp_df)
