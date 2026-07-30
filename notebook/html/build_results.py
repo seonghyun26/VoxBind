@@ -76,28 +76,35 @@ def add_atom_column(table):
 
 # Our DecompDiff reproductions (N=100 pockets × 10 mols, Vina full). Two rows added right after the
 # paper DecompDiff row (paper values kept), ordered paper → ref-informed → ref-free:
-#   • ref-informed = ref_prior / golden-prior-from-data (closest analog to the paper's reference priors):
-#     Vina Dock −6.98/−7.07, #atoms 20.9/21 — recovers most of the gap to the paper's −8.39.
+#   • ref-informed = ref_prior / golden-prior (closest analog to the paper's reference priors).
+#     BENCHMARK-FAITHFUL 260729: 25 samples/pocket, exh 32, 98/100 pockets (2 dropped — pockets
+#     81/92 had pathologically large molecules that don't dock in reasonable time even at exh 8).
+#     Vina Score/Min/Dock −5.14/−6.00/−7.05, High aff 49.2%, QED 0.50, SA 0.66, Diversity 0.85,
+#     #atoms 20.9. vs paper Ours −6.04/−7.09/−8.43, High aff 71%, QED 0.43, SA 0.60. Our reference
+#     ligands dock at −7.44 (paper −7.26) → pipeline calibrated; the ~1.4 Vina Dock gap is real
+#     generation quality, not a docking artifact (public ckpt makes reference-level binders, not
+#     beat-reference). Supersedes the earlier 10-sample −6.98.
 #   • ref-free = subpocket prior + num_atoms_mode=prior (the fair pocket-only comparison to VoxBind):
 #     Vina Dock −5.83/−6.02, #atoms 16.1/15 (undersized → weaker docking).
-# High aff./Diversity/Sim.ref are not emitted by DecompDiff's eval script → "—".
+# High aff. = % of gen mols out-docking their pocket's reference; Diversity = 1-mean pairwise Tanimoto.
+# Sim.ref not emitted by the eval → "—". Medians for High aff/Diversity are single aggregates → "—".
 _DECOMP_REPRO_ROW = """
           <tr>
-            <td class="col-method">DecompDiff <span class="tag repro">reproduced</span><span style="display:block;font-size:11px;color:#7a8699">ref-informed &middot; golden-prior &middot; our run &middot; N=100</span></td>
-            <td class="metric div-major"><span class="val">&minus;5.02</span></td>
-            <td class="metric"><span class="val">&minus;5.15</span></td>
-            <td class="metric div-minor"><span class="val">&minus;5.89</span></td>
-            <td class="metric"><span class="val">&minus;5.86</span></td>
-            <td class="metric div-minor"><span class="val">&minus;6.98</span></td>
-            <td class="metric"><span class="val">&minus;7.07</span></td>
-            <td class="metric div-major"><span class="sd">&mdash;</span></td>
-            <td class="metric"><span class="sd">&mdash;</span></td>
+            <td class="col-method">DecompDiff <span class="tag repro">reproduced</span><span style="display:block;font-size:11px;color:#7a8699">ref-informed &middot; golden-prior &middot; 25/pocket &middot; exh32 &middot; N=98</span></td>
+            <td class="metric div-major"><span class="val">&minus;5.14</span></td>
+            <td class="metric"><span class="val">&minus;5.20</span></td>
+            <td class="metric div-minor"><span class="val">&minus;6.00</span></td>
+            <td class="metric"><span class="val">&minus;5.98</span></td>
+            <td class="metric div-minor"><span class="val">&minus;7.05</span></td>
+            <td class="metric"><span class="val">&minus;7.17</span></td>
+            <td class="metric div-major"><span class="val">49.2</span></td>
+            <td class="metric"><span class="val">50.0</span></td>
             <td class="metric div-minor"><span class="val">0.50</span></td>
             <td class="metric"><span class="val">0.49</span></td>
             <td class="metric div-minor"><span class="val">0.66</span></td>
             <td class="metric"><span class="val">0.65</span></td>
-            <td class="metric div-minor"><span class="sd">&mdash;</span></td>
-            <td class="metric"><span class="sd">&mdash;</span></td>
+            <td class="metric div-minor"><span class="val">0.85</span></td>
+            <td class="metric"><span class="val">0.87</span></td>
             <td class="metric div-major"><span class="sd">&mdash;</span></td>
             <td class="metric"><span class="sd">&mdash;</span></td>
             <td class="metric div-major"><span class="val">20.9</span></td>
@@ -819,15 +826,18 @@ def build():
     <p class="section-intro">Conditional de novo ligand generation on the CrossDocked test pockets, scored by
       AutoDock&nbsp;Vina + drug-likeness. <b>Ours</b> = frozen-encoder generator; &sigma;&nbsp;0.9&nbsp;/&nbsp;1.0 =
       reproduced VoxBind; prior-SBDD rows = VoxBind paper (100 pockets).
-      The two <span class="tag repro">reproduced</span> <b>DecompDiff</b> rows are our own runs (100 pockets &times; 10 mols,
-      Vina&nbsp;full), bracketing the paper's setting. <b>ref-informed</b> (<code>ref_prior</code> / golden-prior-from-data)
-      is the closest analog to the <b>DecompDiff&dagger;</b> paper row's <i>reference</i> priors &mdash; it samples reference-scale
-      molecules (~21 heavy atoms) and recovers most of the gap (Vina&nbsp;Dock <b>&minus;6.98</b> vs paper &minus;8.39; the
-      residual is no force-field / bond post-processing on our side). <b>ref-free</b> (<code>subpocket</code>&nbsp;prior +
-      <code>num_atoms_mode=prior</code>) leaks nothing from the reference ligand and is the fair pocket-only comparison to
-      VoxBind; it is a <i>conservative</i> lower bound (size sampling undershot, ~16 vs ~21 heavy atoms &rarr; weaker docking,
-      and the stronger <code>beta_prior</code> ref-free mode wasn't obtainable &mdash; priors 50&ndash;99 gated). High&nbsp;aff. /
-      Diversity / Sim.ref were not emitted by DecompDiff's eval script (&mdash;).</p>
+      The two <span class="tag repro">reproduced</span> <b>DecompDiff</b> rows are our own runs, bracketing the paper's setting.
+      <b>ref-informed</b> (<code>ref_prior</code> / golden-prior) is the closest analog to the <b>DecompDiff&dagger;</b> paper
+      row's <i>reference</i> priors &mdash; the <b>benchmark-faithful</b> run (25 samples/pocket, exhaustiveness&nbsp;32, 98/100
+      pockets; 2 dropped for pathologically slow docking of oversized molecules). It gives Vina&nbsp;Dock <b>&minus;7.05</b>
+      vs paper &minus;8.43, and only <b>49%</b> of molecules out-dock their reference (vs the paper's 71%). Crucially, our
+      pipeline docks the <i>reference</i> crystal ligands at <b>&minus;7.44</b> (paper reference &minus;7.26) &mdash; so the
+      pipeline is calibrated and the ~1.4&nbsp;kcal/mol gap is <b>real generation quality</b>, not a docking artifact: the
+      public checkpoint+config reproduces <i>reference-level</i> binders, not the paper's beat-reference headline (we verified
+      exhaustiveness is flat, molecules are reference-scale, and the box is standard). <b>ref-free</b> (<code>subpocket</code>
+      prior + <code>num_atoms_mode=prior</code>) leaks nothing from the reference ligand and is the fair pocket-only comparison
+      to VoxBind; a conservative lower bound (undersized ~16-atom molecules). High&nbsp;aff. = % of generated molecules
+      out-docking their pocket's reference; Diversity = 1&minus;mean pairwise Tanimoto; Sim.ref not emitted (&mdash;).</p>
 
     <section class="block">
       <p class="table-title">Figure 3 &nbsp;&middot;&nbsp; Vina Score / Min / Dock &mdash; average &amp; median</p>

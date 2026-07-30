@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""build_trials.py — 260730 data/recipe campaign trial tracker (autoresearch-style).
+"""build_trials.py — 260806 data/recipe campaign trial tracker (autoresearch-style).
 
 Trial identity split into DATASET / SIZE / MASK / OTHER; val ρ + test ρ/r/RMSE, compared vs the
 CHAMPION. val–test gap column = overfitting diagnostic. Per-trial ρ/r/RMSE scatter (red champion
@@ -125,7 +125,7 @@ tr.ref td{{background:#eaf5ee;font-weight:600}}
 .legend{{display:flex;flex-wrap:wrap;gap:14px;margin-top:10px;font-size:11.5px;color:#5b6678}}
 .legend span{{display:inline-flex;align-items:center;gap:5px}}
 </style></head><body><div class="page">
-<header><div class="date">VoxBind · PLINDER · 2026-07-30</div>
+<header><div class="date">VoxBind · PLINDER · 2026-08-06</div>
 <h1>Data &amp; recipe campaign — trials vs the best recipe</h1>
 <div class="sub">Every data-curation and recipe trial, frozen affinity probe on <code>lp_edrscc_v2</code> (Kd/Ki; val n=817, test n=1320; 3 seeds).
 Champion (best recipe) = red ceiling; Δ = vs champion; gold ring = best-so-far. Dot colour = dataset.</div></header>
@@ -148,7 +148,7 @@ Champion (best recipe) = red ceiling; Δ = vs champion; gold ring = best-so-far.
 <div class="note" style="margin-top:12px"><b>Verdict:</b> champion ρ 0.644 not broken, but <b>v3 · 100M · mask0.95 Pareto-beats it</b> (ties ρ 0.644, <b>r 0.663 &gt; 0.660</b>, <b>RMSE 1.334 &lt; 1.349</b>) on a cleaner, 35%-smaller corpus — the best model to adopt.
 <b>Masking × cleanliness interact:</b> clean v3 rises to a peak at mask 0.90–0.95 (0.632→0.640→0.645→0.644), while noisy v2 <i>drops</i> above 0.75 (0.644→0.620→0.627) — clean data absorbs aggressive masking, noisy data cannot.
 <b>Size × corpus interact:</b> 60M ≈ 100M on small v3, but 100M &gt; 60M (+0.014) on large v2 (data rewards capacity).
-All val−test gaps negative (test&gt;val, val n=817 harder subset) → no probe overfitting. Ceiling ρ≈0.644 is downstream (probe on 3850 labels); readout/uncertainty settled in §4 of the meeting doc.</div></div>
+All val−test gaps negative (test&gt;val, val n=817 harder subset) → no probe overfitting. Ceiling ρ≈0.644 is downstream (probe on 3850 labels); head trials are summarized in §1.1 of the meeting doc.</div></div>
 </div></body></html>"""
 out=HERE/"trials.html"; out.write_text(html)
 print(f"wrote {out} ({len(html)} bytes, {len(TRIALS)} trials)")

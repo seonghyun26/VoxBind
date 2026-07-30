@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Binding-affinity results, adjusted de novo evaluation, and CrossDocked2020 split audit · 260730</title>
+<title>Binding-affinity update and mFo–Fc channels · 260806</title>
 <style>
   :root {
     --ink: #1c2433;
@@ -104,11 +104,12 @@
 
   .doc-section { margin-bottom: 68px; }
   .affinity-results { order: 1; }
-  .evaluation-pipeline { order: 2; }
-  .dataset-audit { order: 3; }
+  .uncertainty { order: 2; }
+  .mfo-channels { order: 3; }
   .structural-quality { order: 4; }
-  .uncertainty { order: 5; }
-  .denovo-generation { order: 6; }
+  .denovo-generation { order: 5; }
+  .evaluation-pipeline { order: 6; }
+  .dataset-audit { order: 7; }
 
   .section-head {
     display: flex;
@@ -135,6 +136,12 @@
     color: #fff;
     font-size: 15px;
     font-weight: 760;
+  }
+
+  .sec-num.wide {
+    width: auto;
+    min-width: 39px;
+    padding: 0 7px;
   }
 
   .section-intro {
@@ -760,7 +767,7 @@
   .positive-details a { color: var(--danger); }
 
   footer {
-    order: 7;
+    order: 8;
     margin-top: 62px;
     padding-top: 18px;
     border-top: 1px solid var(--line-strong);
@@ -804,10 +811,10 @@
 
   <header class="doc">
     <div class="eyebrow">
-      <span>Meeting note · 2026-07-30</span>
-      <span class="status">results + adjusted evaluation protocol</span>
+      <span>Meeting note · 2026-08-06</span>
+      <span class="status">affinity + channel trials</span>
     </div>
-    <h1>Binding-affinity results, adjusted de novo evaluation, and CrossDocked2020 split audit</h1>
+    <h1>Binding-affinity update and mFo–Fc channels</h1>
   </header>
 
   <section class="doc-section affinity-results">
@@ -1118,78 +1125,80 @@
     </figure>
 
     <div class="notes">
-      <b>Interpretation and leakage control.</b>
+      <b>Leakage check.</b>
       <ul>
-        <li><b>Nesso-1 performs well for binding-affinity prediction</b> (Pearson <i>r</i> 0.670,
-          Spearman ρ 0.663, RMSE 1.410). However, all complexes in our
-          <code>lp_edrscc_v2</code> test set are reported as overlapping Nesso-1's affinity-training
-          sources, so its result is a leaked upper bound rather than a clean generalization result.</li>
-        <li><b>Yes—we tested a deliberately leaked CDG probe.</b> With the same frozen Pareto
-          CDG encoder, the clean probe gives Pearson <i>r</i> 0.663, Spearman ρ 0.644, and
-          RMSE 1.334. Appending all 1,320 test features and affinity labels to probe training
-          (<code>--leak_test append</code>; 3,850 → 5,170 training examples), then evaluating on
-          those same test examples, improves this to <i>r</i> 0.713, ρ 0.687, and RMSE 1.273.</li>
-        <li><b>The leakage is in probing, not CDG pretraining.</b> The frozen encoder was still
-          pretrained on leakage-filtered PLINDER data; the diagnostic exposes the test affinity
-          labels to the MLP head. It is therefore an optimistic upper bound—useful for comparison
-          with Nesso-1's overlap, but not a clean generalization result.</li>
+        <li><b>Nesso-1:</b> r 0.670, ρ 0.663, RMSE 1.410; treat as a leaked ceiling because its
+          affinity training overlaps the full test set.</li>
+        <li><b>Deliberate probe leakage:</b> CDG changes from r 0.663 / ρ 0.644 / RMSE 1.334 to
+          0.713 / 0.687 / 1.273. Only the MLP saw test labels; encoder pretraining stayed clean.</li>
       </ul>
     </div>
   </section>
 
-  <section class="doc-section evaluation-pipeline">
-    <h2 class="section-head"><span class="sec-num">2</span>Evaluation pipeline adjusted — cropped input, whole-receptor Vina</h2>
+  <section class="doc-section mfo-channels">
+    <h2 class="section-head"><span class="sec-num">2</span>mFo–Fc channels</h2>
     <p class="section-intro">
-      The protein representation now has an explicit stage-specific contract. VoxBind generation remains
-      conditioned on the local CrossDocked <code>*_pocket10.pdb</code> crop, because that is the model’s
-      trained input. Primary affinity evaluation instead uses the <b>coordinate-aligned whole receptor</b>
-      (<code>*_rec.pdb</code>) while keeping the search box on the same reference-ligand site. This prevents
-      a cropped scoring receptor from being mistaken for the full docking environment.
+      Test whether adding an mFo–Fc difference-map channel improves the frozen affinity representation.
+      Keep the encoder scale, mask ratio, split, and three-seed probe fixed.
     </p>
 
-    <div class="pipeline-flow" aria-label="Adjusted generation and evaluation input flow">
-      <div class="pipeline-row">
-        <div class="pipeline-label">Generation</div>
-        <div class="pipeline-node local">
-          Cropped pocket10
-          <span>protein atoms within the local CrossDocked pocket</span>
-        </div>
-        <div class="pipeline-arrow" aria-hidden="true">→</div>
-        <div class="pipeline-node">
-          Local voxel field
-          <span>centered on the paired reference-ligand coordinates</span>
-        </div>
-        <div class="pipeline-arrow" aria-hidden="true">→</div>
-        <div class="pipeline-node">
-          Generated ligands
-          <span>same conditioning input for σ 0.9, σ 1.0, and Ours</span>
-        </div>
-      </div>
-      <div class="pipeline-row">
-        <div class="pipeline-label">Evaluation</div>
-        <div class="pipeline-node full">
-          Whole receptor
-          <span>aligned CrossDocked <code>*_rec.pdb</code>; required</span>
-        </div>
-        <div class="pipeline-arrow" aria-hidden="true">+</div>
-        <div class="pipeline-node">
-          Same local site box
-          <span>center and size fixed from the paired reference ligand</span>
-        </div>
-        <div class="pipeline-arrow" aria-hidden="true">→</div>
-        <div class="pipeline-node full">
-          One matched Vina stack
-          <span>score-only → minimize → dock for generated and reference ligands</span>
-        </div>
-      </div>
-    </div>
-
-    <h3 class="table-title">Evaluation pipeline modified</h3>
+    <h3 class="table-title">Table 2 · mFo–Fc channel ablation — pending</h3>
     <p class="table-sub">
-      Placeholder for a matched before-versus-fixed comparison. Report within-pocket-first averages
-      on the same frozen QC mask. “Fixed” uses the aligned CrossDocked2020
-      <code>crossdocked_v1.1_rmsd1.0</code> whole receptor; do not copy the crop-scored legacy values
-      into those cells.
+      Add results from the matched channel trial only.
+    </p>
+    <div class="table-wrap">
+      <table class="results mini-table">
+        <thead>
+          <tr>
+            <th class="col-method">Input</th>
+            <th>Checkpoint</th>
+            <th>Val ρ</th>
+            <th>Test r↑</th>
+            <th>Test ρ↑</th>
+            <th>RMSE↓</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="col-method">
+              C+D+G <span class="tag ref">control</span>
+              <span class="sub">current channels</span>
+            </td>
+            <td class="na">—</td>
+            <td class="na">—</td>
+            <td class="na">—</td>
+            <td class="na">—</td>
+            <td class="na">—</td>
+            <td><span class="metric-status">pending</span></td>
+          </tr>
+          <tr class="ours">
+            <td class="col-method">
+              C+D+G + mFo–Fc <span class="tag ours">new</span>
+              <span class="sub">one additional difference-map channel</span>
+            </td>
+            <td class="na">—</td>
+            <td class="na">—</td>
+            <td class="na">—</td>
+            <td class="na">—</td>
+            <td class="na">—</td>
+            <td><span class="metric-status">pending</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="doc-section evaluation-pipeline">
+    <h2 class="section-head"><span class="sec-num">B</span>Appendix B — evaluation-pipeline check</h2>
+    <p class="section-intro">
+      Small matched trial: keep pocket10 for generation, but compare pocket10 versus the aligned whole
+      receptor for Vina. Use the same ligands, site box, pocket mask, and Vina settings.
+    </p>
+
+    <h3 class="table-title">Table B1 · Evaluation pipeline before and fixed — pending</h3>
+    <p class="table-sub">
+      Fixed = CrossDocked2020 <code>crossdocked_v1.1_rmsd1.0</code> whole receptor.
     </p>
     <div class="table-wrap">
       <table class="results mini-table">
@@ -1244,55 +1253,16 @@
     </div>
 
     <div class="callout">
-      <strong>Strict guardrail.</strong> The evaluator must record
-      <code>receptor_scope</code>, receptor path and checksum, ligand-to-receptor mapping key,
-      box center and size, Vina version, seed, exhaustiveness, and CPU count. Require the pocket crop
-      and whole receptor to share the same coordinate frame (matched pocket-atom RMSD ≤ 0.5 Å).
-      If the whole receptor is missing or the alignment check fails, mark that pocket
-      <b>pending / invalid for the primary result</b>; do not silently fall back to pocket10.
-    </div>
-
-    <div class="protocol">
-      <div class="protocol-item">
-        <b>What remains cropped</b>
-        Generation and voxel conditioning. Feeding the whole receptor to the generator would change
-        the trained input distribution and is not part of this adjustment.
-      </div>
-      <div class="protocol-item">
-        <b>What changes</b>
-        Vina’s receptor for generated ligands and the crystal reference. All methods use the same full
-        receptor, preparation, local search box, and Vina settings.
-      </div>
-      <div class="protocol-item">
-        <b>Current result status</b>
-        The 100 aligned full receptors are present under <code>base/decompdiff/data/test_set</code>.
-        Section 3 and Appendix A retain their existing pocket10-scored values as clearly labeled diagnostics;
-        no new Vina run was launched.
-      </div>
-    </div>
-
-    <div class="notes">
-      <b>Transition rule.</b>
-      <ul>
-        <li>Before a final de novo comparison, score the 79 reference ligands on the whole receptors,
-          reapply the same preregistered reference-only outlier rule, freeze that mask, and then evaluate
-          σ 0.9, σ 1.0, and Ours on the identical retained set.</li>
-        <li>Do not carry the current two-pocket mask forward without that check: it was derived from
-          pocket10 reference scores, and receptor scope can change both the score distribution and the
-          pockets that fail preparation QC.</li>
-      </ul>
+      <strong>Guardrail.</strong> Record receptor scope and box. Require aligned coordinates; never
+      fall back to pocket10 for a fixed-pipeline result.
     </div>
   </section>
 
   <section class="doc-section denovo-generation">
     <h2 class="section-head"><span class="sec-num">A</span>Appendix — de novo generation with two outlier pockets excluded</h2>
     <p class="section-intro">
-      Conditional generation on the held-out CrossDocked density subset. Each reproduced run generates
-      100 ligands per pocket and is evaluated through all three Vina modes against the cropped pocket10
-      receptor. These are the <b>legacy diagnostic values</b> retained while the whole-receptor protocol
-      in Section 2 is pending. Metrics are aggregated
-      <b>within pocket first</b>, then across the 77 retained pockets so every pocket has equal weight.
-      Vina is in kcal/mol; <b>lower is stronger</b>. “Ours” is the frozen C+D+G encoder generator.
+      Crop-scored diagnostic on 77 retained pockets, with 100 ligands per pocket. Aggregate within
+      pocket first. The whole-receptor check is in Appendix B.
     </p>
 
     <div class="summary-grid">
@@ -1604,22 +1574,17 @@
 
   <!-- CROSSDOCKED_AUDIT_START -->
   <section class="doc-section dataset-audit">
-    <h2 class="section-head"><span class="sec-num">3</span>CrossDocked2020 train–test Vina distributions</h2>
+    <h2 class="section-head"><span class="sec-num wide">B.1</span>CrossDocked pocket10 score audit</h2>
     <p class="section-intro">
-      Crystal ligands were evaluated against their paired CrossDocked2020 pocket10 receptors with one
-      fixed Vina pipeline. All 100 test instances and a deterministic simple-random sample of 500 of
-      the 99,881 training instances are complete. Densities are normalized within split because sample
-      sizes differ.
-      <b>No pocket or score outliers were removed for this split audit.</b> Under the adjusted input
-      contract in Section 2, this is a <b>crop-only diagnostic</b>, not the primary whole-receptor
-      docking benchmark.
+      Crop-only diagnostic: all 100 test instances and a seeded sample of 500 from 99,881 training
+      instances. No score or pocket was removed.
     </p>
 
     <figure class="figure-card">
       <img src="fig_crossdocked_vina_train_test.svg"
            alt="Normalized train and test distributions of Vina score-only, minimized, and docked energies for CrossDocked2020 crystal ligands">
       <figcaption>
-        <b>Figure 2 · CrossDocked2020 reference-ligand energy distributions.</b>
+        <b>Figure B1 · CrossDocked2020 reference-ligand energy distributions.</b>
         Solid curves and translucent histograms show normalized density; dashed vertical lines show
         split medians. Each panel uses a pooled central 1st–99th percentile display window, with every
         observation outside that window counted in the panel annotation rather than silently discarded.
@@ -1627,7 +1592,7 @@
       </figcaption>
     </figure>
 
-    <h3 class="table-title">Table 1 · Vina distribution summary</h3>
+    <h3 class="table-title">Table B2 · Vina distribution summary</h3>
     <p class="table-sub">
       <span class="scope legacy">pocket10 receptor</span>
       All values are in kcal/mol. Test rows cover the full test split; train rows summarize the
@@ -1710,10 +1675,8 @@
     </div>
 
     <div class="callout">
-      <strong>Sampling design.</strong>
-      The train tensor contains exactly <b>99,881 unique pocket–ligand instances</b>, so there is no
-      useful deduplication shortcut. Table 1 therefore reports a fixed 500-instance random sample
-      (seed 260730) and the complete 100-instance test split.
+      <strong>Scope.</strong> Test: 100 / 100. Train: 500 / 99,881, sampled with seed 260730.
+      Pocket10 receptor; exhaustiveness 8; Vina seed 1; four CPUs. All tails are retained.
     </div>
 
     <details class="positive-details" open>
@@ -1742,53 +1705,18 @@
       </div>
     </details>
 
-    <div class="protocol">
-      <div class="protocol-item">
-        <b>Split coverage</b>
-        Test: 100 / 100 instances from 93 protein families. Train: 500 / 99,881 sampled instances
-        across 238 protein families; sampling seed 260730.
-      </div>
-      <div class="protocol-item">
-        <b>Identical Vina protocol</b>
-        Paired pocket10 receptor; score-only → local minimize → dock; exhaustiveness 8, Vina seed 1,
-        and four Vina CPUs per complex.
-      </div>
-      <div class="protocol-item">
-        <b>Raw tails retained</b>
-        Positive score-only tails occur in both splits. Every energy &gt; 0 is retained, shaded red
-        in the figure, counted in Table 1, and exported with its pocket and ligand identifiers.
-      </div>
-    </div>
-
-    <div class="notes">
-      <b>Interpretation and reproducibility.</b>
-      <ul>
-        <li>The project split is reproduced by shuffling the 99,981-item training tensor with seed
-          1234 and reserving the final 100 instances for validation. The supplied 100-item test tensor
-          is evaluated in full.</li>
-        <li>The exhaustive train tensor contains 99,881 unique pocket paths, 99,881 unique ligand paths,
-          and 99,881 unique pocket–ligand pairs; there are no duplicated instances to collapse.</li>
-        <li>The CSV contains all 500 sampled train and 100 test energies and identifiers. The included
-          script, checkpoint, positive-pocket CSV, and summary reproduce the reported evaluation.</li>
-      </ul>
-    </div>
   </section>
   <!-- CROSSDOCKED_AUDIT_END -->
 
   <section class="doc-section structural-quality">
-    <h2 class="section-head"><span class="sec-num">4</span>PoseCheck + PoseBusters structural quality</h2>
+    <h2 class="section-head"><span class="sec-num">3</span>PoseCheck + PoseBusters structural quality</h2>
     <p class="section-intro">
-      Placeholder for the matched structural-quality evaluation of the three de novo methods in Appendix A.
-      No numerical result is reported here yet: the previous values came from a different VoxBind
-      pipeline-validation run and were not a valid comparison for σ 0.9, σ 1.0, and Ours.
+      Matched evaluation for VoxBind σ 0.9, σ 1.0, and Ours on the Appendix A pocket set.
     </p>
 
-    <h3 class="table-title">Table 2 · Structural-quality evaluation — pending</h3>
+    <h3 class="table-title">Table 3 · Structural-quality evaluation — pending</h3>
     <p class="table-sub">
-      Each method must be evaluated on the same retained whole-receptor QC mask once it is frozen, with
-      the same generated-ligand count, receptor preparation, PoseCheck settings, PoseBusters checks,
-      timeout policy, and within-pocket-first aggregation. Dashes are intentional placeholders, not
-      missing published results.
+      Same pocket mask, sample count, receptor preparation, checks, and aggregation.
     </p>
     <div class="table-wrap">
       <table class="results">
@@ -1841,10 +1769,7 @@
     </div>
 
     <div class="callout">
-      <strong>Status: evaluation pending.</strong>
-      Populate this table only after all three methods have been scored through the same structural-quality
-      pipeline. The earlier VoxBind-only validation numbers have been removed because they do not support
-      a method comparison.
+      <strong>Status.</strong> Pending matched evaluation.
     </div>
 
     <div class="notes">
@@ -1861,26 +1786,14 @@
   </section>
 
   <section class="doc-section uncertainty">
-    <h2 class="section-head"><span class="sec-num">5</span>Uncertainty &amp; readout &mdash; beyond a plain MLP probe</h2>
+    <h2 class="section-head"><span class="sec-num wide">1.1</span>Trials on MLP heads</h2>
     <p class="section-intro">
-      Inspired by <a href="https://arxiv.org/pdf/2602.07735">TerraBind</a>, whose affinity module reads binding
-      strength from a rich <b>pair / distogram representation</b> through a pairformer and adds an
-      <b>epinet</b> for calibrated affinity uncertainty. Our winning champion probes affinity far more simply:
-      it <b>mean-pools all patch tokens</b> of the frozen C+D+G encoder into one 640-D vector and regresses with a
-      2-layer MLP &mdash; a strong point estimate, but a blended average with <b>no interaction structure and no
-      uncertainty</b>. This section tests richer readouts on the <b>same frozen champion</b> (100M · v2 · mask0.75;
-      no re-pretraining): split the tokens into ligand-region vs pocket-region pools by input occupancy, and make
-      affinity an explicit <b>ligand&times;pocket interaction</b> (TerraBind's pair-rep idea), plus an
-      <b>epinet uncertainty head</b>. All rows share the identical frozen features, split
-      (<code>lp_edrscc_v2</code>, 3850/817/1320), and 3-seed protocol; only the head differs.
+      Same frozen 100M v2 mask0.75 features and <code>lp_edrscc_v2</code> split; only the probe head changes.
     </p>
 
-    <h3 class="table-title">Table 3 · Affinity-regression heads on the frozen champion</h3>
+    <h3 class="table-title">Table 1 · MLP-head trials</h3>
     <p class="table-sub">
-      Head applied to the frozen 100M v2 mask0.75 encoder. <b>Champion</b> = the current probe (mean-pool &rarr; MLP).
-      Metrics are test Pearson&nbsp;r / Spearman&nbsp;ρ / RMSE (pK), mean over 3 probe seeds; higher r/ρ and lower
-      RMSE are better. <b>Uncert.</b> = does the head emit a calibrated per-prediction uncertainty (TerraBind-style),
-      which the point-estimate MLP does not.
+      Three probe seeds. Higher r/ρ and lower RMSE are better.
     </p>
     <div class="table-wrap">
       <table class="results">
@@ -1892,7 +1805,6 @@
             <th>Test r↑</th>
             <th>Test ρ↑</th>
             <th>RMSE↓</th>
-            <th>Uncert.</th>
             <th>Status</th>
           </tr>
         </thead>
@@ -1907,7 +1819,6 @@
             <td class="best"><span class="val">0.656</span></td>
             <td class="best"><span class="val">0.641</span></td>
             <td class="best"><span class="val">1.420</span></td>
-            <td class="na">—</td>
             <td><span class="val">baseline</span></td>
           </tr>
           <tr class="grp-top">
@@ -1920,7 +1831,6 @@
             <td><span class="val">0.650</span></td>
             <td><span class="val">0.634</span></td>
             <td><span class="val">1.391</span></td>
-            <td class="na">—</td>
             <td><span class="val">done · −0.007 ρ</span></td>
           </tr>
           <tr>
@@ -1933,7 +1843,6 @@
             <td><span class="val">0.645</span></td>
             <td><span class="val">0.625</span></td>
             <td><span class="val">1.508</span></td>
-            <td class="na">—</td>
             <td><span class="val">done · −0.016 ρ</span></td>
           </tr>
           <tr>
@@ -1946,83 +1855,22 @@
             <td class="na">—</td>
             <td class="na">—</td>
             <td class="na">—</td>
-            <td class="na">—</td>
             <td><span class="metric-status">deprioritized</span></td>
-          </tr>
-          <tr>
-            <td class="col-method">
-              Uncertainty heads · epinet / ensemble / MC-drop <span class="tag ref">D·done</span>
-              <span class="sub">TerraBind epinet + gold-standard deep ensemble + MC-dropout · point ρ preserved (0.64)</span>
-            </td>
-            <td class="na">—</td>
-            <td><span class="val">0.643</span></td>
-            <td><span class="val">0.640</span></td>
-            <td><span class="val">1.388</span></td>
-            <td><span class="val">σ ✗</span></td>
-            <td><span class="val">done · not calibrated</span></td>
           </tr>
         </tbody>
       </table>
     </div>
 
     <div class="callout">
-      <strong>Result: the interaction heads do not beat mean-pool — the caveat won.</strong> Binding affinity is
-      fundamentally a ligand&ndash;pocket interaction, so we made it explicit; but on 3,850 labels the richer heads
-      <b>lose monotonically with head size</b>: mean-pool ρ <b>0.641</b> &gt; split-pool <b>0.634</b> &gt;
-      bilinear <b>0.625</b>. The most-parameterized head (bilinear) is worst and its <i>validation</i> ρ also drops
-      (0.527) &mdash; the overfitting signature we predicted (TerraBind trains its pairformer on <b>millions</b> of
-      labels; we have 3,850, and attention-pool &lt; mean-pool + fine-tune-hurt already showed high-capacity heads
-      overfit here). <b>Mean-pool's simplicity wins.</b> Cross-attention (C, even more parameters) is therefore
-      deprioritized; the remaining value is the <b>epinet head (D) for calibrated uncertainty</b> &mdash; not to raise
-      ρ, but to give a per-ligand affinity σ for de novo screening, which the plain MLP cannot.
-    </div>
-
-    <div class="callout" style="border-left-color:var(--danger)">
-      <strong>Uncertainty result: it does not calibrate on the frozen probe &mdash; a fundamental negative, not a tuning miss.</strong>
-      All three methods &mdash; TerraBind-style <b>epinet</b>, gold-standard <b>deep ensemble</b> (10 bootstrap members),
-      and <b>MC-dropout</b> &mdash; preserve the point estimate (ρ 0.64) but produce σ that <b>does not track error</b>:
-      corr(σ, |err|) = −0.03 / −0.11 / −0.01, and <b>selective RMSE rises</b> when keeping the most-confident
-      predictions (deep ensemble 1.388 → 1.410 → 1.453 at all / conf-50% / conf-25%). Because even the deep ensemble
-      &mdash; the most reliable epistemic method, with real σ ≈ 0.34 pK &mdash; fails, this is <b>fundamental</b>: the
-      frozen-probe errors are <b>representation-limited, not epistemic</b>. The 3,850 points densely cover the feature
-      space, so the ensemble is ~equally confident everywhere; the ~0.64 ceiling means certain complexes are simply
-      <i>not predictable</i> from the frozen features, and that missing-information error is invisible to ensemble
-      disagreement. <b>Implication:</b> TerraBind-style calibrated uncertainty needs end-to-end training on
-      &sim;10⁶ affinity labels plus a structural (distogram-entropy) signal &mdash; neither available to the frozen
-      density probe. Uncertainty is not a free add-on here.
-    </div>
-
-    <div class="notes">
-      <b>Method &amp; verdict.</b>
-      <ul>
-        <li><b>Frozen, shared features:</b> every head reads the identical 100M v2 mask0.75 encoder; per-patch tokens
-          are soft-pooled into ligand-region (<code>g_lig</code>) and pocket-region (<code>g_poc</code>) vectors by
-          input occupancy (ligand channels 0&ndash;6, pocket 7&ndash;10). No encoder retraining
-          (<code>test/head_designs.py</code>).</li>
-        <li><b>Pipeline validated:</b> the matched-protocol mean-pool reproduces the canonical champion
-          (ρ 0.641 vs 0.644) &mdash; so the head deltas are trustworthy. (Matched-protocol RMSE 1.420 differs from the
-          canonical 1.349 only because the head-sweep MLP uses its own fixed hyper-parameters across all rows; the
-          <i>comparison</i> is apples-to-apples.)</li>
-        <li><b>Interaction bias does not transfer at this label count:</b> mean 0.641 → concat 0.634 (−0.007) →
-          bilinear 0.625 (−0.016); more head capacity = worse test ρ. A·concat's better <i>val</i> (0.563) and RMSE
-          (1.391) but worse test ρ is a mild-overfit tell, not a win.</li>
-        <li><b>Uncertainty is the portable win:</b> the epinet head (D) gives a calibrated per-ligand affinity σ for
-          ranking / triage in de novo screening &mdash; the capability the plain MLP cannot provide &mdash; regardless
-          of point-estimate ρ. This is the one TerraBind ingredient worth carrying over.</li>
-      </ul>
+      <strong>Result.</strong> Mean-pool MLP remains best: ρ 0.641 versus 0.634 for concat and
+      0.625 for bilinear. Larger interaction heads overfit; cross-attention is deprioritized.
     </div>
   </section>
 
   <footer>
-    Provenance: Section 1 reuses the original <code>results.html</code> Figure 1 generator and its
-    <code>lp_edrscc_v2</code> method values, including Nesso-1. Section 2 records the adjusted receptor-input
-    contract established from the checked generation and evaluator code paths; the aligned CrossDocked test
-    set contains 100 whole-receptor <code>*_rec.pdb</code> files. Appendix A uses the 2026-07-23 three-mode
-    de novo evaluation and the 79 reference
-    <code>ref_score</code> values in <code>voxbind/log/260524_sample_voxbind_vit_ep379_fulltest.log</code>.
-    Section 3 was evaluated 2026-07-23 from the canonical CrossDocked2020 tensors and paired pocket10
-    receptors using AutoDock Vina 1.2.7. Section 3 and Appendix A are explicitly crop-scored diagnostics; all
-    600 requested split-audit evaluations completed successfully, and no whole-receptor rerun was launched.
+    Provenance: Section 1 uses the original <code>results.html</code> chart; Section 1.1 uses matched
+    frozen-head trials. Sections 2–3 are pending placeholders. Appendix A contains the crop-scored
+    de novo results. Appendix B contains the receptor-input trial and the 600-instance pocket10 audit.
   </footer>
 
 </div>
