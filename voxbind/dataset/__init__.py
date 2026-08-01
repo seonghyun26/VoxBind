@@ -52,7 +52,15 @@ def _make_dataset(cfg, split: str, aug: bool):
             # semantics, ~85% util vs OTF's ~40%. n_lig_ch/n_poc_ch flow through unchanged.
             box_path = cfg.dset.get("box_path", "")
             if box_path:
-                return DatasetCrossDockedDensityBox(box_path=box_path, **density_kwargs)
+                # 2nd density source (opt-in): dset.resample_dir_diff points at the mFo-DFc
+                # difference-map recipe dir (its own box{g}.dat + norm). Adds xray_diff_*
+                # channels → [ …atoms…, dens0, grad0, dens1, grad1 ]. Empty → single 2Fo-Fc.
+                return DatasetCrossDockedDensityBox(
+                    box_path=box_path,
+                    resample_dir_diff=cfg.dset.get("resample_dir_diff", ""),
+                    box_path_diff=cfg.dset.get("box_path_diff", ""),
+                    **density_kwargs,
+                )
             return DatasetCrossDockedDensity(**density_kwargs)
         return DatasetCrossDockedXray(
             data_dir=cfg.dset.data_dir,

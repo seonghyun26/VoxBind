@@ -205,6 +205,20 @@ def set_atom_channels(n_lig: int, n_poc: int) -> None:
     LIG_CH, POC_CH = int(n_lig), int(n_poc)
 
 
+# Number of electron-density SOURCES fed as (density, gradmag) channel pairs. Default 1 =
+# 2Fo-Fc only (all prior runs bit-identical). 2 = 2Fo-Fc + mFo-DFc difference map, laid out
+# per-source-interleaved [ …atoms…, dens0, grad0, dens1, grad1 ] so channel_groups=[…,2,2]
+# groups each map's (density, gradmag) as its own ChannelViT modality. Set ONCE at run()
+# startup via set_density_sources(); read by _channel_layout below.
+N_DENSITY_SRC = 1
+
+
+def set_density_sources(n: int) -> None:
+    """Pin the # of density sources (2Fo-Fc [+ mFo-DFc]) for _channel_layout (call once at startup)."""
+    global N_DENSITY_SRC
+    N_DENSITY_SRC = int(n)
+
+
 def _channel_layout(
     input_mode: str,
     with_gradmag: bool = False,
@@ -251,9 +265,16 @@ def _channel_layout(
             f"(density / *_density); got input_mode={input_mode!r}"
         )
     n_gradmag = 1 if with_gradmag else 0
-    n_full = n_atom + n_density + n_gradmag           # full assembled width (= target width source)
-    # Reconstruction / loss-target width: gradmag dropped only when input-only.
-    n_recon = n_full - (0 if gradmag_reconstruct else n_gradmag)
+    # Density SOURCES (2Fo-Fc [+ mFo-DFc]) each contribute a (density, gradmag) pair,
+    # interleaved per source: [ …atoms…, dens0, grad0, dens1, grad1 ]. n_density / n_gradmag
+    # stay PER-SOURCE (=1); the multi-source width scales by n_src. n_src=1 → identical to
+    # the single-2Fo-Fc layout (all prior runs unaffected).
+    n_src = N_DENSITY_SRC if has_density else 0
+    per_src = n_density + n_gradmag                   # channels contributed per source
+    n_full = n_atom + n_src * per_src                 # full assembled width (= target width source)
+    # Reconstruction / loss-target width: gradmag dropped (per source) only when input-only.
+    per_src_recon = n_density + (n_gradmag if gradmag_reconstruct else 0)
+    n_recon = n_atom + n_src * per_src_recon
     # Encoder input width. density_input=False → atoms-only encoder; density+gradmag
     # are reconstruction targets the coords-only encoder must predict (n_in < n_recon).
     if density_input:
@@ -267,13 +288,14 @@ def _channel_layout(
         n_in = n_atom
     return {
         "n_atom": n_atom,
-        "n_density": n_density,
-        "n_gradmag": n_gradmag,
+        "n_density": n_density,           # PER SOURCE (1 if density-bearing)
+        "n_gradmag": n_gradmag,           # PER SOURCE (1 if with_gradmag)
+        "n_density_src": n_src,           # # density sources: 0 (atomblob) / 1 (2Fo-Fc) / 2 (+mFo-DFc)
         "n_in": n_in,
         "n_recon": n_recon,
         "density_input": density_input,
-        "density_idx": n_atom,
-        "gradmag_idx": (n_atom + n_density) if with_gradmag else None,
+        "density_idx": n_atom,            # source-0 (2Fo-Fc) density channel
+        "gradmag_idx": (n_atom + n_density) if with_gradmag else None,  # source-0 gradmag channel
     }
 
 
@@ -291,6 +313,10 @@ def _val_cache_path(cfg) -> str:
         # resample mode reads density from a different source (full-map crop at the
         # augmented pose) → must key the cache so it can't reuse a frozen-crops blob.
         "resample_dir": cfg.dset.get("resample_dir", ""),
+        # 2nd density source (mFo-DFc) adds xray_diff_* tensors to the cache → must key it so
+        # a single-source (13-ch) blob can't be reused for a 15-ch run and vice-versa.
+        "density_sources": cfg.dset.get("density_sources", 1),
+        "resample_dir_diff": cfg.dset.get("resample_dir_diff", ""),
         "density_source": cfg.mae.get("density_source", "synthetic"),
         "input_mode": cfg.get("input_mode", "density"),
         # with_gradmag adds an xray_gradmag tensor to the cache (xray source),
@@ -314,11 +340,15 @@ def precompute_val(loader_val, voxelizer, cfg) -> dict:
     density_source = str(cfg.mae.get("density_source", "synthetic"))
     with_gradmag = bool(cfg.get("with_gradmag", False))
     cache_gradmag = with_gradmag and density_source == "xray"
+    # 2nd density source (mFo-DFc): cache its (density, gradmag) too so val_epoch can
+    # assemble the SAME 15-channel input as training. Single-source → all_diff stay empty.
+    cache_diff = (int(cfg.dset.get("density_sources", 1)) > 1) and density_source == "xray"
     logger.info(
         f"pre-computing val voxels (density_source={density_source}, "
-        f"with_gradmag={with_gradmag})..."
+        f"with_gradmag={with_gradmag}, density_sources={int(cfg.dset.get('density_sources', 1))})..."
     )
     all_lig, all_poc, all_xray, all_gradmag = [], [], [], []
+    all_diff, all_diff_gradmag = [], []
     with torch.no_grad():
         for batch in loader_val:
             all_lig.append(voxelizer.forward(batch["ligand"], num_channels=int(cfg.model.get("n_channels_ligand", 7))).cpu())
@@ -327,6 +357,10 @@ def precompute_val(loader_val, voxelizer, cfg) -> dict:
                 all_xray.append(batch["xray_density"].cpu())
             if cache_gradmag:
                 all_gradmag.append(batch["xray_gradmag"].cpu())
+            if cache_diff:
+                all_diff.append(batch["xray_diff_density"].cpu())
+                if cache_gradmag:
+                    all_diff_gradmag.append(batch["xray_diff_gradmag"].cpu())
     cache = {
         "voxels_lig": torch.cat(all_lig, 0),
         "voxels_poc": torch.cat(all_poc, 0),
@@ -335,6 +369,10 @@ def precompute_val(loader_val, voxelizer, cfg) -> dict:
         cache["xray_density"] = torch.cat(all_xray, 0)
     if cache_gradmag:
         cache["xray_gradmag"] = torch.cat(all_gradmag, 0)
+    if cache_diff:
+        cache["xray_diff_density"] = torch.cat(all_diff, 0)
+        if cache_gradmag:
+            cache["xray_diff_gradmag"] = torch.cat(all_diff_gradmag, 0)
     torch.save(cache, path)
     logger.info(f"saved val voxels to {path}")
     return cache

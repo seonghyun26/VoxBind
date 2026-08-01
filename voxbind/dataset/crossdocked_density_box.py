@@ -59,19 +59,59 @@ def _resample_from_box(box, R_aug, t_aug, G_out=_GRID_DIM, G_box=96, res=_RESOLU
 class DatasetCrossDockedDensityBox(DatasetCrossDockedDensity):
     """DatasetCrossDockedDensity, but density comes from a precomputed 96³ box memmap."""
 
-    def __init__(self, *, box_path: str, **kwargs):
+    def __init__(self, *, box_path: str, resample_dir_diff: str = "", box_path_diff: str = "", **kwargs):
         super().__init__(**kwargs)
-        meta = json.loads((Path(box_path).with_name("box96_meta.json")).read_text())
+        meta = json.loads((Path(box_path).with_name(Path(box_path).stem + "_meta.json")).read_text())
         self._g_box = int(meta["g_box"])
         self._box_n = int(meta["n"])
         self._box_path = box_path
+        # storage dtype: 'float16' (raw) or 'uint8' (affine-quantised raw over [quant_lo, quant_hi],
+        # dequantised on read). uint8 halves the memmap so a 116³ box fits RAM page cache.
+        self._box_dtype = np.dtype(meta.get("dtype", "float16"))
+        self._qlo = meta.get("quant_lo"); self._qhi = meta.get("quant_hi")
         self._box = None  # opened lazily per worker (fork-safe)
+
+        # ── Optional 2nd density source: mFo-DFc difference-map box (SAME pose manifest) ──
+        # resample_dir_diff carries the diff normalization recipe; its box{g}.dat is read too
+        # (box_path_diff overrides the path). Emits xray_diff_density / xray_diff_gradmag.
+        self._box_diff = None
+        self._recipe_norm_diff = None
+        if resample_dir_diff:
+            rdd = Path(resample_dir_diff)
+            self._recipe_norm_diff = json.loads((rdd / "resample.json").read_text())["normalization"]
+            bpd = box_path_diff or str(rdd / Path(box_path).name)   # same box{g}.dat filename
+            meta_d = json.loads(Path(bpd).with_name(Path(bpd).stem + "_meta.json").read_text())
+            self._box_diff_path = bpd
+            self._box_diff_dtype = np.dtype(meta_d.get("dtype", "float16"))
+            self._box_diff_qlo = meta_d.get("quant_lo"); self._box_diff_qhi = meta_d.get("quant_hi")
+            self._box_diff_g = int(meta_d["g_box"])
+            self._box_diff_n = int(meta_d["n"])
 
     def _boxes(self):
         if self._box is None:
-            self._box = np.memmap(self._box_path, dtype=np.float16, mode="r",
+            self._box = np.memmap(self._box_path, dtype=self._box_dtype, mode="r",
                                   shape=(self._box_n, self._g_box, self._g_box, self._g_box))
         return self._box
+
+    def _read_box(self, index: int) -> np.ndarray:
+        """row → float32 raw-density box (dequantise uint8; float16 passes through)."""
+        raw = self._boxes()[index]
+        if self._box_dtype == np.uint8:
+            return self._qlo + (raw.astype(np.float32) / 255.0) * (self._qhi - self._qlo)
+        return np.asarray(raw, dtype=np.float32)
+
+    def _boxes_diff(self):
+        if self._box_diff is None:
+            self._box_diff = np.memmap(self._box_diff_path, dtype=self._box_diff_dtype, mode="r",
+                                       shape=(self._box_diff_n, self._box_diff_g, self._box_diff_g, self._box_diff_g))
+        return self._box_diff
+
+    def _read_box_diff(self, index: int) -> np.ndarray:
+        """row → float32 raw mFo-DFc box (dequantise uint8; float16 passes through)."""
+        raw = self._boxes_diff()[index]
+        if self._box_diff_dtype == np.uint8:
+            return self._box_diff_qlo + (raw.astype(np.float32) / 255.0) * (self._box_diff_qhi - self._box_diff_qlo)
+        return np.asarray(raw, dtype=np.float32)
 
     def __getitem__(self, index: int) -> dict:
         if self._subset_indices is not None:
@@ -130,7 +170,7 @@ class DatasetCrossDockedDensityBox(DatasetCrossDockedDensity):
         # ── X-ray density: RESAMPLE 64³ from the precomputed 96³ box at the aug pose ──
         xray_density: Optional[torch.Tensor] = None
         if self.use_xray and bool(self._man_ok[index]):
-            box = np.asarray(self._boxes()[index], dtype=np.float32)
+            box = self._read_box(index)
             R_aug = rot_matrix.numpy() if rot_matrix is not None else None
             t_aug = trans_noise.reshape(3).numpy() if trans_noise is not None else None
             dens = _resample_from_box(box, R_aug, t_aug, G_out=_GRID_DIM, G_box=self._g_box, res=_RESOLUTION)
@@ -161,5 +201,23 @@ class DatasetCrossDockedDensityBox(DatasetCrossDockedDensity):
                 out["xray_gradmag"] = per_sample_zscore(g).view(_GRID_DIM, _GRID_DIM, _GRID_DIM)
             else:
                 out["xray_gradmag"] = torch.zeros(_GRID_DIM, _GRID_DIM, _GRID_DIM)
+
+        # ── 2nd density source: mFo-DFc difference map, resampled from its own box at the
+        #    SAME augmented pose (rot_matrix/trans_noise), own recipe-norm + own gradmag. ──
+        if self._recipe_norm_diff is not None:
+            if bool(xray_available):
+                R_aug = rot_matrix.numpy() if rot_matrix is not None else None
+                t_aug = trans_noise.reshape(3).numpy() if trans_noise is not None else None
+                boxd = self._read_box_diff(index)
+                dd = _resample_from_box(boxd, R_aug, t_aug, G_out=_GRID_DIM,
+                                        G_box=self._box_diff_g, res=_RESOLUTION)
+                dd = torch.from_numpy(_apply_recipe_norm(dd, self._recipe_norm_diff).astype(np.float32))
+                out["xray_diff_density"] = dd
+                out["xray_diff_gradmag"] = per_sample_zscore(
+                    gradient_magnitude3d(dd.view(1, 1, _GRID_DIM, _GRID_DIM, _GRID_DIM))
+                ).view(_GRID_DIM, _GRID_DIM, _GRID_DIM)
+            else:
+                out["xray_diff_density"] = torch.zeros(_GRID_DIM, _GRID_DIM, _GRID_DIM)
+                out["xray_diff_gradmag"] = torch.zeros(_GRID_DIM, _GRID_DIM, _GRID_DIM)
 
         return out

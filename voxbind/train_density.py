@@ -67,7 +67,7 @@ from voxbind.train_common import (  # shared pretext-independent engine (extract
     _ch_freq_cache_path, _cleanup_ddp, _compile_options, _reconcile_input_keys,
     _setup_ddp, _unwrap, _val_cache_path, _CH_FREQ_DEFAULT_N_SAMPLES,
     _CH_FREQ_POS_THRESH, _VALID_INPUT_MODES, log_metrics, maybe_compile_model,
-    precompute_channel_weights, precompute_val, set_atom_channels,
+    precompute_channel_weights, precompute_val, set_atom_channels, set_density_sources,
 )
 from voxbind.models.ema import ModelEma
 from voxbind.utils.base_utils import create_exp_dir, makedir, seed_everything
@@ -224,6 +224,9 @@ class MAEPrefetcher:
         self.layout = _channel_layout(
             input_mode, with_gradmag, gradmag_reconstruct, density_input=self.density_input
         )
+        # 2 density sources → the dataset also emits the mFo-DFc (density, gradmag) pair,
+        # appended as trailing channels in _step. False (single 2Fo-Fc) = unchanged path.
+        self.with_diff = self.layout.get("n_density_src", 1) > 1
         self.stream = torch.cuda.Stream()
 
     def _step(self, batch):
@@ -294,6 +297,16 @@ class MAEPrefetcher:
                 # Append gradmag as the trailing channel: [ …atoms…, density, gradmag ].
                 if self.with_gradmag:
                     x_clean = torch.cat([x_clean, g_clean], dim=1)
+
+                # Second density SOURCE (mFo-DFc difference map): append its (density, gradmag)
+                # pair from the dataset → [ …atoms…, dens0, grad0, dens1, grad1 ], matching
+                # channel_groups=[…,2,2]. Only the xray path carries a real second map.
+                if self.with_diff and self.density_source == "xray":
+                    d_diff = batch["xray_diff_density"].to(device, non_blocking=True).unsqueeze(1)
+                    x_clean = torch.cat([x_clean, d_diff], dim=1)
+                    if self.with_gradmag:
+                        g_diff = batch["xray_diff_gradmag"].to(device, non_blocking=True).unsqueeze(1)
+                        x_clean = torch.cat([x_clean, g_diff], dim=1)
 
                 # Noise is a density-domain augmentation applied to the density
                 # channel BY INDEX (gradmag may trail it). Atom-only modes skip it;
@@ -628,6 +641,10 @@ def val_epoch(cfg, model, val_cache, device, ch_weight=None) -> dict:
     voxels_poc = val_cache["voxels_poc"]
     cached_xray = val_cache.get("xray_density", None)
     cached_gradmag = val_cache.get("xray_gradmag", None)
+    # 2nd density source (mFo-DFc): cached (density, gradmag) appended below to match training.
+    with_diff = layout.get("n_density_src", 1) > 1
+    cached_diff = val_cache.get("xray_diff_density", None)
+    cached_diff_gradmag = val_cache.get("xray_diff_gradmag", None)
     n = voxels_lig.shape[0]
 
     L_pretext_sum, L_str_sum, n_batches = 0.0, 0.0, 0
@@ -677,6 +694,15 @@ def val_epoch(cfg, model, val_cache, device, ch_weight=None) -> dict:
 
             if with_gradmag:
                 x_clean = torch.cat([x_clean, g_clean], dim=1)
+
+            # 2nd density source (mFo-DFc): append its (density, gradmag) → matches training's
+            # [ …atoms…, dens0, grad0, dens1, grad1 ]. Single-source → no-op.
+            if with_diff and density_source == "xray":
+                d_diff = cached_diff[start:start + cfg.bsz].to(device, non_blocking=True).unsqueeze(1)
+                x_clean = torch.cat([x_clean, d_diff], dim=1)
+                if with_gradmag:
+                    g_diff = cached_diff_gradmag[start:start + cfg.bsz].to(device, non_blocking=True).unsqueeze(1)
+                    x_clean = torch.cat([x_clean, g_diff], dim=1)
 
             atom_only = input_mode in ("atomblob", "atomblob_merged", "roleblob")
             if sigma_noise > 0 and not atom_only:
@@ -1217,6 +1243,9 @@ def run(cfg: DictConfig, method: str) -> None:
     # Pin ligand/pocket element-channel counts for _channel_layout (default 7/4; 8/4 for the
     # per-element "+other" corpus). Must precede any _channel_layout / model build below.
     set_atom_channels(int(cfg.model.get("n_channels_ligand", 7)), int(cfg.model.get("n_channels_pocket", 4)))
+    # Pin the # of density sources (1 = 2Fo-Fc only; 2 = + mFo-DFc difference map). Read from
+    # dset.density_sources (default 1 → all prior runs unaffected). Must precede _channel_layout.
+    set_density_sources(int(cfg.dset.get("density_sources", 1)))
     create_exp_dir(cfg, write=is_main)
     if world_size > 1:
         dist.barrier()
@@ -1503,10 +1532,14 @@ def run(cfg: DictConfig, method: str) -> None:
             def build_ch_weight(epoch: int):
                 scale = _aux_scale(epoch)
                 parts = [atom_w]
-                if n_density > 0:
-                    parts.append(torch.tensor([density_channel_weight * scale]))
-                if with_gradmag and gradmag_reconstruct:
-                    parts.append(torch.tensor([gradmag_channel_weight * scale]))
+                # One (density, gradmag) weight pair per density SOURCE, interleaved to match
+                # the [ …atoms…, dens0, grad0, dens1, grad1 ] channel order. n_density_src=1 →
+                # single pair (identical to the pre-diff single-2Fo-Fc vector).
+                for _src in range(layout["n_density_src"]):
+                    if n_density > 0:
+                        parts.append(torch.tensor([density_channel_weight * scale]))
+                    if with_gradmag and gradmag_reconstruct:
+                        parts.append(torch.tensor([gradmag_channel_weight * scale]))
                 raw = torch.cat(parts, dim=0)
                 assert raw.shape[0] == layout["n_recon"], (
                     f"weight vector length {raw.shape[0]} != n_recon {layout['n_recon']}"
