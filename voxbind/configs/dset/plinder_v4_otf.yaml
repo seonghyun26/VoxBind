@@ -1,0 +1,21 @@
+# VoxBind v4: leakage-safe PLINDER holo + PLINDER/AHoJ apo states.
+# This intentionally follows the existing PLINDER OTF tuple/manifest layout.
+dset_name: crossdocked_xray
+data_dir: ${oc.env:VOXBIND_DATA_ROOT,dataset/data}
+data_file: pretrain/data_train_plinder_v4_perelem.pt
+crops_dir: ""
+ccp4_dir: ${oc.env:VOXBIND_DATA_ROOT,dataset/data}/ccp4
+resample_dir: ${oc.env:VOXBIND_DATA_ROOT,dataset/data}/pretrain/xray_resample_plinder_v4_perelem
+ligand_radius: -1
+pocket_radius: -1
+n_lig_ch: 8
+n_poc_ch: 4
+max_len: 30
+delta_translate: 1.0
+use_xray: true
+gradmag_as_density: false
+cache_size: 32
+normalize: false
+subset_n: 11417  # exact post-shuffle leakage-safe train count (v4 loader contract)
+subset_xray_only: true
+subset_val_n: 100

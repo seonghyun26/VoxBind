@@ -1,0 +1,44 @@
+{
+  "kind": "voxbind_v4_plinder_component_audit",
+  "cluster_column": "pocket_fident__50__weak__component",
+  "split_precedence": "test > val > train",
+  "inputs": {
+    "annotation_table": {
+      "path": "dataset/data/plinder/index/annotation_table.parquet",
+      "sha256": "d7ff7a087b3d336859afd5e57775fa1a4e9a23c90a7bb4ccbb6a278540ae31e9"
+    },
+    "plinder_split": {
+      "path": "dataset/data/plinder/splits/split.parquet",
+      "sha256": "2959fb4b32f8c5cc2d3e12fc810b8905e904496f5538e8d058f47eecee73eb40"
+    },
+    "v3_selection": {
+      "path": "splits/plinder/v3/plinder_selected.csv",
+      "sha256": "e73c2b3bce01d306c196434b6bc991e2801bf9cee9bc5044ca11433e784b29ca"
+    },
+    "protected_pdb_ids": {
+      "path": "splits/v4/protected_pdb_ids.csv",
+      "sha256": "b5f6547363b62f5036033ea0bc68932cba18f0fb73020d4f2ecffca3fb0db789"
+    }
+  },
+  "components": {
+    "all_annotation": 5218,
+    "annotation_systems_missing_component": 510449,
+    "test": 283,
+    "val": 156
+  },
+  "v3_systems": {
+    "test": 83855,
+    "train": 18225,
+    "val": 5571
+  },
+  "v3_components": {
+    "train": 1780,
+    "val": 120,
+    "test": 260
+  },
+  "component_intersections": {
+    "train_val": 0,
+    "train_test": 0,
+    "val_test": 0
+  }
+}

@@ -25,6 +25,47 @@ which resolves `splits/plinder/<version>/`, verifies the sha256, and loud-fails 
 `DEFAULT_PLINDER_VERSION` (`v2`); it falls back to `v1/` (then the legacy flat dir) with a warning if absent.
 `03b/03c` also take `--plinder_version`.
 
+## Linked experimental apo pockets
+
+`dataset/plinder/06_build_apo_pairs.py` intersects any frozen `v2`, `v2p1`, or
+`v3` selection with PLINDER's experimental apo links. It keeps only local apo
+PDBs with an existing 2Fo-Fc map, aligns the holo binding site into the apo map
+frame, defines the apo pocket around that site, and writes paired records plus a
+model-ready apo tuple/resampling manifest. The aligned holo ligand is an
+explicit crop anchor, not an input: apo tuples carry `ligand_present=false`, so
+the dataset loader emits zero ligand atoms.
+
+The current local v2 snapshot (2026-07-30) has 2,964 density-backed candidate
+holo systems after selecting the best apo link per system. Strict coordinate,
+density, and no-nearby-organic-ligand validation retains **1,329 apo pockets
+from 179 unique apo PDB/map targets**. The standard deterministic loader split
+contains 1,227 train and 100 validation samples after the 30 Å size filter.
+
+```bash
+cd voxbind
+
+# Count local candidates without building coordinates.
+python dataset/plinder/06_build_apo_pairs.py --version v2 --selection-only
+
+# Build/validate paired records, apo-only tuples, and train/val density manifests.
+python dataset/plinder/06_build_apo_pairs.py --version v2
+```
+
+Ignored generated outputs live under `dataset/data/pretrain/`:
+
+- `plinder_v2_apo_pairs.pt`: paired holo/apo records and provenance;
+- `data_train_plinder_v2_apo.pt`: model tuples with no ligand atoms;
+- `plinder_v2_apo/{selected_links,pair_index,skipped}.csv`;
+- `xray_resample_plinder_v2_apo/`: train/val manifests and map symlinks.
+
+The interactive paired-state viewer is
+`notebook/html/260806/visualize_plinder_apo_pockets.ipynb`. It shows the apo
+pocket and apo experimental density, then the matching deposited-frame holo
+pocket, real ligand, and its separate experimental density map. A clearly
+labelled visualization-only "dry pocket" panel identifies modeled apo waters
+and smoothly masks their local density without modifying the source CCP4 map or
+the training data.
+
 ## Re-pin / build a version
 Deliberate, version-bumped step. v2 recipe (run where the **proper leakage files** live —
 `pdbbind/index.csv` *with* a `new_split` column, `misato/pool_pids.txt`, `data_test.pt`):

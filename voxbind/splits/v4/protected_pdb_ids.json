@@ -1,0 +1,29 @@
+{
+  "kind": "voxbind_v4_protected_pdb_ids",
+  "policy": "PDB protection followed by merged pocket-cluster co-assignment; test > val > train",
+  "sources": {
+    "binding_affinity": {
+      "path": "splits/lp_edrscc_v2.csv",
+      "sha256": "99741edb70dd3cea0a6a14e1db371437bdf81630328130ac41c994435d027b9a",
+      "counts": {
+        "train": 3850,
+        "val": 817,
+        "test": 1320
+      }
+    },
+    "crossdocked2020_test": {
+      "path": "dataset/data/pretrain/data_test.pt",
+      "sha256": "24579bc2725b0b80b3a0e65fef649baab9e34fbb3f79ce92c0c4a5b1a9c2d2e8",
+      "n_pairs": 100,
+      "n_receptor_pdbs": 100,
+      "n_ligand_source_pdbs": 98,
+      "n_unique_pdbs": 161
+    }
+  },
+  "counts": {
+    "total": 2293,
+    "val": 816,
+    "test": 1477
+  },
+  "csv_sha256": "b5f6547363b62f5036033ea0bc68932cba18f0fb73020d4f2ecffca3fb0db789"
+}

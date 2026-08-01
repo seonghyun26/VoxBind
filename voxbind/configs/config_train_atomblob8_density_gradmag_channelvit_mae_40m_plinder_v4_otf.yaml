@@ -1,0 +1,98 @@
+defaults:
+  - dset: plinder_v4_otf
+  - model: atomblob_density_vit_mae_40m
+  - vox: default
+  - override hydra/job_logging: custom
+  - _self_
+
+# PLINDER v4 — element-resolved pocket coordinates + experimental density +
+# density-gradient magnitude. Apo records expose zero ligand atoms; their
+# aligned holo ligand is used only as the local crop anchor. Every map is from
+# the same deposited experiment as the coordinates.
+
+debug: false
+wandb: true
+wandb_tags: [pretrain, v4, plinder, ahoj, apo, holo, atomblob8, density_gradmag, channelvit, leakage_safe, otf]
+num_workers: 16
+prefetch_factor: 6
+resume: null
+resume_epoch: null
+exp_dir: exps
+exp_name: 260801_plinder_v4_otf_atomblob8_cdg_channelvit_pretrain
+output_dir: null
+
+seed: 42
+num_epochs: 100
+aug: true
+bsz: 8
+accum_steps: 4
+lr: 1e-4
+wd: 5e-2
+
+amp:
+  enabled: true
+  dtype: bf16
+channels_last: false
+optimizer:
+  fused: false
+ema:
+  foreach: false
+compile:
+  enabled: true
+  backend: inductor
+  mode: default
+  fullgraph: false
+  dynamic: false
+
+input_mode: atomblob_density
+with_gradmag: true
+
+model:
+  n_in_channels: 14
+  n_channels_ligand: 8
+  n_channels_pocket: 4
+  head_style: patch_mlp
+  head_hidden_dim: 67
+  head_depth: 2
+  patch_embed_mode: channel_group
+  channel_groups: [8, 4, 1, 1]
+
+mae:
+  pretext_style: mae
+  density_source: xray
+  sigma_blur_a_lo: 0.30
+  sigma_blur_a_hi: 0.80
+  sigma_noise: 0.0
+  block_size: 8
+  mask_ratio: 0.50
+  mask_strategy: uniform
+  mask_atom_tau: 1.0
+  channel_weighting: uniform
+  density_channel_weight: 0.1
+  gradmag_channel_weight: 0.1
+  gradmag_reconstruct: true
+  gradmag_noise: false
+  atom_pos_weight: 10.0
+  atom_pos_thresh: 0.05
+  lambda_dens: 1.0
+  lambda_str: 1.0
+  struct_pos_weight: 100.0
+  struct_pos_thresh: 0.05
+  ema_decay: 0.999
+  grad_clip: 1.0
+  val_every: 1
+  ckpt_every: 20
+
+hydra:
+  run:
+    dir: ./${exp_dir}/${exp_name}
+  job:
+    config:
+      override_dirname:
+        kv_sep: ""
+        item_sep: "_"
+        exclude_keys: [
+          "exp_dir", "lr", vox.grid_dim, "wd", "resume", "resume_epoch", "wandb",
+          "num_workers", "exp_name", "output_dir", "out_dir", "bsz", "accum_steps",
+          "seed", "num_epochs", "aug", "pocket_radius", "grid_dim", "debug"
+        ]

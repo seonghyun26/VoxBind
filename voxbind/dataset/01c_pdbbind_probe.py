@@ -280,6 +280,7 @@ class FeatureSpec:
     needs_atoms: bool
     needs_density: bool
     expected_channels: int
+    with_diff: bool = False   # mFo-DFc difference-map channels (diff + its gradmag)
 
 
 def _fallback_input_mode(condition: str) -> str:
@@ -297,18 +298,22 @@ def _fallback_input_mode(condition: str) -> str:
     return condition
 
 
-def _expected_channels(input_mode: str, with_gradmag: bool) -> int:
+def _expected_channels(input_mode: str, with_gradmag: bool, with_diff: bool = False,
+                       n_lig: int = 7, n_poc: int = 4) -> int:
     if input_mode == "density":
         n = 1
     elif input_mode in ("atomblob", "atomblob_density"):
-        n = 11 + (1 if input_mode.endswith("_density") else 0)
+        # n_lig+n_poc atom channels (per-element 7+4=11 default; atomblob8 = 8+4=12).
+        n = (n_lig + n_poc) + (1 if input_mode.endswith("_density") else 0)
     elif input_mode in ("atomblob_merged", "atomblob_merged_density"):
         n = 7 + (1 if input_mode.endswith("_density") else 0)
     elif input_mode in ("roleblob", "roleblob_density"):
         n = 2 + (1 if input_mode.endswith("_density") else 0)   # [ligand, pocket] (+density)
     else:
         raise ValueError(f"unsupported input_mode={input_mode!r}")
-    return n + (1 if with_gradmag else 0)
+    # +2 for the mFo-DFc difference map + its gradmag (order [..., diff, diff_gradmag],
+    # matching train_common._channel_layout with_diff=True).
+    return n + (1 if with_gradmag else 0) + (2 if with_diff else 0)
 
 
 def infer_feature_spec(condition: str, cfg, atom_source_arg: str = "auto") -> FeatureSpec:
@@ -339,9 +344,16 @@ def infer_feature_spec(condition: str, cfg, atom_source_arg: str = "auto") -> Fe
         input_mode = input_mode[: -len("_density")]      # atomblob_density -> atomblob
         with_gradmag = False
     ligand_radius = float(OmegaConf.select(cfg, "dset.ligand_radius", default=0.5))
-    expected = _expected_channels(input_mode, with_gradmag)
+    # mFo-DFc difference-map channels: encoders trained with mae.with_diff=true expect
+    # 2 extra input channels (diff + its gradmag) after density+gradmag → n_in 13→15.
+    with_diff = bool(OmegaConf.select(cfg, "mae.with_diff", default=False))
+    # atomblob8 encoders carry an 8th "other-heavy" ligand channel (n_channels_ligand=8);
+    # default 7+4 per-element for every existing encoder.
+    n_lig = int(OmegaConf.select(cfg, "model.n_channels_ligand", default=7))
+    n_poc = int(OmegaConf.select(cfg, "model.n_channels_pocket", default=4))
+    expected = _expected_channels(input_mode, with_gradmag, with_diff, n_lig, n_poc)
     needs_density = input_mode in ("density", "atomblob_density", "atomblob_merged_density") \
-        or with_gradmag
+        or with_gradmag or with_diff
     needs_atoms = input_mode != "density"
 
     if condition == "atomblob_ligvdw" and atom_source_arg == "default":
@@ -365,6 +377,7 @@ def infer_feature_spec(condition: str, cfg, atom_source_arg: str = "auto") -> Fe
         needs_atoms=needs_atoms,
         needs_density=needs_density,
         expected_channels=expected,
+        with_diff=with_diff,
     )
 
 
@@ -776,13 +789,15 @@ def load_voxels_for(
     input_mode: str = None,
     with_gradmag: bool = False,
     gradmag_dir: Path = None,
+    with_diff: bool = False,
+    diff_dir: Path = None,
 ) -> torch.Tensor:
     """Build the (n_in_channels, G, G, G) tensor for one complex."""
     input_mode = input_mode or _fallback_input_mode(condition)
     needs_atoms = input_mode != "density"
     needs_density = input_mode in (
         "density", "atomblob_density", "atomblob_merged_density", "roleblob_density",
-    ) or with_gradmag
+    ) or with_gradmag or with_diff
 
     atoms_t = None
     if needs_atoms:
@@ -835,6 +850,15 @@ def load_voxels_for(
             g = per_sample_zscore(gradient_magnitude3d(dens_t.unsqueeze(0))).squeeze(0)
         x = torch.cat([x, g], dim=0)
 
+    if with_diff:
+        # mFo-DFc difference-map crop (arcsinh+pool-z, same crop/pose as density) then
+        # its ‖∇·‖ (per-sample z-score), appended last → order [..., diff, diff_gradmag],
+        # matching train_common._channel_layout / crossdocked_density_box (with_diff=True).
+        diff = np.load(diff_dir / f"{pid}.npy")                  # (G, G, G) float16
+        diff_t = torch.from_numpy(diff.astype(np.float32)).unsqueeze(0)
+        diff_g = per_sample_zscore(gradient_magnitude3d(diff_t.unsqueeze(0))).squeeze(0)
+        x = torch.cat([x, diff_t, diff_g], dim=0)
+
     assert x.shape[0] == n_in_channels, (
         f"{condition}: built {x.shape[0]} channels from input_mode={input_mode}, "
         f"with_gradmag={with_gradmag}, but encoder expects {n_in_channels}"
@@ -852,7 +876,8 @@ class _ExtractDataset(Dataset):
     batch — preserving the old serial loop's per-pid error logging."""
 
     def __init__(self, pids, condition, n_in, atom_dir, dens_dir,
-                 input_mode, with_gradmag, gradmag_dir):
+                 input_mode, with_gradmag, gradmag_dir,
+                 with_diff=False, diff_dir=None):
         self.pids = list(pids)
         self.condition = condition
         self.n_in = n_in
@@ -861,6 +886,8 @@ class _ExtractDataset(Dataset):
         self.input_mode = input_mode
         self.with_gradmag = with_gradmag
         self.gradmag_dir = gradmag_dir
+        self.with_diff = with_diff
+        self.diff_dir = diff_dir
 
     def __len__(self) -> int:
         return len(self.pids)
@@ -872,7 +899,9 @@ class _ExtractDataset(Dataset):
                                 self.atom_dir, self.dens_dir,
                                 input_mode=self.input_mode,
                                 with_gradmag=self.with_gradmag,
-                                gradmag_dir=self.gradmag_dir)
+                                gradmag_dir=self.gradmag_dir,
+                                with_diff=self.with_diff,
+                                diff_dir=self.diff_dir)
             return pid, x, ""
         except Exception as e:                                   # logged, not fatal
             return pid, None, repr(e)[:160]
@@ -902,7 +931,10 @@ def run_features(args: argparse.Namespace) -> None:
     spec = infer_feature_spec(args.condition, cfg, args.atom_source)
 
     vox_dir  = voxel_dir_for(args.voxel_version)
-    atom_dir = atom_dir_for(vox_dir, spec.atom_source)
+    # --atom_dir override: feed a custom atom-voxel dir (e.g. voxels_atomblob8/atoms for
+    # atomblob8 8-lig encoders) instead of the version's default per-element atoms.
+    atom_dir = Path(args.atom_dir) if getattr(args, "atom_dir", None) \
+        else atom_dir_for(vox_dir, spec.atom_source)
     dens_dir = vox_dir / "density"
     # Density-ablation control: when --noise_voxels_dir is set, density and gradmag
     # are read from the precomputed matched-noise voxels instead of the real ones.
@@ -911,6 +943,12 @@ def run_features(args: argparse.Namespace) -> None:
         _nd = Path(args.noise_voxels_dir)
         dens_dir = _nd / "density"
         gradmag_dir = _nd / "gradmag"
+    # mFo-DFc difference-map crops (parallel to dens_dir). Default: voxels_v5_diff/density
+    # next to the density voxel dir; override with --diff_voxel_dir.
+    diff_dir = None
+    if spec.with_diff:
+        diff_dir = Path(args.diff_voxel_dir) if getattr(args, "diff_voxel_dir", None) \
+            else vox_dir.parent / "voxels_v5_diff" / "density"
     # availability.csv only exists in v1; v2/v3 reuse v1's since the pid set
     # is the same (they share the same successful-crop universe).
     avail_csv = vox_dir / "availability.csv"
@@ -929,6 +967,9 @@ def run_features(args: argparse.Namespace) -> None:
     print(f"  ligand_radius  : {spec.ligand_radius}")
     print(f"  atom_source    : {spec.atom_source} ({atom_dir})")
     print(f"  dens_dir       : {dens_dir}")
+    if spec.with_diff:
+        print(f"  with_diff      : True  (mFo-DFc +2ch)")
+        print(f"  diff_dir       : {diff_dir}")
     print(f"  device         : {args.device}")
     print(f"  batch_size     : {args.batch_size}")
     print(f"  out            : {out_path}")
@@ -996,7 +1037,8 @@ def run_features(args: argparse.Namespace) -> None:
     on_cuda = str(args.device).startswith("cuda")
     num_workers = getattr(args, "num_workers", 8)
     ds = _ExtractDataset(pids, args.condition, n_in, atom_dir, dens_dir,
-                         spec.input_mode, spec.with_gradmag, gradmag_dir)
+                         spec.input_mode, spec.with_gradmag, gradmag_dir,
+                         with_diff=spec.with_diff, diff_dir=diff_dir)
     # pin_memory only with workers: pinning + the multiprocessing worker fd-share path
     # can flakily fail with "CUDA error: invalid argument" in the pin_memory thread
     # (fork-after-CUDA-init). num_workers=0 → single-process, no fork, no pin → robust.
@@ -2460,6 +2502,14 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Density-ablation control: read density+gradmag from this dir's "
                          "density/ and gradmag/ subdirs (matched noise) instead of the real "
                          "voxels. Atoms still come from the real atom_dir.")
+    pf.add_argument("--diff_voxel_dir", default=None,
+                    help="mFo-DFc difference-map crop dir (contains {pid}.npy). Only used "
+                         "when the encoder cfg has mae.with_diff=true (15-ch [7,4,2,2]). "
+                         "Default: voxels_v5_diff/density next to the density voxel dir.")
+    pf.add_argument("--atom_dir", default=None,
+                    help="Override the atom-voxel dir (contains {pid}.npy). Use for encoders "
+                         "with a non-default ligand layout, e.g. voxels_atomblob8/atoms for "
+                         "atomblob8 (8 lig + 4 poc = 12 atom ch). Default: version's atoms.")
     pf.set_defaults(func=run_features)
 
     pr = sub.add_parser(

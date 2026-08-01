@@ -516,7 +516,18 @@ class DatasetCrossDockedXray(Dataset):
         pocket_, ligand_ = self.data[index]
 
         # ── Ligand ────────────────────────────────────────────────────────────
-        mask = ligand_["atoms_channel"] < 7
+        # Linked apo tuples retain the aligned holo ligand only as a crop /
+        # recentering anchor.  `ligand_present=False` must therefore produce
+        # zero ligand atoms while preserving the explicit centre used to crop
+        # the experimental apo density.
+        valid_ligand_mask = ligand_["atoms_channel"] < 7
+        center_coords = ligand_.get("center_coords")
+        if center_coords is None:
+            center_coords = ligand_["coords"][valid_ligand_mask].mean(dim=0)
+        ligand_present = bool(ligand_.get("ligand_present", True))
+        mask = valid_ligand_mask if ligand_present else torch.zeros_like(
+            valid_ligand_mask, dtype=torch.bool
+        )
         if self.ligand_radius > 0:
             lig_radius = torch.full_like(
                 ligand_["atoms_channel"][mask], self.ligand_radius, dtype=torch.float32
@@ -529,8 +540,7 @@ class DatasetCrossDockedXray(Dataset):
             "atoms_channel": ligand_["atoms_channel"][mask],
             "radius": lig_radius,
         }
-        # Ligand centroid in PDB Cartesian frame (used for density crop)
-        center_coords = ligand["coords"].mean(dim=0)
+        # Ligand/anchor centroid in PDB Cartesian frame (used for density crop).
 
         # ── Pocket ────────────────────────────────────────────────────────────
         mask = pocket_["atoms_channel"] < 4

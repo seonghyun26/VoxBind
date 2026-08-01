@@ -87,6 +87,7 @@ while [[ $# -gt 0 ]]; do
         --epoch)          EPOCH="$2"; shift 2;;
         --voxel)          VV="$2"; shift 2;;
         --atom_source)    ATOM="$2"; shift 2;;
+        --atom_dir)       ATOM_DIR="$2"; shift 2;;
         --seeds)          SEEDS="$2"; shift 2;;
         --gpu)            GPU="$2"; shift 2;;
         --tag)            TAG="$2"; shift 2;;
@@ -174,6 +175,7 @@ FEAT_CMD=( "$PY/python" "$PROBE" features
            --atom_source "$ATOM" --exp_dir "$EXP_DIR" --tag "$TAG"
            --num_workers "$NUM_WORKERS" )
 [[ "$MAXC" -gt 0 ]] && FEAT_CMD+=( --max_complexes "$MAXC" )
+[[ -n "${ATOM_DIR:-}" ]] && FEAT_CMD+=( --atom_dir "$ATOM_DIR" )
 
 # per-task probe command (built in the loop; $T filled per target)
 build_probe_cmd(){

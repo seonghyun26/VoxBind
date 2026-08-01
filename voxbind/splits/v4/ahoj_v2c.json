@@ -1,0 +1,22 @@
+{
+  "kind": "voxbind_v4_ahoj_archive",
+  "version": "v2c",
+  "release_date": "2025-04-03",
+  "url": "https://apoholo.cz/api/db/archive/download/ahojdb_v2c.tar.gz",
+  "archive_bytes": 40181598291,
+  "archive_md5": "f803f4eacde1b31e05eb4c06f352c8aa",
+  "server_etag": "d08d439a6a1b8f34770acbdd1f6f8379",
+  "server_etag_kind": "MD5(\"mtime-size\"), not file-content MD5",
+  "inner_archive_bytes": 40611424582,
+  "stats": {
+    "num_entries": 515463,
+    "num_unique_pdb_ids": 121029,
+    "num_unique_uniprot_ids": 29463,
+    "num_unique_target_ligands": 37620,
+    "num_found_apo_sites": 14874483,
+    "num_found_holo_sites": 42925658,
+    "num_found_unobserved_sites": 354495
+  },
+  "extraction_policy": "keep compressed; stream nested CSV members",
+  "verified": true
+}

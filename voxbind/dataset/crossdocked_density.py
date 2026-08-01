@@ -281,7 +281,14 @@ class DatasetCrossDockedDensity(DatasetCrossDockedXray):
         pocket_, ligand_ = self.data[index]
 
         # ── Ligand / pocket (identical to crossdocked_xray) ──────────────────────
-        mask = ligand_["atoms_channel"] < self.n_lig_ch
+        valid_ligand_mask = ligand_["atoms_channel"] < self.n_lig_ch
+        center_coords = ligand_.get("center_coords")
+        if center_coords is None:
+            center_coords = ligand_["coords"][valid_ligand_mask].mean(dim=0)
+        ligand_present = bool(ligand_.get("ligand_present", True))
+        mask = valid_ligand_mask if ligand_present else torch.zeros_like(
+            valid_ligand_mask, dtype=torch.bool
+        )
         if "radius" in ligand_:
             # Phase-2 diverse build: per-atom vdW radius is precomputed + stored in the
             # tuple (atoms_channel collapsed to 0 → single role channel) so EVERY heavy
@@ -299,7 +306,8 @@ class DatasetCrossDockedDensity(DatasetCrossDockedXray):
             "atoms_channel": ligand_["atoms_channel"][mask],
             "radius": lig_radius,
         }
-        center_coords = ligand["coords"].mean(dim=0)  # crop center == atom-recenter center
+        # For apo tuples the crop/recenter centre comes from the aligned holo
+        # ligand anchor, while the returned ligand atom set remains empty.
 
         mask = pocket_["atoms_channel"] < self.n_poc_ch
         poc_ch = pocket_["atoms_channel"][mask]

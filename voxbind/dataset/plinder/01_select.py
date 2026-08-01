@@ -23,7 +23,7 @@ Freezes to splits/plinder/v2p1/. v2 path stays BIT-IDENTICAL (default --version 
     cd voxbind && python dataset/plinder/01_select.py --version v2p1 --dry_run  # funnel only
 """
 import os; os.environ.setdefault("OMP_NUM_THREADS", "2")
-import argparse, hashlib, json
+import argparse, hashlib, json, re
 from pathlib import Path
 import pandas as pd, pyarrow.parquet as pq
 import torch; torch.set_num_threads(2)
@@ -62,6 +62,33 @@ def sha256(p: Path) -> str:
     return hashlib.sha256(p.read_bytes()).hexdigest()
 
 
+_CROSSDOCKED_ID_RE = re.compile(
+    r"(?:^|/)(?P<receptor>[0-9][A-Za-z0-9]{3})_[^_/]+_rec_"
+    r"(?P<ligand_source>[0-9][A-Za-z0-9]{3})_",
+    re.IGNORECASE,
+)
+
+
+def crossdocked_test_pdb_ids(data) -> set[str]:
+    """Extract real receptor + ligand-source PDB IDs, not target-family prefixes."""
+    ids: set[str] = set()
+    for index, (pocket, ligand) in enumerate(data):
+        matches = [
+            _CROSSDOCKED_ID_RE.search(str(record["id"]))
+            for record in (pocket, ligand)
+        ]
+        if any(match is None for match in matches):
+            raise ValueError(f"cannot parse CrossDocked test row {index}")
+        parsed = [
+            (match.group("receptor").lower(), match.group("ligand_source").lower())
+            for match in matches
+        ]
+        if parsed[0] != parsed[1]:
+            raise ValueError(f"CrossDocked test row {index} has mismatched IDs: {parsed}")
+        ids.update(parsed[0])
+    return ids
+
+
 def leakage_holdout():
     """4-char lowercase PDB ids held out by any downstream eval, + their file hashes."""
     excl, hashes = set(), {}
@@ -77,7 +104,7 @@ def leakage_holdout():
     for cd in [DATA / "data_test.pt", DATA / "pretrain" / "data_test.pt"]:
         if cd.exists():
             data = torch.load(cd, weights_only=False)
-            excl |= {str(p[0]["id"])[:4].lower() for p in data}
+            excl |= crossdocked_test_pdb_ids(data)
             hashes["crossdocked_test_pt"] = {"path": str(cd.relative_to(VOX)), "sha256": sha256(cd)}
             break
     return excl, hashes
