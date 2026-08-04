@@ -58,7 +58,7 @@ from voxbind.models.mae_ops import (
     corrupt_noise, corrupt_reblur, corrupt_swap,
     gaussian_blur3d, gradient_magnitude3d, make_atom_biased_block_mask,
     make_block_mask, make_cluster_mask, make_interface_mask, per_sample_zscore,
-    voxel_mask_to_patch_target,
+    region_keep_masks, voxel_mask_to_patch_target,
 )
 from voxbind.models.density_cha_mae import DensityChaMAE
 from voxbind.models.density_vit import DensityViTMAE
@@ -172,6 +172,8 @@ class MAEPrefetcher:
         modal_mask_prob: float = 0.0,
         density_visible: bool = False,
         lig_mask_thresh: float = 0.1,
+        pocket_ed_mask: str = "ligand_footprint",
+        mask_as_channel: bool = False,
         contrastive: bool = False,
         with_gradmag: bool = False,
         gradmag_reconstruct: bool = True,
@@ -222,8 +224,14 @@ class MAEPrefetcher:
         # magnitude encodes atom identity (electron count), this trains the density→chemistry
         # decoding directly. Reverse of modal_mask_prob (which drops density).
         self.density_visible = bool(density_visible)
-        # pocket_density: ligand vdW-blob occupancy above this → density zeroed there (apo-like)
+        # Two-tower density gating. `_lig_mask_thresh` is the vdW-occupancy threshold used to
+        # draw the pocket/ligand boundary. `pocket_ed_mask` selects the boundary basis
+        # (ligand_footprint = legacy apo-like pocket; protein_vdw = M_P = protein-atom vdW;
+        # none = holo/unmasked). `mask_as_channel` additionally feeds the binary keep-mask as an
+        # explicit input+recon channel (folded into the atom block). See mae_ops.region_keep_masks.
         self._lig_mask_thresh = float(lig_mask_thresh)
+        self.pocket_ed_mask = str(pocket_ed_mask)
+        self.mask_as_channel = bool(mask_as_channel)
         self.contrastive = bool(contrastive)
         self.with_gradmag = with_gradmag
         self.gradmag_reconstruct = gradmag_reconstruct
@@ -232,7 +240,8 @@ class MAEPrefetcher:
         self.n_lig_ch = int(n_lig_ch)
         self.n_poc_ch = int(n_poc_ch)
         self.layout = _channel_layout(
-            input_mode, with_gradmag, gradmag_reconstruct, density_input=self.density_input
+            input_mode, with_gradmag, gradmag_reconstruct, density_input=self.density_input,
+            mask_as_channel=self.mask_as_channel,
         )
         # 2 density sources → the dataset also emits the mFo-DFc (density, gradmag) pair,
         # appended as trailing channels in _step. False (single 2Fo-Fc) = unchanged path.
@@ -251,7 +260,7 @@ class MAEPrefetcher:
                 # xray path, no blur on the synthetic path.
                 need_density = self.input_mode in (
                     "density", "atomblob_density", "atomblob_merged_density",
-                    "roleblob_density", "pocket_density",
+                    "roleblob_density", "pocket_density", "ligand_density",
                 )
                 # atom-biased / cluster masks need the all-channel atom sum even in atomblob mode
                 need_atoms_sum = need_density or self.mask_strategy in ("atom_biased", "cluster")
@@ -274,21 +283,29 @@ class MAEPrefetcher:
                         d_clean = gaussian_blur3d(atoms_sum, sigma_vox)
                         d_clean = per_sample_zscore(d_clean)
 
-                # pocket_density (two-tower pocket): zero the 2Fo-Fc density INSIDE the ligand
-                # footprint → the pocket tower sees ligand-free (apo-like) pocket density. The
-                # footprint = ligand vdW-blob occupancy > thresh. gradmag is re-derived below
-                # from this masked density so both channels are consistent.
-                if self.input_mode == "pocket_density" and d_clean is not None:
+                # Two-tower density gating: split the shared 2Fo-Fc map into the pocket region
+                # (rho_P) and the ligand region (rho_L) per the pocket_ed_mask basis. The pocket
+                # tower sees rho_P (ligand-free / protein-interior); the ligand tower sees rho_L
+                # (the non-protein / ligand-accessible region). `keep_ch` is stashed for the
+                # optional mask-as-channel input. gradmag is re-derived from the MASKED density
+                # below so both channels stay consistent.
+                twotower = self.input_mode in ("pocket_density", "ligand_density")
+                keep_ch = None
+                if twotower and d_clean is not None:
                     lig_occ = v_lig.sum(dim=1, keepdim=True)
-                    d_clean = d_clean * (lig_occ <= self._lig_mask_thresh).to(d_clean.dtype)
+                    poc_occ = v_poc.sum(dim=1, keepdim=True)
+                    keep_p, keep_l = region_keep_masks(
+                        lig_occ, poc_occ, self.pocket_ed_mask, self._lig_mask_thresh)
+                    keep_ch = keep_p if self.input_mode == "pocket_density" else keep_l
+                    d_clean = d_clean * keep_ch
 
                 # Gradient-magnitude channel ‖∇ρ‖. xray: precomputed in the
                 # dataset from the aligned crop (post-augmentation). synthetic:
                 # derived on-GPU from the clean density. Appended as trailing ch.
                 g_clean = None
                 if self.with_gradmag:
-                    if self.input_mode == "pocket_density":
-                        # derive ‖∇ρ‖ from the LIGAND-MASKED density (consistency)
+                    if twotower:
+                        # derive ‖∇ρ‖ from the region-MASKED density (consistency)
                         g_clean = per_sample_zscore(gradient_magnitude3d(d_clean))
                     elif self.density_source == "xray":
                         g_clean = batch["xray_gradmag"].to(device, non_blocking=True).unsqueeze(1)
@@ -314,14 +331,20 @@ class MAEPrefetcher:
                         [_build_role_atoms(v_lig, v_poc), d_clean], dim=1)  # (B, 3, G³)
                 elif self.input_mode == "ligand":
                     x_clean = v_lig                                        # (B, 7, G³) ligand atoms only
-                elif self.input_mode == "pocket_density":
-                    x_clean = torch.cat([v_poc, d_clean], dim=1)           # (B, 5, G³) pocket + apo-like density
+                elif self.input_mode in ("pocket_density", "ligand_density"):
+                    atoms = v_poc if self.input_mode == "pocket_density" else v_lig
+                    x_clean = torch.cat([atoms, d_clean], dim=1)           # [ atoms, density ]
                 else:
                     raise RuntimeError(f"unexpected input_mode={self.input_mode!r}")
 
                 # Append gradmag as the trailing channel: [ …atoms…, density, gradmag ].
                 if self.with_gradmag:
                     x_clean = torch.cat([x_clean, g_clean], dim=1)
+
+                # Trailing input-only region-mask channel (two-tower, mask_as_channel): appended
+                # LAST so it lands past n_recon and is excluded from the recon target.
+                if self.mask_as_channel and keep_ch is not None:
+                    x_clean = torch.cat([x_clean, keep_ch.to(x_clean.dtype)], dim=1)
 
                 # Second density SOURCE (mFo-DFc difference map): append its (density, gradmag)
                 # pair from the dataset → [ …atoms…, dens0, grad0, dens1, grad1 ], matching
@@ -654,14 +677,16 @@ def val_epoch(cfg, model, val_cache, device, ch_weight=None) -> dict:
     gradmag_reconstruct = bool(cfg.mae.get("gradmag_reconstruct", True))
     gradmag_noise = bool(cfg.mae.get("gradmag_noise", False))
     density_input = bool(cfg.mae.get("density_input", True))
+    mask_as_channel = bool(cfg.mae.get("mask_as_channel", False))
     layout = _channel_layout(input_mode, with_gradmag, gradmag_reconstruct,
-                             density_input=density_input)
+                             density_input=density_input, mask_as_channel=mask_as_channel)
     need_density = input_mode in (
         "density", "atomblob_density", "atomblob_merged_density",
-        "roleblob_density", "pocket_density",
+        "roleblob_density", "pocket_density", "ligand_density",
     )
     need_atoms_sum = need_density or mask_strategy in ("atom_biased", "cluster")
     lig_mask_thresh = float(cfg.mae.get("lig_mask_thresh", 0.1))
+    pocket_ed_mask = str(cfg.mae.get("pocket_ed_mask", "ligand_footprint"))
 
     if pretext_style == "electra":
         corruption_ops = tuple(cfg.electra.corruption_ops)
@@ -702,13 +727,19 @@ def val_epoch(cfg, model, val_cache, device, ch_weight=None) -> dict:
                     sigma_vox = sigma_lo + (sigma_hi - sigma_lo) * 0.5
                     d_clean = gaussian_blur3d(atoms_sum, sigma_vox)
                     d_clean = per_sample_zscore(d_clean)
-                if input_mode == "pocket_density":                    # apo-like: zero density in ligand footprint
-                    lig_occ = v_lig.sum(dim=1, keepdim=True)
-                    d_clean = d_clean * (lig_occ <= lig_mask_thresh).to(d_clean.dtype)
+            twotower = input_mode in ("pocket_density", "ligand_density")
+            keep_ch = None
+            if twotower and d_clean is not None:                   # split shared map into rho_P / rho_L
+                lig_occ = v_lig.sum(dim=1, keepdim=True)
+                poc_occ = v_poc.sum(dim=1, keepdim=True)
+                keep_p, keep_l = region_keep_masks(
+                    lig_occ, poc_occ, pocket_ed_mask, lig_mask_thresh)
+                keep_ch = keep_p if input_mode == "pocket_density" else keep_l
+                d_clean = d_clean * keep_ch
 
             g_clean = None
             if with_gradmag:
-                if input_mode == "pocket_density":
+                if twotower:
                     g_clean = per_sample_zscore(gradient_magnitude3d(d_clean))
                 elif density_source == "xray":
                     g_clean = cached_gradmag[start:start + cfg.bsz].to(device, non_blocking=True).unsqueeze(1)
@@ -732,13 +763,18 @@ def val_epoch(cfg, model, val_cache, device, ch_weight=None) -> dict:
                 x_clean = torch.cat([_build_role_atoms(v_lig, v_poc), d_clean], dim=1)
             elif input_mode == "ligand":
                 x_clean = v_lig
-            elif input_mode == "pocket_density":
-                x_clean = torch.cat([v_poc, d_clean], dim=1)
+            elif input_mode in ("pocket_density", "ligand_density"):
+                atoms = v_poc if input_mode == "pocket_density" else v_lig
+                x_clean = torch.cat([atoms, d_clean], dim=1)          # [ atoms, density ]
             else:
                 raise RuntimeError(f"unexpected input_mode={input_mode!r}")
 
             if with_gradmag:
                 x_clean = torch.cat([x_clean, g_clean], dim=1)
+
+            # Trailing input-only region-mask channel (two-tower, mask_as_channel).
+            if mask_as_channel and keep_ch is not None:
+                x_clean = torch.cat([x_clean, keep_ch.to(x_clean.dtype)], dim=1)
 
             # 2nd density source (mFo-DFc): append its (density, gradmag) → matches training's
             # [ …atoms…, dens0, grad0, dens1, grad1 ]. Single-source → no-op.
@@ -871,7 +907,8 @@ def train_epoch(cfg, prefetcher, model, optimizer, model_ema, device, global_ste
     with_gradmag = bool(cfg.get("with_gradmag", False))
     gradmag_reconstruct = bool(cfg.mae.get("gradmag_reconstruct", True))
     layout = _channel_layout(input_mode, with_gradmag, gradmag_reconstruct,
-                             density_input=bool(cfg.mae.get("density_input", True)))
+                             density_input=bool(cfg.mae.get("density_input", True)),
+                             mask_as_channel=bool(cfg.mae.get("mask_as_channel", False)))
     if pretext_style == "electra":
         pretext_key = "L_rtd"
         lambda_pretext = float(cfg.mae.get("lambda_rtd", 1.0))
@@ -1364,7 +1401,8 @@ def run(cfg: DictConfig, method: str) -> None:
     gradmag_noise = bool(cfg.mae.get("gradmag_noise", False))
     gradmag_channel_weight = float(cfg.mae.get("gradmag_channel_weight", 1.0))
     layout = _channel_layout(input_mode, with_gradmag, gradmag_reconstruct,
-                             density_input=bool(cfg.mae.get("density_input", True)))
+                             density_input=bool(cfg.mae.get("density_input", True)),
+                             mask_as_channel=bool(cfg.mae.get("mask_as_channel", False)))
     torch.manual_seed(cfg.seed)
     torch.cuda.manual_seed(cfg.seed)
     model = spec.build_model(cfg, device, layout, is_main)
@@ -1695,6 +1733,8 @@ def run(cfg: DictConfig, method: str) -> None:
             modal_mask_prob=float(cfg.mae.get("modal_mask_prob", 0.0)),
             density_visible=bool(cfg.mae.get("density_visible", False)),
             lig_mask_thresh=float(cfg.mae.get("lig_mask_thresh", 0.1)),
+            pocket_ed_mask=str(cfg.mae.get("pocket_ed_mask", "ligand_footprint")),
+            mask_as_channel=bool(cfg.mae.get("mask_as_channel", False)),
             contrastive=(float(cfg.mae.get("contrastive_weight", 0.0)) > 0.0
                          and prefetch_pretext == "mae"),
             with_gradmag=with_gradmag,

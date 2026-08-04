@@ -155,7 +155,8 @@ _VALID_INPUT_MODES = (
     "roleblob",                   # 2 atom ch: [ligand-occupancy, pocket-occupancy], vdW-radius blobs
     "roleblob_density",           # 3 ch: role-2 atoms + 1 density
     "ligand",                     # two-tower LIGAND: 7 ligand atom ch only, no density
-    "pocket_density",             # two-tower POCKET: 4 pocket atom ch + ligand-masked (apo-like) density
+    "ligand_density",             # two-tower LIGAND: 7 ligand atom ch + non-protein (rho_L) density
+    "pocket_density",             # two-tower POCKET: 4 pocket atom ch + masked (rho_P) density
 )
 
 
@@ -226,6 +227,7 @@ def _channel_layout(
     with_gradmag: bool = False,
     gradmag_reconstruct: bool = True,
     density_input: bool = True,
+    mask_as_channel: bool = False,
 ) -> dict:
     """Single source of truth for the multi-channel input / reconstruction layout.
 
@@ -256,14 +258,23 @@ def _channel_layout(
         n_atom = 2                                    # [ligand-occupancy, pocket-occupancy]
     elif input_mode == "ligand":
         n_atom = LIG_CH                               # two-tower ligand: 7 ligand atoms only
+    elif input_mode == "ligand_density":
+        n_atom = LIG_CH                               # two-tower ligand: 7 ligand atoms + density
     elif input_mode == "pocket_density":
         n_atom = POC_CH                               # two-tower pocket: 4 pocket atoms + density
     else:
         raise RuntimeError(f"unexpected input_mode={input_mode!r}")
 
+    # mask_as_channel (two-tower only): a binary region mask (keep_pocket / keep_ligand) is
+    # fed as one extra TRAILING, INPUT-ONLY channel (appended after gradmag). It is added to
+    # n_in but NOT n_recon (never reconstructed) and NOT n_atom — so density_idx / gradmag_idx
+    # and the atom-position loss weighting are all untouched. n_in += 1 happens below, after
+    # the base n_in is computed. No-op for every other mode.
+    has_mask_channel = mask_as_channel and input_mode in ("pocket_density", "ligand_density")
+
     has_density = input_mode in (
         "density", "atomblob_density", "atomblob_merged_density", "roleblob_density",
-        "pocket_density",
+        "pocket_density", "ligand_density",
     )
     n_density = 1 if has_density else 0
     if with_gradmag and not has_density:
@@ -293,8 +304,13 @@ def _channel_layout(
                 f"(density / *_density); got input_mode={input_mode!r}"
             )
         n_in = n_atom
+    # Trailing input-only region-mask channel widens the encoder input by 1, leaving n_recon
+    # (and every channel index) unchanged → the recon head still targets x_clean[:, :n_recon].
+    if has_mask_channel:
+        n_in += 1
     return {
         "n_atom": n_atom,
+        "has_mask_channel": has_mask_channel,   # trailing input-only two-tower region mask
         "n_density": n_density,           # PER SOURCE (1 if density-bearing)
         "n_gradmag": n_gradmag,           # PER SOURCE (1 if with_gradmag)
         "n_density_src": n_src,           # # density sources: 0 (atomblob) / 1 (2Fo-Fc) / 2 (+mFo-DFc)
