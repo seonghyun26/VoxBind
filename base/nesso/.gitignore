@@ -1,0 +1,18 @@
+# Downloaded model caches
+.cache/
+
+# Generated Nesso inputs, embeddings, predictions, and logs
+_edrscc/yamls/
+_edrscc/shard_*_yamls/
+_edrscc/*shard*/
+_edrscc/test_batch_yamls/
+_edrscc/outputs/
+_edrscc/outputs_*/
+_edrscc/logs/
+_edrscc/shard_*.txt
+_edrscc/predictions*.csv
+_edrscc/results*.json
+
+**/__pycache__/
+*.py[cod]
+*.safetensors

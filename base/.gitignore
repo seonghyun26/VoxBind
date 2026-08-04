@@ -1,0 +1,67 @@
+# Generated files shared by the baseline projects.
+#
+# Result directories keep their own .gitignore so the expected directory
+# exists after cloning while evaluation outputs stay local.
+**/results/*
+!**/results/.gitignore
+
+# Training and inference outputs
+**/output/
+**/outputs/
+**/outputs_*/
+**/preds/
+**/predictions/
+**/runs/
+**/checkpoints/
+**/checkpoint/
+**/ckpts/
+**/ckpts_*/
+**/tmp/
+**/tmp_*/
+
+# Logs and job output
+*.log
+*.out
+*.err
+slurm-*.out
+
+# Model weights and serialized intermediate data
+*.ckpt
+*.pt
+*.pth
+*.pth.tar
+*.safetensors
+*.model
+*.npy
+*.npz
+*.pkl
+*.pickle
+*.lmdb
+
+# Python, notebook, tool, and OS caches
+**/__pycache__/
+*.py[cod]
+**/.ipynb_checkpoints/
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+**/.cache/
+**/.hydra/
+**/wandb/
+**/lightning_logs/
+.DS_Store
+
+# Local environments and editor state
+.env
+.env.*
+!.env.example
+.venv/
+venv/
+.vscode/
+.idea/
+*.swp
+
+# Temporary files
+*.tmp
+*.bak
+*~

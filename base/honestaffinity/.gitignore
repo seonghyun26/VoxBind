@@ -1,0 +1,5 @@
+# cache is large (4.3G ESM embeddings) and regenerable from data_prep.py
+cache/
+logs/
+# smoke result is not a deliverable
+results/*_smoke.json

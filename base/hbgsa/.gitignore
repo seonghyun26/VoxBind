@@ -1,0 +1,7 @@
+# regenerable artifacts (keep src/, results/, README, run script, env spec)
+cache/
+logs/
+**/__pycache__/
+*.pyc
+*.pt
+*.ckpt

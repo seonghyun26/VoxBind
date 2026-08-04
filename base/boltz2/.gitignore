@@ -1,0 +1,8 @@
+# regenerable / large artifacts
+inputs/
+inputs_*/
+preds/
+logs/
+msa_cache/
+**/__pycache__/
+*.pyc

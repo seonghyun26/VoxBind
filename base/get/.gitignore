@@ -1,0 +1,24 @@
+__pycache__
+
+*.txt
+
+*.pt
+
+*.png
+
+*.pkl
+
+*.svg
+
+*.log
+
+*.pdb
+
+*.npy
+
+datasets
+
+# VoxBind edrscc artifacts
+_edrscc/models/
+*.ckpt
+*.jsonl

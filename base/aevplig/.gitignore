@@ -1,0 +1,18 @@
+# regenerable artifacts — rebuild via build_graphs.py / train_edrscc.py
+graphs/
+output/
+logs/
+**/__pycache__/
+*.pyc
+_*smoke*.pickle
+*.cu
+*.model
+*.pickle
+*.info
+*.params
+*.wparam
+*.bparam
+*.nnf
+*.ipt
+*.opt
+*.dat
