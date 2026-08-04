@@ -1703,6 +1703,7 @@ def run_probe(args: argparse.Namespace) -> None:
                 _name += f"_{eff_tag}"
             wb = _wandb.init(
                 project=getattr(args, "wandb_project", "binding-affinity"),
+                entity="eddy26",
                 name=_name, job_type="probe", reinit=True,
                 tags=["probe", f"target:{args.target}", f"split:{split_flag}",
                       f"epoch:{args.epoch}", *_extra],

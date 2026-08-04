@@ -240,7 +240,7 @@ def main():
             import wandb as _wandb
             _extra = [t for t in (args.wandb_tags or "").split(",") if t]
             wb = _wandb.init(
-                project=args.wandb_project, job_type="probe", reinit=True,
+                project=args.wandb_project, entity="eddy26", job_type="probe", reinit=True,
                 name=f"twotower_{args.pocket_exp}+{args.ligand_exp}_e{args.epoch}",
                 tags=["probe", "twotower", f"split:{args.split}", f"epoch:{args.epoch}", *_extra],
                 config=dict(kind="twotower_crossattn", pocket_exp=args.pocket_exp,
