@@ -943,6 +943,10 @@ def run_features(args: argparse.Namespace) -> None:
         _nd = Path(args.noise_voxels_dir)
         dens_dir = _nd / "density"
         gradmag_dir = _nd / "gradmag"
+    # --dens_dir: override just the density crop dir (gradmag still derived on-the-fly).
+    # Used to feed RAW (un-normalized) density crops to a raw-density-trained encoder.
+    if getattr(args, "dens_dir", None):
+        dens_dir = Path(args.dens_dir)
     # mFo-DFc difference-map crops (parallel to dens_dir). Default: voxels_v5_diff/density
     # next to the density voxel dir; override with --diff_voxel_dir.
     diff_dir = None
@@ -2510,6 +2514,10 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Override the atom-voxel dir (contains {pid}.npy). Use for encoders "
                          "with a non-default ligand layout, e.g. voxels_atomblob8/atoms for "
                          "atomblob8 (8 lig + 4 poc = 12 atom ch). Default: version's atoms.")
+    pf.add_argument("--dens_dir", default=None,
+                    help="Override just the density-crop dir (gradmag still derived on-the-fly). "
+                         "Use to feed RAW un-normalized density (voxels_v5_raw/density) to a "
+                         "raw-density-trained encoder.")
     pf.set_defaults(func=run_features)
 
     pr = sub.add_parser(

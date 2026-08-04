@@ -88,6 +88,7 @@ while [[ $# -gt 0 ]]; do
         --voxel)          VV="$2"; shift 2;;
         --atom_source)    ATOM="$2"; shift 2;;
         --atom_dir)       ATOM_DIR="$2"; shift 2;;
+        --dens_dir)       DENS_DIR="$2"; shift 2;;
         --seeds)          SEEDS="$2"; shift 2;;
         --gpu)            GPU="$2"; shift 2;;
         --tag)            TAG="$2"; shift 2;;
@@ -176,6 +177,7 @@ FEAT_CMD=( "$PY/python" "$PROBE" features
            --num_workers "$NUM_WORKERS" )
 [[ "$MAXC" -gt 0 ]] && FEAT_CMD+=( --max_complexes "$MAXC" )
 [[ -n "${ATOM_DIR:-}" ]] && FEAT_CMD+=( --atom_dir "$ATOM_DIR" )
+[[ -n "${DENS_DIR:-}" ]] && FEAT_CMD+=( --dens_dir "$DENS_DIR" )
 
 # per-task probe command (built in the loop; $T filled per target)
 build_probe_cmd(){

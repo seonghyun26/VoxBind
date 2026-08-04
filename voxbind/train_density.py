@@ -170,6 +170,8 @@ class MAEPrefetcher:
         mask_atom_tau: float = 1.0,
         mask_n_seeds: int = 4,
         modal_mask_prob: float = 0.0,
+        density_visible: bool = False,
+        lig_mask_thresh: float = 0.1,
         contrastive: bool = False,
         with_gradmag: bool = False,
         gradmag_reconstruct: bool = True,
@@ -214,6 +216,14 @@ class MAEPrefetcher:
         self.mask_atom_tau = mask_atom_tau
         self.mask_n_seeds = mask_n_seeds
         self.modal_mask_prob = modal_mask_prob
+        # density_visible: keep the density(+gradmag) channels FULLY VISIBLE (never spatially
+        # masked) while the atom channels are masked as usual → the encoder reconstructs the
+        # masked ATOMS from the visible density (cross-modal, MultiMAE-style). Since density
+        # magnitude encodes atom identity (electron count), this trains the density→chemistry
+        # decoding directly. Reverse of modal_mask_prob (which drops density).
+        self.density_visible = bool(density_visible)
+        # pocket_density: ligand vdW-blob occupancy above this → density zeroed there (apo-like)
+        self._lig_mask_thresh = float(lig_mask_thresh)
         self.contrastive = bool(contrastive)
         self.with_gradmag = with_gradmag
         self.gradmag_reconstruct = gradmag_reconstruct
@@ -241,7 +251,7 @@ class MAEPrefetcher:
                 # xray path, no blur on the synthetic path.
                 need_density = self.input_mode in (
                     "density", "atomblob_density", "atomblob_merged_density",
-                    "roleblob_density",
+                    "roleblob_density", "pocket_density",
                 )
                 # atom-biased / cluster masks need the all-channel atom sum even in atomblob mode
                 need_atoms_sum = need_density or self.mask_strategy in ("atom_biased", "cluster")
@@ -264,12 +274,23 @@ class MAEPrefetcher:
                         d_clean = gaussian_blur3d(atoms_sum, sigma_vox)
                         d_clean = per_sample_zscore(d_clean)
 
+                # pocket_density (two-tower pocket): zero the 2Fo-Fc density INSIDE the ligand
+                # footprint → the pocket tower sees ligand-free (apo-like) pocket density. The
+                # footprint = ligand vdW-blob occupancy > thresh. gradmag is re-derived below
+                # from this masked density so both channels are consistent.
+                if self.input_mode == "pocket_density" and d_clean is not None:
+                    lig_occ = v_lig.sum(dim=1, keepdim=True)
+                    d_clean = d_clean * (lig_occ <= self._lig_mask_thresh).to(d_clean.dtype)
+
                 # Gradient-magnitude channel ‖∇ρ‖. xray: precomputed in the
                 # dataset from the aligned crop (post-augmentation). synthetic:
                 # derived on-GPU from the clean density. Appended as trailing ch.
                 g_clean = None
                 if self.with_gradmag:
-                    if self.density_source == "xray":
+                    if self.input_mode == "pocket_density":
+                        # derive ‖∇ρ‖ from the LIGAND-MASKED density (consistency)
+                        g_clean = per_sample_zscore(gradient_magnitude3d(d_clean))
+                    elif self.density_source == "xray":
                         g_clean = batch["xray_gradmag"].to(device, non_blocking=True).unsqueeze(1)
                     else:
                         g_clean = per_sample_zscore(gradient_magnitude3d(d_clean))
@@ -291,6 +312,10 @@ class MAEPrefetcher:
                 elif self.input_mode == "roleblob_density":
                     x_clean = torch.cat(
                         [_build_role_atoms(v_lig, v_poc), d_clean], dim=1)  # (B, 3, G³)
+                elif self.input_mode == "ligand":
+                    x_clean = v_lig                                        # (B, 7, G³) ligand atoms only
+                elif self.input_mode == "pocket_density":
+                    x_clean = torch.cat([v_poc, d_clean], dim=1)           # (B, 5, G³) pocket + apo-like density
                 else:
                     raise RuntimeError(f"unexpected input_mode={self.input_mode!r}")
 
@@ -386,6 +411,16 @@ class MAEPrefetcher:
                             g_idx = self.layout.get("gradmag_idx", None)
                             if g_idx is not None:
                                 x_in[drop, g_idx] = 0.0
+                    # density_visible (opt-in): restore density(+gradmag) to their unmasked
+                    # values so ONLY the atom channels are spatially masked → reconstruct atoms
+                    # from fully-visible density. No-op when density_visible=False.
+                    if (self.density_visible and self.density_input
+                            and self.layout.get("n_density", 0) > 0):
+                        d_idx = self.layout["density_idx"]
+                        x_in[:, d_idx] = x_noisy[:, d_idx]
+                        g_idx = self.layout.get("gradmag_idx", None)
+                        if g_idx is not None:
+                            x_in[:, g_idx] = x_noisy[:, g_idx]
                     # Contrastive 2nd view (opt-in): a SECOND independent uniform masking of
                     # the SAME complex → the augmentation pair for the InfoNCE aux loss. The
                     # encoder is pulled to map both maskings of a complex to the same vector.
@@ -623,9 +658,10 @@ def val_epoch(cfg, model, val_cache, device, ch_weight=None) -> dict:
                              density_input=density_input)
     need_density = input_mode in (
         "density", "atomblob_density", "atomblob_merged_density",
-        "roleblob_density",
+        "roleblob_density", "pocket_density",
     )
     need_atoms_sum = need_density or mask_strategy in ("atom_biased", "cluster")
+    lig_mask_thresh = float(cfg.mae.get("lig_mask_thresh", 0.1))
 
     if pretext_style == "electra":
         corruption_ops = tuple(cfg.electra.corruption_ops)
@@ -666,10 +702,15 @@ def val_epoch(cfg, model, val_cache, device, ch_weight=None) -> dict:
                     sigma_vox = sigma_lo + (sigma_hi - sigma_lo) * 0.5
                     d_clean = gaussian_blur3d(atoms_sum, sigma_vox)
                     d_clean = per_sample_zscore(d_clean)
+                if input_mode == "pocket_density":                    # apo-like: zero density in ligand footprint
+                    lig_occ = v_lig.sum(dim=1, keepdim=True)
+                    d_clean = d_clean * (lig_occ <= lig_mask_thresh).to(d_clean.dtype)
 
             g_clean = None
             if with_gradmag:
-                if density_source == "xray":
+                if input_mode == "pocket_density":
+                    g_clean = per_sample_zscore(gradient_magnitude3d(d_clean))
+                elif density_source == "xray":
                     g_clean = cached_gradmag[start:start + cfg.bsz].to(device, non_blocking=True).unsqueeze(1)
                 else:
                     g_clean = per_sample_zscore(gradient_magnitude3d(d_clean))
@@ -689,6 +730,10 @@ def val_epoch(cfg, model, val_cache, device, ch_weight=None) -> dict:
                 x_clean = _build_role_atoms(v_lig, v_poc)
             elif input_mode == "roleblob_density":
                 x_clean = torch.cat([_build_role_atoms(v_lig, v_poc), d_clean], dim=1)
+            elif input_mode == "ligand":
+                x_clean = v_lig
+            elif input_mode == "pocket_density":
+                x_clean = torch.cat([v_poc, d_clean], dim=1)
             else:
                 raise RuntimeError(f"unexpected input_mode={input_mode!r}")
 
@@ -1648,6 +1693,8 @@ def run(cfg: DictConfig, method: str) -> None:
             mask_atom_tau=float(cfg.mae.get("mask_atom_tau", 1.0)),
             mask_n_seeds=int(cfg.mae.get("mask_n_seeds", 4)),
             modal_mask_prob=float(cfg.mae.get("modal_mask_prob", 0.0)),
+            density_visible=bool(cfg.mae.get("density_visible", False)),
+            lig_mask_thresh=float(cfg.mae.get("lig_mask_thresh", 0.1)),
             contrastive=(float(cfg.mae.get("contrastive_weight", 0.0)) > 0.0
                          and prefetch_pretext == "mae"),
             with_gradmag=with_gradmag,

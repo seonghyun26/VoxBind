@@ -174,7 +174,8 @@ class DatasetCrossDockedDensityBox(DatasetCrossDockedDensity):
             R_aug = rot_matrix.numpy() if rot_matrix is not None else None
             t_aug = trans_noise.reshape(3).numpy() if trans_noise is not None else None
             dens = _resample_from_box(box, R_aug, t_aug, G_out=_GRID_DIM, G_box=self._g_box, res=_RESOLUTION)
-            dens = _apply_recipe_norm(dens, self._recipe_norm)
+            if not getattr(self, "raw_density", False):
+                dens = _apply_recipe_norm(dens, self._recipe_norm)   # skip → raw (box-clipped to quant range)
             xray_density = torch.from_numpy(dens.astype(np.float32))
 
         if xray_density is None:

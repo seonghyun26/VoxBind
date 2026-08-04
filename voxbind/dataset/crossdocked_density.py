@@ -188,6 +188,7 @@ class DatasetCrossDockedDensity(DatasetCrossDockedXray):
         small: bool = False,
         cache_size: int = 32,
         verbose: bool = False,
+        raw_density: bool = False,
     ):
         # Parent loads tuples + size filter + radius LUTs and the per-worker grid cache.
         # Disable the parent's frozen-crop subset/normalize: we select via the resample
@@ -204,6 +205,11 @@ class DatasetCrossDockedDensity(DatasetCrossDockedXray):
         # gradmag-only OTF: settable via dset.gradmag_as_density (config flag) in addition to the
         # VOXBIND_OTF_GRADMAG_AS_DENSITY env var; either feeds ‖∇ρ‖ into the density slot.
         self.gradmag_as_density = bool(gradmag_as_density)
+        # raw_density: feed the resampled RAW map crop (native CCP4 units, unclipped,
+        # positive-skewed peaks) directly — skip the arcsinh soft-squash + pool z-score.
+        # Ablation for "does the density preprocessing matter". Applies to the density
+        # channel (input + recon target); gradmag is still derived from the raw crop.
+        self.raw_density = bool(raw_density)
         # Ligand/pocket element-channel counts (voxelizer width). 7/4 default; 8/4 for the
         # per-element "+other" corpus → the mask must keep atoms_channel up to n_lig_ch-1.
         self.n_lig_ch = int(n_lig_ch)
@@ -364,7 +370,8 @@ class DatasetCrossDockedDensity(DatasetCrossDockedXray):
                     R_kab=self._man_R[index], t_kab=self._man_t[index],
                     R_aug=R_aug, t_aug=t_aug,
                 )
-                dens = _apply_recipe_norm(dens, self._recipe_norm)
+                if not self.raw_density:
+                    dens = _apply_recipe_norm(dens, self._recipe_norm)
                 xray_density = torch.from_numpy(dens.astype(np.float32))
 
         if xray_density is None:

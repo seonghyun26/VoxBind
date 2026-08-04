@@ -154,6 +154,8 @@ _VALID_INPUT_MODES = (
     "atomblob_merged_density",    # 8 ch: merged-7 atoms + 1 density
     "roleblob",                   # 2 atom ch: [ligand-occupancy, pocket-occupancy], vdW-radius blobs
     "roleblob_density",           # 3 ch: role-2 atoms + 1 density
+    "ligand",                     # two-tower LIGAND: 7 ligand atom ch only, no density
+    "pocket_density",             # two-tower POCKET: 4 pocket atom ch + ligand-masked (apo-like) density
 )
 
 
@@ -252,11 +254,16 @@ def _channel_layout(
         n_atom = LIG_CH
     elif input_mode in ("roleblob", "roleblob_density"):
         n_atom = 2                                    # [ligand-occupancy, pocket-occupancy]
+    elif input_mode == "ligand":
+        n_atom = LIG_CH                               # two-tower ligand: 7 ligand atoms only
+    elif input_mode == "pocket_density":
+        n_atom = POC_CH                               # two-tower pocket: 4 pocket atoms + density
     else:
         raise RuntimeError(f"unexpected input_mode={input_mode!r}")
 
     has_density = input_mode in (
         "density", "atomblob_density", "atomblob_merged_density", "roleblob_density",
+        "pocket_density",
     )
     n_density = 1 if has_density else 0
     if with_gradmag and not has_density:

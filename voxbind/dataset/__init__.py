@@ -46,6 +46,8 @@ def _make_dataset(cfg, split: str, aug: bool):
                 data_file=cfg.dset.get("data_file", "data_train.pt"),
                 small=cfg.debug,
                 cache_size=cfg.dset.get("cache_size", 32),
+                # raw_density: skip arcsinh+z-score, feed native unclipped map values.
+                raw_density=cfg.dset.get("raw_density", False),
             )
             # Fast precomputed-box path (opt-in): when dset.box_path is set, resample the 64³
             # from a precomputed 96³ canonical box instead of the full ccp4 map — identical aug
@@ -61,7 +63,24 @@ def _make_dataset(cfg, split: str, aug: bool):
                     box_path_diff=cfg.dset.get("box_path_diff", ""),
                     **density_kwargs,
                 )
-            return DatasetCrossDockedDensity(**density_kwargs)
+            primary = DatasetCrossDockedDensity(**density_kwargs)
+            # apo+holo concat (opt-in): dset.extra_resample_dir (+ extra_data_file) adds a SECOND
+            # OTF corpus (e.g. v4 apo) to the TRAIN split via ConcatDataset — no file merge, no
+            # extra storage; each sub-dataset self-aligns via its own manifest/size-filter. Val
+            # stays the primary (holo) split so early-stop tracks affinity-relevant reconstruction.
+            extra_rd = cfg.dset.get("extra_resample_dir", "")
+            if extra_rd and split == "train":
+                ek = dict(density_kwargs)
+                ek["resample_dir"] = extra_rd
+                ek["data_file"] = cfg.dset.get("extra_data_file", density_kwargs["data_file"])
+                ek["subset_n"] = cfg.dset.get("extra_subset_n", None)   # None → all extra tuples
+                extra = DatasetCrossDockedDensity(**ek)
+                from torch.utils.data import ConcatDataset
+                cat = ConcatDataset([primary, extra])
+                print(f"[apoholo] ConcatDataset: primary(holo) {len(primary):,} + extra(apo) "
+                      f"{len(extra):,} = {len(cat):,}", flush=True)
+                return cat
+            return primary
         return DatasetCrossDockedXray(
             data_dir=cfg.dset.data_dir,
             crops_dir=cfg.dset.get("crops_dir", ""),

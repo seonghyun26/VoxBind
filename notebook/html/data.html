@@ -306,6 +306,93 @@
   </div>
 </div>
 
+<div class="doc-section">
+  <h2 class="section-head"><span class="sec-num">6</span> Data acquisition &amp; preprocessing pipeline</h2>
+  <p class="table-sub">How a PLINDER entry travels from PDBe to the training loop &mdash; five stages under
+    <code>voxbind/dataset/plinder/</code>, every artifact landing in <code>voxbind/dataset/data/</code> (git-ignored).
+    The mFo-DFc difference-map channel (added 2026&#8209;08&#8209;01) mirrors the same stages in parallel <code>_diff</code> dirs.</p>
+
+  <div class="table-wrap">
+  <table class="results">
+    <thead><tr>
+      <th class="col-method">stage</th><th>script</th><th>reads</th><th>writes &rarr; <code>data/</code></th>
+    </tr></thead>
+    <tbody>
+      <tr><td class="col-method">&#9312; select</td><td class="mut">01_select.py</td><td class="mut">PLINDER index</td><td><code>splits/plinder/v2/plinder_selected.csv</code><div class="mut">41,833 PDB IDs · frozen · sha256-gated (in git)</div></td></tr>
+      <tr><td class="col-method">&#9313; download</td><td class="mut">03_download.py</td><td class="mut">PDBe entry-files</td><td><code>ccp4/{pid}.ccp4</code> (density) + <code>cif/{pid}.cif</code> (model)<div class="mut">URLs <code>entry-files/{pid}.ccp4</code> · <code>{pid}_updated.cif</code>; resumable pool, skips existing, records 404s</div></td></tr>
+      <tr><td class="col-method">&#9314; build</td><td class="mut">04_build_perelem.py</td><td class="mut">cif + PLINDER annots</td><td><code>pretrain/data_train_&hellip;_perelem.pt</code> (atom tuples) + <code>pretrain/xray_resample_&hellip;/</code> (<code>train_manifest.npz</code> + <code>resample.json</code>)</td></tr>
+      <tr><td class="col-method">&#9315; precompute</td><td class="mut">05_make_boxes.py</td><td class="mut">ccp4 + manifest</td><td><code>xray_resample_&hellip;/box116.dat</code><div class="mut">uint8-quantised 116³ canonical-pose density boxes · ~176 GB</div></td></tr>
+      <tr><td class="col-method">&#9316; train</td><td class="mut">crossdocked_density_box.py</td><td class="mut">box116.dat + tuples</td><td class="mut">reads box → 64³ crop @ aug pose → recipe-norm → +gradmag → 15-ch input</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <div class="notes">Why the box (stage &#9315;): OTF training re-reads + resamples a 0.3&ndash;0.4 GB <code>.ccp4</code> <i>per sample per
+    epoch</i> &rarr; GPU starves (~40% util). Stage &#9315; does that resample <b>once, offline</b> into a small quantised box;
+    training reads the box and resamples the 64³ at the augmented pose &mdash; identical aug semantics, ~85% util.</div>
+
+  <section class="block" style="margin-top:32px">
+    <p class="table-title">CCP4 vs CIF &mdash; density map vs coordinate model</p>
+    <div class="card">
+      <p><code>.ccp4</code> &mdash; the <b>electron-density map</b>: a binary 3-D grid of &sigma;A-weighted 2Fo-Fc density (the
+        experimental "image" of where electrons/atoms are, from X-ray diffraction). Source of VoxBind's <b>density + gradmag</b>
+        channels. Large (~0.3&ndash;0.4 GB/entry, whole unit cell). The <code>_diff.ccp4</code> variant is the mFo-DFc difference map.</p>
+      <p><code>.cif</code> (mmCIF) &mdash; the <b>atomic coordinate model</b>: deposited atom positions, elements, residues,
+        chains, B-factors, occupancies + metadata (resolution, space group) &mdash; the model a crystallographer <i>fit</i> to the
+        density. Source of VoxBind's <b>ligand + pocket atom</b> channels; <code>_updated.cif</code> carries
+        <code>label_asym_id</code> to identify the binding chains.</p>
+      <p class="mut">In short: <b>cif = coordinates (the model)</b>, <b>ccp4 = density (the experiment)</b> &mdash; VoxBind voxelizes
+        the cif atoms and reads the ccp4 density, the model and map that were solved together.</p>
+    </div>
+  </section>
+
+  <section class="block" style="margin-top:32px">
+    <p class="table-title">Normalization recipe (per resample dir, baked into <code>resample.json</code>)</p>
+    <div class="notes">
+      Density is normalized by <b>arcsinh soft-squash + z-score</b> (v6): <code>x' = (arcsinh(x/s) &minus; &mu;_a)/&sigma;_a</code>,
+      <code>s = 0.5</code>. arcsinh compresses bright atom-centre peaks; the constants are fit once over a pool of pocket-crop
+      voxels. 2Fo-Fc: <code>&mu;_a=&minus;0.0154, &sigma;_a=0.5085</code>. mFo-DFc: <code>&mu;_a=0.0002, &sigma;_a=0.1606</code>
+      (symmetric, ~3.7&times; smaller &mdash; its box is uint8-quantised over <code>[&minus;2, 2]</code> vs 2Fo-Fc's
+      <code>[&minus;2.2, 5]</code>). The <code>_diff</code> resample dir <b>symlinks the 2Fo-Fc <code>train_manifest.npz</code></b>:
+      both maps share the crystal frame, so the pose (centroid / R / t) is identical.
+    </div>
+  </section>
+
+  <section class="block" style="margin-top:32px">
+    <p class="table-title">Storage layout &amp; a more efficient structure</p>
+    <div class="table-wrap">
+    <table class="results">
+      <thead><tr><th class="col-method">artifact</th><th>size</th><th>tier</th><th>note</th></tr></thead>
+      <tbody>
+        <tr><td class="col-method"><code>ccp4/</code> raw 2Fo-Fc maps</td><td>228 G</td><td class="mut">cold (build input)</td><td class="mut">shared across v2/v3/v4; read only to build boxes</td></tr>
+        <tr><td class="col-method"><code>cif/</code> deposited models</td><td>46 G</td><td class="mut">cold (build input)</td><td class="mut">read only to build tuples</td></tr>
+        <tr><td class="col-method"><code>&hellip;_perelem/box116.dat</code> &times;N</td><td>176 G each</td><td class="yes">hot (train)</td><td class="mut">2Fo-Fc + mFo-DFc = 2 boxes today</td></tr>
+        <tr><td class="col-method"><code>data_train_&hellip;_perelem.pt</code></td><td>~1 G</td><td class="yes">hot (train)</td><td class="mut">atom tuples</td></tr>
+        <tr><td class="col-method"><code>ccp4_diff/</code> raw diff maps</td><td class="mut">deleted</td><td class="mut">&mdash;</td><td class="no">purged 08-01 (box retained; re-fetch to rebuild)</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <div class="notes">
+      <b>Separate cold build-inputs from hot train-artifacts</b> &mdash; the core inefficiency is that
+      <code>ccp4/</code>&thinsp;+&thinsp;<code>cif/</code> (read once to build) sit on the same tier as the boxes/tuples (read every step):
+      <ul>
+        <li><b>Gzip the raw maps</b> &mdash; <code>gemmi</code> reads <code>.ccp4.gz</code> transparently; CCP4 grids compress ~2&ndash;3&times;,
+          so <code>ccp4/</code> 228 G &rarr; ~90&ndash;110 G with zero pipeline change (only the box-build touches them).</li>
+        <li><b>Purge cold inputs after validation</b> &mdash; once boxes + tuples are built and a run confirms them,
+          <code>ccp4/</code>/<code>cif/</code> are only needed for rebuilds (exactly why deleting <code>ccp4_diff/</code> was safe);
+          keep a checksum manifest to re-fetch on demand.</li>
+        <li><b>One box, stacked density channels</b> &mdash; store 2Fo-Fc + mFo-DFc as a single <code>[N, 2, 116³]</code> memmap
+          instead of two files (same bytes, one read, shared pose).</li>
+        <li><b>Right-size the box</b> &mdash; 116³ guarantees any-rotation coverage; 96³ (moderate rotations) is <b>&minus;44%</b>
+          (176 G &rarr; ~99 G/box).</li>
+        <li><b>Relative / env-rooted paths</b> &mdash; <code>resample.json</code> hard-codes absolute <code>/home/shpark/&hellip;</code>
+          <code>ccp4_dir</code> (cross-server-fragile); a <code>VOXBIND_DATA_ROOT</code> prefix makes the whole tree portable.</li>
+        <li><b>Reuse boxes across versions</b> &mdash; v2/v3/v4 sharing a (PDB, pose) can reference one canonical box row
+          instead of rebuilding, since maps are already deduplicated in the shared cache.</li>
+      </ul>
+    </div>
+  </section>
+</div>
+
 <p class="foot">VoxBind · experimental-density pretraining · v4 built by
   <code>dataset/v4/build_ahoj_local.py</code> + <code>build_corpus.py</code> + <code>acceptance.py</code> · legacy tuple
   layout retained for the existing loader · frozen 2026-08-01.</p>
