@@ -1368,7 +1368,7 @@ def run(cfg: DictConfig, method: str) -> None:
             import re as _re
             _wandb_name = _re.sub(r"^\d{6}_", "", cfg.exp_name)
             wandb.init(
-                project="voxbind",
+                project=cfg.get("wandb_project", "binding-affinity"),
                 entity="eddy26",
                 config=OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True),
                 name=_wandb_name,

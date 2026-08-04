@@ -34,29 +34,34 @@ All coordinate voxels, masks, and ED grids must share the same center, orientati
 
 ## Binding-affinity model
 
-Keep the pocket and ligand encoders independent until the interaction stage. Coordinate and ED channels may be jointly encoded within each branch.
+Encode pocket and ligand with separate early encoders, keep their **spatial** structure, and fuse at the **token level**. This is not "pool each branch, then concatenate two vectors" — pooling before interaction discards where the ligand contacts the pocket.
 
-$\boxed{
-z_P=E_P\left([V_P^{\mathrm{coord}},\rho_P,M_P]\right),
-}$
+1. **Shared pocket-centered frame.** Pocket and ligand inputs use the same pocket-centered coordinate frame, crop size, orientation, and voxel resolution. Do **not** independently recenter the two inputs — their relative spatial geometry (how the ligand sits in the pocket) must be preserved.
+2. **Separate early encoders**, coordinate and ED channels jointly encoded within each branch:
+   - Pocket: $[\,V_P^{\mathrm{coord}},\ M_P\odot\rho_{\mathrm{exp}},\ M_P\,]$
+   - Ligand: $[\,V_L^{\mathrm{coord}},\ (1-M_P)\odot\rho_{\mathrm{exp}},\ 1-M_P\,]$
+3. **Retain spatial tokens / feature grids.** Each encoder emits per-token spatial features $T_P,\ T_L$ (tokens on the shared patch grid, or feature volumes). Do not globally pool either branch before interaction modeling.
+4. **Token-level fusion.** Fuse $T_P$ and $T_L$ with joint self-attention or cross-attention blocks over their tokens, so a ligand token can attend to the pocket tokens it physically contacts.
+5. **Regress affinity** from the fused representation.
+6. **Transfer.** Only the pocket representation *before* fusion, $T_P$, is carried to VoxBind (see below).
 
-$\boxed{
-z_L=E_L\left([V_L^{\mathrm{coord}},\rho_L,1-M_P]\right).
-}$
+$\boxed{T_P = E_P\left([\,V_P^{\mathrm{coord}},\ M_P\odot\rho_{\mathrm{exp}},\ M_P\,]\right)}$
 
-Then predict affinity only after combining the independently encoded representations:
+$\boxed{T_L = E_L\left([\,V_L^{\mathrm{coord}},\ (1-M_P)\odot\rho_{\mathrm{exp}},\ 1-M_P\,]\right)}$
 
-$\boxed{
-\hat a=R\left(\operatorname{Fuse}(z_P,z_L)\right).
-}$
+$\boxed{T_{PL} = \operatorname{JointFusion}(T_P,\ T_L)}$
+
+$\boxed{\hat a = \operatorname{RegressionHead}(T_{PL})}$
 
 ```text
-Pocket coordinate + masked pocket ED + pocket mask -> Pocket encoder --+
-                                                                    +-> Fusion -> Affinity
-Ligand coordinate + non-protein ED + inverse mask -> Ligand encoder --+
+Pocket C+D ── Pocket spatial encoder ── T_P ──┐
+                                              ├─ Token-level joint fusion ─ Affinity
+Ligand C+D ── Ligand spatial encoder ── T_L ──┘
+
+T_P before fusion ── Spatial adapter ── VoxBind conditioning
 ```
 
-Do not mix pocket and ligand input channels before their respective encoders. The pre-fusion pocket representation must be independently usable without a ligand.
+Do not mix pocket and ligand input channels before their respective encoders. The pre-fusion pocket representation $T_P$ must be independently usable without a ligand.
 
 ## VoxBind transfer
 

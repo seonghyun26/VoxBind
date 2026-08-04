@@ -1,19 +1,27 @@
 #!/usr/bin/env python3
 """Two-tower affinity probe: frozen pocket + ligand towers → cross-attention interaction head → pK.
 
-Extracts per-patch tokens from each frozen tower (pocket = 4 pocket atoms + LIGAND-MASKED
-apo-like density + gradmag; ligand = 7 ligand atoms), caches them, then trains
-CrossAttnAffinityHead (bidirectional pocket↔ligand cross-attention + 3D RoPE) on lp_edrscc_v2.
-Reports Pearson r / Spearman ρ / RMSE (3 seeds), vs the single-encoder champion 0.644.
+Each tower's input construction is read from its own cfg.yaml (input_mode / pocket_ed_mask /
+mask_as_channel / with_gradmag), so pocket_density, ligand_density, protein_vdw vs ligand_footprint
+masking, and the mask-as-channel variants all probe correctly without code changes.
 
-    python test/twotower_probe.py --pocket_exp 260803_twotower_pocket \
-        --ligand_exp 260803_twotower_ligand --epoch 49 --seeds 3
+Efficient two-stage pipeline:
+  1) extract_tokens — DataLoader workers stream raw voxels off disk (pinned) while both frozen
+     towers assemble inputs + encode on GPU in bulk; per-patch tokens cached to disk (fp16).
+  2) train_head — tokens are staged ONCE (GPU-resident, or pinned host w/ --stage_cpu) and
+     CrossAttnAffinityHead (bidirectional pocket↔ligand cross-attention + 3D RoPE) trains by
+     on-device index gather — no per-minibatch CPU stack / H2D.
+Reports Pearson r / Spearman ρ / RMSE (mean±std over seeds) on lp_edrscc_v2, vs champion 0.644.
+
+    python test/twotower_probe.py --pocket_exp 260806_tt_pocket_protein_vdw_mc \
+        --ligand_exp 260806_tt_ligdens_protein_vdw_mc --epoch 49 --seeds 3
 """
 import argparse, importlib.util
 from pathlib import Path
 import numpy as np
 import pandas as pd
 import torch
+torch.set_num_threads(4)
 import torch.nn as nn
 from omegaconf import OmegaConf
 from scipy.stats import spearmanr, pearsonr
@@ -49,106 +57,129 @@ def _tower_spec(cfg) -> dict:
     )
 
 
-def _build_tower(a: torch.Tensor, d: torch.Tensor, spec: dict) -> torch.Tensor:
-    """Build one tower's input tensor, mirroring train_density's assembly EXACTLY.
+class _RawVoxDS(torch.utils.data.Dataset):
+    """Streams raw voxels off disk for one complex: (pid, atoms(11,G,G,G), density(1,G,G,G)),
+    both fp32. Disk I/O (np.load) is the ONLY CPU work here — all masking / gradmag / encoding
+    runs on GPU in extract_tokens — so this parallelizes cleanly across DataLoader workers and
+    keeps the GPU fed (fixes the old serial per-pid CPU np.load+gradmag GPU-starver)."""
+    def __init__(self, pids):
+        self.pids = [p for p in pids
+                     if (ATOMS / f"{p}.npy").exists() and (DENS / f"{p}.npy").exists()]
 
-    a: (11,G,G,G) atom channels [7 ligand, 4 pocket]; d: (1,G,G,G) 2Fo-Fc density.
+    def __len__(self):
+        return len(self.pids)
+
+    def __getitem__(self, i):
+        pid = self.pids[i]
+        a = torch.from_numpy(np.load(ATOMS / f"{pid}.npy").astype(np.float32))       # (11,G,G,G)
+        d = torch.from_numpy(np.load(DENS / f"{pid}.npy").astype(np.float32))[None]   # (1,G,G,G)
+        return pid, a, d
+
+
+def _build_tower_batch(a: torch.Tensor, d: torch.Tensor, spec: dict) -> torch.Tensor:
+    """Batched, on-GPU tower-input assembly — mirrors train_density's assembly EXACTLY.
+
+    a: (B,11,G,G,G) atoms [7 ligand, 4 pocket]; d: (B,1,G,G,G) 2Fo-Fc density.
     Channel order matches pretraining: [ atoms, density, (gradmag), (mask) ].
     """
-    lig, poc = a[:7], a[7:11]
+    lig, poc = a[:, :7], a[:, 7:11]
     mode = spec["input_mode"]
     if mode == "ligand":
         return lig
-    if mode == "pocket_density":
-        atoms = poc
-    elif mode == "ligand_density":
-        atoms = lig
-    else:
+    if mode not in ("pocket_density", "ligand_density"):
         raise ValueError(f"two-tower probe: unsupported input_mode={mode!r}")
-
-    lig_occ = lig.sum(0, keepdim=True)                           # (1,G,G,G)
-    poc_occ = poc.sum(0, keepdim=True)
+    atoms = poc if mode == "pocket_density" else lig
+    lig_occ = lig.sum(1, keepdim=True)
+    poc_occ = poc.sum(1, keepdim=True)
     keep_p, keep_l = region_keep_masks(lig_occ, poc_occ, spec["pocket_ed_mask"], spec["thresh"])
     keep = keep_p if mode == "pocket_density" else keep_l
-    d_masked = d * keep                                          # rho_P or rho_L
+    d_masked = d * keep                                              # rho_P or rho_L
     parts = [atoms, d_masked]
     if spec["with_gradmag"]:
-        g = per_sample_zscore(gradient_magnitude3d(d_masked.unsqueeze(0))).squeeze(0)
-        parts.append(g)
+        parts.append(per_sample_zscore(gradient_magnitude3d(d_masked)))
     if spec["mask_as_channel"]:
-        parts.append(keep.to(d_masked.dtype))                   # trailing region-mask channel
-    return torch.cat(parts, dim=0)
+        parts.append(keep.to(d_masked.dtype))                       # trailing region-mask channel
+    return torch.cat(parts, dim=1)
 
 
 @torch.no_grad()
-def build_inputs(pid, pspec, lspec):
-    """(pocket_input, ligand_input) for one complex, or None if missing."""
-    fa, fd = ATOMS / f"{pid}.npy", DENS / f"{pid}.npy"
-    if not (fa.exists() and fd.exists()):
-        return None
-    a = torch.from_numpy(np.load(fa).astype(np.float32))          # (11,G,G,G)
-    d = torch.from_numpy(np.load(fd).astype(np.float32)).unsqueeze(0)  # (1,G,G,G)
-    pocket = _build_tower(a, d, pspec)
-    ligand = _build_tower(a, d, lspec)
-    return pocket, ligand
-
-
-@torch.no_grad()
-def extract_tokens(pids, pocket_enc, ligand_enc, pspec, lspec, device, bsz=32):
-    """Run both towers → {pid: (pocket_tokens, ligand_tokens)} on CPU (fp16)."""
-    out, buf = {}, []
-    def flush(items):
-        ps = torch.stack([x[1][0] for x in items]).to(device)
-        ls = torch.stack([x[1][1] for x in items]).to(device)
-        pt = _p.forward_tokens(pocket_enc, ps).half().cpu()
-        lt = _p.forward_tokens(ligand_enc, ls).half().cpu()
-        for i, (pid, _) in enumerate(items):
-            out[pid] = (pt[i], lt[i])
-    for pid in pids:
-        io = build_inputs(pid, pspec, lspec)
-        if io is None:
-            continue
-        buf.append((pid, io))
-        if len(buf) >= bsz:
-            flush(buf); buf = []
-    if buf:
-        flush(buf)
+def extract_tokens(pids, pocket_enc, ligand_enc, pspec, lspec, device, bsz=48, workers=8):
+    """Bulk GPU token extraction. DataLoader workers stream raw voxels off disk (pinned,
+    async H2D); both towers assemble their inputs + encode on GPU per batch. Returns
+    {pid: (pocket_tok, ligand_tok)} as fp16 CPU tensors."""
+    from torch.utils.data import DataLoader
+    loader = DataLoader(_RawVoxDS(pids), batch_size=bsz, num_workers=workers,
+                        pin_memory=True, shuffle=False, drop_last=False)
+    out = {}
+    for pids_b, a_b, d_b in loader:
+        a_b = a_b.to(device, non_blocking=True)
+        d_b = d_b.to(device, non_blocking=True)
+        pt = _p.forward_tokens(pocket_enc, _build_tower_batch(a_b, d_b, pspec)).half().cpu()
+        lt = _p.forward_tokens(ligand_enc, _build_tower_batch(a_b, d_b, lspec)).half().cpu()
+        for j, pid in enumerate(pids_b):
+            out[pid] = (pt[j], lt[j])
     return out
 
 
-def train_head(tok, y, tr, va, te, dim, device, seed, epochs=300, lr=3e-4, wd=1e-2):
+def stage_tokens(tok, y, pids, stage_dev):
+    """Stack a split's cached tokens into contiguous tensors ONCE (shared across seeds).
+
+    Returns (P, L, Y): pocket/ligand tokens (N,T,D) fp16 + labels (N,) fp32, resident on
+    `stage_dev`. Staging once here removes the per-minibatch CPU stack + H2D the old loop did
+    every batch of every epoch of every seed. On a free GPU the whole split set (~6 GB fp16)
+    lives on-device; pass --stage_cpu to keep it pinned on the host instead (per-batch async H2D)."""
+    P = torch.stack([tok[p][0] for p in pids])                # (N,T,D) fp16, CPU
+    L = torch.stack([tok[p][1] for p in pids])
+    Y = torch.tensor([y[p] for p in pids], dtype=torch.float32)
+    if stage_dev == "cpu":
+        return P.pin_memory(), L.pin_memory(), Y.pin_memory()
+    return P.to(stage_dev), L.to(stage_dev), Y.to(stage_dev)
+
+
+def train_head(data, device, seed, epochs=300, lr=3e-4, wd=1e-2, bsz=32):
+    """Train CrossAttnAffinityHead on pre-staged tokens. `data` = {split: (P,L,Y)} from
+    stage_tokens(); minibatches are gathered by index on the staging device (no CPU stack)."""
+    Ptr, Ltr, Ytr = data["train"]
+    Pva, Lva, _ = data["val"]
+    Pte, Lte, _ = data["test"]
+    dim = Ptr.shape[-1]
+    ntr = Ptr.shape[0]
     torch.manual_seed(seed)
     head = CrossAttnAffinityHead(dim=dim, grid_p=8, n_layers=2, n_heads=8, use_rope=True).to(device)
     opt = torch.optim.AdamW(head.parameters(), lr=lr, weight_decay=wd)
-    def batch(pids):
-        P = torch.stack([tok[p][0] for p in pids]).float().to(device)
-        L = torch.stack([tok[p][1] for p in pids]).float().to(device)
-        Y = torch.tensor([y[p] for p in pids], dtype=torch.float32, device=device)
-        return P, L, Y
-    best_val, best_test, best_pred = -1, None, None
+
+    def fetch(P, L, idx):                                      # gather + (async) H2D + upcast
+        return (P[idx].to(device, non_blocking=True).float(),
+                L[idx].to(device, non_blocking=True).float())
+
+    @torch.no_grad()
+    def predict(P, L):                                         # chunked eval → no OOM
+        head.eval(); out = []
+        for s in range(0, P.shape[0], 256):
+            idx = torch.arange(s, min(s + 256, P.shape[0]), device=P.device)
+            pb, lb = fetch(P, L, idx)
+            out.append(head(pb, lb).float().cpu())
+        return torch.cat(out).numpy()
+
+    yva = data["val"][2].cpu().numpy()
+    yte = data["test"][2].cpu().numpy()
+    best_val, best_pred = -1.0, None
     for ep in range(epochs):
-        head.train(); perm = [tr[i] for i in torch.randperm(len(tr))]
-        for s in range(0, len(perm), 32):
-            P, L, Y = batch(perm[s:s + 32])
-            loss = nn.functional.mse_loss(head(P, L), Y)
+        head.train()
+        perm = torch.randperm(ntr, device=Ptr.device)
+        for s in range(0, ntr, bsz):
+            idx = perm[s:s + bsz]
+            pb, lb = fetch(Ptr, Ltr, idx)
+            yb = Ytr[idx].to(device, non_blocking=True)
+            loss = nn.functional.mse_loss(head(pb, lb), yb)
             opt.zero_grad(); loss.backward(); opt.step()
-        head.eval()
-        def predict(pids):                                    # chunked eval → no OOM
-            out = []
-            with torch.no_grad():
-                for s in range(0, len(pids), 64):
-                    P, L, _ = batch(pids[s:s + 64])
-                    out.append(head(P, L).float().cpu())
-            return torch.cat(out).numpy()
-        vp = predict(va); vy = np.array([y[p] for p in va])
-        vr = spearmanr(vp, vy).correlation
+        vr = spearmanr(predict(Pva, Lva), yva).correlation
         if vr > best_val:
-            best_val, best_pred = vr, predict(te)
-    ty = np.array([y[p] for p in te])
+            best_val, best_pred = vr, predict(Pte, Lte)
     return dict(val_rho=best_val,
-                test_rho=spearmanr(best_pred, ty).correlation,
-                test_r=pearsonr(best_pred, ty)[0],
-                test_rmse=float(np.sqrt(((best_pred - ty) ** 2).mean())))
+                test_rho=spearmanr(best_pred, yte).correlation,
+                test_r=pearsonr(best_pred, yte)[0],
+                test_rmse=float(np.sqrt(((best_pred - yte) ** 2).mean())))
 
 
 def main():
@@ -157,6 +188,13 @@ def main():
     ap.add_argument("--epoch", type=int, default=49); ap.add_argument("--split", default="lp_edrscc_v2")
     ap.add_argument("--seeds", type=int, default=3); ap.add_argument("--gpu", default="0")
     ap.add_argument("--refresh", action="store_true")
+    ap.add_argument("--stage_cpu", action="store_true",
+                    help="Keep staged tokens pinned on host (per-batch async H2D) instead of "
+                         "resident on GPU — use if the probe GPU is shared/tight (~6 GB fp16).")
+    ap.add_argument("--no_wandb", action="store_true",
+                    help="Disable wandb logging (default: log to binding-affinity).")
+    ap.add_argument("--wandb_project", default="binding-affinity")
+    ap.add_argument("--wandb_tags", default=None, help="Comma-separated extra wandb tags.")
     args = ap.parse_args()
     device = f"cuda:{args.gpu}"
 
@@ -188,11 +226,49 @@ def main():
     dim = next(iter(tok.values()))[0].shape[-1]
     print(f"split (with tokens): train {len(tr)} val {len(va)} test {len(te)} | dim {dim}")
 
-    rows = [train_head(tok, y, tr, va, te, dim, device, seed=s) for s in range(args.seeds)]
+    # Stage tokens ONCE (shared across all seeds) → GPU-resident (or pinned host w/ --stage_cpu).
+    stage_dev = "cpu" if args.stage_cpu else device
+    data = {sp: stage_tokens(tok, y, ids, stage_dev)
+            for sp, ids in (("train", tr), ("val", va), ("test", te))}
+    gb = sum(t.element_size() * t.nelement()
+             for s in data.values() for t in s[:2]) / 1e9
+    print(f"staged tokens on {stage_dev} ({gb:.1f} GB fp16)")
+
+    wb = None
+    if not args.no_wandb:
+        try:
+            import wandb as _wandb
+            _extra = [t for t in (args.wandb_tags or "").split(",") if t]
+            wb = _wandb.init(
+                project=args.wandb_project, job_type="probe", reinit=True,
+                name=f"twotower_{args.pocket_exp}+{args.ligand_exp}_e{args.epoch}",
+                tags=["probe", "twotower", f"split:{args.split}", f"epoch:{args.epoch}", *_extra],
+                config=dict(kind="twotower_crossattn", pocket_exp=args.pocket_exp,
+                            ligand_exp=args.ligand_exp, epoch=args.epoch,
+                            split=args.split, seeds=args.seeds, dim=dim),
+            )
+        except Exception as e:
+            print(f"[wandb] init failed ({e!r}); continuing without wandb"); wb = None
+
+    rows = []
+    for s in range(args.seeds):
+        m = train_head(data, device, seed=s)
+        rows.append(m)
+        print(f"  seed={s}  val_rho={m['val_rho']:.4f}  test_rho={m['test_rho']:.4f}  "
+              f"test_r={m['test_r']:.4f}  test_rmse={m['test_rmse']:.4f}")
+        if wb is not None:
+            wb.log({"seed/val_rho": m["val_rho"], "seed/test_rho": m["test_rho"],
+                    "seed/test_r": m["test_r"], "seed/test_rmse": m["test_rmse"], "seed": s})
     df = pd.DataFrame(rows)
     print("\n=== two-tower cross-attention probe (vs champion 0.644) ===")
     for k in ("test_rho", "test_r", "test_rmse", "val_rho"):
         print(f"  {k:10s}: {df[k].mean():.4f} ± {df[k].std():.4f}")
+    if wb is not None:
+        wb.summary.update({f"{k}_mean": float(df[k].mean()) for k in
+                           ("test_rho", "test_r", "test_rmse", "val_rho")})
+        wb.summary.update({f"{k}_std": float(df[k].std()) for k in
+                           ("test_rho", "test_r", "test_rmse", "val_rho")})
+        wb.finish()
 
 
 if __name__ == "__main__":

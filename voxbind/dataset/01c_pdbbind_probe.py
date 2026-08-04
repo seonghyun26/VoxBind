@@ -1692,6 +1692,34 @@ def run_probe(args: argparse.Namespace) -> None:
         shared = set.intersection(*(set(f.keys()) for f in all_feats.values()))
         print(f"  shared pids   : {len(shared):,}  (intersection across conditions)")
 
+    # ── wandb: log probe metrics to the binding-affinity project ─────────────
+    wb = None
+    if not getattr(args, "no_wandb", False):
+        try:
+            import wandb as _wandb
+            _extra = [t for t in (getattr(args, "wandb_tags", None) or "").split(",") if t]
+            _name = f"probe_{'+'.join(args.conditions)}_e{args.epoch}"
+            if eff_tag:
+                _name += f"_{eff_tag}"
+            wb = _wandb.init(
+                project=getattr(args, "wandb_project", "binding-affinity"),
+                name=_name, job_type="probe", reinit=True,
+                tags=["probe", f"target:{args.target}", f"split:{split_flag}",
+                      f"epoch:{args.epoch}", *_extra],
+                config=dict(
+                    kind="frozen_probe", conditions=list(args.conditions),
+                    target=args.target, split=split_flag, split_scheme=split_scheme,
+                    epoch=args.epoch, voxel_version=args.voxel_version,
+                    seeds=args.seeds, head=args.head, lr=args.lr,
+                    weight_decay=args.weight_decay, hidden=args.hidden,
+                    dropout=args.dropout, tag=args.tag, feature_tag=args.feature_tag,
+                    exp_dir=args.exp_dir,
+                ),
+            )
+        except Exception as e:
+            print(f"  [wandb] init failed ({e!r}); continuing without wandb")
+            wb = None
+
     rows = []
     for cond in args.conditions:
         feats = all_feats[cond]
@@ -1770,6 +1798,14 @@ def run_probe(args: argparse.Namespace) -> None:
                   f"test_ρ={m['test_spearman']:.4f}  "
                   f"test_r={m['test_pearson']:.4f}  "
                   f"test_rmse={m['test_rmse']:.4f}")
+            if wb is not None:
+                wb.log({f"{cond}/seed/test_spearman":    m["test_spearman"],
+                        f"{cond}/seed/test_pearson":     m["test_pearson"],
+                        f"{cond}/seed/test_rmse":        m["test_rmse"],
+                        f"{cond}/seed/best_val_spearman":m["best_val_spearman"],
+                        f"{cond}/seed/val_pearson":      m["val_pearson"],
+                        f"{cond}/seed/epoch_stopped":    m["epoch_stopped"],
+                        "seed": seed})
             if "test_accuracy" in m:
                 print(f"           clf(K={m['n_classes']}): acc={m['test_accuracy']:.3f}  "
                       f"±1acc={m['test_within1_acc']:.3f}  macroF1={m['test_macro_f1']:.3f}  "
@@ -1790,6 +1826,17 @@ def run_probe(args: argparse.Namespace) -> None:
         print("  [regression — E[count]]")
     agg = df.groupby("condition")[metric_cols].agg(["mean", "std"]).round(4)
     print(agg.to_string())
+    if wb is not None:
+        for cond in df["condition"].unique():
+            sub = df[df["condition"] == cond]
+            wb.summary.update({
+                f"{cond}/test_spearman_mean": float(sub["test_spearman"].mean()),
+                f"{cond}/test_spearman_std":  float(sub["test_spearman"].std()),
+                f"{cond}/test_pearson_mean":  float(sub["test_pearson"].mean()),
+                f"{cond}/test_rmse_mean":     float(sub["test_rmse"].mean()),
+                f"{cond}/val_spearman_mean":  float(sub["best_val_spearman"].mean()),
+            })
+        wb.finish()
     if args.no_write_csv:
         print("\n[write] disabled (--no_write_csv)")
     else:
@@ -2611,6 +2658,12 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Which seed's held-out test predictions to dump for the scatter CSV (default 0).")
     pr.add_argument("--no_scatter",    action="store_true",
                     help="Do not write the single-seed scatter CSV.")
+    pr.add_argument("--no_wandb",      action="store_true",
+                    help="Disable wandb logging (default: log to the binding-affinity project).")
+    pr.add_argument("--wandb_project", default="binding-affinity",
+                    help="wandb project for probe metrics (default: binding-affinity).")
+    pr.add_argument("--wandb_tags",    default=None,
+                    help="Comma-separated extra wandb tags for this probe run.")
     pr.set_defaults(func=run_probe)
 
     pt = sub.add_parser(
