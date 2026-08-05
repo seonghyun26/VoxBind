@@ -45,13 +45,17 @@ class VoxelPrefetcher:
     """
 
     def __init__(self, loader, voxelizer, smooth_sigma, training=True,
-                 with_density=False, with_gradmag=False):
+                 with_density=False, with_gradmag=False, adapter=False):
         self.loader = loader
         self.voxelizer = voxelizer
         self.smooth_sigma = smooth_sigma
         self.training = training
         self.with_density = with_density
         self.with_gradmag = with_gradmag
+        # fusion='adapter' also needs the pocket density fed to the model, but as a RAW 1-ch
+        # crop (the PocketAdapter masks it by M_P and derives ‖∇ρ‖ itself) — so it passes density
+        # even when with_density=False and never concatenates the gradmag channel here.
+        self.adapter = adapter
         self.stream = torch.cuda.Stream()
 
     def _voxelize(self, batch):
@@ -63,11 +67,11 @@ class VoxelPrefetcher:
                 if self.training:
                     voxels_poc[:math.ceil(.2 * voxels_poc.shape[0])].zero_()
                 density = None
-                if self.with_density and "xray_density" in batch:
+                if (self.with_density or self.adapter) and "xray_density" in batch:
                     density = batch["xray_density"].to(
                         self.voxelizer.device, non_blocking=True
                     ).unsqueeze(1)
-                    if self.with_gradmag and "xray_gradmag" in batch:
+                    if self.with_gradmag and not self.adapter and "xray_gradmag" in batch:
                         gradmag = batch["xray_gradmag"].to(
                             self.voxelizer.device, non_blocking=True
                         ).unsqueeze(1)
@@ -266,9 +270,10 @@ def train(
 
     with_density = bool(cfg.model.get("with_density", False))
     with_gradmag = bool(cfg.get("with_gradmag", False))
+    adapter = str(cfg.model.get("fusion", "default")) == "adapter"
     prefetcher = VoxelPrefetcher(
         loader, voxelizer, cfg.smooth_sigma,
-        training=True, with_density=with_density, with_gradmag=with_gradmag,
+        training=True, with_density=with_density, with_gradmag=with_gradmag, adapter=adapter,
     )
     for i, (voxels_lig, smooth_voxels_lig, voxels_poc, density) in enumerate(prefetcher):
         # fwd
@@ -323,9 +328,13 @@ def val(
     device = next(model.parameters()).device
     with_density = bool(cfg.model.get("with_density", False))
     with_gradmag = bool(cfg.get("with_gradmag", False))
+    adapter = str(cfg.model.get("fusion", "default")) == "adapter"
 
     with torch.no_grad():
-        if val_cache is not None:
+        # adapter needs raw 1-ch pocket density fed to the model; the precomputed val_cache
+        # stores the with_density (possibly 2-ch) density, so route adapter val through the live
+        # prefetcher path (which supplies the correct raw crop) instead of the cache.
+        if val_cache is not None and not adapter:
             voxels_lig_all = val_cache["voxels_lig"]
             voxels_poc_all = val_cache["voxels_poc"]
             density_all = val_cache.get("density") if with_density else None
@@ -344,6 +353,7 @@ def val(
             prefetcher = VoxelPrefetcher(
                 loader, voxelizer, cfg.smooth_sigma,
                 training=False, with_density=with_density, with_gradmag=with_gradmag,
+                adapter=(str(cfg.model.get("fusion", "default")) == "adapter"),
             )
             for i, (voxels_lig, smooth_voxels_lig, voxels_poc, density) in enumerate(prefetcher):
                 pred = model(smooth_voxels_lig, voxels_poc, density=density)

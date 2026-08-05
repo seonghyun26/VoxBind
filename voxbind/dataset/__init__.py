@@ -93,6 +93,10 @@ def _make_dataset(cfg, split: str, aug: bool):
             ligand_radius=cfg.dset.ligand_radius,
             pocket_radius=cfg.dset.pocket_radius,
             normalize=cfg.dset.get("normalize", True),
+            # Opt-in: apply the pretraining density recipe (e.g. the PLINDER arcsinh+z from the
+            # pocket tower's resample.json) to RAW crops instead of local normalize_crop, so the
+            # frozen adapter encoder sees density on its pretraining scale.
+            density_norm_recipe=cfg.dset.get("density_norm_recipe", ""),
             subset_n=cfg.dset.get("subset_n", None),
             subset_xray_only=cfg.dset.get("subset_xray_only", False),
             subset_val_n=cfg.dset.get("subset_val_n", None),

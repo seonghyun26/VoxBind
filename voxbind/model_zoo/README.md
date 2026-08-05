@@ -17,6 +17,20 @@ the training log, and `checkpoint_e0049.pth.tar` (probe reads `encoder_state_dic
 
 All ChannelViT `[7,4,2]`, 60-100M params, frozen mean-pool MLP probe on `lp_edrscc_v2` (Kd/Ki, 3850/817/1320, 3 seeds).
 
+## Two-tower encoders (for VoxBind pocket-adapter transfer)
+
+Separate ~45M pocket / ligand ChannelViT-MAE encoders (260806, PLINDER v2 holo, protein_vdw mask +
+mask-channel). Probed jointly via `test/twotower_probe.py` (frozen towers → cross-attention
+interaction head, 3 seeds). The pocket encoder is the one that transfers to VoxBind.
+
+| folder | input | test ρ / r / RMSE |
+|---|---|---|
+| `twotower_pocket_protein_vdw_mc` | pocket 4-atom + M_P⊙ρ + ‖∇ρ‖ + M_P (`[4,2,1]`) | joint two-tower: **0.587 / 0.599 / 1.474** |
+| `twotower_ligdens_protein_vdw_mc` | ligand 7-atom + (1−M_P)⊙ρ + ‖∇ρ‖ + (1−M_P) (`[7,2,1]`) | (same probe) |
+
+Below the single-encoder champion (0.644) — two-tower late-fusion handicap; see
+`../../notebook/html/260806/voxbind_twotower_affinity_playbook.md` for the improvement ladder.
+
 ## Reprobe a kept checkpoint
 ```bash
 python dataset/01c_pdbbind_probe.py probe \

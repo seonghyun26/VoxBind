@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Binding-affinity update and mFo–Fc channels · 260806</title>
+<title>Binding-affinity update and mFo–DFc channels · 260806</title>
 <style>
   :root {
     --ink: #1c2433;
@@ -814,7 +814,7 @@
       <span>Meeting note · 2026-08-06</span>
       <span class="status">affinity + channel trials</span>
     </div>
-    <h1>Binding-affinity update and mFo–Fc channels</h1>
+    <h1>Binding-affinity update and mFo–DFc channels</h1>
   </header>
 
   <section class="doc-section affinity-results">
@@ -1136,56 +1136,72 @@
   </section>
 
   <section class="doc-section mfo-channels">
-    <h2 class="section-head"><span class="sec-num">2</span>mFo–Fc channels</h2>
+    <h2 class="section-head"><span class="sec-num">2</span>mFo–DFc channels</h2>
     <p class="section-intro">
-      Test whether adding an mFo–Fc difference-map channel improves the frozen affinity representation.
-      Keep the encoder scale, mask ratio, split, and three-seed probe fixed.
+      Three completed trials add mFo–DFc density and gradient-magnitude channels to C+D+G.
+      The encoder, data, mask, and frozen-probe protocol are matched.
     </p>
 
-    <h3 class="table-title">Table 2 · mFo–Fc channel ablation — pending</h3>
+    <h3 class="table-title">Table 1 · mFo–DFc channel trials</h3>
     <p class="table-sub">
-      Add results from the matched channel trial only.
+      Mean over three seeds. C+D+G control: val ρ 0.546, test r 0.660, test ρ 0.644,
+      RMSE 1.349. Δρ is versus this control.
     </p>
     <div class="table-wrap">
       <table class="results mini-table">
         <thead>
           <tr>
-            <th class="col-method">Input</th>
-            <th>Checkpoint</th>
-            <th>Val ρ</th>
+            <th class="col-method">Trial</th>
+            <th>Best val ρ</th>
             <th>Test r↑</th>
             <th>Test ρ↑</th>
             <th>RMSE↓</th>
-            <th>Status</th>
+            <th>Δρ</th>
           </tr>
         </thead>
         <tbody>
           <tr>
-            <td class="col-method">
-              C+D+G <span class="tag ref">control</span>
-              <span class="sub">current channels</span>
-            </td>
-            <td class="na">—</td>
-            <td class="na">—</td>
-            <td class="na">—</td>
-            <td class="na">—</td>
-            <td class="na">—</td>
-            <td><span class="metric-status">pending</span></td>
+            <td class="col-method">Trial 1</td>
+            <td><span class="val">0.523</span></td>
+            <td><span class="val">0.628</span></td>
+            <td><span class="val">0.611</span></td>
+            <td><span class="val">1.431</span></td>
+            <td class="shift"><span class="val">−0.033</span></td>
           </tr>
           <tr class="ours">
-            <td class="col-method">
-              C+D+G + mFo–Fc <span class="tag ours">new</span>
-              <span class="sub">one additional difference-map channel</span>
-            </td>
-            <td class="na">—</td>
-            <td class="na">—</td>
-            <td class="na">—</td>
-            <td class="na">—</td>
-            <td class="na">—</td>
-            <td><span class="metric-status">pending</span></td>
+            <td class="col-method">Trial 2</td>
+            <td><span class="val">0.535</span></td>
+            <td><span class="val">0.633</span></td>
+            <td><span class="val">0.618</span></td>
+            <td><span class="val">1.431</span></td>
+            <td class="shift"><span class="val">−0.026</span></td>
+          </tr>
+          <tr>
+            <td class="col-method">Trial 3</td>
+            <td><span class="val">0.502</span></td>
+            <td><span class="val">0.600</span></td>
+            <td><span class="val">0.588</span></td>
+            <td><span class="val">1.477</span></td>
+            <td class="shift"><span class="val">−0.056</span></td>
           </tr>
         </tbody>
       </table>
+    </div>
+
+    <div class="notes">
+      <b>Trial details.</b>
+      <ul>
+        <li><b>Shared:</b> 100M ChannelViT, 15 channels <code>[7,4,2,2]</code>, PLINDER v2
+          112K, mask 0.75, 50 epochs, epoch-49 probe, and split 3850 / 817 / 1320.</li>
+        <li><b>Trial 1:</b> reconstruct mFo–DFc density and gradient channels at weight 0.1 each.</li>
+        <li><b>Trial 2:</b> use mFo–DFc as input only; reconstruction weights are 0.</li>
+        <li><b>Trial 3:</b> reconstruct both mFo–DFc channels at weight 0.3 each.</li>
+      </ul>
+    </div>
+
+    <div class="callout">
+      <strong>Result.</strong> Trial 2 is the best addition at ρ 0.618, but all three are below
+      the C+D+G control at 0.644. The added difference-map channels did not improve affinity.
     </div>
   </section>
 
@@ -1714,7 +1730,7 @@
       Matched evaluation for VoxBind σ 0.9, σ 1.0, and Ours on the Appendix A pocket set.
     </p>
 
-    <h3 class="table-title">Table 3 · Structural-quality evaluation — pending</h3>
+    <h3 class="table-title">Table 2 · Structural-quality evaluation — pending</h3>
     <p class="table-sub">
       Same pocket mask, sample count, receptor preparation, checks, and aggregation.
     </p>
@@ -1791,7 +1807,7 @@
       Same frozen 100M v2 mask0.75 features and <code>lp_edrscc_v2</code> split; only the probe head changes.
     </p>
 
-    <h3 class="table-title">Table 1 · MLP-head trials</h3>
+    <h3 class="table-title">MLP-head trials</h3>
     <p class="table-sub">
       Three probe seeds. Higher r/ρ and lower RMSE are better.
     </p>
@@ -1869,8 +1885,9 @@
 
   <footer>
     Provenance: Section 1 uses the original <code>results.html</code> chart; Section 1.1 uses matched
-    frozen-head trials. Sections 2–3 are pending placeholders. Appendix A contains the crop-scored
-    de novo results. Appendix B contains the receptor-input trial and the 600-instance pocket10 audit.
+    frozen-head trials. Section 2 uses the completed epoch-49, three-seed mFo–DFc probe logs.
+    Section 3 remains pending. Appendix A contains the crop-scored de novo results; Appendix B contains
+    the receptor-input trial and 600-instance pocket10 audit.
   </footer>
 
 </div>

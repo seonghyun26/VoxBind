@@ -1,0 +1,5 @@
+loaded 5987 cached token pairs
+split (with tokens): train 3850 val 817 test 1320 | dim 512
+staged tokens on cuda:2 (6.3 GB fp16)
+seed=1  val_rho=0.4875  test_rho=0.5682  test_r=0.5923  test_rmse=1.4313
+-> test/results/twotower_parallel/260803_twotower_pocket__260803_twotower_ligand_e49/seed1.json

@@ -38,6 +38,7 @@ def create_model(cfg, device="cuda") -> VoxBind:
     # vit knobs (only consulted when density_encoder_type == "vit"; safe defaults
     # otherwise so older configs without the `density_vit:` block still load).
     vit_cfg = cfg.model.get("density_vit", {}) or {}
+    adapter_cfg = cfg.model.get("adapter", {}) or {}
     model = VoxBind(
         n_channels_ligand=N_LIGAND_ELEMENTS,
         n_channels_pocket=N_POCKET_ELEMENTS,
@@ -74,7 +75,21 @@ def create_model(cfg, device="cuda") -> VoxBind:
         density_mask_dilate=int(cfg.model.get("density_mask_dilate", 2)),
         # "default": pocket_encoder + zero-init density_proj. "v3": frozen encoder replaces
         # pocket_encoder (pocket + apo density), fused via normal-init context_proj (early fusion).
+        # "adapter": frozen VoxBind + frozen pretrained pocket encoder + trainable PocketAdapter.
         fusion=str(cfg.model.get("fusion", "default")),
+        # adapter (fusion='adapter') knobs — match the pretrained pocket tower's ViT geometry.
+        adapter_dim=int(adapter_cfg.get("dim", 512)),
+        adapter_depth=int(adapter_cfg.get("depth", 12)),
+        adapter_heads=int(adapter_cfg.get("heads", 8)),
+        adapter_mlp_ratio=int(adapter_cfg.get("mlp_ratio", 4)),
+        adapter_n_in=int(adapter_cfg.get("n_in_channels", 7)),
+        adapter_channel_groups=(tuple(adapter_cfg.channel_groups)
+                                if adapter_cfg.get("channel_groups", None) else None),
+        adapter_patch=int(adapter_cfg.get("patch", 8)),
+        adapter_grid_dim=int(cfg.vox.grid_dim),
+        adapter_hidden=(int(adapter_cfg["hidden"]) if adapter_cfg.get("hidden", None) else None),
+        adapter_mask_basis=str(adapter_cfg.get("mask_basis", "protein_vdw")),
+        adapter_mask_thresh=float(adapter_cfg.get("mask_thresh", 0.2)),
     )
 
     # Optionally load + freeze the pretrained density encoder
@@ -114,6 +129,54 @@ def create_model(cfg, device="cuda") -> VoxBind:
             )
             n_frozen = sum(p.numel() for p in model.density_encoder.parameters())
             logger.info(f"density_encoder frozen ({n_frozen:,} params, dropout disabled)")
+
+    # fusion='adapter': load the pretrained pocket-tower TRUNK into adapter_encoder, then FREEZE
+    # all of VoxBind except the PocketAdapter (transfer per the handoff: frozen pocket encoder +
+    # frozen VoxBind + trainable spatial adapter).
+    if str(cfg.model.get("fusion", "default")) == "adapter":
+        ap = cfg.model.get("adapter", {}) or {}
+        pre = ap.get("pretrained_path", None)
+        if pre:
+            if not os.path.isfile(pre):
+                raise FileNotFoundError(f"adapter.pretrained_path not found: {pre}")
+            ck = torch.load(pre, map_location="cpu", weights_only=False)
+            enc = ck.get("encoder_state_dict_ema") or {
+                k: v for k, v in ck.get("state_dict_ema", ck.get("state_dict", {})).items()
+                if k.startswith("encoder.")
+            }
+            enc = {k.replace("encoder.", "", 1): v for k, v in enc.items() if k.startswith("encoder.")}
+            # forward_features never touches decoder_proj (the MAE recon head) — drop it so a
+            # c_out mismatch can't break the load; the trunk (group_proj/blocks/norm/embeds) loads.
+            enc = {k: v for k, v in enc.items() if not k.startswith("decoder_proj")}
+            missing, unexpected = model.adapter_encoder.load_state_dict(enc, strict=False)
+            trunk_missing = [k for k in missing if not k.startswith("decoder_proj")]
+            logger.info(f"adapter_encoder loaded from {pre}: {len(enc)} keys, "
+                        f"trunk_missing={len(trunk_missing)} unexpected={len(unexpected)}")
+            if trunk_missing:
+                raise RuntimeError(f"adapter_encoder trunk keys not loaded: {trunk_missing[:8]}")
+        else:
+            logger.warning("fusion='adapter' with no adapter.pretrained_path — encoder is RANDOM "
+                           "(fine for a code smoke, NOT for training).")
+        # Freeze everything, then re-enable ONLY the trainable adapter.
+        for p in model.parameters():
+            p.requires_grad = False
+        for p in model.pocket_adapter.parameters():
+            p.requires_grad = True
+        # Keep all frozen submodules in eval() and pin their train() so model.train() can't
+        # reactivate dropout/norm updates on them; the adapter alone follows train/eval.
+        def _no_train(self_mod, mode=True):
+            return torch.nn.Module.train(self_mod, False)
+        for name, mod in (("ligand_encoder", model.ligand_encoder),
+                          ("pocket_encoder", model.pocket_encoder),
+                          ("unet3d", model.unet3d),
+                          ("final_ligand", model.final_ligand),
+                          ("adapter_encoder", model.adapter_encoder)):
+            mod.eval()
+            mod.train = types.MethodType(_no_train, mod)
+        n_train = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        n_total = sum(p.numel() for p in model.parameters())
+        logger.info(f"fusion=adapter: trainable {n_train:,} / {n_total:,} params "
+                    f"({100*n_train/max(1,n_total):.2f}%) — PocketAdapter only")
 
     model.to(device)
     return model

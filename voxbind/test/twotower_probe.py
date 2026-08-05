@@ -108,14 +108,19 @@ def extract_tokens(pids, pocket_enc, ligand_enc, pspec, lspec, device, bsz=48, w
     async H2D); both towers assemble their inputs + encode on GPU per batch. Returns
     {pid: (pocket_tok, ligand_tok)} as fp16 CPU tensors."""
     from torch.utils.data import DataLoader
+    # pin_memory=False: workers parallelize the disk load; a one-time extraction doesn't need
+    # pinned async H2D, and pinning to a specific device tripped a CUDA "invalid argument" here.
     loader = DataLoader(_RawVoxDS(pids), batch_size=bsz, num_workers=workers,
-                        pin_memory=True, shuffle=False, drop_last=False)
+                        pin_memory=False, shuffle=False, drop_last=False)
     out = {}
     for pids_b, a_b, d_b in loader:
         a_b = a_b.to(device, non_blocking=True)
         d_b = d_b.to(device, non_blocking=True)
-        pt = _p.forward_tokens(pocket_enc, _build_tower_batch(a_b, d_b, pspec)).half().cpu()
-        lt = _p.forward_tokens(ligand_enc, _build_tower_batch(a_b, d_b, lspec)).half().cpu()
+        # forward_features returns (B, nG·N, D) for channel_group encoders; POOL groups → (B, N, D)
+        # per-patch tokens on the shared 8³ grid, which is what CrossAttnAffinityHead's RoPE
+        # (grid_p=8 → 512 positions) expects — and 1/nG the memory.
+        pt = pocket_enc._pool_groups(_p.forward_tokens(pocket_enc, _build_tower_batch(a_b, d_b, pspec))).half().cpu()
+        lt = ligand_enc._pool_groups(_p.forward_tokens(ligand_enc, _build_tower_batch(a_b, d_b, lspec))).half().cpu()
         for j, pid in enumerate(pids_b):
             out[pid] = (pt[j], lt[j])
     return out
@@ -136,7 +141,7 @@ def stage_tokens(tok, y, pids, stage_dev):
     return P.to(stage_dev), L.to(stage_dev), Y.to(stage_dev)
 
 
-def train_head(data, device, seed, epochs=300, lr=3e-4, wd=1e-2, bsz=32):
+def train_head(data, device, seed, epochs=300, lr=3e-4, wd=1e-2, bsz=32, n_layers=2, n_heads=8):
     """Train CrossAttnAffinityHead on pre-staged tokens. `data` = {split: (P,L,Y)} from
     stage_tokens(); minibatches are gathered by index on the staging device (no CPU stack)."""
     Ptr, Ltr, Ytr = data["train"]
@@ -145,7 +150,7 @@ def train_head(data, device, seed, epochs=300, lr=3e-4, wd=1e-2, bsz=32):
     dim = Ptr.shape[-1]
     ntr = Ptr.shape[0]
     torch.manual_seed(seed)
-    head = CrossAttnAffinityHead(dim=dim, grid_p=8, n_layers=2, n_heads=8, use_rope=True).to(device)
+    head = CrossAttnAffinityHead(dim=dim, grid_p=8, n_layers=n_layers, n_heads=n_heads, use_rope=True).to(device)
     opt = torch.optim.AdamW(head.parameters(), lr=lr, weight_decay=wd)
 
     def fetch(P, L, idx):                                      # gather + (async) H2D + upcast
@@ -176,9 +181,9 @@ def train_head(data, device, seed, epochs=300, lr=3e-4, wd=1e-2, bsz=32):
         vr = spearmanr(predict(Pva, Lva), yva).correlation
         if vr > best_val:
             best_val, best_pred = vr, predict(Pte, Lte)
-    return dict(val_rho=best_val,
-                test_rho=spearmanr(best_pred, yte).correlation,
-                test_r=pearsonr(best_pred, yte)[0],
+    return dict(val_rho=float(best_val),
+                test_rho=float(spearmanr(best_pred, yte).correlation),
+                test_r=float(pearsonr(best_pred, yte)[0]),
                 test_rmse=float(np.sqrt(((best_pred - yte) ** 2).mean())))
 
 
@@ -188,6 +193,16 @@ def main():
     ap.add_argument("--epoch", type=int, default=49); ap.add_argument("--split", default="lp_edrscc_v2")
     ap.add_argument("--seeds", type=int, default=3); ap.add_argument("--gpu", default="0")
     ap.add_argument("--refresh", action="store_true")
+    ap.add_argument("--extract_only", action="store_true",
+                    help="Extract+cache tokens then exit — run ONCE before fanning out seed "
+                         "workers (else concurrent workers all redo the extraction).")
+    ap.add_argument("--seed", type=int, default=None,
+                    help="Run ONLY this single seed (process-parallel seed fan-out); writes "
+                         "result to --out and skips wandb. Omit to run range(--seeds) in-process.")
+    ap.add_argument("--out", default=None,
+                    help="Write result JSON here (single-seed row, or the aggregate mean/std).")
+    ap.add_argument("--n_layers", type=int, default=2, help="CrossAttnAffinityHead interaction layers.")
+    ap.add_argument("--n_heads", type=int, default=8, help="CrossAttnAffinityHead attention heads.")
     ap.add_argument("--stage_cpu", action="store_true",
                     help="Keep staged tokens pinned on host (per-batch async H2D) instead of "
                          "resident on GPU — use if the probe GPU is shared/tight (~6 GB fp16).")
@@ -219,6 +234,9 @@ def main():
         CACHE.mkdir(parents=True, exist_ok=True); torch.save(tok, cache_f)
         print(f"cached {len(tok)} token pairs → {cache_f}")
 
+    if args.extract_only:
+        print(f"[extract_only] tokens cached at {cache_f} — exiting"); return
+
     have = set(tok)
     tr = [p for p in pids if split_map[p] == "train" and p in have]
     va = [p for p in pids if split_map[p] == "val" and p in have]
@@ -233,6 +251,18 @@ def main():
     gb = sum(t.element_size() * t.nelement()
              for s in data.values() for t in s[:2]) / 1e9
     print(f"staged tokens on {stage_dev} ({gb:.1f} GB fp16)")
+
+    # Single-seed worker (parallel fan-out): train one seed, write JSON, no wandb.
+    if args.seed is not None:
+        m = train_head(data, device, seed=args.seed, n_layers=args.n_layers, n_heads=args.n_heads)
+        print(f"seed={args.seed}  val_rho={m['val_rho']:.4f}  test_rho={m['test_rho']:.4f}  "
+              f"test_r={m['test_r']:.4f}  test_rmse={m['test_rmse']:.4f}")
+        if args.out:
+            import json
+            Path(args.out).parent.mkdir(parents=True, exist_ok=True)
+            Path(args.out).write_text(json.dumps({"seed": args.seed, **m}))
+            print(f"-> {args.out}")
+        return
 
     wb = None
     if not args.no_wandb:
@@ -252,7 +282,7 @@ def main():
 
     rows = []
     for s in range(args.seeds):
-        m = train_head(data, device, seed=s)
+        m = train_head(data, device, seed=s, n_layers=args.n_layers, n_heads=args.n_heads)
         rows.append(m)
         print(f"  seed={s}  val_rho={m['val_rho']:.4f}  test_rho={m['test_rho']:.4f}  "
               f"test_r={m['test_r']:.4f}  test_rmse={m['test_rmse']:.4f}")
@@ -263,6 +293,13 @@ def main():
     print("\n=== two-tower cross-attention probe (vs champion 0.644) ===")
     for k in ("test_rho", "test_r", "test_rmse", "val_rho"):
         print(f"  {k:10s}: {df[k].mean():.4f} ± {df[k].std():.4f}")
+    if args.out:
+        import json
+        agg = {"n": len(rows)}
+        for k in ("test_rho", "test_r", "test_rmse", "val_rho"):
+            agg[f"{k}_mean"] = float(df[k].mean()); agg[f"{k}_std"] = float(df[k].std())
+        Path(args.out).parent.mkdir(parents=True, exist_ok=True)
+        Path(args.out).write_text(json.dumps(agg, indent=2)); print(f"-> {args.out}")
     if wb is not None:
         wb.summary.update({f"{k}_mean": float(df[k].mean()) for k in
                            ("test_rho", "test_r", "test_rmse", "val_rho")})

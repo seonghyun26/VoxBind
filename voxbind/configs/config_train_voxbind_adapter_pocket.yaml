@@ -1,0 +1,94 @@
+defaults:
+  - dset: crossdocked_xray          # need xray_density (pocket ED) for the frozen pocket encoder
+  - model: voxbind
+  - vox: default
+  - wjs: training
+  - override hydra/job_logging: custom
+  - _self_
+
+# ADAPTER transfer of the two-tower POCKET encoder into VoxBind (handoff §VoxBind transfer).
+#
+# The whole of VoxBind (ligand_encoder, pocket_encoder, unet3d, final_ligand) is FROZEN, and the
+# pretrained two-tower pocket encoder is FROZEN. A trainable PocketAdapter turns the frozen
+# encoder's post-norm spatial tokens into a zero-init RESIDUAL that is added to the VoxBind
+# conditioning stream. So training updates ONLY the adapter (~10⁴-10⁵ params); at step 0 the
+# adapter contributes exactly 0 → the frozen-VoxBind baseline is reproduced, then its influence
+# is learned. Original VoxBind pocket coordinate channels are preserved (pocket_encoder kept).
+#
+# The frozen pocket-encoder input is built inside the model from [pocket, density] as
+#   [ pocket atoms(4), M_P⊙ρ, ‖∇(M_P⊙ρ)‖, M_P ]   (mask_basis=protein_vdw ⇒ M_P = pocket vdW),
+# EXACTLY the pocket-tower (260806_tt_pocket_protein_vdw_mc) layout. Masking by M_P removes
+# non-protein density (incl. any co-crystal ligand ED on a holo crop → no leak; no-op at gen time).
+#
+# NOTE (paths are server-specific — set for the GPU server):
+#   - model.adapter.pretrained_path : the two-tower pocket checkpoint
+#   - dset.crops_dir                : the aligned xray pocket-density crops
+
+debug: False
+wandb: True
+wandb_tags: [voxbind, adapter, pocket_transfer, twotower, protein_vdw, mask_channel, frozen_voxbind]
+num_workers: 16
+prefetch_factor: 8
+resume: null
+resume_epoch: null
+exp_dir: exps
+exp_name: voxbind_adapter_pocket_sig${smooth_sigma}
+output_dir: null
+
+seed: 42
+num_epochs: 350
+aug: True
+bsz: 32                              # per-rank → eff 128 across 4 GPUs
+accum_steps: 1
+lr: 1e-4                             # only the small adapter trains → higher than full-FT 1e-5
+wd: 1e-2
+smooth_sigma: 0.9                    # match the frozen-enc baselines for a clean comparison
+
+with_gradmag: false
+
+dset:
+  crops_dir: /home/shpark/prj-denovo/VoxBind/voxbind/dataset/data/xray_crops_aligned_v5
+  # Normalize the pocket ED with the SAME recipe the pocket tower pretrained under (PLINDER
+  # arcsinh+z from its resample.json: arcsinh_scale=0.5, mu_a=-0.0154, sigma_a=0.5085) so the
+  # FROZEN encoder sees in-distribution density. This REPLACES local normalize_crop.
+  #   ⚠️ REQUIRES RAW (sigma-scaled 2Fo-Fc) crops — arcsinh+z is fit on raw map values. If your
+  #   crops_dir holds pre-normalized (v5-baked) crops, either point crops_dir at RAW crops, or
+  #   use the on-the-fly CCP4 path (crops_dir: "" + use_xray:true), which loads raw density.
+  density_norm_recipe: /home/shpark/prj-denovo/VoxBind/voxbind/dataset/data/pretrain/xray_resample_plinder_v2_perelem/resample.json
+  normalize: false                   # ignored when density_norm_recipe is set (recipe replaces it)
+  pocket_radius: -1                  # element-wise vdW pocket atoms — matches the pocket encoder
+  ligand_radius: 0.5
+  use_xray: true                     # dataset yields xray_density (the adapter path passes it raw)
+  subset_xray_only: true
+  cache_size: 32
+
+model:
+  with_density: false                # adapter uses its OWN frozen encoder, not the density branch
+  fusion: adapter
+  adapter:
+    # geometry MUST match the pretrained pocket tower (260806_tt_pocket_protein_vdw_mc):
+    dim: 512
+    depth: 12
+    heads: 8
+    mlp_ratio: 4
+    n_in_channels: 7                 # [poc4, M_P⊙ρ, gradmag, M_P]
+    patch: 8
+    channel_groups: [4, 2, 1]        # pocket atoms / (density+gradmag) / mask
+    mask_basis: protein_vdw          # M_P = pocket-atom vdW occupancy (matches pocket_ed_mask)
+    mask_thresh: 0.2
+    hidden: null                     # PocketAdapter hidden width (null → c_out)
+    pretrained_path: /home/shpark/prj-denovo/VoxBind/voxbind/exps/260806_tt_pocket_protein_vdw_mc/checkpoint_e0049.pth.tar
+
+hydra:
+  run:
+    dir: ./${exp_dir}/${exp_name}
+  job:
+    config:
+      override_dirname:
+        kv_sep: ""
+        item_sep: "_"
+        exclude_keys: [
+            "exp_dir", "smooth_sigma", "lr", vox.grid_dim, "wd", "resume", "resume_epoch", "wandb",
+            "num_workers", "exp_name", "output_dir", "pretrained_path", "out_dir",
+            "bsz", "accum_steps", "seed", "num_epochs", "aug", "pocket_radius", "grid_dim"
+]

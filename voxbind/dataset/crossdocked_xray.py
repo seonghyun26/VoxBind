@@ -304,6 +304,7 @@ class DatasetCrossDockedXray(Dataset):
         max_len: int = 30,
         delta_translate: float = 1.0,
         normalize: bool = True,
+        density_norm_recipe: str = "",
         verbose: bool = False,
         subset_n: Optional[int] = None,
         subset_xray_only: bool = False,
@@ -331,6 +332,23 @@ class DatasetCrossDockedXray(Dataset):
         self.max_len = max_len
         self.delta = delta_translate
         self.normalize = normalize
+        # density_norm_recipe: path to a resample.json whose "normalization" block (e.g. the
+        # PLINDER v5 arcsinh+z recipe the pocket tower was pretrained under) REPLACES the local
+        # normalize_crop, so the density lands on the SAME scale the frozen encoder expects.
+        # Requires RAW (sigma-scaled 2Fo-Fc) crops — the arcsinh+z is fit on raw map values.
+        # Opt-in (empty → unchanged normalize_crop / raw behaviour). Lazy import avoids the
+        # crossdocked_density ↔ crossdocked_xray circular import.
+        self._norm_recipe = None
+        self._recipe_fn = None
+        if density_norm_recipe:
+            import json
+            from voxbind.dataset.crossdocked_density import _apply_recipe_norm
+            rj = json.loads(Path(density_norm_recipe).read_text())
+            self._norm_recipe = rj.get("normalization", rj)
+            self._recipe_fn = _apply_recipe_norm
+            if verbose:
+                print(f"[xray] density normalized via recipe {density_norm_recipe} "
+                      f"scheme={self._norm_recipe.get('scheme')}")
         self.verbose = verbose
         # When True, __getitem__ also returns "xray_gradmag" = ‖∇ρ‖ of the final
         # (normalized + augmented) density crop, per-sample z-scored. Derived
@@ -586,7 +604,9 @@ class DatasetCrossDockedXray(Dataset):
                     crop_path = self._crops_dir / f"{index:06d}.npy"
                     if crop_path.exists():
                         density_np = np.load(str(crop_path)).astype(np.float32)
-                        if self.normalize:
+                        if self._norm_recipe is not None:
+                            density_np = self._recipe_fn(density_np, self._norm_recipe)
+                        elif self.normalize:
                             density_np = normalize_crop(density_np)
                         if rot_matrix is not None:
                             density_np = _rotate_density(density_np, rot_matrix)
@@ -602,7 +622,9 @@ class DatasetCrossDockedXray(Dataset):
                         arr_norm, frac_T, nu, nv, nw = grid
                         center_np = center_coords.numpy()
                         density_np = _crop_density(arr_norm, frac_T, nu, nv, nw, center_np)
-                        if self.normalize:
+                        if self._norm_recipe is not None:
+                            density_np = self._recipe_fn(density_np, self._norm_recipe)
+                        elif self.normalize:
                             density_np = normalize_crop(density_np)
                         if rot_matrix is not None:
                             density_np = _rotate_density(density_np, rot_matrix)

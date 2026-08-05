@@ -5,8 +5,43 @@ from typing import Tuple, Union, List
 
 from voxbind.constants import N_POCKET_ELEMENTS, N_LIGAND_ELEMENTS
 from voxbind.models.density_vit import DensityViT
-from voxbind.models.mae_ops import gradient_magnitude3d, per_sample_zscore
+from voxbind.models.mae_ops import gradient_magnitude3d, per_sample_zscore, region_keep_masks
 from voxbind.models.unet3d import UNet3D, ResidualBlock
+
+
+class PocketAdapter(torch.nn.Module):
+    """Trainable spatial adapter that turns the FROZEN pretrained pocket encoder's post-norm
+    patch tokens into a residual VoxBind conditioning volume.
+
+    tokens (B, N=g_p³, D)  →  reshape to the g_p³ patch grid (B, D, g_p, g_p, g_p)
+                           →  1×1 project D→hidden (cheap, at patch res)
+                           →  trilinear upsample ×patch_size to full (G, G, G)
+                           →  3×3 refine  →  3×3 zero-init out (→ c_out)
+
+    The final conv is zero-initialised so the adapter contributes exactly 0 at step 0 (the frozen
+    VoxBind baseline is reproduced) and its influence is learned from there — a stable residual.
+    Spatial structure is preserved throughout (no global pooling)."""
+
+    def __init__(self, dim: int, g_p: int, patch_size: int, c_out: int, hidden: int = None):
+        super().__init__()
+        self.g_p = g_p
+        h = int(hidden) if hidden else c_out
+        self.proj = torch.nn.Conv3d(dim, h, kernel_size=1)
+        self.up = torch.nn.Upsample(scale_factor=patch_size, mode="trilinear", align_corners=False)
+        self.refine = torch.nn.Sequential(
+            torch.nn.Conv3d(h, h, kernel_size=3, padding=1), torch.nn.SiLU())
+        self.out = torch.nn.Conv3d(h, c_out, kernel_size=3, padding=1)
+        torch.nn.init.zeros_(self.out.weight)
+        torch.nn.init.zeros_(self.out.bias)
+
+    def forward(self, pooled_tokens: torch.Tensor) -> torch.Tensor:
+        B, N, D = pooled_tokens.shape
+        gp = self.g_p
+        x = pooled_tokens.transpose(1, 2).reshape(B, D, gp, gp, gp)   # (B, D, g_p³ grid)
+        x = self.proj(x)                                              # (B, h, g_p³)
+        x = self.up(x)                                               # (B, h, G, G, G)
+        x = self.refine(x)
+        return self.out(x)                                          # (B, c_out, G, G, G), starts at 0
 
 
 class VoxBind(torch.nn.Module):
@@ -40,6 +75,17 @@ class VoxBind(torch.nn.Module):
         density_mask_threshold: float = 0.2,
         density_mask_dilate: int = 2,
         fusion: str = "default",
+        adapter_dim: int = 512,
+        adapter_depth: int = 12,
+        adapter_heads: int = 8,
+        adapter_mlp_ratio: int = 4,
+        adapter_n_in: int = 7,
+        adapter_channel_groups=(4, 2, 1),
+        adapter_patch: int = 8,
+        adapter_grid_dim: int = 64,
+        adapter_hidden: int = None,
+        adapter_mask_basis: str = "protein_vdw",
+        adapter_mask_thresh: float = 0.2,
         verbose: bool = False
     ):
         """
@@ -211,6 +257,36 @@ class VoxBind(torch.nn.Module):
                 n_channels // 2, n_channels // 2, n_groups=0, dropout=0
             )
 
+        # fusion='adapter': transfer the FROZEN two-tower pocket encoder into a FROZEN VoxBind and
+        # inject its spatial pocket features through a trainable residual PocketAdapter. Keeps the
+        # original pocket_encoder (pocket coord channels preserved); does NOT touch the with_density
+        # branch. The frozen encoder input is [pocket atoms, M_P⊙ρ, ‖∇ρ‖, M_P] (the pocket-tower
+        # layout); create_model loads its pretrained trunk and freezes everything but the adapter.
+        if self.fusion == "adapter":
+            self.adapter_encoder = DensityViT(
+                grid_dim=int(adapter_grid_dim),
+                patch_size=int(adapter_patch),
+                n_in_channels=int(adapter_n_in),
+                c_out=n_channels // 2,             # unused (we call forward_features), any value
+                dim=int(adapter_dim),
+                depth=int(adapter_depth),
+                n_heads=int(adapter_heads),
+                mlp_ratio=int(adapter_mlp_ratio),
+                dropout=0.0,
+                patch_embed_mode=("channel_group" if adapter_channel_groups else "fused"),
+                channel_groups=(tuple(int(c) for c in adapter_channel_groups)
+                                if adapter_channel_groups else None),
+            )
+            self.pocket_adapter = PocketAdapter(
+                dim=int(adapter_dim),
+                g_p=int(adapter_grid_dim) // int(adapter_patch),
+                patch_size=int(adapter_patch),
+                c_out=n_channels // 2,
+                hidden=adapter_hidden,
+            )
+            self.adapter_mask_basis = str(adapter_mask_basis)
+            self.adapter_mask_thresh = float(adapter_mask_thresh)
+
         self.final_ligand = torch.nn.Conv3d(
             n_channels, n_channels_ligand, kernel_size=(3, 3, 3), padding=(1, 1, 1)
         )
@@ -237,6 +313,26 @@ class VoxBind(torch.nn.Module):
             k = 2 * dilate + 1
             m = torch.nn.functional.max_pool3d(m, kernel_size=k, stride=1, padding=dilate)
         return m
+
+    def _pocket_adapter_input(self, pocket: torch.Tensor,
+                              density: torch.Tensor) -> torch.Tensor:
+        """Build the 7-channel input for the FROZEN pocket encoder, matching the two-tower
+        pocket-tower layout EXACTLY: [ pocket atoms (n_poc), M_P⊙ρ, ‖∇(M_P⊙ρ)‖, M_P ].
+
+        M_P is the region keep-mask for the pocket tower (protein_vdw ⇒ M_P = pocket-atom vdW
+        occupancy > thresh). Masking ρ by M_P removes non-protein density — including any
+        co-crystal ligand density in a holo training crop (no ED leak), and it is a no-op at
+        generation time where no ligand is present. Channel order = [atoms, density, gradmag,
+        mask], the same trailing-mask layout the tower was pretrained with.
+        """
+        # pocket occupancy; ligand not needed for protein_vdw / none bases (lig_occ ⇒ zeros).
+        poc_occ = pocket.sum(dim=1, keepdim=True)
+        lig_occ = torch.zeros_like(poc_occ)
+        keep_p, _ = region_keep_masks(lig_occ, poc_occ,
+                                      self.adapter_mask_basis, self.adapter_mask_thresh)
+        d_masked = density * keep_p
+        gradmag = per_sample_zscore(gradient_magnitude3d(d_masked))
+        return torch.cat([pocket, d_masked, gradmag, keep_p.to(density.dtype)], dim=1)
 
     def _density_encoder_input(self, pocket: torch.Tensor,
                                density: torch.Tensor,
@@ -295,7 +391,17 @@ class VoxBind(torch.nn.Module):
         Returns:
             torch.Tensor: Output tensor of the model.
         """
-        if self.fusion == "v3":
+        if self.fusion == "adapter":
+            # Frozen VoxBind baseline (original ligand + pocket coord channels), then a trainable
+            # residual from the FROZEN pretrained pocket encoder via the PocketAdapter.
+            if density is None:
+                raise ValueError("fusion='adapter' requires the pocket density (density=...).")
+            x = self.ligand_encoder(ligand) + self.pocket_encoder(pocket)
+            enc_in = self._pocket_adapter_input(pocket, density)
+            tokens = self.adapter_encoder.forward_features(enc_in)          # (B, nG·N, D) frozen
+            pooled = self.adapter_encoder._pool_groups(tokens)             # (B, N, D)
+            x = x + self.pocket_adapter(pooled)                            # zero-init residual
+        elif self.fusion == "v3":
             # frozen encoder carries pocket + (apo) density; pocket_encoder is gone. Ligand
             # stream identical. Early fusion: add the projected frozen context to ligand features.
             enc_in = self._density_encoder_input(pocket, density, dens_mask=dens_mask)
