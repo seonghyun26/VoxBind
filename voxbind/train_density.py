@@ -174,6 +174,7 @@ class MAEPrefetcher:
         lig_mask_thresh: float = 0.1,
         pocket_ed_mask: str = "ligand_footprint",
         mask_as_channel: bool = False,
+        apo_prob: float = 0.0,
         contrastive: bool = False,
         with_gradmag: bool = False,
         gradmag_reconstruct: bool = True,
@@ -232,6 +233,12 @@ class MAEPrefetcher:
         self._lig_mask_thresh = float(lig_mask_thresh)
         self.pocket_ed_mask = str(pocket_ed_mask)
         self.mask_as_channel = bool(mask_as_channel)
+        # apo augmentation: for a random `apo_prob` fraction of TRAIN samples, delete the ligand
+        # from the ENCODER INPUT (ligand atoms + footprint density → 0) but keep the ligand-region
+        # density as a PREDICTION TARGET (force-masked recon of the real holo density) — the
+        # encoder learns to predict the ligand's electron-density field from the apo pocket alone,
+        # matching VoxBind's pocket→ligand generation setup. 0.0 = off (holo only). See _step.
+        self.apo_prob = float(apo_prob)
         self.contrastive = bool(contrastive)
         self.with_gradmag = with_gradmag
         self.gradmag_reconstruct = gradmag_reconstruct
@@ -414,6 +421,39 @@ class MAEPrefetcher:
                 else:
                     mask = make_block_mask(B, G, self.block_size, self.mask_ratio, device)
                 # mask: (B, 1, G, G, G) — broadcasts across all input channels
+
+                # apo augmentation (opt-in): for a random `apo_prob` fraction of samples, DELETE
+                # the ligand from the ENCODER INPUT but keep its density as a PREDICTION TARGET —
+                # the encoder must reconstruct the ligand's electron density from the apo pocket
+                # alone (exactly VoxBind's pocket→ligand task; makes the encoder apo-robust).
+                #   input  : ligand atom channels → 0 everywhere; density+gradmag → 0 inside the
+                #            ligand vdW footprint (pocket atoms + pocket density stay intact).
+                #   target : ligand atom channels → 0 (not predicted); the ligand-footprint
+                #            density(+gradmag) keep their REAL holo values and the footprint is
+                #            FORCE-MASKED, so the recon head predicts the ligand density field.
+                # Random uniform masking still covers the remaining (pocket) region as usual.
+                if self.apo_prob > 0.0:
+                    lig_occ = v_lig.sum(dim=1, keepdim=True)                      # (B,1,G³)
+                    fp = (lig_occ > self._lig_mask_thresh).to(x_noisy.dtype)      # ligand footprint
+                    apo_f = (torch.rand(B, device=device, generator=self.generator)
+                             < self.apo_prob).view(B, 1, 1, 1, 1).to(x_noisy.dtype)
+                    lig_keep = 1.0 - apo_f              # (B,1,1,1,1): 0 → drop the whole ligand
+                    keep = 1.0 - fp * apo_f             # (B,1,G³): 0 → drop footprint (input side)
+                    d_idx = self.layout["density_idx"]
+                    g_idx = self.layout.get("gradmag_idx", None)
+                    # input and target diverge in the ligand region → ensure separate tensors
+                    if x_noisy is x_clean:
+                        x_noisy = x_noisy.clone()
+                    # INPUT (apo): ligand atoms removed everywhere; density/gradmag removed in fp.
+                    x_noisy[:, :self.n_lig_ch] = x_noisy[:, :self.n_lig_ch] * lig_keep
+                    x_noisy[:, d_idx:d_idx + 1] = x_noisy[:, d_idx:d_idx + 1] * keep
+                    if g_idx is not None:
+                        x_noisy[:, g_idx:g_idx + 1] = x_noisy[:, g_idx:g_idx + 1] * keep
+                    # TARGET: don't predict ligand ATOMS (blank), but DO predict the ligand
+                    # DENSITY(+gradmag) — leave x_clean's density channels at real holo values.
+                    x_clean[:, :self.n_lig_ch] = x_clean[:, :self.n_lig_ch] * lig_keep
+                    # force the footprint to be reconstructed (input hidden, density predicted)
+                    mask = mask | ((fp * apo_f) > 0.5)
 
                 x_in_b = None
                 # Encoder input width: full channels normally; atoms-only when density
@@ -1739,6 +1779,7 @@ def run(cfg: DictConfig, method: str) -> None:
             lig_mask_thresh=float(cfg.mae.get("lig_mask_thresh", 0.1)),
             pocket_ed_mask=str(cfg.mae.get("pocket_ed_mask", "ligand_footprint")),
             mask_as_channel=bool(cfg.mae.get("mask_as_channel", False)),
+            apo_prob=float(cfg.mae.get("apo_prob", 0.0)),
             contrastive=(float(cfg.mae.get("contrastive_weight", 0.0)) > 0.0
                          and prefetch_pretext == "mae"),
             with_gradmag=with_gradmag,

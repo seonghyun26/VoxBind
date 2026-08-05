@@ -41,3 +41,12 @@ CLAUDE.md
 env.local.sh
 *dropbox-sync.md
 **/diagnostics/
+
+# GPU dashboard / viewer (local ops tool, not part of the project)
+notebook/html/gpu_dashboard.py
+notebook/html/push_node.py
+notebook/html/relay_pull.py
+notebook/html/relay_push.py
+notebook/html/gpu.html
+notebook/html/gpu.json
+notebook/html/nodes/

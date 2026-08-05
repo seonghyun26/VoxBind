@@ -7,7 +7,7 @@ from voxbind.constants import N_POCKET_ELEMENTS, N_LIGAND_ELEMENTS
 from voxbind.models.density_vit import DensityViT
 from voxbind.models.mae_ops import (attenuate_density, gaussian_blur3d,
                                     gradient_magnitude3d, per_sample_zscore,
-                                    protein_attenuation_field), region_keep_masks
+                                    protein_attenuation_field, region_keep_masks)
 from voxbind.models.unet3d import UNet3D, ResidualBlock
 
 
@@ -352,6 +352,46 @@ class VoxBind(torch.nn.Module):
             k = 2 * dilate + 1
             m = torch.nn.functional.max_pool3d(m, kernel_size=k, stride=1, padding=dilate)
         return m
+
+    def _pocket_adapter_input(self, pocket: torch.Tensor,
+                              density: torch.Tensor) -> torch.Tensor:
+        """Build the 7-channel input for the FROZEN pocket encoder, matching the two-tower
+        pocket-tower layout EXACTLY: [ pocket atoms (n_poc), M_P⊙ρ, ‖∇(M_P⊙ρ)‖, M_P ].
+
+        M_P is the region keep-mask for the pocket tower (protein_vdw ⇒ M_P = pocket-atom vdW
+        occupancy > thresh). Masking ρ by M_P removes non-protein density — including any
+        co-crystal ligand density in a holo training crop (no ED leak), and it is a no-op at
+        generation time where no ligand is present. Channel order = [atoms, density, gradmag,
+        mask], the same trailing-mask layout the tower was pretrained with.
+        """
+        # pocket occupancy; ligand not needed for protein_vdw / none bases (lig_occ ⇒ zeros).
+        poc_occ = pocket.sum(dim=1, keepdim=True)
+        lig_occ = torch.zeros_like(poc_occ)
+        keep_p, _ = region_keep_masks(lig_occ, poc_occ,
+                                      self.adapter_mask_basis, self.adapter_mask_thresh)
+        d_masked = density * keep_p
+        gradmag = per_sample_zscore(gradient_magnitude3d(d_masked))
+        return torch.cat([pocket, d_masked, gradmag, keep_p.to(density.dtype)], dim=1)
+
+    def _blend_density_noise(self, density: torch.Tensor) -> torch.Tensor:
+        """d = a*d + (1-a)*noise with a = `density_noise_alpha` (global scalar).
+
+        a=1 returns `density` untouched (identity, not a numerically-equal copy), so every
+        existing config and checkpoint reproduces bit-for-bit. Intended as a TEST-TIME
+        dose-response knob: sweeping a from 1 -> 0 measures how much the trained model
+        relies on the density channel at all, with a=0 the random-density lower bound.
+        """
+        a = float(getattr(self, "density_noise_alpha", 1.0))
+        if density is None or a >= 1.0:
+            return density
+        noise = torch.randn_like(density)
+        sig = float(getattr(self, "density_noise_sigma", 0.0))
+        if sig > 0:
+            # correlate the noise to the map's resolution, then restore unit variance so
+            # the blend keeps the z-scored scale the encoder was pretrained on.
+            noise = gaussian_blur3d(noise, sig)
+            noise = noise / noise.std().clamp(min=1e-6)
+        return a * density + (1.0 - a) * noise
 
     def _density_encoder_input(self, pocket: torch.Tensor,
                                density: torch.Tensor,

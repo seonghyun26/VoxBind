@@ -42,9 +42,11 @@ VoxBind baseline.
 **Single CDG encoder.** Ligand coordinates, pocket coordinates, experimental
 electron density, and density gradient are aligned in one pocket-centered frame
 and concatenated into a 13-channel CDG tensor. One masked-autoencoding encoder
-learns their joint spatial representation. The same frozen encoder supports an
-affinity probe and VoxBind conditioning; at generation time its ligand-coordinate
-channels are masked while pocket coordinates and experimental ED are retained.
+learns their joint spatial representation. For VoxBind conditioning, the
+original noisy-ligand and pocket inputs form the baseline feature stream, while
+the frozen CDG encoder receives zeroed ligand channels together with pocket
+coordinates and experimental ED. Their high-level feature fusion is shown as a
+module under evaluation rather than committing to one detailed implementation.
 
 ## Code grounding
 

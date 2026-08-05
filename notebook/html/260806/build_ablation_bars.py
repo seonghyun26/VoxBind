@@ -9,18 +9,31 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 MEETING = HERE / "260806_meeting.html"
 
+# Figure-1 SOTA reference (best NON-leaked method = C+D+G, from build_appendixB_bar.METHODS).
+# Drawn as a horizontal dashed line on every panel so the trials read against the headline
+# champion: bars approaching the line = closing the gap, bars past it = a new best.
+SOTA_FIG1 = {"test_r": 0.660, "test_rho": 0.644, "rmse": 1.349, "val_rho": 0.546}
+
+# metric column order: Pearson r, Spearman ρ, RMSE, best val ρ
 MLP_METRICS = (
-    ("Best val ρ", "val_rho", 0.50, 0.58, (0.50, 0.54, 0.58), False),
     ("Test Pearson r", "test_r", 0.63, 0.67, (0.63, 0.65, 0.67), False),
     ("Test Spearman ρ", "test_rho", 0.61, 0.65, (0.61, 0.63, 0.65), False),
-    ("Test RMSE", "rmse", 1.36, 1.54, (1.36, 1.45, 1.54), True),
+    ("Test RMSE", "rmse", 1.34, 1.54, (1.34, 1.44, 1.54), True),
+    ("Best val ρ", "val_rho", 0.50, 0.58, (0.50, 0.54, 0.58), False),
+)
+
+LOSS_METRICS = (
+    ("Test Pearson r", "test_r", 0.654, 0.668, (0.655, 0.661, 0.667), False),
+    ("Test Spearman ρ", "test_rho", 0.638, 0.650, (0.638, 0.644, 0.650), False),
+    ("Test RMSE", "rmse", 1.32, 1.38, (1.32, 1.35, 1.38), True),
+    ("Best val ρ", "val_rho", 0.54, 0.57, (0.540, 0.555, 0.570), False),
 )
 
 MFODFC_METRICS = (
-    ("Best val ρ", "val_rho", 0.48, 0.56, (0.48, 0.52, 0.56), False),
     ("Test Pearson r", "test_r", 0.58, 0.67, (0.58, 0.625, 0.67), False),
     ("Test Spearman ρ", "test_rho", 0.57, 0.66, (0.57, 0.615, 0.66), False),
     ("Test RMSE", "rmse", 1.32, 1.50, (1.32, 1.41, 1.50), True),
+    ("Best val ρ", "val_rho", 0.48, 0.56, (0.48, 0.52, 0.56), False),
 )
 
 CHARTS = (
@@ -36,20 +49,22 @@ CHARTS = (
             ("T2", "#315f9b", {"val_rho": 0.527, "test_r": 0.645, "test_rho": 0.625, "rmse": 1.508}),
             ("T3", "#9aafca", {"val_rho": None, "test_r": None, "test_rho": None, "rmse": None}),
         ),
+        None,
     ),
     (
         "LOSS_BAR",
         "loss",
         "Loss-term trial comparison",
-        "The matched MSE champion is shown; Trials 1 through 4 are pending.",
-        MLP_METRICS,
+        "MSE + Pearson-correlation term (T1) is the best probe-head loss — highest r/ρ and lowest RMSE.",
+        LOSS_METRICS,
         (
-            ("Base", "#2f6f4f", {"val_rho": 0.546, "test_r": 0.656, "test_rho": 0.641, "rmse": 1.420}),
-            ("T1", "#9aafca", {"val_rho": None, "test_r": None, "test_rho": None, "rmse": None}),
-            ("T2", "#315f9b", {"val_rho": None, "test_r": None, "test_rho": None, "rmse": None}),
-            ("T3", "#9aafca", {"val_rho": None, "test_r": None, "test_rho": None, "rmse": None}),
-            ("T4", "#9aafca", {"val_rho": None, "test_r": None, "test_rho": None, "rmse": None}),
+            ("Base", "#2f6f4f", {"val_rho": 0.546, "test_r": 0.660, "test_rho": 0.644, "rmse": 1.349}),
+            ("T1", "#315f9b", {"val_rho": 0.556, "test_r": 0.665, "test_rho": 0.648, "rmse": 1.342}),
+            ("T2", "#9aafca", {"val_rho": 0.556, "test_r": 0.663, "test_rho": 0.647, "rmse": 1.360}),
+            ("T3", "#9aafca", {"val_rho": 0.563, "test_r": 0.657, "test_rho": 0.641, "rmse": 1.368}),
+            ("T4", "#9aafca", {"val_rho": 0.559, "test_r": 0.662, "test_rho": 0.644, "rmse": 1.375}),
         ),
+        "T1",
     ),
     (
         "MFODFC_BAR",
@@ -63,17 +78,22 @@ CHARTS = (
             ("T2", "#315f9b", {"val_rho": 0.535, "test_r": 0.633, "test_rho": 0.618, "rmse": 1.431}),
             ("T3", "#9aafca", {"val_rho": 0.502, "test_r": 0.600, "test_rho": 0.588, "rmse": 1.477}),
         ),
+        "T2",
     ),
 )
 
 
 def y_position(value: float, low: float, high: float, invert: bool) -> float:
+    # Normal ascending axis for every panel (bar height = raw value, low at the
+    # baseline). `invert` no longer flips the RMSE axis — the "lower is better"
+    # cue lives in the panel subtitle instead.
     top, bottom = 68.0, 235.0
     ratio = (value - low) / (high - low)
-    return top + ratio * (bottom - top) if invert else bottom - ratio * (bottom - top)
+    return bottom - ratio * (bottom - top)
 
 
-def svg(chart_id: str, title: str, description: str, metrics: tuple, series: tuple) -> str:
+def svg(chart_id: str, title: str, description: str, metrics: tuple, series: tuple,
+        winner: str = None) -> str:
     width, height = 1130, 294
     last_trial = series[-1][0]
     parts = [
@@ -97,7 +117,7 @@ def svg(chart_id: str, title: str, description: str, metrics: tuple, series: tup
                 f'<text x="{panel_x + 133}" y="50" text-anchor="middle" '
                 'font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" '
                 'font-size="10" font-weight="650" fill="#657284">'
-                f'{"lower ↑" if invert else "higher ↑"}</text>',
+                f'{"lower is better" if invert else "higher is better"}</text>',
             ]
         )
 
@@ -118,6 +138,20 @@ def svg(chart_id: str, title: str, description: str, metrics: tuple, series: tup
             'stroke="#8995a4" stroke-width="1"/>'
         )
 
+        # Figure-1 SOTA reference line (C+D+G headline champion) — dashed, drawn under the bars.
+        sota_val = SOTA_FIG1.get(key)
+        if sota_val is not None and low <= sota_val <= high:
+            sota_y = y_position(sota_val, low, high, invert)
+            parts.append(
+                f'<line x1="{axis_x}" y1="{sota_y:.1f}" x2="{plot_right}" y2="{sota_y:.1f}" '
+                'stroke="#a33f39" stroke-width="1.3" stroke-dasharray="5 3"/>'
+            )
+            parts.append(
+                f'<text x="{plot_right - 2}" y="{sota_y - 3:.1f}" text-anchor="end" '
+                'font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" '
+                f'font-size="8" font-weight="700" fill="#a33f39">SOTA {sota_val:.3f}</text>'
+            )
+
         plot_width = plot_right - axis_x - 4
         step = plot_width / len(series)
         bar_width = min(30.0, step * 0.58)
@@ -125,7 +159,7 @@ def svg(chart_id: str, title: str, description: str, metrics: tuple, series: tup
             value = values[key]
             center_x = axis_x + 4 + step * (series_index + 0.5)
             bar_x = center_x - bar_width / 2
-            stroke = "#183d68" if label == "T2" else ("#19472e" if label == "Base" else "#7188a7")
+            stroke = "#183d68" if label == winner else ("#19472e" if label == "Base" else "#7188a7")
             if value is None:
                 parts.extend(
                     [
@@ -176,8 +210,8 @@ def inject(html: str, marker: str, chart: str) -> str:
 
 def main() -> None:
     html = MEETING.read_text(encoding="utf-8")
-    for marker, chart_id, title, description, metrics, series in CHARTS:
-        html = inject(html, marker, svg(chart_id, title, description, metrics, series))
+    for marker, chart_id, title, description, metrics, series, winner in CHARTS:
+        html = inject(html, marker, svg(chart_id, title, description, metrics, series, winner))
     MEETING.write_text(html, encoding="utf-8")
     print(f"embedded three ablation charts in {MEETING}")
 

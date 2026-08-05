@@ -183,7 +183,7 @@ TYPE = {  # display tag per method — three categories, distinctly colored
     "GET": "supervised", "ProFSA": "pretrained", "CheapNet": "supervised", "BindNet": "supervised",
     "HonestAffinity": "supervised", "AEV-PLIG": "supervised", "DSMBind": "zero-shot",
     "IPNet (frozen)": "pretrained", "IPNet (scratch)": "supervised", "Nesso-1": "zero-shot",
-    "C": "pretrained", "C+D+G": "pretrained",
+    "C": "pretrained", "C+D+G": "pretrained", "C+D+G +corr": "pretrained",
 }
 TAGCLASS = {"supervised": "supervised", "pretrained": "pretrained", "zero-shot": "zeroshot"}
 
@@ -204,6 +204,7 @@ BACKBONE = {
     "IPNet (frozen)": ("affinity-pre", "backbone"),   # BAPNet supervised-pretrained on PDBbind affinity
     "C":              ("voxel-MAE",    "backbone"),    # our SSL-pretrained voxel ViT (frozen)
     "C+D+G":          ("voxel-MAE",    "backbone"),
+    "C+D+G +corr":    ("voxel-MAE",    "backbone"),    # same encoder; probe head = MSE + Pearson-aux (λ5)
     "Nesso-1":        ("ESM-2",        "esm"),         # cofolding trunk on ESM-2 protein embeddings
 }
 
@@ -267,6 +268,14 @@ PROBE_CSV = {
         "lp_edrscc_v2_cl1":   "probe_results_e49_v5_lp_edrscc_v2_cl1split_260705_ar_cvit_100m_v2_mask075.csv",
         "lp_edrscc_v2_cl12":  "probe_results_e49_v5_lp_edrscc_v2_cl12split_260705_ar_cvit_100m_v2_mask075.csv",
         "lp_edrscc_v2_cl123": "probe_results_e49_v5_lp_edrscc_v2_cl123split_260705_ar_cvit_100m_v2_mask075.csv",
+    },
+    # C+D+G with the probe HEAD trained as MSE + Pearson-correlation aux (λ=5) — same 100M encoder,
+    # head-only change (260806). Slightly higher r/ρ and lower RMSE than the MSE-head C+D+G.
+    "C+D+G +corr": {
+        "lp_edrscc_v2":       "probe_results_e49_v5_lp_edrscc_v2split_loss-mse-corr-w5.csv",
+        "lp_edrscc_v2_cl1":   "probe_results_e49_v5_lp_edrscc_v2_cl1split_loss-mse-corr-w5.csv",
+        "lp_edrscc_v2_cl12":  "probe_results_e49_v5_lp_edrscc_v2_cl12split_loss-mse-corr-w5.csv",
+        "lp_edrscc_v2_cl123": "probe_results_e49_v5_lp_edrscc_v2_cl123split_loss-mse-corr-w5.csv",
     },
 }
 
@@ -777,7 +786,11 @@ def build():
         and <b>IPNet&nbsp;(frozen)</b> (BAPNet supervised on PDBbind-v2016 affinity). Their cells are a <b>leaked ceiling</b>,
         not clean generalization, so they are shown for reference but <b>excluded from the best/second highlighting</b>
         (the <b>bold</b> marks the best <i>non-leaked</i> method). Nesso-1's &rho;&nbsp;0.66 &gt; every clean method precisely
-        because it memorized these complexes; its RMSE is on a pIC50 scale (Nesso predicts IC50-like potency, our labels are Kd/Ki).</p>
+        because it memorized these complexes; its RMSE is on a pIC50 scale (Nesso predicts IC50-like potency, our labels are Kd/Ki).<br>
+        <b>C+D+G&nbsp;+corr</b> is the C+D+G champion with its probe <i>head</i> trained as MSE&nbsp;+&nbsp;Pearson-correlation
+        auxiliary (weight&nbsp;5) rather than plain MSE (260806) &mdash; a head-only change on the <b>same frozen encoder</b>,
+        giving slightly higher <i>r</i>/&rho; and lower RMSE. Because the encoder is unchanged, the <b>CASF (Appendix&nbsp;A)
+        and %-within (Table&nbsp;1b) rows keep the MSE-head C+D+G values</b> and are not re-listed for the +corr variant.</p>
       <div class="table-wrap"><table class="results">
         <thead>
           {affinity_table_head()}
