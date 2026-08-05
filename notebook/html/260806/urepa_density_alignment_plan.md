@@ -197,17 +197,21 @@ what makes it deployable to targets with no crystal structure.
 
 ## 8. Implementation checklist
 
-- [ ] Confirm VoxBind U-Net bottleneck spatial size; confirm CDG ViT patch size → fixes upsample factor
-- [ ] CKA-vs-depth profile (noisy input, σ = 0.9) to validate bottleneck as alignment point
-- [ ] Token-level CKA + directional R² between CDG and U-Net
-- [ ] Precompute and cache CDG target tokens for the density subset
-- [ ] Build density subset with explicit test-pocket PDB exclusion
-- [ ] Implement MLP projector → upsample → manifold loss (per U-REPA)
-- [ ] Wire dual-loss training: `L_denoise` on all batches, `L_align` on density-bearing samples only
-- [ ] Freeze U-Net; train projector + adapter only; log alignment loss curve → **decision point**
-- [ ] λ sweep {0, 0.1, 0.5, 1, 5}
-- [ ] Controls: coords-only-CDG target, computed-density-CDG target
-- [ ] Verify batch size is large enough for a meaningful manifold similarity matrix
+Built + verified on the analysis server (ckpt-independent Phase A):
+
+- [x] Confirm bottleneck size / CDG patch size → **U-Net `(B,128,8³)` ↔ CDG `(B,512,640)`, grids match → projector is a pure 128→640 map, upsample = identity**
+- [x] Implement MLP projector → upsample → manifold loss → **`models/urepa.py`** (`UREPAAlignment`, `manifold_alignment_loss` relkl/gram/pool, `BottleneckTap`; smoke-passed)
+- [x] Build density subset w/ explicit test-pocket exclusion → **`dataset/00i_urepa_subset.py` → `urepa_subset.pt` (6,181 native+density; 0 test-leak — CrossDocked split already pocket-clean)**
+- [x] Precompute + cache CDG target tokens → **`dataset/00j_urepa_cache_cdg.py`** (load→assemble→encode→cache self-test OK; full run needs the density crops in the finetuning env)
+- [x] Wire dual-loss training → **`urepa_train_integration.md`** (reference patch: pid-carrying loader, `BottleneckTap`, Stage-1 frozen-U-Net, λ block, aug caveat)
+- [x] Controls: coords-only-CDG target → rebuild `00j` with `model_zoo/coords_100m_v2_mask075` (n_in=11). Computed-density-CDG control **dropped** (synthetic density not needed).
+
+Needs the VoxBind generator ckpt (Phase B, finetuning server):
+
+- [ ] CKA-vs-depth profile (noisy input, σ = 0.9) to validate the bottleneck as the alignment point
+- [ ] Token-level CKA + directional R²(U-Net ← CDG) — pooled CDG↔C already measured: CKA 0.60, R²(C←CDG) 0.97 / R²(CDG←C) 0.64
+- [ ] Freeze U-Net; train projector only; log alignment-loss floor → **decision point**
+- [ ] λ sweep {0, 0.1, 0.5, 1, 5} + verify batch size gives a meaningful manifold matrix
 
 ---
 
