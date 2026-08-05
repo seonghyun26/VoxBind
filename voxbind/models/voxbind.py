@@ -5,7 +5,9 @@ from typing import Tuple, Union, List
 
 from voxbind.constants import N_POCKET_ELEMENTS, N_LIGAND_ELEMENTS
 from voxbind.models.density_vit import DensityViT
-from voxbind.models.mae_ops import gradient_magnitude3d, per_sample_zscore, region_keep_masks
+from voxbind.models.mae_ops import (attenuate_density, gaussian_blur3d,
+                                    gradient_magnitude3d, per_sample_zscore,
+                                    protein_attenuation_field), region_keep_masks
 from voxbind.models.unet3d import UNet3D, ResidualBlock
 
 
@@ -74,6 +76,14 @@ class VoxBind(torch.nn.Module):
         density_mask_ligand: bool = False,
         density_mask_threshold: float = 0.2,
         density_mask_dilate: int = 2,
+        density_encoder_amp: bool = False,
+        density_noise_alpha: float = 1.0,
+        density_noise_sigma: float = 0.0,
+        density_attenuate: bool = False,
+        density_attenuate_sigma: float = 7.0,
+        density_attenuate_quantile: float = 0.90,
+        density_attenuate_strength: float = 1.0,
+        density_attenuate_noise_sigma: float = 7.0,
         fusion: str = "default",
         adapter_dim: int = 512,
         adapter_depth: int = 12,
@@ -152,11 +162,33 @@ class VoxBind(torch.nn.Module):
         self.density_mask_ligand = bool(density_mask_ligand)
         self.density_mask_threshold = float(density_mask_threshold)
         self.density_mask_dilate = int(density_mask_dilate)
+        # Global density->noise blend (see _blend_density_noise). 1.0 = exact no-op, so
+        # every existing config/checkpoint is unaffected. Test-time dose-response knob.
+        self.density_noise_alpha = float(density_noise_alpha)
+        self.density_noise_sigma = float(density_noise_sigma)
+        # Protein-only attenuation field alpha(x) (see models/mae_ops.protein_attenuation_field).
+        # Built from pocket atoms alone -> no ligand needed, so the training condition and the
+        # generation-time condition are identical. Default off: existing configs unaffected.
+        self.density_attenuate = bool(density_attenuate)
+        self.density_attenuate_sigma = float(density_attenuate_sigma)
+        self.density_attenuate_quantile = float(density_attenuate_quantile)
+        self.density_attenuate_strength = float(density_attenuate_strength)
+        self.density_attenuate_noise_sigma = float(density_attenuate_noise_sigma)
         # Fusion variant. "default": ligand_encoder + pocket_encoder, with the frozen density
         # branch added via the zero-init density_proj. "v3": the frozen encoder ENTIRELY replaces
         # pocket_encoder — pocket + (apo) density are carried by the frozen ViT and fused into the
         # ligand features via a normal-init context_proj (early fusion). Ligand stream unchanged.
+        # "protein_first": as "default", but the density correction is fused into the POCKET
+        # representation alone and only then added to the ligand features, so density_proj never
+        # sees ligand features. Same modules/shapes/zero-init as "default".
         self.fusion = str(fusion)
+        # Validate explicitly: forward() dispatches with an `else` fallback, so an unknown value
+        # (a typo) would otherwise run "default" silently and quietly train the wrong experiment.
+        _valid_fusions = ("default", "v3", "protein_first")
+        if self.fusion not in _valid_fusions:
+            raise ValueError(
+                f"fusion must be one of {_valid_fusions}, got {fusion!r}"
+            )
 
         self.ligand_encoder = ResidualBlock(
             n_channels_ligand, n_channels // 2, n_groups=0, dropout=0
@@ -229,6 +261,13 @@ class VoxBind(torch.nn.Module):
                     f"density_encoder_type must be 'cnn' or 'vit', got {density_encoder_type!r}"
                 )
             self.density_encoder_type = density_encoder_type
+            # bf16 autocast for the FROZEN encoder's forward only (the denoiser itself stays
+            # fp32, as in the paper's train.py). The pretrained encoders were themselves
+            # trained under bf16 autocast (train_density.py `amp.enabled: true`), so this
+            # restores their pretraining precision rather than departing from it. Frozen +
+            # no gradient path ⇒ trained weights are unaffected beyond the conditioning
+            # signal's own rounding. Default off so existing configs reproduce exactly.
+            self.density_encoder_amp = bool(density_encoder_amp)
             # Projects cat([ligand+pocket, density], dim=1) → C/2.
             # Zero-init so initial output is 0: x = x_backbone + 0 = x_backbone.
             # Training grows the density correction from zero, keeping early
@@ -314,26 +353,6 @@ class VoxBind(torch.nn.Module):
             m = torch.nn.functional.max_pool3d(m, kernel_size=k, stride=1, padding=dilate)
         return m
 
-    def _pocket_adapter_input(self, pocket: torch.Tensor,
-                              density: torch.Tensor) -> torch.Tensor:
-        """Build the 7-channel input for the FROZEN pocket encoder, matching the two-tower
-        pocket-tower layout EXACTLY: [ pocket atoms (n_poc), M_P⊙ρ, ‖∇(M_P⊙ρ)‖, M_P ].
-
-        M_P is the region keep-mask for the pocket tower (protein_vdw ⇒ M_P = pocket-atom vdW
-        occupancy > thresh). Masking ρ by M_P removes non-protein density — including any
-        co-crystal ligand density in a holo training crop (no ED leak), and it is a no-op at
-        generation time where no ligand is present. Channel order = [atoms, density, gradmag,
-        mask], the same trailing-mask layout the tower was pretrained with.
-        """
-        # pocket occupancy; ligand not needed for protein_vdw / none bases (lig_occ ⇒ zeros).
-        poc_occ = pocket.sum(dim=1, keepdim=True)
-        lig_occ = torch.zeros_like(poc_occ)
-        keep_p, _ = region_keep_masks(lig_occ, poc_occ,
-                                      self.adapter_mask_basis, self.adapter_mask_thresh)
-        d_masked = density * keep_p
-        gradmag = per_sample_zscore(gradient_magnitude3d(d_masked))
-        return torch.cat([pocket, d_masked, gradmag, keep_p.to(density.dtype)], dim=1)
-
     def _density_encoder_input(self, pocket: torch.Tensor,
                                density: torch.Tensor,
                                dens_mask: torch.Tensor = None) -> torch.Tensor:
@@ -356,7 +375,31 @@ class VoxBind(torch.nn.Module):
         inside that region so the encoder cannot read the co-crystal ligand's own
         electron density. gradmag is computed from the UNMASKED density first (to avoid
         a spurious sharp edge at the mask boundary) and then blanked in the region.
+
+        Global noise blend (density_noise_alpha): d = a*d + (1-a)*noise, a GLOBAL scalar
+        (no spatial structure — that is the separate soft alpha-field idea). a=1 is an
+        exact no-op; a=0 replaces the map with pure noise, i.e. the "random density"
+        lower-bound condition. Applied BEFORE gradmag is derived so channel 12 is the
+        gradient of the map the encoder actually sees — deriving it first would leave the
+        real density's edges in gradmag and defeat the whole point.
+        `density_noise_sigma`>0 blurs the noise to that voxel scale first (1 vox = 0.25 A)
+        so its gradient statistics resemble real density; 0 = literal white randn, which
+        makes gradmag strongly OOD and conflates "density removed" with "gradmag broken".
         """
+        density = self._blend_density_noise(density)
+        # Protein-only attenuation: alpha(x) from the POCKET channels we already receive,
+        # so it needs no ligand and is computable at generation time. Applied here, BEFORE
+        # gradmag, so channel 12 is the gradient of the attenuated map — deriving gradmag
+        # first would leave the real density's edges in it and defeat the masking (the
+        # density x gradmag ablation found the signal lives in the EDGES).
+        if self.density_attenuate and density is not None:
+            alpha = protein_attenuation_field(
+                pocket.sum(dim=1, keepdim=True),
+                sigma_vox=self.density_attenuate_sigma,
+                quantile=self.density_attenuate_quantile,
+                strength=self.density_attenuate_strength,
+            )
+            density = attenuate_density(density, alpha, self.density_attenuate_noise_sigma)
         if not self.density_full_voxel:
             return density
         # density: (B, 1, G, G, G) — the v5 (arcsinh+z) pocket density crop.
@@ -369,6 +412,19 @@ class VoxBind(torch.nn.Module):
             gradmag = gradmag * keep
         # channel order MUST match pretraining: [ lig, poc, density, gradmag ]
         return torch.cat([lig0, pocket, density, gradmag], dim=1)
+
+    def _encode_density(self, enc_in: torch.Tensor) -> torch.Tensor:
+        """Run the density encoder, optionally in bf16 (see `density_encoder_amp`).
+
+        Only the encoder forward is autocast — `_density_encoder_input` (gradmag +
+        z-score) stays fp32, and the result is cast back to fp32 so the downstream
+        fusion conv and the whole denoiser see exactly the dtype they always did.
+        """
+        if not (self.density_encoder_amp and enc_in.is_cuda):
+            return self.density_encoder(enc_in)
+        with torch.autocast("cuda", dtype=torch.bfloat16):
+            x_dens = self.density_encoder(enc_in)
+        return x_dens.float()
 
     def forward(
         self,
@@ -405,13 +461,26 @@ class VoxBind(torch.nn.Module):
             # frozen encoder carries pocket + (apo) density; pocket_encoder is gone. Ligand
             # stream identical. Early fusion: add the projected frozen context to ligand features.
             enc_in = self._density_encoder_input(pocket, density, dens_mask=dens_mask)
-            x_dens = self.density_encoder(enc_in)
+            x_dens = self._encode_density(enc_in)
             x = self.ligand_encoder(ligand) + self.context_proj(x_dens)
+        elif self.fusion == "protein_first":
+            # Density is fused into the PROTEIN representation on its own, and only the
+            # result is added to the ligand features. density_proj therefore conditions on
+            # pocket features alone — under "default" it also sees the (noisy) ligand, which
+            # lets the density correction depend on the generation target. Modules, shapes
+            # and the zero-init are identical to "default", so step 0 is still exactly the
+            # density-free baseline.
+            x_poc = self.pocket_encoder(pocket)
+            if self.with_density and density is not None:
+                enc_in = self._density_encoder_input(pocket, density, dens_mask=dens_mask)
+                x_dens = self._encode_density(enc_in)
+                x_poc = x_poc + self.density_proj(torch.cat([x_poc, x_dens], dim=1))
+            x = self.ligand_encoder(ligand) + x_poc
         else:
             x = self.ligand_encoder(ligand) + self.pocket_encoder(pocket)
             if self.with_density and density is not None:
                 enc_in = self._density_encoder_input(pocket, density, dens_mask=dens_mask)
-                x_dens = self.density_encoder(enc_in)
+                x_dens = self._encode_density(enc_in)
                 x = x + self.density_proj(torch.cat([x, x_dens], dim=1))
 
         x = self.unet3d(x, None)

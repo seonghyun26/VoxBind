@@ -269,6 +269,50 @@ def main(cfg: DictConfig) -> None:
     torch.cuda.manual_seed(cfg.seed)
 
     model = create_model(cfg, device=device)
+
+    # ── warm start from a VANILLA (density-free) VoxBind checkpoint ──────────────
+    # Loads only the shared denoiser tensors (unet3d / ligand_encoder / pocket_encoder
+    # / final_ligand) and leaves the density branch exactly as built: frozen pretrained
+    # encoder + ZERO-INIT density_proj. Because density_proj is zero-init, the model
+    # starts functionally IDENTICAL to the source checkpoint and grows the density
+    # correction from zero on top of an already-trained denoiser.
+    #
+    # Weights only — no optimizer state, no epoch. This is deliberately NOT `resume`:
+    # resume reloads the source run's cfg.yaml (see above), which would restore the
+    # vanilla config and delete the density branch. Skipped when resuming, since a
+    # resumed checkpoint already carries the full (warm-started) state.
+    pretrained_path = cfg.get("pretrained_path", None)
+    if pretrained_path:
+        if cfg.resume is not None:
+            if is_main:
+                logger.info(">> resume set — ignoring pretrained_path (checkpoint has full state)")
+        else:
+            _ck = torch.load(pretrained_path, map_location="cpu", weights_only=False)
+            _sd = _ck.get("state_dict_ema") or _ck.get("state_dict")
+            if _sd is None:
+                raise KeyError(
+                    f"{pretrained_path}: no 'state_dict_ema'/'state_dict' key "
+                    f"(found {list(_ck.keys())})"
+                )
+            _missing, _unexpected = model.load_state_dict(_sd, strict=False)
+            # everything absent from a vanilla checkpoint MUST be density-branch;
+            # anything else means the architectures don't actually match.
+            _stray = [k for k in _missing
+                      if not k.startswith(("density_encoder.", "density_proj.", "context_proj."))]
+            if _unexpected or _stray:
+                raise RuntimeError(
+                    f"warm start from {pretrained_path} is not architecture-compatible: "
+                    f"unexpected={_unexpected[:8]} stray_missing={_stray[:8]}"
+                )
+            if is_main:
+                logger.info(
+                    f">> warm start from {pretrained_path} "
+                    f"(epoch {_ck.get('epoch')}): loaded {len(_sd)} denoiser tensors, "
+                    f"{len(_missing)} density-branch tensors left at init "
+                    f"(zero-init density_proj ⇒ output identical to source at step 0)"
+                )
+            del _ck, _sd
+
     criterion = torch.nn.MSELoss(reduction="sum").to(device)
     optimizer = AdamW(model.parameters(), lr=cfg.lr, weight_decay=cfg.wd)
     optimizer.zero_grad()

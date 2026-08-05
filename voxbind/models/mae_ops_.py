@@ -281,55 +281,6 @@ def per_sample_zscore(x: torch.Tensor, eps: float = 1e-6) -> torch.Tensor:
     return (x - mu) / std
 
 
-def region_keep_masks(
-    lig_occ: torch.Tensor,
-    poc_occ: torch.Tensor,
-    basis: str = "ligand_footprint",
-    thresh: float = 0.1,
-) -> Tuple[torch.Tensor, torch.Tensor]:
-    """Two-tower density region masks: (keep_pocket, keep_ligand).
-
-    Given ligand / pocket vdW-blob OCCUPANCY sums (channel-summed atom volumes;
-    any shape with a trailing spatial block, e.g. (B,1,G,G,G) or (1,G,G,G)),
-    return the two multiplicative masks that gate the shared 2Fo-Fc map into each
-    tower:
-
-        rho_P = keep_pocket * rho_exp   (fed to the POCKET tower)
-        rho_L = keep_ligand * rho_exp   (fed to the LIGAND tower)
-
-    `basis` selects how the pocket/ligand boundary M_P is drawn:
-
-      "ligand_footprint" (default, legacy):  boundary from the LIGAND blob.
-          keep_pocket = 1[lig_occ <= thresh]  (apo-like: density everywhere but
-          the ligand footprint — protein + solvent + cavity kept)
-          keep_ligand = 1[lig_occ >  thresh]  (density inside the ligand only)
-
-      "protein_vdw":  M_P = protein (pocket-atom) vdW occupancy.
-          keep_pocket = 1[poc_occ >  thresh]  (rho_P = density inside protein vdW)
-          keep_ligand = 1[poc_occ <= thresh]  (rho_L = the non-protein / ligand-
-          accessible region: ligand + solvent + cavity)
-
-      "none":  no masking — both towers see the full holo map (control).
-
-    Masks are returned as float tensors matching lig_occ's dtype. The two masks
-    are exact complements for the vdW / footprint bases, identical (all-ones) for
-    "none".
-    """
-    if basis == "none":
-        one = torch.ones_like(lig_occ)
-        return one, one
-    if basis == "protein_vdw":
-        mp = (poc_occ > thresh).to(lig_occ.dtype)
-        return mp, 1.0 - mp
-    if basis == "ligand_footprint":
-        fp = (lig_occ > thresh).to(lig_occ.dtype)
-        return 1.0 - fp, fp
-    raise ValueError(
-        f"pocket_ed_mask basis={basis!r}; expected "
-        "'ligand_footprint', 'protein_vdw' or 'none'"
-    )
-
-
 def synth_density(
     voxels_lig: torch.Tensor,
     voxels_poc: torch.Tensor,

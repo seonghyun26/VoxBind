@@ -73,6 +73,18 @@ def create_model(cfg, device="cuda") -> VoxBind:
         density_mask_ligand=bool(cfg.model.get("density_mask_ligand", False)),
         density_mask_threshold=float(cfg.model.get("density_mask_threshold", 0.2)),
         density_mask_dilate=int(cfg.model.get("density_mask_dilate", 2)),
+        # bf16 autocast for the frozen encoder's forward ONLY (denoiser stays fp32).
+        density_encoder_amp=bool(cfg.model.get("density_encoder_amp", False)),
+        # Global density->noise blend: d = a*d + (1-a)*noise. 1.0 = no-op. Test-time knob
+        # for measuring how much a trained model relies on the density channel.
+        density_noise_alpha=float(cfg.model.get("density_noise_alpha", 1.0)),
+        density_noise_sigma=float(cfg.model.get("density_noise_sigma", 0.0)),
+        # Protein-only attenuation field: alpha(x) from pocket atoms, no ligand involved.
+        density_attenuate=bool(cfg.model.get("density_attenuate", False)),
+        density_attenuate_sigma=float(cfg.model.get("density_attenuate_sigma", 7.0)),
+        density_attenuate_quantile=float(cfg.model.get("density_attenuate_quantile", 0.90)),
+        density_attenuate_strength=float(cfg.model.get("density_attenuate_strength", 1.0)),
+        density_attenuate_noise_sigma=float(cfg.model.get("density_attenuate_noise_sigma", 7.0)),
         # "default": pocket_encoder + zero-init density_proj. "v3": frozen encoder replaces
         # pocket_encoder (pocket + apo density), fused via normal-init context_proj (early fusion).
         # "adapter": frozen VoxBind + frozen pretrained pocket encoder + trainable PocketAdapter.

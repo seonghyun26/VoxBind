@@ -26,7 +26,41 @@ density_mask_ligand: false       # Path B leak-removal: blank density+gradmag in
                                  # can't read the co-crystal ligand's own density. Requires n_in_channels=13.
 density_mask_threshold: 0.2      # occupancy threshold on the summed clean-ligand voxel grid
 density_mask_dilate: 2           # voxels to dilate the mask (0.25Å grid → 2 = 0.5Å) to cover the x-ray envelope
-fusion: default                  # default: ligand_encoder + pocket_encoder, frozen density via zero-init density_proj.
+density_attenuate: false         # PROTEIN-ONLY attenuation field alpha(x): high near protein atoms (preserve),
+                                 # low in open space (attenuate), then rho' = alpha*rho + (1-alpha)*noise.
+                                 # Built from the POCKET channels only — ligand coordinates never enter, so
+                                 # (a) the mask shape cannot encode ligand shape (unlike density_mask_ligand,
+                                 # whose hole IS ligand-shaped) and (b) it is computable at GENERATION time,
+                                 # making the training and deployment conditions identical. Applied before
+                                 # gradmag so channel 12 tracks the attenuated map. Default off.
+density_attenuate_sigma: 7.0     # transition width in voxels (1 vox = 0.25A) -> 7 = 1.75A, at/above the map's
+                                 # own blur. A sharper boundary is physically impossible and reads as a feature.
+density_attenuate_quantile: 0.90 # proximity value mapped to alpha=1; quantile over OCCUPIED voxels so dense
+                                 # protein cores don't compress the rest of the field toward 0.
+density_attenuate_strength: 1.0  # global dose: alpha_eff = 1 - strength*(1-alpha). 0 = no-op, 1 = full.
+                                 # Sweeping this is the performance-vs-alpha dose-response curve.
+density_attenuate_noise_sigma: 7.0  # blur applied to the fill noise (voxels) before unit-variance renorm, so its
+                                 # gradient statistics resemble real density. 0 = white randn = gradmag OOD.
+density_noise_alpha: 1.0         # GLOBAL density->noise blend: d = a*d + (1-a)*noise, applied BEFORE gradmag
+                                 # is derived so channel 12 matches the map the encoder sees. 1.0 = exact no-op
+                                 # (existing configs unaffected); 0.0 = pure noise = the "random density"
+                                 # lower-bound condition. Sweep 1->0 at TEST TIME to measure how much a trained
+                                 # model relies on density at all. No spatial structure — the soft alpha(x) field
+                                 # (attenuate open space, preserve protein-adjacent density) is a separate thing.
+density_noise_sigma: 0.0         # voxels (1 vox = 0.25A). >0 blurs the noise to that scale and restores unit
+                                 # variance, so its gradient statistics resemble real density. 0 = white randn,
+                                 # which makes gradmag strongly OOD and conflates "density removed" with
+                                 # "gradmag broken". Use ~7 (1.75A) for a physically honest degradation.
+density_encoder_amp: false       # bf16 autocast for the FROZEN density encoder's forward ONLY. The denoiser
+                                 # (UNet3D + fusion) stays fp32, matching the paper's train.py — only the
+                                 # frozen conditioning encoder runs in bf16, which is the precision it was
+                                 # pretrained under (train_density.py `amp.enabled: true`). No gradient path
+                                 # through it, and the output is cast back to fp32 before fusion, so trained
+                                 # weights are unaffected. ~2.3x on the encoder forward. Default off.
+fusion: default                # default: ligand_encoder + pocket_encoder, frozen density via zero-init density_proj.
                                  # v3: frozen encoder REPLACES pocket_encoder (pocket + apo density carried by the
                                  # frozen ViT), fused into the ligand features via a normal-init context_proj (early
                                  # fusion). Requires with_density + full-voxel n_in_channels=13. Ligand stream unchanged.
+                                 # protein_first: as default, but the density correction is fused into the POCKET
+                                 # representation alone and only then added to the ligand features, so density_proj
+                                 # never conditions on the (noisy) ligand. Same modules/shapes/zero-init as default.
