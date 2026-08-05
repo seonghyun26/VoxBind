@@ -105,8 +105,8 @@
   .doc-section { margin-bottom: 68px; }
   .affinity-results { order: 1; }
   .uncertainty { order: 2; }
-  .mfo-channels { order: 3; }
-  .structural-quality { order: 4; }
+  .loss-terms { order: 3; }
+  .mfo-channels { order: 4; }
   .denovo-generation { order: 5; }
   .evaluation-pipeline { order: 6; }
   .dataset-audit { order: 7; }
@@ -712,6 +712,12 @@
     height: auto;
   }
 
+  .figure-card svg {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+
   .figure-card figcaption {
     margin-top: 10px;
     padding: 10px 5px 0;
@@ -1136,16 +1142,118 @@
   </section>
 
   <section class="doc-section mfo-channels">
-    <h2 class="section-head"><span class="sec-num">2</span>mFo–DFc channels</h2>
+    <h2 class="section-head"><span class="sec-num wide">1.3</span>mFo–DFc channels</h2>
     <p class="section-intro">
       Three completed trials add mFo–DFc density and gradient-magnitude channels to C+D+G.
       The encoder, data, mask, and frozen-probe protocol are matched.
     </p>
 
-    <h3 class="table-title">Table 1 · mFo–DFc channel trials</h3>
+    <figure class="figure-card">
+      <!-- MFODFC_BAR_START -->
+      <svg viewBox="0 0 1130 294" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="mfodfc-title mfodfc-desc">
+      <title id="mfodfc-title">mFo–DFc channel trial comparison</title>
+      <desc id="mfodfc-desc">The C+D+G champion is best on every metric; Trial 2 is the best added-channel trial.</desc>
+      <rect x="8" y="7" width="266" height="275" rx="10" fill="#fbfcfe" stroke="#dce3eb"/>
+      <text x="141" y="31" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="700" fill="#17202b">Best val ρ</text>
+      <text x="141" y="50" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="10" font-weight="650" fill="#657284">higher ↑</text>
+      <line x1="47" y1="235.0" x2="262" y2="235.0" stroke="#e2e7ed" stroke-width="1"/>
+      <text x="42" y="238.5" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.48</text>
+      <line x1="47" y1="151.5" x2="262" y2="151.5" stroke="#e2e7ed" stroke-width="1"/>
+      <text x="42" y="155.0" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.52</text>
+      <line x1="47" y1="68.0" x2="262" y2="68.0" stroke="#e2e7ed" stroke-width="1"/>
+      <text x="42" y="71.5" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.56</text>
+      <line x1="47" y1="235" x2="262" y2="235" stroke="#8995a4" stroke-width="1"/>
+      <rect x="62.4" y="97.2" width="30.0" height="137.8" rx="3" fill="#2f6f4f" stroke="#19472e" stroke-width="1.2"/>
+      <text x="77.4" y="91.2" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">0.546</text>
+      <text x="77.4" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#19472e">Base</text>
+      <rect x="115.1" y="145.2" width="30.0" height="89.8" rx="3" fill="#9aafca" stroke="#7188a7" stroke-width="1.2"/>
+      <text x="130.1" y="139.2" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">0.523</text>
+      <text x="130.1" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#7188a7">T1</text>
+      <rect x="167.9" y="120.2" width="30.0" height="114.8" rx="3" fill="#315f9b" stroke="#183d68" stroke-width="1.2"/>
+      <text x="182.9" y="114.2" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">0.535</text>
+      <text x="182.9" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#183d68">T2</text>
+      <rect x="220.6" y="189.1" width="30.0" height="45.9" rx="3" fill="#9aafca" stroke="#7188a7" stroke-width="1.2"/>
+      <text x="235.6" y="183.1" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">0.502</text>
+      <text x="235.6" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#7188a7">T3</text>
+      <rect x="288" y="7" width="266" height="275" rx="10" fill="#fbfcfe" stroke="#dce3eb"/>
+      <text x="421" y="31" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="700" fill="#17202b">Test Pearson r</text>
+      <text x="421" y="50" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="10" font-weight="650" fill="#657284">higher ↑</text>
+      <line x1="327" y1="235.0" x2="542" y2="235.0" stroke="#e2e7ed" stroke-width="1"/>
+      <text x="322" y="238.5" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.58</text>
+      <line x1="327" y1="151.5" x2="542" y2="151.5" stroke="#e2e7ed" stroke-width="1"/>
+      <text x="322" y="155.0" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.62</text>
+      <line x1="327" y1="68.0" x2="542" y2="68.0" stroke="#e2e7ed" stroke-width="1"/>
+      <text x="322" y="71.5" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.67</text>
+      <line x1="327" y1="235" x2="542" y2="235" stroke="#8995a4" stroke-width="1"/>
+      <rect x="342.4" y="86.6" width="30.0" height="148.4" rx="3" fill="#2f6f4f" stroke="#19472e" stroke-width="1.2"/>
+      <text x="357.4" y="80.6" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">0.660</text>
+      <text x="357.4" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#19472e">Base</text>
+      <rect x="395.1" y="145.9" width="30.0" height="89.1" rx="3" fill="#9aafca" stroke="#7188a7" stroke-width="1.2"/>
+      <text x="410.1" y="139.9" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">0.628</text>
+      <text x="410.1" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#7188a7">T1</text>
+      <rect x="447.9" y="136.7" width="30.0" height="98.3" rx="3" fill="#315f9b" stroke="#183d68" stroke-width="1.2"/>
+      <text x="462.9" y="130.7" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">0.633</text>
+      <text x="462.9" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#183d68">T2</text>
+      <rect x="500.6" y="197.9" width="30.0" height="37.1" rx="3" fill="#9aafca" stroke="#7188a7" stroke-width="1.2"/>
+      <text x="515.6" y="191.9" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">0.600</text>
+      <text x="515.6" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#7188a7">T3</text>
+      <rect x="568" y="7" width="266" height="275" rx="10" fill="#fbfcfe" stroke="#dce3eb"/>
+      <text x="701" y="31" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="700" fill="#17202b">Test Spearman ρ</text>
+      <text x="701" y="50" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="10" font-weight="650" fill="#657284">higher ↑</text>
+      <line x1="607" y1="235.0" x2="822" y2="235.0" stroke="#e2e7ed" stroke-width="1"/>
+      <text x="602" y="238.5" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.57</text>
+      <line x1="607" y1="151.5" x2="822" y2="151.5" stroke="#e2e7ed" stroke-width="1"/>
+      <text x="602" y="155.0" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.61</text>
+      <line x1="607" y1="68.0" x2="822" y2="68.0" stroke="#e2e7ed" stroke-width="1"/>
+      <text x="602" y="71.5" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.66</text>
+      <line x1="607" y1="235" x2="822" y2="235" stroke="#8995a4" stroke-width="1"/>
+      <rect x="622.4" y="97.7" width="30.0" height="137.3" rx="3" fill="#2f6f4f" stroke="#19472e" stroke-width="1.2"/>
+      <text x="637.4" y="91.7" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">0.644</text>
+      <text x="637.4" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#19472e">Base</text>
+      <rect x="675.1" y="158.9" width="30.0" height="76.1" rx="3" fill="#9aafca" stroke="#7188a7" stroke-width="1.2"/>
+      <text x="690.1" y="152.9" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">0.611</text>
+      <text x="690.1" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#7188a7">T1</text>
+      <rect x="727.9" y="145.9" width="30.0" height="89.1" rx="3" fill="#315f9b" stroke="#183d68" stroke-width="1.2"/>
+      <text x="742.9" y="139.9" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">0.618</text>
+      <text x="742.9" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#183d68">T2</text>
+      <rect x="780.6" y="201.6" width="30.0" height="33.4" rx="3" fill="#9aafca" stroke="#7188a7" stroke-width="1.2"/>
+      <text x="795.6" y="195.6" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">0.588</text>
+      <text x="795.6" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#7188a7">T3</text>
+      <rect x="848" y="7" width="266" height="275" rx="10" fill="#fbfcfe" stroke="#dce3eb"/>
+      <text x="981" y="31" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="700" fill="#17202b">Test RMSE</text>
+      <text x="981" y="50" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="10" font-weight="650" fill="#657284">lower ↑</text>
+      <line x1="887" y1="68.0" x2="1102" y2="68.0" stroke="#e2e7ed" stroke-width="1"/>
+      <text x="882" y="71.5" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">1.32</text>
+      <line x1="887" y1="151.5" x2="1102" y2="151.5" stroke="#e2e7ed" stroke-width="1"/>
+      <text x="882" y="155.0" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">1.41</text>
+      <line x1="887" y1="235.0" x2="1102" y2="235.0" stroke="#e2e7ed" stroke-width="1"/>
+      <text x="882" y="238.5" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">1.50</text>
+      <line x1="887" y1="235" x2="1102" y2="235" stroke="#8995a4" stroke-width="1"/>
+      <rect x="902.4" y="94.9" width="30.0" height="140.1" rx="3" fill="#2f6f4f" stroke="#19472e" stroke-width="1.2"/>
+      <text x="917.4" y="88.9" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">1.349</text>
+      <text x="917.4" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#19472e">Base</text>
+      <rect x="955.1" y="171.0" width="30.0" height="64.0" rx="3" fill="#9aafca" stroke="#7188a7" stroke-width="1.2"/>
+      <text x="970.1" y="165.0" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">1.431</text>
+      <text x="970.1" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#7188a7">T1</text>
+      <rect x="1007.9" y="171.0" width="30.0" height="64.0" rx="3" fill="#315f9b" stroke="#183d68" stroke-width="1.2"/>
+      <text x="1022.9" y="165.0" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">1.431</text>
+      <text x="1022.9" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#183d68">T2</text>
+      <rect x="1060.6" y="213.7" width="30.0" height="21.3" rx="3" fill="#9aafca" stroke="#7188a7" stroke-width="1.2"/>
+      <text x="1075.6" y="207.7" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">1.477</text>
+      <text x="1075.6" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#7188a7">T3</text>
+      <text x="565" y="278" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="10" fill="#657284">Base = champion · T1–T3 = matched trials</text>
+      </svg>
+      <!-- MFODFC_BAR_END -->
+      <figcaption>
+        <b>Figure 4 · mFo–DFc channel trials.</b>
+        Bars are three-seed means. Base is the C+D+G champion; higher r/ρ and lower RMSE are better.
+        Δρ is reported in Table 3.
+      </figcaption>
+    </figure>
+
+    <h3 class="table-title">Table 3 · mFo–DFc channel trials</h3>
     <p class="table-sub">
-      Mean over three seeds. C+D+G control: val ρ 0.546, test r 0.660, test ρ 0.644,
-      RMSE 1.349. Δρ is versus this control.
+      Mean over three seeds. Δρ is versus the C+D+G champion.
     </p>
     <div class="table-wrap">
       <table class="results mini-table">
@@ -1160,6 +1268,14 @@
           </tr>
         </thead>
         <tbody>
+          <tr class="ours">
+            <td class="col-method">Champion (baseline)</td>
+            <td><span class="val">0.546</span></td>
+            <td><span class="val">0.660</span></td>
+            <td><span class="val">0.644</span></td>
+            <td><span class="val">1.349</span></td>
+            <td><span class="val">0.000</span></td>
+          </tr>
           <tr>
             <td class="col-method">Trial 1</td>
             <td><span class="val">0.523</span></td>
@@ -1168,7 +1284,7 @@
             <td><span class="val">1.431</span></td>
             <td class="shift"><span class="val">−0.033</span></td>
           </tr>
-          <tr class="ours">
+          <tr>
             <td class="col-method">Trial 2</td>
             <td><span class="val">0.535</span></td>
             <td><span class="val">0.633</span></td>
@@ -1191,9 +1307,12 @@
     <div class="notes">
       <b>Trial details.</b>
       <ul>
-        <li><b>Shared:</b> 100M ChannelViT, 15 channels <code>[7,4,2,2]</code>, PLINDER v2
-          112K, mask 0.75, 50 epochs, epoch-49 probe, and split 3850 / 817 / 1320.</li>
-        <li><b>Trial 1:</b> reconstruct mFo–DFc density and gradient channels at weight 0.1 each.</li>
+        <li><b>Shared:</b> 100M ChannelViT, PLINDER v2 112K, mask 0.75, 50 epochs,
+          epoch-49 probe, and split 3850 / 817 / 1320.</li>
+        <li><b>Champion:</b> C+D+G input, 13 channels <code>[7,4,2]</code>; no mFo–DFc channels.</li>
+        <li><b>Trials 1–3:</b> add mFo–DFc density and gradient channels; 15 channels
+          <code>[7,4,2,2]</code>.</li>
+        <li><b>Trial 1:</b> reconstruct both added channels at weight 0.1 each.</li>
         <li><b>Trial 2:</b> use mFo–DFc as input only; reconstruction weights are 0.</li>
         <li><b>Trial 3:</b> reconstruct both mFo–DFc channels at weight 0.3 each.</li>
       </ul>
@@ -1724,157 +1843,177 @@
   </section>
   <!-- CROSSDOCKED_AUDIT_END -->
 
-  <section class="doc-section structural-quality">
-    <h2 class="section-head"><span class="sec-num">3</span>PoseCheck + PoseBusters structural quality</h2>
-    <p class="section-intro">
-      Matched evaluation for VoxBind σ 0.9, σ 1.0, and Ours on the Appendix A pocket set.
-    </p>
-
-    <h3 class="table-title">Table 2 · Structural-quality evaluation — pending</h3>
-    <p class="table-sub">
-      Same pocket mask, sample count, receptor preparation, checks, and aggregation.
-    </p>
-    <div class="table-wrap">
-      <table class="results">
-        <thead>
-          <tr>
-            <th class="col-method">Method · matched QC pockets</th>
-            <th>Clashes↓<br>Med</th>
-            <th>Clashes↓<br>Mean</th>
-            <th>Strain↓<br>Med</th>
-            <th>Interact.<br>Mean</th>
-            <th>PB-valid↑</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td class="col-method">
-              VoxBind σ 0.9 <span class="tag base">pending</span>
-              <span class="sub">matched structural-quality evaluation not yet run</span>
-            </td>
-            <td class="na">—</td>
-            <td class="na">—</td>
-            <td class="na">—</td>
-            <td class="na">—</td>
-            <td class="na">—</td>
-          </tr>
-          <tr>
-            <td class="col-method">
-              VoxBind σ 1.0 <span class="tag base">pending</span>
-              <span class="sub">matched structural-quality evaluation not yet run</span>
-            </td>
-            <td class="na">—</td>
-            <td class="na">—</td>
-            <td class="na">—</td>
-            <td class="na">—</td>
-            <td class="na">—</td>
-          </tr>
-          <tr class="ours">
-            <td class="col-method">
-              Ours — frozen C+D+G <span class="tag ours">pending</span>
-              <span class="sub">matched structural-quality evaluation not yet run</span>
-            </td>
-            <td class="na">—</td>
-            <td class="na">—</td>
-            <td class="na">—</td>
-            <td class="na">—</td>
-            <td class="na">—</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-
-    <div class="callout">
-      <strong>Status.</strong> Pending matched evaluation.
-    </div>
-
-    <div class="notes">
-      <b>Required reporting specification.</b>
-      <ul>
-        <li><b>Methods:</b> VoxBind σ 0.9, VoxBind σ 1.0, and the frozen Ours C+D+G checkpoint only.</li>
-        <li><b>Pocket mask:</b> use the same retained pockets from Appendix A for every method.</li>
-        <li><b>Metrics:</b> PoseCheck clash median/mean, UFF strain median, mean interaction count,
-          and the fraction passing every PoseBusters check.</li>
-        <li><b>Aggregation:</b> compute each metric within pocket first, then average or take the median
-          across pockets so every pocket has equal weight.</li>
-      </ul>
-    </div>
-  </section>
-
   <section class="doc-section uncertainty">
-    <h2 class="section-head"><span class="sec-num wide">1.1</span>Trials on MLP heads</h2>
+    <h2 class="section-head"><span class="sec-num wide">1.1</span>MLP-head trials</h2>
     <p class="section-intro">
-      Same frozen 100M v2 mask0.75 features and <code>lp_edrscc_v2</code> split; only the probe head changes.
+      Same frozen champion features and <code>lp_edrscc_v2</code> split; only the probe head changes.
     </p>
 
-    <h3 class="table-title">MLP-head trials</h3>
+    <figure class="figure-card">
+      <!-- MLP_BAR_START -->
+      <svg viewBox="0 0 1130 294" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="mlp-title mlp-desc">
+      <title id="mlp-title">MLP-head trial comparison</title>
+      <desc id="mlp-desc">The matched mean-pool champion is best on test Spearman correlation. Trial 3 is pending.</desc>
+      <rect x="8" y="7" width="266" height="275" rx="10" fill="#fbfcfe" stroke="#dce3eb"/>
+      <text x="141" y="31" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="700" fill="#17202b">Best val ρ</text>
+      <text x="141" y="50" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="10" font-weight="650" fill="#657284">higher ↑</text>
+      <line x1="47" y1="235.0" x2="262" y2="235.0" stroke="#e2e7ed" stroke-width="1"/>
+      <text x="42" y="238.5" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.50</text>
+      <line x1="47" y1="151.5" x2="262" y2="151.5" stroke="#e2e7ed" stroke-width="1"/>
+      <text x="42" y="155.0" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.54</text>
+      <line x1="47" y1="68.0" x2="262" y2="68.0" stroke="#e2e7ed" stroke-width="1"/>
+      <text x="42" y="71.5" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.58</text>
+      <line x1="47" y1="235" x2="262" y2="235" stroke="#8995a4" stroke-width="1"/>
+      <rect x="62.4" y="139.0" width="30.0" height="96.0" rx="3" fill="#2f6f4f" stroke="#19472e" stroke-width="1.2"/>
+      <text x="77.4" y="133.0" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">0.546</text>
+      <text x="77.4" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#19472e">Base</text>
+      <rect x="115.1" y="103.5" width="30.0" height="131.5" rx="3" fill="#9aafca" stroke="#7188a7" stroke-width="1.2"/>
+      <text x="130.1" y="97.5" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">0.563</text>
+      <text x="130.1" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#7188a7">T1</text>
+      <rect x="167.9" y="178.6" width="30.0" height="56.4" rx="3" fill="#315f9b" stroke="#183d68" stroke-width="1.2"/>
+      <text x="182.9" y="172.6" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">0.527</text>
+      <text x="182.9" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#183d68">T2</text>
+      <rect x="220.6" y="207" width="30.0" height="28" rx="3" fill="none" stroke="#9aa3b2" stroke-width="1.2" stroke-dasharray="4 3"/>
+      <text x="235.6" y="201" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8.5" font-weight="650" fill="#7d8795">pending</text>
+      <text x="235.6" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#7188a7">T3</text>
+      <rect x="288" y="7" width="266" height="275" rx="10" fill="#fbfcfe" stroke="#dce3eb"/>
+      <text x="421" y="31" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="700" fill="#17202b">Test Pearson r</text>
+      <text x="421" y="50" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="10" font-weight="650" fill="#657284">higher ↑</text>
+      <line x1="327" y1="235.0" x2="542" y2="235.0" stroke="#e2e7ed" stroke-width="1"/>
+      <text x="322" y="238.5" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.63</text>
+      <line x1="327" y1="151.5" x2="542" y2="151.5" stroke="#e2e7ed" stroke-width="1"/>
+      <text x="322" y="155.0" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.65</text>
+      <line x1="327" y1="68.0" x2="542" y2="68.0" stroke="#e2e7ed" stroke-width="1"/>
+      <text x="322" y="71.5" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.67</text>
+      <line x1="327" y1="235" x2="542" y2="235" stroke="#8995a4" stroke-width="1"/>
+      <rect x="342.4" y="126.5" width="30.0" height="108.5" rx="3" fill="#2f6f4f" stroke="#19472e" stroke-width="1.2"/>
+      <text x="357.4" y="120.5" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">0.656</text>
+      <text x="357.4" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#19472e">Base</text>
+      <rect x="395.1" y="151.5" width="30.0" height="83.5" rx="3" fill="#9aafca" stroke="#7188a7" stroke-width="1.2"/>
+      <text x="410.1" y="145.5" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">0.650</text>
+      <text x="410.1" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#7188a7">T1</text>
+      <rect x="447.9" y="172.4" width="30.0" height="62.6" rx="3" fill="#315f9b" stroke="#183d68" stroke-width="1.2"/>
+      <text x="462.9" y="166.4" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">0.645</text>
+      <text x="462.9" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#183d68">T2</text>
+      <rect x="500.6" y="207" width="30.0" height="28" rx="3" fill="none" stroke="#9aa3b2" stroke-width="1.2" stroke-dasharray="4 3"/>
+      <text x="515.6" y="201" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8.5" font-weight="650" fill="#7d8795">pending</text>
+      <text x="515.6" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#7188a7">T3</text>
+      <rect x="568" y="7" width="266" height="275" rx="10" fill="#fbfcfe" stroke="#dce3eb"/>
+      <text x="701" y="31" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="700" fill="#17202b">Test Spearman ρ</text>
+      <text x="701" y="50" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="10" font-weight="650" fill="#657284">higher ↑</text>
+      <line x1="607" y1="235.0" x2="822" y2="235.0" stroke="#e2e7ed" stroke-width="1"/>
+      <text x="602" y="238.5" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.61</text>
+      <line x1="607" y1="151.5" x2="822" y2="151.5" stroke="#e2e7ed" stroke-width="1"/>
+      <text x="602" y="155.0" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.63</text>
+      <line x1="607" y1="68.0" x2="822" y2="68.0" stroke="#e2e7ed" stroke-width="1"/>
+      <text x="602" y="71.5" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.65</text>
+      <line x1="607" y1="235" x2="822" y2="235" stroke="#8995a4" stroke-width="1"/>
+      <rect x="622.4" y="105.6" width="30.0" height="129.4" rx="3" fill="#2f6f4f" stroke="#19472e" stroke-width="1.2"/>
+      <text x="637.4" y="99.6" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">0.641</text>
+      <text x="637.4" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#19472e">Base</text>
+      <rect x="675.1" y="134.8" width="30.0" height="100.2" rx="3" fill="#9aafca" stroke="#7188a7" stroke-width="1.2"/>
+      <text x="690.1" y="128.8" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">0.634</text>
+      <text x="690.1" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#7188a7">T1</text>
+      <rect x="727.9" y="172.4" width="30.0" height="62.6" rx="3" fill="#315f9b" stroke="#183d68" stroke-width="1.2"/>
+      <text x="742.9" y="166.4" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">0.625</text>
+      <text x="742.9" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#183d68">T2</text>
+      <rect x="780.6" y="207" width="30.0" height="28" rx="3" fill="none" stroke="#9aa3b2" stroke-width="1.2" stroke-dasharray="4 3"/>
+      <text x="795.6" y="201" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8.5" font-weight="650" fill="#7d8795">pending</text>
+      <text x="795.6" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#7188a7">T3</text>
+      <rect x="848" y="7" width="266" height="275" rx="10" fill="#fbfcfe" stroke="#dce3eb"/>
+      <text x="981" y="31" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="700" fill="#17202b">Test RMSE</text>
+      <text x="981" y="50" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="10" font-weight="650" fill="#657284">lower ↑</text>
+      <line x1="887" y1="68.0" x2="1102" y2="68.0" stroke="#e2e7ed" stroke-width="1"/>
+      <text x="882" y="71.5" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">1.36</text>
+      <line x1="887" y1="151.5" x2="1102" y2="151.5" stroke="#e2e7ed" stroke-width="1"/>
+      <text x="882" y="155.0" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">1.45</text>
+      <line x1="887" y1="235.0" x2="1102" y2="235.0" stroke="#e2e7ed" stroke-width="1"/>
+      <text x="882" y="238.5" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">1.54</text>
+      <line x1="887" y1="235" x2="1102" y2="235" stroke="#8995a4" stroke-width="1"/>
+      <rect x="902.4" y="123.7" width="30.0" height="111.3" rx="3" fill="#2f6f4f" stroke="#19472e" stroke-width="1.2"/>
+      <text x="917.4" y="117.7" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">1.420</text>
+      <text x="917.4" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#19472e">Base</text>
+      <rect x="955.1" y="96.8" width="30.0" height="138.2" rx="3" fill="#9aafca" stroke="#7188a7" stroke-width="1.2"/>
+      <text x="970.1" y="90.8" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">1.391</text>
+      <text x="970.1" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#7188a7">T1</text>
+      <rect x="1007.9" y="205.3" width="30.0" height="29.7" rx="3" fill="#315f9b" stroke="#183d68" stroke-width="1.2"/>
+      <text x="1022.9" y="199.3" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">1.508</text>
+      <text x="1022.9" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#183d68">T2</text>
+      <rect x="1060.6" y="207" width="30.0" height="28" rx="3" fill="none" stroke="#9aa3b2" stroke-width="1.2" stroke-dasharray="4 3"/>
+      <text x="1075.6" y="201" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8.5" font-weight="650" fill="#7d8795">pending</text>
+      <text x="1075.6" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#7188a7">T3</text>
+      <text x="565" y="278" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="10" fill="#657284">Base = champion · T1–T3 = matched trials</text>
+      </svg>
+      <!-- MLP_BAR_END -->
+      <figcaption>
+        <b>Figure 2 · MLP-head trials.</b>
+        Base is the matched mean-pool champion. Higher r/ρ and lower RMSE are better;
+        Trial 3 is pending.
+      </figcaption>
+    </figure>
+
+    <h3 class="table-title">Table 1 · MLP-head trials</h3>
     <p class="table-sub">
-      Three probe seeds. Higher r/ρ and lower RMSE are better.
+      Mean over three seeds. Δρ is versus the matched champion rerun.
     </p>
     <div class="table-wrap">
-      <table class="results">
+      <table class="results mini-table">
         <thead>
           <tr>
-            <th class="col-method">Head · frozen champion features</th>
-            <th>Feature<br>dim</th>
-            <th>Val ρ</th>
+            <th class="col-method">Trial</th>
+            <th>Best val ρ</th>
             <th>Test r↑</th>
             <th>Test ρ↑</th>
             <th>RMSE↓</th>
-            <th>Status</th>
+            <th>Δρ</th>
           </tr>
         </thead>
         <tbody>
           <tr class="ours">
-            <td class="col-method">
-              Champion · mean-pool &rarr; MLP <span class="tag ours">current</span>
-              <span class="sub">all patch tokens averaged → 2-layer MLP · matched sweep 0.641 reproduces canonical 0.644</span>
-            </td>
-            <td><span class="val">640</span></td>
+            <td class="col-method">Champion (baseline)</td>
             <td><span class="val">0.546</span></td>
-            <td class="best"><span class="val">0.656</span></td>
-            <td class="best"><span class="val">0.641</span></td>
-            <td class="best"><span class="val">1.420</span></td>
-            <td><span class="val">baseline</span></td>
+            <td><span class="val">0.656</span></td>
+            <td><span class="val">0.641</span></td>
+            <td><span class="val">1.420</span></td>
+            <td><span class="val">0.000</span></td>
           </tr>
-          <tr class="grp-top">
-            <td class="col-method">
-              Split-pool concat &rarr; MLP <span class="tag base">A·concat</span>
-              <span class="sub">[g<sub>lig</sub>, g<sub>poc</sub>] · better val + RMSE but worse test ρ (mild overfit)</span>
-            </td>
-            <td><span class="val">1280</span></td>
+          <tr>
+            <td class="col-method">Trial 1</td>
             <td><span class="val">0.563</span></td>
             <td><span class="val">0.650</span></td>
             <td><span class="val">0.634</span></td>
             <td><span class="val">1.391</span></td>
-            <td><span class="val">done · −0.007 ρ</span></td>
+            <td class="shift"><span class="val">−0.007</span></td>
           </tr>
           <tr>
-            <td class="col-method">
-              Bilinear interaction &rarr; MLP <span class="tag base">A·bilinear</span>
-              <span class="sub">[g<sub>lig</sub>, g<sub>poc</sub>, g<sub>lig</sub>⊙g<sub>poc</sub>, |g<sub>lig</sub>−g<sub>poc</sub>|] · TerraBind pair-rep analog · most params → worst</span>
-            </td>
-            <td><span class="val">2560</span></td>
+            <td class="col-method">Trial 2</td>
             <td><span class="val">0.527</span></td>
             <td><span class="val">0.645</span></td>
             <td><span class="val">0.625</span></td>
             <td><span class="val">1.508</span></td>
-            <td><span class="val">done · −0.016 ρ</span></td>
+            <td class="shift"><span class="val">−0.016</span></td>
           </tr>
           <tr>
-            <td class="col-method">
-              Cross-attention pooling <span class="tag ref">C·deprioritized</span>
-              <span class="sub">ligand tokens attend pocket · more params → expected to overfit given A trend</span>
-            </td>
+            <td class="col-method">Trial 3</td>
             <td class="na">—</td>
             <td class="na">—</td>
             <td class="na">—</td>
             <td class="na">—</td>
             <td class="na">—</td>
-            <td><span class="metric-status">deprioritized</span></td>
           </tr>
         </tbody>
       </table>
+    </div>
+
+    <div class="notes">
+      <b>Trial details.</b>
+      <ul>
+        <li><b>Shared:</b> frozen 100M v2 mask0.75 encoder, split 3850 / 817 / 1320, three probe seeds.</li>
+        <li><b>Champion:</b> mean-pool all tokens → 2-layer MLP; feature dim 640.</li>
+        <li><b>Trial 1:</b> concatenate ligand and pocket pools; feature dim 1280.</li>
+        <li><b>Trial 2:</b> add product and absolute-difference interactions; feature dim 2560.</li>
+        <li><b>Trial 3:</b> cross-attention pooling; deprioritized after larger heads overfit.</li>
+      </ul>
     </div>
 
     <div class="callout">
@@ -1883,11 +2022,197 @@
     </div>
   </section>
 
+  <section class="doc-section loss-terms">
+    <h2 class="section-head"><span class="sec-num wide">1.2</span>Loss terms</h2>
+    <p class="section-intro">
+      Same frozen champion features and mean-pool MLP; only the probe loss changes.
+    </p>
+
+    <figure class="figure-card">
+      <!-- LOSS_BAR_START -->
+      <svg viewBox="0 0 1130 294" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="loss-title loss-desc">
+      <title id="loss-title">Loss-term trial comparison</title>
+      <desc id="loss-desc">The matched MSE champion is shown; Trials 1 through 4 are pending.</desc>
+      <rect x="8" y="7" width="266" height="275" rx="10" fill="#fbfcfe" stroke="#dce3eb"/>
+      <text x="141" y="31" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="700" fill="#17202b">Best val ρ</text>
+      <text x="141" y="50" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="10" font-weight="650" fill="#657284">higher ↑</text>
+      <line x1="47" y1="235.0" x2="262" y2="235.0" stroke="#e2e7ed" stroke-width="1"/>
+      <text x="42" y="238.5" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.50</text>
+      <line x1="47" y1="151.5" x2="262" y2="151.5" stroke="#e2e7ed" stroke-width="1"/>
+      <text x="42" y="155.0" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.54</text>
+      <line x1="47" y1="68.0" x2="262" y2="68.0" stroke="#e2e7ed" stroke-width="1"/>
+      <text x="42" y="71.5" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.58</text>
+      <line x1="47" y1="235" x2="262" y2="235" stroke="#8995a4" stroke-width="1"/>
+      <rect x="59.9" y="139.0" width="24.5" height="96.0" rx="3" fill="#2f6f4f" stroke="#19472e" stroke-width="1.2"/>
+      <text x="72.1" y="133.0" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">0.546</text>
+      <text x="72.1" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#19472e">Base</text>
+      <rect x="102.1" y="207" width="24.5" height="28" rx="3" fill="none" stroke="#9aa3b2" stroke-width="1.2" stroke-dasharray="4 3"/>
+      <text x="114.3" y="201" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8.5" font-weight="650" fill="#7d8795">pending</text>
+      <text x="114.3" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#7188a7">T1</text>
+      <rect x="144.3" y="207" width="24.5" height="28" rx="3" fill="none" stroke="#9aa3b2" stroke-width="1.2" stroke-dasharray="4 3"/>
+      <text x="156.5" y="201" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8.5" font-weight="650" fill="#7d8795">pending</text>
+      <text x="156.5" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#183d68">T2</text>
+      <rect x="186.5" y="207" width="24.5" height="28" rx="3" fill="none" stroke="#9aa3b2" stroke-width="1.2" stroke-dasharray="4 3"/>
+      <text x="198.7" y="201" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8.5" font-weight="650" fill="#7d8795">pending</text>
+      <text x="198.7" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#7188a7">T3</text>
+      <rect x="228.7" y="207" width="24.5" height="28" rx="3" fill="none" stroke="#9aa3b2" stroke-width="1.2" stroke-dasharray="4 3"/>
+      <text x="240.9" y="201" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8.5" font-weight="650" fill="#7d8795">pending</text>
+      <text x="240.9" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#7188a7">T4</text>
+      <rect x="288" y="7" width="266" height="275" rx="10" fill="#fbfcfe" stroke="#dce3eb"/>
+      <text x="421" y="31" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="700" fill="#17202b">Test Pearson r</text>
+      <text x="421" y="50" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="10" font-weight="650" fill="#657284">higher ↑</text>
+      <line x1="327" y1="235.0" x2="542" y2="235.0" stroke="#e2e7ed" stroke-width="1"/>
+      <text x="322" y="238.5" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.63</text>
+      <line x1="327" y1="151.5" x2="542" y2="151.5" stroke="#e2e7ed" stroke-width="1"/>
+      <text x="322" y="155.0" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.65</text>
+      <line x1="327" y1="68.0" x2="542" y2="68.0" stroke="#e2e7ed" stroke-width="1"/>
+      <text x="322" y="71.5" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.67</text>
+      <line x1="327" y1="235" x2="542" y2="235" stroke="#8995a4" stroke-width="1"/>
+      <rect x="339.9" y="126.5" width="24.5" height="108.5" rx="3" fill="#2f6f4f" stroke="#19472e" stroke-width="1.2"/>
+      <text x="352.1" y="120.5" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">0.656</text>
+      <text x="352.1" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#19472e">Base</text>
+      <rect x="382.1" y="207" width="24.5" height="28" rx="3" fill="none" stroke="#9aa3b2" stroke-width="1.2" stroke-dasharray="4 3"/>
+      <text x="394.3" y="201" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8.5" font-weight="650" fill="#7d8795">pending</text>
+      <text x="394.3" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#7188a7">T1</text>
+      <rect x="424.3" y="207" width="24.5" height="28" rx="3" fill="none" stroke="#9aa3b2" stroke-width="1.2" stroke-dasharray="4 3"/>
+      <text x="436.5" y="201" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8.5" font-weight="650" fill="#7d8795">pending</text>
+      <text x="436.5" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#183d68">T2</text>
+      <rect x="466.5" y="207" width="24.5" height="28" rx="3" fill="none" stroke="#9aa3b2" stroke-width="1.2" stroke-dasharray="4 3"/>
+      <text x="478.7" y="201" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8.5" font-weight="650" fill="#7d8795">pending</text>
+      <text x="478.7" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#7188a7">T3</text>
+      <rect x="508.7" y="207" width="24.5" height="28" rx="3" fill="none" stroke="#9aa3b2" stroke-width="1.2" stroke-dasharray="4 3"/>
+      <text x="520.9" y="201" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8.5" font-weight="650" fill="#7d8795">pending</text>
+      <text x="520.9" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#7188a7">T4</text>
+      <rect x="568" y="7" width="266" height="275" rx="10" fill="#fbfcfe" stroke="#dce3eb"/>
+      <text x="701" y="31" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="700" fill="#17202b">Test Spearman ρ</text>
+      <text x="701" y="50" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="10" font-weight="650" fill="#657284">higher ↑</text>
+      <line x1="607" y1="235.0" x2="822" y2="235.0" stroke="#e2e7ed" stroke-width="1"/>
+      <text x="602" y="238.5" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.61</text>
+      <line x1="607" y1="151.5" x2="822" y2="151.5" stroke="#e2e7ed" stroke-width="1"/>
+      <text x="602" y="155.0" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.63</text>
+      <line x1="607" y1="68.0" x2="822" y2="68.0" stroke="#e2e7ed" stroke-width="1"/>
+      <text x="602" y="71.5" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.65</text>
+      <line x1="607" y1="235" x2="822" y2="235" stroke="#8995a4" stroke-width="1"/>
+      <rect x="619.9" y="105.6" width="24.5" height="129.4" rx="3" fill="#2f6f4f" stroke="#19472e" stroke-width="1.2"/>
+      <text x="632.1" y="99.6" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">0.641</text>
+      <text x="632.1" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#19472e">Base</text>
+      <rect x="662.1" y="207" width="24.5" height="28" rx="3" fill="none" stroke="#9aa3b2" stroke-width="1.2" stroke-dasharray="4 3"/>
+      <text x="674.3" y="201" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8.5" font-weight="650" fill="#7d8795">pending</text>
+      <text x="674.3" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#7188a7">T1</text>
+      <rect x="704.3" y="207" width="24.5" height="28" rx="3" fill="none" stroke="#9aa3b2" stroke-width="1.2" stroke-dasharray="4 3"/>
+      <text x="716.5" y="201" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8.5" font-weight="650" fill="#7d8795">pending</text>
+      <text x="716.5" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#183d68">T2</text>
+      <rect x="746.5" y="207" width="24.5" height="28" rx="3" fill="none" stroke="#9aa3b2" stroke-width="1.2" stroke-dasharray="4 3"/>
+      <text x="758.7" y="201" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8.5" font-weight="650" fill="#7d8795">pending</text>
+      <text x="758.7" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#7188a7">T3</text>
+      <rect x="788.7" y="207" width="24.5" height="28" rx="3" fill="none" stroke="#9aa3b2" stroke-width="1.2" stroke-dasharray="4 3"/>
+      <text x="800.9" y="201" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8.5" font-weight="650" fill="#7d8795">pending</text>
+      <text x="800.9" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#7188a7">T4</text>
+      <rect x="848" y="7" width="266" height="275" rx="10" fill="#fbfcfe" stroke="#dce3eb"/>
+      <text x="981" y="31" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="700" fill="#17202b">Test RMSE</text>
+      <text x="981" y="50" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="10" font-weight="650" fill="#657284">lower ↑</text>
+      <line x1="887" y1="68.0" x2="1102" y2="68.0" stroke="#e2e7ed" stroke-width="1"/>
+      <text x="882" y="71.5" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">1.36</text>
+      <line x1="887" y1="151.5" x2="1102" y2="151.5" stroke="#e2e7ed" stroke-width="1"/>
+      <text x="882" y="155.0" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">1.45</text>
+      <line x1="887" y1="235.0" x2="1102" y2="235.0" stroke="#e2e7ed" stroke-width="1"/>
+      <text x="882" y="238.5" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">1.54</text>
+      <line x1="887" y1="235" x2="1102" y2="235" stroke="#8995a4" stroke-width="1"/>
+      <rect x="899.9" y="123.7" width="24.5" height="111.3" rx="3" fill="#2f6f4f" stroke="#19472e" stroke-width="1.2"/>
+      <text x="912.1" y="117.7" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">1.420</text>
+      <text x="912.1" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#19472e">Base</text>
+      <rect x="942.1" y="207" width="24.5" height="28" rx="3" fill="none" stroke="#9aa3b2" stroke-width="1.2" stroke-dasharray="4 3"/>
+      <text x="954.3" y="201" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8.5" font-weight="650" fill="#7d8795">pending</text>
+      <text x="954.3" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#7188a7">T1</text>
+      <rect x="984.3" y="207" width="24.5" height="28" rx="3" fill="none" stroke="#9aa3b2" stroke-width="1.2" stroke-dasharray="4 3"/>
+      <text x="996.5" y="201" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8.5" font-weight="650" fill="#7d8795">pending</text>
+      <text x="996.5" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#183d68">T2</text>
+      <rect x="1026.5" y="207" width="24.5" height="28" rx="3" fill="none" stroke="#9aa3b2" stroke-width="1.2" stroke-dasharray="4 3"/>
+      <text x="1038.7" y="201" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8.5" font-weight="650" fill="#7d8795">pending</text>
+      <text x="1038.7" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#7188a7">T3</text>
+      <rect x="1068.7" y="207" width="24.5" height="28" rx="3" fill="none" stroke="#9aa3b2" stroke-width="1.2" stroke-dasharray="4 3"/>
+      <text x="1080.9" y="201" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8.5" font-weight="650" fill="#7d8795">pending</text>
+      <text x="1080.9" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#7188a7">T4</text>
+      <text x="565" y="278" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="10" fill="#657284">Base = champion · T1–T4 = matched trials</text>
+      </svg>
+      <!-- LOSS_BAR_END -->
+      <figcaption>
+        <b>Figure 3 · Loss-term trials — pending.</b>
+        Base is the matched MSE champion. Dashed slots mark pending three-seed results.
+      </figcaption>
+    </figure>
+
+    <h3 class="table-title">Table 2 · Loss-term trials — pending</h3>
+    <p class="table-sub">
+      Champion values are the matched MSE baseline. Trial metrics are placeholders.
+    </p>
+    <div class="table-wrap">
+      <table class="results mini-table">
+        <thead>
+          <tr>
+            <th class="col-method">Trial</th>
+            <th>Best val ρ</th>
+            <th>Test r↑</th>
+            <th>Test ρ↑</th>
+            <th>RMSE↓</th>
+            <th>Δρ</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="ours">
+            <td class="col-method">Champion (baseline)</td>
+            <td><span class="val">0.546</span></td>
+            <td><span class="val">0.656</span></td>
+            <td><span class="val">0.641</span></td>
+            <td><span class="val">1.420</span></td>
+            <td><span class="val">0.000</span></td>
+          </tr>
+          <tr>
+            <td class="col-method">Trial 1</td>
+            <td class="na">—</td><td class="na">—</td><td class="na">—</td>
+            <td class="na">—</td><td class="na">—</td>
+          </tr>
+          <tr>
+            <td class="col-method">Trial 2</td>
+            <td class="na">—</td><td class="na">—</td><td class="na">—</td>
+            <td class="na">—</td><td class="na">—</td>
+          </tr>
+          <tr>
+            <td class="col-method">Trial 3</td>
+            <td class="na">—</td><td class="na">—</td><td class="na">—</td>
+            <td class="na">—</td><td class="na">—</td>
+          </tr>
+          <tr>
+            <td class="col-method">Trial 4</td>
+            <td class="na">—</td><td class="na">—</td><td class="na">—</td>
+            <td class="na">—</td><td class="na">—</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="notes">
+      <b>Trial details.</b>
+      <ul>
+        <li><b>Shared:</b> frozen champion features, mean-pool MLP, identical split and optimization.</li>
+        <li><b>Champion:</b> MSE loss.</li>
+        <li><b>Trial 1:</b> MSE + Pearson-correlation term; auxiliary weight 3.</li>
+        <li><b>Trial 2:</b> MSE + RankNet term; auxiliary weight 3.</li>
+        <li><b>Trial 3:</b> MSE + GAR term; auxiliary weight 3.</li>
+        <li><b>Trial 4:</b> Huber + Pearson-correlation term; auxiliary weight 3.</li>
+      </ul>
+    </div>
+
+    <div class="callout">
+      <strong>Status.</strong> Pending matched three-seed aggregation.
+    </div>
+  </section>
+
   <footer>
-    Provenance: Section 1 uses the original <code>results.html</code> chart; Section 1.1 uses matched
-    frozen-head trials. Section 2 uses the completed epoch-49, three-seed mFo–DFc probe logs.
-    Section 3 remains pending. Appendix A contains the crop-scored de novo results; Appendix B contains
-    the receptor-input trial and 600-instance pocket10 audit.
+    Provenance: Section 1 uses the original <code>results.html</code> chart. Sections 1.1–1.2 use
+    matched frozen-head probes; Section 1.3 uses completed epoch-49, three-seed mFo–DFc probes.
+    Appendix A contains the crop-scored de novo results; Appendix B contains the receptor-input trial
+    and 600-instance pocket10 audit.
   </footer>
 
 </div>

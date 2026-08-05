@@ -156,6 +156,7 @@ _VALID_INPUT_MODES = (
     "roleblob_density",           # 3 ch: role-2 atoms + 1 density
     "ligand",                     # two-tower LIGAND: 7 ligand atom ch only, no density
     "ligand_density",             # two-tower LIGAND: 7 ligand atom ch + non-protein (rho_L) density
+    "pocket",                     # two-tower POCKET (coords-only): 4 pocket atom ch only, no density
     "pocket_density",             # two-tower POCKET: 4 pocket atom ch + masked (rho_P) density
 )
 
@@ -260,6 +261,8 @@ def _channel_layout(
         n_atom = LIG_CH                               # two-tower ligand: 7 ligand atoms only
     elif input_mode == "ligand_density":
         n_atom = LIG_CH                               # two-tower ligand: 7 ligand atoms + density
+    elif input_mode == "pocket":
+        n_atom = POC_CH                               # two-tower pocket coords-only: 4 pocket atoms
     elif input_mode == "pocket_density":
         n_atom = POC_CH                               # two-tower pocket: 4 pocket atoms + density
     else:

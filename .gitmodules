@@ -1,0 +1,12 @@
+[submodule "base/bindnet"]
+	path = base/bindnet
+	url = https://github.com/fengshikun/BindNet
+[submodule "base/cheapnet"]
+	path = base/cheapnet
+	url = https://github.com/hyukjunlim/CheapNet
+[submodule "base/decompdiff"]
+	path = base/decompdiff
+	url = https://github.com/bytedance/DecompDiff.git
+[submodule "base/ipdiff"]
+	path = base/ipdiff
+	url = https://github.com/YangLing0818/IPDiff

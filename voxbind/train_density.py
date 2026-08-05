@@ -331,6 +331,8 @@ class MAEPrefetcher:
                         [_build_role_atoms(v_lig, v_poc), d_clean], dim=1)  # (B, 3, G³)
                 elif self.input_mode == "ligand":
                     x_clean = v_lig                                        # (B, 7, G³) ligand atoms only
+                elif self.input_mode == "pocket":
+                    x_clean = v_poc                                        # (B, 4, G³) pocket atoms only (coords-only)
                 elif self.input_mode in ("pocket_density", "ligand_density"):
                     atoms = v_poc if self.input_mode == "pocket_density" else v_lig
                     x_clean = torch.cat([atoms, d_clean], dim=1)           # [ atoms, density ]
@@ -763,6 +765,8 @@ def val_epoch(cfg, model, val_cache, device, ch_weight=None) -> dict:
                 x_clean = torch.cat([_build_role_atoms(v_lig, v_poc), d_clean], dim=1)
             elif input_mode == "ligand":
                 x_clean = v_lig
+            elif input_mode == "pocket":
+                x_clean = v_poc                                       # pocket atoms only (coords-only)
             elif input_mode in ("pocket_density", "ligand_density"):
                 atoms = v_poc if input_mode == "pocket_density" else v_lig
                 x_clean = torch.cat([atoms, d_clean], dim=1)          # [ atoms, density ]

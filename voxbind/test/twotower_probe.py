@@ -86,6 +86,8 @@ def _build_tower_batch(a: torch.Tensor, d: torch.Tensor, spec: dict) -> torch.Te
     mode = spec["input_mode"]
     if mode == "ligand":
         return lig
+    if mode == "pocket":
+        return poc                                                  # coords-only pocket (4 atoms)
     if mode not in ("pocket_density", "ligand_density"):
         raise ValueError(f"two-tower probe: unsupported input_mode={mode!r}")
     atoms = poc if mode == "pocket_density" else lig

@@ -101,6 +101,7 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from omegaconf import OmegaConf
 from scipy.stats import spearmanr, pearsonr
 from torch.utils.data import Dataset, DataLoader
@@ -1465,10 +1466,112 @@ def classification_metrics(y_true: np.ndarray, y_pred: np.ndarray, K: int) -> di
     }
 
 
+# ── probe-head loss functions (config-selectable via --probe_loss) ──────────
+# A BASE regressor (mse/mae/huber) anchors the output SCALE so RMSE stays
+# meaningful; an AUXILIARY term (corr/ccc/rank/softrank) pushes the ranking
+# metrics (Pearson r / Spearman ρ). Compose as "<base>+<aux>", e.g. mse+corr,
+# mae+rank; --aux_weight scales the aux term (base terms are fixed at 1.0).
+# A scale-free aux ALONE (corr/rank/softrank) lets predictions drift off the pK
+# scale → RMSE becomes meaningless, so keep a base term unless you only want ρ.
+# References: GenScore (Pearson aux, Chem.Sci.2023), MBP (pairwise RankNet,
+# arXiv:2306.04886), S1+P hybrid (arXiv:2407.15202), CCC loss (arXiv:2003.10724),
+# Blondel soft-rank (ICML2020, arXiv:2002.08871, torchsort).
+_BASE_LOSSES = {"mse", "mae", "huber"}
+_AUX_LOSSES  = {"corr", "ccc", "rank", "softrank", "gar"}
+
+
+def _pearson_term(p, y):
+    """1 − Pearson r over the batch (GenScore / S1+P Pearson auxiliary). Scale-free."""
+    p = p - p.mean(); y = y - y.mean()
+    return 1.0 - (p * y).sum() / (p.norm() * y.norm() + 1e-8)
+
+
+def _ccc_term(p, y):
+    """1 − Lin's concordance correlation. Penalises mean/variance mismatch too, so
+    (unlike raw Pearson) it is scale/shift-AWARE and usable standalone."""
+    cov = ((p - p.mean()) * (y - y.mean())).mean()
+    ccc = 2 * cov / (p.var(unbiased=False) + y.var(unbiased=False)
+                     + (p.mean() - y.mean()) ** 2 + 1e-8)
+    return 1.0 - ccc
+
+
+def _ranknet_term(p, y):
+    """RankNet pairwise logistic ranking loss (MBP-style within-batch ordering). Scale-free."""
+    dp = p.unsqueeze(1) - p.unsqueeze(0)
+    tgt = (y.unsqueeze(1) > y.unsqueeze(0)).float()
+    mask = (y.unsqueeze(1) != y.unsqueeze(0)).float()
+    loss = F.binary_cross_entropy_with_logits(dp, tgt, reduction="none")
+    return (loss * mask).sum() / mask.sum().clamp(min=1)
+
+
+def _gar_term(p, y):
+    """GAR-style pairwise-difference alignment (Gradient-Aligned Regression, ICML 2025,
+    arXiv:2402.06104): match predicted pairwise gaps to the true gaps in DIRECTION AND
+    MAGNITUDE — MSE over all pairs (pred_i−pred_j vs y_i−y_j). Unlike RankNet (sign only)
+    it also fits the size of each gap. Shift-invariant, scale-sensitive → pairs with a
+    base term. (Simplified surrogate: pairwise-difference MSE, not the full gradient-surgery.)"""
+    dp = p.unsqueeze(1) - p.unsqueeze(0)
+    dy = y.unsqueeze(1) - y.unsqueeze(0)
+    return ((dp - dy) ** 2).mean()
+
+
+def _softrank_term(p, y):
+    """1 − Spearman ρ via Blondel et al. (2020) differentiable soft-rank (torchsort).
+    Needs `pip install torchsort`; raises a clear error if unavailable. Scale-free."""
+    try:
+        import torchsort
+    except ImportError as e:
+        raise RuntimeError("probe_loss term 'softrank' needs torchsort "
+                           "(pip install torchsort)") from e
+    pr = torchsort.soft_rank(p.reshape(1, -1)).reshape(-1)
+    yr = torchsort.soft_rank(y.reshape(1, -1)).reshape(-1)
+    pr = pr - pr.mean(); yr = yr - yr.mean()
+    return 1.0 - (pr * yr).sum() / (pr.norm() * yr.norm() + 1e-8)
+
+
+_LOSS_TERMS = {
+    "mse":      lambda p, y: F.mse_loss(p, y),
+    "mae":      lambda p, y: F.l1_loss(p, y),
+    "huber":    lambda p, y: F.smooth_l1_loss(p, y),
+    "corr":     _pearson_term,
+    "ccc":      _ccc_term,
+    "rank":     _ranknet_term,
+    "gar":      _gar_term,
+    "softrank": _softrank_term,
+}
+
+
+def build_probe_loss(spec: str, aux_weight: float = 1.0):
+    """Return loss_fn(pred, target) for a '+'-joined spec like 'mse+corr'.
+
+    Base terms (mse/mae/huber) get weight 1.0; aux terms (corr/ccc/rank/softrank)
+    get weight `aux_weight`. Terms are summed. 'mse' (default) reproduces the
+    prior nn.MSELoss behaviour bit-for-bit.
+    """
+    terms = [t.strip() for t in spec.split("+") if t.strip()]
+    if not terms:
+        raise ValueError(f"empty probe_loss spec {spec!r}")
+    unknown = [t for t in terms if t not in _LOSS_TERMS]
+    if unknown:
+        raise ValueError(f"unknown probe_loss term(s) {unknown}; valid: {sorted(_LOSS_TERMS)}")
+
+    def loss_fn(pred, target):
+        total = pred.new_zeros(())
+        for t in terms:
+            w = aux_weight if t in _AUX_LOSSES else 1.0
+            total = total + w * _LOSS_TERMS[t](pred, target)
+        return total
+
+    loss_fn.terms = terms
+    loss_fn.needs_pairs = any(t in _AUX_LOSSES for t in terms)
+    return loss_fn
+
+
 def train_one(
     data: dict, *, seed: int, device: str, max_epochs: int, patience: int,
     batch_size: int, lr: float, weight_decay: float, hidden: int, dropout: float,
     head: str = "scalar", soft_sigma: float = 1.0, num_classes: Optional[int] = None,
+    probe_loss: str = "mse", aux_weight: float = 1.0,
 ) -> dict:
     """Train a single MLP probe; return metrics dict.
 
@@ -1497,7 +1600,10 @@ def train_one(
 
     model = MLP2(Xtr.shape[1], hidden=hidden, dropout=dropout, out_dim=out_dim).to(device)
     opt = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
-    _mse = nn.MSELoss()
+    _reg_loss = build_probe_loss(probe_loss, aux_weight)     # scalar-head training loss
+    # ranking/correlation terms need ≥2 distinct samples per batch; skip a tiny trailing
+    # batch only when such a term is active (default mse keeps min=1 → behaviour unchanged).
+    _min_bs = 4 if _reg_loss.needs_pairs else 1
 
     def predict(X):                                                 # → continuous scalar per sample
         if head == "softmax":
@@ -1525,12 +1631,14 @@ def train_one(
         perm = torch.randperm(n_train, device=device)
         for s in range(0, n_train, batch_size):
             idx = perm[s : s + batch_size]
+            if idx.numel() < _min_bs:
+                continue
             opt.zero_grad()
             out = model(Xtr[idx])
             if head == "softmax":
                 loss = -(soft_tr[idx] * torch.log_softmax(out, dim=1)).sum(dim=1).mean()
             else:
-                loss = _mse(out, ytr[idx])
+                loss = _reg_loss(out, ytr[idx])
             loss.backward()
             opt.step()
 
@@ -1607,6 +1715,8 @@ def run_probe(args: argparse.Namespace) -> None:
         tag_parts.append(f"{split_flag}split")          # misatosplit / lp_edrsccsplit / timesplit
     if args.head == "softmax":                           # head/loss variant token, orthogonal to target
         tag_parts.append("softmax")
+    if getattr(args, "probe_loss", "mse") != "mse":      # non-default loss → own CSV, never clobber MSE
+        tag_parts.append(f"loss-{args.probe_loss.replace('+', '-')}-w{args.aux_weight:g}")
     if getattr(args, "leak_test", "none") == "append":   # diagnostic leak — never clobber a clean CSV
         tag_parts.append("leaktest")
     if args.tag:
@@ -1715,6 +1825,7 @@ def run_probe(args: argparse.Namespace) -> None:
                     weight_decay=args.weight_decay, hidden=args.hidden,
                     dropout=args.dropout, tag=args.tag, feature_tag=args.feature_tag,
                     exp_dir=args.exp_dir,
+                    probe_loss=args.probe_loss, aux_weight=args.aux_weight,
                 ),
             )
         except Exception as e:
@@ -1773,6 +1884,7 @@ def run_probe(args: argparse.Namespace) -> None:
                 weight_decay=args.weight_decay,
                 hidden=args.hidden, dropout=args.dropout,
                 head=args.head, soft_sigma=args.soft_sigma,
+                probe_loss=args.probe_loss, aux_weight=args.aux_weight,
             )
             _pred_te = m.pop("_pred_te", None)    # per-sample preds (kept out of the metrics DataFrame)
             _yte     = m.pop("_yte", None)
@@ -2604,6 +2716,15 @@ def build_parser() -> argparse.ArgumentParser:
     pr.add_argument("--soft_sigma",    type=float, default=1.0,
                     help="Gaussian width (in count units) for softmax-head soft labels; "
                          "smaller → closer to one-hot. Only used when --head softmax.")
+    pr.add_argument("--probe_loss",    default="mse",
+                    help="Scalar-head training loss as '+'-joined terms. BASE (scale-anchoring): "
+                         "mse|mae|huber. AUX (ranking, ×--aux_weight): corr(1-Pearson)|ccc|"
+                         "rank(RankNet)|softrank(soft-Spearman,needs torchsort). e.g. mse+corr, "
+                         "mse+rank, mae+ccc. Default 'mse' = prior behaviour. Early stop stays on "
+                         "val ρ. Non-default adds a _loss-… token to the CSV name. (Ignored for --head softmax.)")
+    pr.add_argument("--aux_weight",    type=float, default=1.0,
+                    help="Weight on the auxiliary ranking/correlation term(s) in --probe_loss "
+                         "(base terms fixed at 1.0). Try 1–3; too high degrades RMSE.")
     pr.add_argument("--seeds",         type=int,   default=3)
     pr.add_argument("--device",        default="cuda" if torch.cuda.is_available() else "cpu")
     pr.add_argument("--hidden",        type=int,   default=128)
