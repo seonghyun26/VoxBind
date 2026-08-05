@@ -26,11 +26,12 @@ density)` — add the batch `pid`s so we can (a) gate L_align to the density sub
 ```python
 from voxbind.models.urepa import UREPAAlignment, BottleneckTap
 
-cdg_tokens = torch.load(cfg.urepa.tokens, weights_only=False)["tokens"]   # {pid: (512,640)}
-align = UREPAAlignment(unet_ch=128, cdg_dim=640, unet_grid=8, cdg_grid=8,
-                       tau=cfg.urepa.tau, n_sample=cfg.urepa.n_sample,
-                       mode=cfg.urepa.mode).to(device)
-tap = BottleneckTap(model.unet3d.middle)          # captures (B,128,8,8,8) each forward
+cdg_tokens = torch.load(cfg.urepa.tokens, weights_only=False)["tokens"]   # {pid: (512, D_cdg)}
+align = UREPAAlignment(unet_ch=cfg.urepa.unet_ch, cdg_dim=cfg.urepa.cdg_dim,   # 512/512 (efficient_60m)
+                       unet_grid=8, cdg_grid=8, tau=cfg.urepa.tau, mode=cfg.urepa.mode,
+                       sampling=cfg.urepa.sampling, tokens_per_sample=cfg.urepa.tokens_per_sample,
+                       w_intra=cfg.urepa.w_intra, w_inter=cfg.urepa.w_inter).to(device)
+tap = BottleneckTap(model.unet3d.middle)          # captures (B,512,8,8,8) each forward
 
 # Unfreezing ladder — STAGE 1: projector only, U-Net frozen (plan §4 decision point).
 for p in model.parameters():        p.requires_grad_(False)
@@ -49,8 +50,9 @@ have = [(i, pid) for i, pid in enumerate(pids) if pid in cdg_tokens]
 if have:
     idx = torch.tensor([i for i, _ in have], device=device)
     tgt = torch.stack([cdg_tokens[p].float() for _, p in have]).to(device)   # (k,512,640)
-    L_align = align(tap.feature[idx], tgt)                     # tap.feature: (B,128,8³)
+    L_align, stats = align(tap.feature[idx], tgt, return_stats=True)   # tap.feature: (B,512,8³)
     loss = L_denoise + cfg.urepa.lam * L_align
+    # log: stats['teacher_entropy'] (tune tau if ~log m), stats['intra'] / stats['inter']
 else:
     loss = L_denoise
 
@@ -67,8 +69,8 @@ CDG tokens are cached at **canonical orientation**. If VoxBind rotates the crop
 token grid. Options, in order of preference:
 1. Disable rotation for the density-subset samples only (denoise loss still augments
    the full set). Cleanest.
-2. Use `align.pool_samples = True` (per-sample pooled manifold loss) — rotation-tolerant,
-   at the cost of discarding intra-sample spatial structure.
+2. Set `sampling='pool'` (per-sample pooled manifold loss) — rotation-tolerant, at the
+   cost of discarding intra-sample spatial structure (also the `w_intra=0` endpoint).
 3. Cache K rotations per pid and pick the matching one (heaviest).
 
 ## 5. Experiments (plan §5)
@@ -93,9 +95,17 @@ walk-jump — the alignment only reshaped the U-Net's learned representation dur
 ```yaml
 urepa:
   tokens: dataset/data/pretrain/urepa_cdg_tokens.pt
-  lam: 0.5            # swept
-  tau: 0.5
-  n_sample: 2048     # manifold similarity-matrix cap; batch size is the real knob
-  mode: relkl        # relkl | gram
-  pool_samples: false
+  unet_ch: 512         # U-Net bottleneck channels (exp_sig0.9: n_channels 128 * 4)
+  cdg_dim: 640         # champion CDG teacher token dim (efficient_60m = 512)
+  lam: 0.5             # swept {0, 0.1, 0.5, 1, 5}
+  tau: 0.3             # log stats['teacher_entropy']; if ~log(m) lower it
+  mode: relkl          # relkl | gram
+  sampling: split      # SWEEP with split (batch-decoupled, per-axis); FINAL run block | flat (legacy) | pool
+  tokens_per_sample: 128
+  w_intra: 1.0         # split-only: spatial (intra-sample) manifold weight
+  w_inter: 1.0         # split-only: sample-relational weight  (sweep these to find the axis)
 ```
+
+Note the intra/inter composition is now explicit `(w_intra, w_inter)` — **not** the old
+implicit `1/B`, so `λ` transfers across batch size / DDP world size. See the companion
+`urepa_manifold_sampling.md` for the 1/B derivation and the CKA-by-axis evidence.
