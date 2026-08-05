@@ -26,6 +26,11 @@ num_workers: 16
 prefetch_factor: 8
 resume: null
 resume_epoch: null
+pretrained_path: null            # warm start: vanilla (density-free) VoxBind checkpoint whose denoiser
+                                 # tensors are loaded weights-only into this density-conditioned model.
+                                 # Zero-init density_proj ⇒ identical output to the source at step 0, so
+                                 # the density correction grows on top of a trained denoiser. NOT `resume`
+                                 # (which would reload the source cfg and drop the density branch).
 exp_dir: exps
 exp_name: voxbind_frozenenc_atomblob7_v2p1_sig${smooth_sigma}
 output_dir: null
