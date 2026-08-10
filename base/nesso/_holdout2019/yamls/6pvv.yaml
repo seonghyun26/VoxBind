@@ -1,0 +1,10 @@
+properties:
+- affinity:
+    binder: L
+sequences:
+- protein:
+    id: A
+    sequence: KETAAAKFERQHMDSSTSAASSSNYCNQMMKSRNLTKDRCKPVNTFVHESLADVQAVCSQKNVACKNGQTNCYQSYSTMSITDCRETGSSKYPNCAYKTTQANKHIIVACEGNPYVPVHFDASV
+- ligand:
+    id: L
+    smiles: Nc1ncnc2c1ncn2C1OC(COP(=O)(O)OP(=O)(O)OP(=O)(O)OP(=O)(O)OP(=O)(O)O)C(O)C1O

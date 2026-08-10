@@ -1,0 +1,19 @@
+sequences:
+- protein:
+    id: A
+    sequence: IEEEELTLTILRQTGGLGISIAGGKGSTPYKGDDEGIFISRVSEEGPAARAGVRVGDKLLEVNGVALQGAEHHEAVEALRGAGTAVQMRVWRER
+- protein:
+    id: B
+    sequence: IEEEELTLTILRQTGGLGISIAGGKGSTPYKGDDEGIFISRVSEEGPAARAGVRVGDKLLEVNGVALQGAEHHEAVEALRGAGTAVQMRVWRER
+- protein:
+    id: C
+    sequence: GSYLVTSV
+- protein:
+    id: D
+    sequence: GSYLVTSV
+- ligand:
+    id: L
+    smiles: '[NH4]CC(=O)N[C@H](C(=O)N[C@H](C(=O)N[C@H](C(=O)N[C@H](C(=O)N[C@H](C(=O)N[C@H](C(=O)N[C@H](C(=O)O)C(C)C)CO)[C@H](O)C)C(C)C)CC(C)C)CC1=[CH]=C[C@@H](CC1)O)CO'
+properties:
+- affinity:
+    binder: L

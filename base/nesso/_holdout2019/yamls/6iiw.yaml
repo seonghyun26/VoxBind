@@ -1,0 +1,13 @@
+sequences:
+- protein:
+    id: A
+    sequence: GPSCKHCKDDVNRLCRVCACHLCGGRQDPDKQLMCDECDMAFHIYCLDPPLSSVPSEDEWYCPECR
+- protein:
+    id: B
+    sequence: VRTKAD
+- ligand:
+    id: L
+    smiles: '[NH4][C@H](C(=O)N[C@H](C(=O)N[C@H](C(=O)N[C@H](C(=O)N[C@H](C(=O)N[C@H](C(=O)O)CC(=O)O)C)CCCC[NH4])[C@H](O)C)CCCNC(N)N)C(C)C'
+properties:
+- affinity:
+    binder: L

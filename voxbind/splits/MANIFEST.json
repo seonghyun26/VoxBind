@@ -204,6 +204,26 @@
           "CL3"
         ]
       }
+    },
+    "lba30": {
+      "file": "lba30_edrscc.csv",
+      "sha256": "9c054fb0f6c1ce73a0783e201800b211368843466daa725447debed939131edc",
+      "counts": {
+        "train": 3846,
+        "val": 823,
+        "test": 1318
+      },
+      "provenance": "LBA-style protein-seq-identity split (mmseqs2 --min-seq-id 0.3 -c 0.8) on lp_edrscc_v2 pool; whole clusters -> splits (seed 42); protein leak-proof, ligand-agnostic. dataset/make_lba_split.py"
+    },
+    "lba60": {
+      "file": "lba60_edrscc.csv",
+      "sha256": "cbbd7c0ed472ebace7e22372472ea6f68eaead9a698fa3221b00f9cb2a983a56",
+      "counts": {
+        "train": 3828,
+        "val": 821,
+        "test": 1338
+      },
+      "provenance": "LBA-style protein-seq-identity split (mmseqs2 --min-seq-id 0.6 -c 0.8) on lp_edrscc_v2 pool; whole clusters -> splits (seed 42); protein leak-proof, ligand-agnostic. dataset/make_lba_split.py"
     }
   }
 }

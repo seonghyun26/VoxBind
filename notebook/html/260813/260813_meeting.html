@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VoxBind Meeting · 260813</title>
+<style>
+  :root {
+    --ink: #1c2433;
+    --ink-soft: #5b6678;
+    --ink-faint: #7a8699;
+    --line: #e3e7ee;
+    --line-strong: #aeb6c4;
+    --bg: #f5f6f8;
+    --card: #ffffff;
+    --accent: #2f6f4f;
+    --accent-2: #3f7f5e;
+    --accent-bg: #eaf5ee;
+    --blue: #38559b;
+    --blue-bg: #e7eefb;
+    --warn: #9a6112;
+    --warn-bg: #fcf3e0;
+    --shadow: 0 1px 2px rgba(20,30,50,.04), 0 8px 24px rgba(20,30,50,.05);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 16px; line-height: 1.55; -webkit-font-smoothing: antialiased;
+  }
+  .page { display: flex; flex-direction: column; max-width: 1280px; margin: 0 auto; padding: 48px 24px 96px; }
+  header.doc { border-bottom: 2px solid var(--ink); padding-bottom: 20px; margin-bottom: 40px; }
+  .eyebrow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px;
+             color: var(--ink-soft); font-size: 13px; letter-spacing: .11em; text-transform: uppercase; }
+  .status { display: inline-flex; align-items: center; gap: 7px; padding: 3px 10px; border-radius: 999px;
+            background: var(--accent-bg); color: #1d5a3a; font-size: 11px; font-weight: 720; letter-spacing: .07em; }
+  .status::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+  header.doc h1 { max-width: 1050px; margin: 0; font-size: clamp(28px, 4vw, 42px); line-height: 1.13;
+                  font-weight: 680; letter-spacing: -.025em; }
+  header.doc .lead { max-width: 1040px; margin: 13px 0 0; color: var(--ink-soft); font-size: 15px; line-height: 1.65; }
+  .doc-section { margin-bottom: 68px; }
+  .section-head { display: flex; align-items: center; gap: 14px; margin: 0 0 28px; padding-bottom: 12px;
+                  border-bottom: 2px solid var(--line-strong); font-size: 23px; line-height: 1.25;
+                  font-weight: 680; letter-spacing: -.015em; }
+  .sec-num { display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; width: 31px; height: 31px;
+             border-radius: 8px; background: var(--accent); color: #fff; font-size: 15px; font-weight: 760; }
+  .section-intro { max-width: 1100px; margin: -5px 0 24px; color: var(--ink-soft); font-size: 13.7px; line-height: 1.65; }
+  .block { margin: 0 0 34px; }
+  .subsection-head { display: flex; align-items: center; gap: 10px; margin: 0 0 9px; font-size: 17px; font-weight: 680; }
+  .sub-lab { display: inline-flex; align-items: center; justify-content: center; min-width: 34px; height: 23px;
+             padding: 0 8px; border-radius: 6px; background: #eef1f6; color: var(--ink-soft);
+             font-size: 11px; font-weight: 760; }
+  .table-sub { max-width: 1100px; margin: 0 0 17px; color: var(--ink-soft); font-size: 13.3px; line-height: 1.6; }
+  .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px;
+                background: var(--card); box-shadow: var(--shadow); }
+  table.results { width: 100%; min-width: 680px; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  table.results th, table.results td { padding: 10px 8px; text-align: center; white-space: nowrap; }
+  table.results thead th { border-bottom: 1px solid var(--line); background: #fafbfc; color: var(--ink-soft);
+                          font-size: 10.7px; line-height: 1.35; font-weight: 650; letter-spacing: .025em; }
+  table.results tbody tr { border-top: 1px solid var(--line); }
+  table.results tbody tr:first-child { border-top: 0; }
+  table.results tbody tr:hover { background: #fbfcfd; }
+  .col-method { min-width: 170px; text-align: left !important; }
+  td.col-method { font-size: 12.3px; font-weight: 620; }
+  .placeholder { color: #a3acb9; }
+  .summary-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 13px; margin: 0 0 26px; }
+  .summary-card { min-height: 118px; padding: 17px 18px; border: 1px solid var(--line); border-radius: 12px;
+                  background: var(--card); box-shadow: var(--shadow); }
+  .summary-card.primary { border-color: #b9d5c3; background: linear-gradient(145deg, #f8fcf9, var(--accent-bg)); }
+  .summary-card .label { color: var(--ink-soft); font-size: 11px; line-height: 1.35; font-weight: 710;
+                         letter-spacing: .075em; text-transform: uppercase; }
+  .summary-card .value { margin-top: 7px; font-size: 27px; line-height: 1.08; font-weight: 730;
+                         letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+  .summary-card .note { margin-top: 7px; color: var(--ink-faint); font-size: 11.7px; }
+  code { padding: 1px 5px; border-radius: 4px; background: #f0f2f5; font-size: .92em; }
+  footer { margin-top: 62px; padding-top: 18px; border-top: 1px solid var(--line-strong);
+           color: var(--ink-faint); font-size: 10.8px; line-height: 1.6; }
+  @media (max-width: 930px) { .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 620px) {
+    .page { padding: 30px 14px 70px; }
+    .summary-grid { grid-template-columns: 1fr; }
+    header.doc h1 { font-size: 29px; }
+  }
+  @media print {
+    body { background: #fff; }
+    .page { max-width: none; padding: 20px; }
+    .summary-card, .table-wrap { box-shadow: none; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <header class="doc">
+    <div class="eyebrow">
+      <span>Meeting note · 2026-08-13</span>
+      <span class="status">affinity + generation + design</span>
+    </div>
+    <h1>CASF evaluation, VoxBind, and MCP design</h1>
+    <p class="lead">Binding-affinity evaluation, generation updates, and the MCP integration contract.</p>
+  </header>
+
+  <section class="doc-section" id="binding-affinity">
+    <h2 class="section-head"><span class="sec-num">1</span>Binding affinity</h2>
+    <p class="section-intro">Held-out affinity evaluation on CASF-2016 and the 2019 temporal set.</p>
+
+    <section class="block" id="casf-2016">
+      <h3 class="subsection-head"><span class="sub-lab">1.1</span>CASF-2016</h3>
+      <p class="table-sub">Compare clean and overlap-affected cohorts with one matched evaluation pipeline.</p>
+      <div class="table-wrap">
+        <table class="results">
+          <thead><tr><th class="col-method">Method</th><th>Cohort</th><th>N</th><th>Pearson r</th><th>Spearman ρ</th><th>RMSE</th></tr></thead>
+          <tbody>
+            <tr><td class="col-method placeholder">Method</td><td>Clean</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td></tr>
+            <tr><td class="col-method placeholder">Method</td><td>Overlap check</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="block" id="casf-2019">
+      <h3 class="subsection-head"><span class="sub-lab">1.2</span>CASF-2019 / temporal holdout</h3>
+      <p class="table-sub">Use the common-complex cohort for direct method comparison; report larger cohorts separately.</p>
+      <div class="table-wrap">
+        <table class="results">
+          <thead><tr><th class="col-method">Method</th><th>Cohort</th><th>N</th><th>Pearson r</th><th>Spearman ρ</th><th>RMSE</th></tr></thead>
+          <tbody>
+            <tr><td class="col-method placeholder">Method</td><td>Common set</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td></tr>
+            <tr><td class="col-method placeholder">Method</td><td>Available set</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </section>
+
+  <section class="doc-section" id="voxbind">
+    <h2 class="section-head"><span class="sec-num">2</span>VoxBind</h2>
+    <p class="section-intro">Generation results, evaluation status, and next experiments.</p>
+    <section class="block">
+      <h3 class="subsection-head"><span class="sub-lab">2.1</span>Results</h3>
+      <div class="summary-grid">
+        <div class="summary-card primary"><div class="label">Baseline</div><div class="value placeholder">—</div><div class="note">Add reference result.</div></div>
+        <div class="summary-card"><div class="label">Current model</div><div class="value placeholder">—</div><div class="note">Add current result.</div></div>
+        <div class="summary-card"><div class="label">Next trial</div><div class="value placeholder">—</div><div class="note">Add experiment and status.</div></div>
+      </div>
+    </section>
+  </section>
+
+  <section class="doc-section" id="mcp-design">
+    <h2 class="section-head"><span class="sec-num">3</span>MCP design</h2>
+    <p class="section-intro">Define the server boundary, tools, and pipeline integration.</p>
+    <section class="block">
+      <h3 class="subsection-head"><span class="sub-lab">3.1</span>Design contract</h3>
+      <p class="table-sub">Draft the component boundary before implementation.</p>
+      <div class="table-wrap">
+        <table class="results">
+          <thead><tr><th class="col-method">Component</th><th>Responsibility</th><th>Input</th><th>Output</th><th>Status</th></tr></thead>
+          <tbody>
+            <tr><td class="col-method">MCP server</td><td class="placeholder">Define scope</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">Draft</td></tr>
+            <tr><td class="col-method">Evaluation tool</td><td class="placeholder">Define contract</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">Draft</td></tr>
+            <tr><td class="col-method">Pipeline adapter</td><td class="placeholder">Define integration</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">Draft</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </section>
+
+  <footer>260813 · Binding affinity · VoxBind · MCP design</footer>
+</div>
+</body>
+</html>

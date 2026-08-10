@@ -1,0 +1,19 @@
+sequences:
+- protein:
+    id: A
+    sequence: SDPLPDNWEMAYTEKGEVYFIDHNTKTTSWLDPRLAKKAKPPEECKENELPYGWEKIDDPIYGTYYVDHINRRTQFENPVLEAKRKLQ
+- protein:
+    id: B
+    sequence: SEFEENEDSDPLPDNWEMAYTEKGEVYFIDHNTKTTSWLDPRLAKKAKPPEECKENELPYGWEKIDDPIYGTYYVDHINRRTQFENPVLEAKRKLQ
+- protein:
+    id: C
+    sequence: DRPPPYVAPPSYE
+- protein:
+    id: D
+    sequence: DRPPPYVAPPSYE
+- ligand:
+    id: L
+    smiles: '[NH4][C@H](C(=O)N[C@H](C(=O)N1[C@H](C(=O)N2[C@H](C(=O)N3[C@H](C(=O)N[C@H](C(=O)N[C@H](C(=O)N[C@H](C(=O)N4[C@H](C(=O)N5[C@H](C(=O)N[C@H](C(=O)N[C@H](C(=O)N[C@H](C(=O)O)C)CC6=[CH]=C[C@@H](CC6)O)CO)CCC5)CCC4)C)C(C)C)CC4=[CH]=C[C@H](CC4)O)CCC3)CCC2)CCC1)C)CC(=O)O'
+properties:
+- affinity:
+    binder: L

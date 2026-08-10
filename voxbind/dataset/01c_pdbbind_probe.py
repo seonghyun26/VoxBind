@@ -558,7 +558,12 @@ def build_cache_signature(
         if atom_metadata and atom_metadata.get("present"):
             atom_filter = atom_metadata.get("element_filter")
             density_filter = density_stats.get("element_filter")
-            if atom_filter != density_filter:
+            # 'none'/'all'/None/'' are synonyms for "no element filtering" (the atom
+            # cache labels it 'none', density stats label it 'all'); only a genuine
+            # filter mismatch (e.g. 'heavy' vs 'all') should fail. The champion cache
+            # uses this atom(none)+density(all) combo and is valid.
+            _norm = lambda x: "all" if x in (None, "none", "all", "") else x
+            if _norm(atom_filter) != _norm(density_filter):
                 raise ValueError(
                     f"atom element_filter={atom_filter!r} but density element_filter={density_filter!r}"
                 )
@@ -1274,6 +1279,11 @@ FROZEN_SPLIT_SCHEMES = {
     "clean_ed":        "clean_ed_v1",         # 4099/1000/214 (CASF-2016 test)
     "clean_ed_v1":     "clean_ed_v1",
     "clean_ed_v1_indep": "clean_ed_v1_indep", # 4099/1000/109 (leakage-independent CASF-2016 test)
+    # LBA-style protein-seq-identity splits on the lp_edrscc_v2 pool (Atom3D-LBA axis):
+    # protein leak-proof (0% cross-split seq overlap), ligand-agnostic. Mirror image of
+    # LP-PDBBind (which controls ligand/interaction, leaks protein). See dataset/make_lba_split.py.
+    "lba30":        "lba30",           # mmseqs 30% id clustering (3846/823/1318)
+    "lba60":        "lba60",           # mmseqs 60% id clustering (3828/821/1338)
 }
 
 
@@ -2701,7 +2711,7 @@ def build_parser() -> argparse.ArgumentParser:
                          "resolution-robust). A non-pK target adds a _<target> token to the CSV name "
                          "and needs its cache built (dataset/extract_bfactors.py for B-factors); "
                          "complexes lacking a label are dropped.")
-    pr.add_argument("--split", choices=["lp", "lp_edrscc", "lp_edrscc_v1", "lp_edrscc_v2", "lp_edrscc_v2_cl1", "lp_edrscc_v2_cl12", "lp_edrscc_v2_cl123", "time", "misato", "clean_ed", "clean_ed_v1", "clean_ed_v1_indep"], default="lp",
+    pr.add_argument("--split", choices=["lp", "lp_edrscc", "lp_edrscc_v1", "lp_edrscc_v2", "lp_edrscc_v2_cl1", "lp_edrscc_v2_cl12", "lp_edrscc_v2_cl123", "time", "misato", "clean_ed", "clean_ed_v1", "clean_ed_v1_indep", "lba30", "lba60"], default="lp",
                     help="Split source. lp = LP_PDBBind new_split recomputed locally (legacy; can drift "
                          "across servers). FROZEN, hash-verified manifests in voxbind/splits/ (identical "
                          "on every server): lp_edrscc (canonical = Kd/Ki-only v2, 3850/817/1320; "
@@ -2847,7 +2857,7 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Keep covalent complexes (default: drop)")
     pt.add_argument("--cl1_only", action="store_true",
                     help="Restrict to LP_PDBBind CL1=True (cleanest subset); adds _filtered to the CSV name")
-    pt.add_argument("--split", choices=["lp", "lp_edrscc", "lp_edrscc_v1", "lp_edrscc_v2", "lp_edrscc_v2_cl1", "lp_edrscc_v2_cl12", "lp_edrscc_v2_cl123", "time", "misato", "clean_ed", "clean_ed_v1", "clean_ed_v1_indep"], default="lp",
+    pt.add_argument("--split", choices=["lp", "lp_edrscc", "lp_edrscc_v1", "lp_edrscc_v2", "lp_edrscc_v2_cl1", "lp_edrscc_v2_cl12", "lp_edrscc_v2_cl123", "time", "misato", "clean_ed", "clean_ed_v1", "clean_ed_v1_indep", "lba30", "lba60"], default="lp",
                     help="Split source (see `probe --split`). Frozen schemes (lp_edrscc/time/misato) load "
                          "the hash-verified manifest in voxbind/splits/ so both arms AND every server use "
                          "the identical pids; lp = legacy local recompute. Pair with --tag to name the CSV.")

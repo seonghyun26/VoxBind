@@ -1,0 +1,10 @@
+sequences:
+- protein:
+    id: A
+    sequence: DAQDKLKYLVKQLERALRELKKSLDELERSLEELEKNPSEDALVENNRLNVENNKIIVEVLRIILELAKASAKL
+- ligand:
+    id: L
+    smiles: '[NH4][C@@]12C[C@H]3C[C@@H](C1)C[C@@H](C2)C3'
+properties:
+- affinity:
+    binder: L

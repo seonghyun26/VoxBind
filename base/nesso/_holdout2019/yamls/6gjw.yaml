@@ -1,0 +1,13 @@
+sequences:
+- protein:
+    id: A
+    sequence: EEFVEEFNRLKTFANFPSGSPVSASTLARAGFLYTGEGDTVRCFSCHAAVDRWQYGDSAVGRHRKVSPNCRFINGFYL
+- protein:
+    id: D
+    sequence: EEFVEEFNRLKTFANFPSGSPVSASTLARAGFLYTGEGDTVRCFSCHAAVDRWQYGDSAVGRHRKVSPNCRFINGFYL
+- ligand:
+    id: L
+    smiles: O=C(Nc1cccc(C(=O)Nc2ccc(S(=O)(=O)O)c3cccc(S(=O)(=O)O)c23)c1)Nc1cccc(C(=O)Nc2ccc(S(=O)(=O)O)c3cccc(S(=O)(=O)O)c23)c1
+properties:
+- affinity:
+    binder: L

@@ -1,0 +1,10 @@
+sequences:
+- protein:
+    id: A
+    sequence: GWKTNKYGTLYKSESASFTPNTDIITRTTGPFRSMPQSGVLKAGQTIHYDEVMKQDGHVWVGYTGNSGQRIYLPVRTWNKSTNTLGVLWGTIK
+- ligand:
+    id: L
+    smiles: C(=O)(NCC(=O)NCC(=O)NCCCC[C@@H](C(=O)N[C@H](C)[C](=O)=O)NC(=O)CC[C@H](C(=O)N)[NH4])CNC(=O)CNC(=O)C[NH4]
+properties:
+- affinity:
+    binder: L

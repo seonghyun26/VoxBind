@@ -1,0 +1,13 @@
+sequences:
+- protein:
+    id: A
+    sequence: ASGKVVKFSYMWTINNFSFCREGEVIKSSTFSSGANDKLKWCLRVNPKGLDEESKDYLSLYLLLVSCPKSEVRAKFKFSILNAKGEETKAMESQRAYRFVQGKDWGFKKFIRRDFLLDEANGLLPDDKLTLFCEVSVVQD
+- protein:
+    id: B
+    sequence: KADTTTP
+- ligand:
+    id: L
+    smiles: '[NH4][C@H](C(=O)N[C@H](C(=O)N[C@H](C(=O)N[C@H](C(=O)N[C@H](C(=O)N[C@H](C(=O)N1[C@H](C(=O)O)CCC1)[C@H](O)C)[C@H](O)C)[C@H](O)C)CC(=O)O)C)C'
+properties:
+- affinity:
+    binder: L

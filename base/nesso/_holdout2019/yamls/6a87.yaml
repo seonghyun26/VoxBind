@@ -1,0 +1,13 @@
+sequences:
+- protein:
+    id: D
+    sequence: APVPVTKLVCDGDTYKCTAYLDYGDGKWVAQWDTAVFHT
+- protein:
+    id: F
+    sequence: APVPVTKLVCDGDTYKCTAYLDYGDGKWVAQWDTAVFHT
+- ligand:
+    id: L
+    smiles: CS[C@@H]1O[C@H](CO[C@@H]2O[C@@H](C)[C@@H](O)[C@@H](O)[C@@H]2O)[C@@H](O)[C@H](O)[C@H]1NC(C)=O
+properties:
+- affinity:
+    binder: L

@@ -74,6 +74,12 @@
   table.results td.col-method .tag.backbone{background:#eef0f2;color:#7a8290;font-style:italic;}
   table.results td.col-method .tag.leaked{background:#fbe0e0;color:#b03030;font-weight:600;border:1px solid #eeb8b8;}
   table.results td.col-method .tag.repro{background:#d8f0e4;color:#1a7a4f;font-weight:600;border:1px solid #a9dcc4;}
+  table.results td.col-modality{text-align:center;vertical-align:middle;padding:6px 11px;font-size:12px;
+    font-weight:600;color:#39424f;line-height:1.4;border-right:1px solid #cfd6df;border-top:1px solid #cfd6df;}
+  table.results th.col-modality{border-right:1px solid #cfd6df;}
+  table.results td.cat-seq{background:#faf3e6;}
+  table.results td.cat-3d{background:#eef1f6;}
+  table.results td.cat-ours{background:#e2efe7;color:#12633a;}
   .lead{font-size:14px;color:var(--ink-soft);margin:10px 0 0;max-width:1000px;}
   table.results thead tr.grp th .nsub{display:block;font-size:9.5px;font-weight:500;letter-spacing:.02em;
     text-transform:none;color:#9aa3b2;margin-top:2px;}
@@ -88,6 +94,10 @@
   .split-notes{font-size:13px;color:var(--ink-soft);margin:12px 0 0;max-width:1000px;line-height:1.55;padding-left:20px;}
   .split-notes li{margin-bottom:4px;} .split-notes b{color:var(--ink);}
   .split-notes code{background:#f0f2f5;padding:1px 5px;border-radius:4px;font-size:12.5px;}
+  .subsec-head{font-size:18px;font-weight:680;color:var(--ink);margin:30px 0 4px;padding-bottom:6px;
+    border-bottom:2px solid #dfe4ea;}
+  .subsec-head .sn{display:inline-block;min-width:34px;color:#566072;font-weight:720;}
+  .subsec-intro{font-size:13.5px;color:var(--ink-soft);margin:8px 0 4px;max-width:1050px;line-height:1.55;}
 </style>
 </head><body><div class="page">
 
@@ -112,6 +122,10 @@
       <li><b>Methods:</b> supervised baselines + CheapNet/BindNet/HonestAffinity vs. the density probe
         (<b>C</b> = coords, <b>C+D+G</b> = coords+density+gradmag).</li>
     </ul>
+
+    <h3 class="subsec-head"><span class="sn">1.1</span> LP-PDBBind &mdash; sequence-clustered no-leak splits</h3>
+    <p class="subsec-intro">In-distribution PDBbind regression on the <code>lp_edrscc_v2</code> test set and its three nested
+      no-leak cleaning tiers (+CL1/+CL2/+CL3). Every method is trained &amp; tested within each tier.</p>
 
     <section class="block">
       <p class="table-title">Figure 1 &nbsp;&middot;&nbsp; Test Pearson r / Spearman &rho; / RMSE &mdash; <code>lp_edrscc_v2</code></p>
@@ -420,7 +434,7 @@
         <code>+CL1</code> 2721&nbsp;/&nbsp;680&nbsp;/&nbsp;1166 &nbsp;&middot;&nbsp;
         <code>+CL1+CL2</code> 2643&nbsp;/&nbsp;659&nbsp;/&nbsp;1149 &nbsp;&middot;&nbsp;
         <code>+CL1+CL2+CL3</code> 1559&nbsp;/&nbsp;410&nbsp;/&nbsp;733.<br>
-        Held-out <b>CASF-2016</b> evaluation of the same methods in <b>Appendix&nbsp;A</b>.<br>
+        Held-out <b>CASF-2016</b> &amp; <b>2019</b> evaluation of the same methods in <b>&sect;1.2</b> (Tables&nbsp;2&ndash;3).<br>
         <b>Badges:</b> the <span class="tag supervised">supervised</span>&nbsp;/&nbsp;<span class="tag pretrained">pretrained</span>&nbsp;/&nbsp;<span class="tag zeroshot">zero-shot</span>
         tag is the training regime; a <i>second</i> badge marks a <b>frozen pretrained backbone</b> &mdash;
         <span class="tag esm">ESM-2</span> = ESM protein-language-model embeddings (HonestAffinity: 650M per-residue
@@ -435,11 +449,11 @@
         because it memorized these complexes; its RMSE is on a pIC50 scale (Nesso predicts IC50-like potency, our labels are Kd/Ki).<br>
         <b>C+D+G&nbsp;+corr</b> is the C+D+G champion with its probe <i>head</i> trained as MSE&nbsp;+&nbsp;Pearson-correlation
         auxiliary (weight&nbsp;5) rather than plain MSE (260806) &mdash; a head-only change on the <b>same frozen encoder</b>,
-        giving slightly higher <i>r</i>/&rho; and lower RMSE. Because the encoder is unchanged, the <b>CASF (Appendix&nbsp;A)
+        giving slightly higher <i>r</i>/&rho; and lower RMSE. Because the encoder is unchanged, the <b>CASF (&sect;1.2)
         and %-within (Table&nbsp;1b) rows keep the MSE-head C+D+G values</b> and are not re-listed for the +corr variant.</p>
       <div class="table-wrap"><table class="results">
         <thead>
-          <tr class="grp"><th class="col-method" rowspan="2">Method</th>
+          <tr class="grp"><th class="col-modality" rowspan="2">Input</th><th class="col-method" rowspan="2">Method</th>
           <th class="div-major" colspan="3">lp_edrscc_v2<span class="nsub">N&nbsp;=&nbsp;1320</span></th>
           <th class="div-major" colspan="3">+CL1<span class="nsub">N&nbsp;=&nbsp;1166</span></th>
           <th class="div-major" colspan="3">+CL1+CL2<span class="nsub">N&nbsp;=&nbsp;1149</span></th>
@@ -453,21 +467,21 @@
           </tr>
         </thead>
         <tbody>
-          <tr><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#469990;margin-right:7px;vertical-align:middle"></span>HBGSA<span class="tag supervised">supervised</span></td><td class="metric div-major"><span class="val">0.565</span> <span class="sd">±0.007</span></td><td class="metric"><span class="val">0.546</span> <span class="sd">±0.003</span></td><td class="metric"><span class="val">1.568</span> <span class="sd">±0.066</span></td><td class="metric div-major"><span class="val">0.551</span> <span class="sd">±0.019</span></td><td class="metric"><span class="val">0.530</span> <span class="sd">±0.008</span></td><td class="metric"><span class="val">1.569</span> <span class="sd">±0.069</span></td><td class="metric div-major"><span class="val">0.560</span> <span class="sd">±0.011</span></td><td class="metric"><span class="val">0.538</span> <span class="sd">±0.013</span></td><td class="metric"><span class="val">1.650</span> <span class="sd">±0.244</span></td><td class="metric div-major"><span class="val">0.578</span> <span class="sd">±0.020</span></td><td class="metric"><span class="val">0.554</span> <span class="sd">±0.012</span></td><td class="metric"><span class="val">1.504</span> <span class="sd">±0.133</span></td></tr>
+          <tr><td class="col-modality cat-seq" rowspan="2">seq+SMILES</td><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#42d4f4;margin-right:7px;vertical-align:middle"></span>HonestAffinity<span class="tag supervised">supervised</span><span class="tag esm" title="frozen pretrained backbone">ESM-2 650M</span></td><td class="metric div-major"><span class="val">0.457</span> <span class="sd">±0.043</span></td><td class="metric"><span class="val">0.443</span> <span class="sd">±0.048</span></td><td class="metric"><span class="val">1.617</span> <span class="sd">±0.011</span></td><td class="metric div-major"><span class="val">0.488</span> <span class="sd">±0.010</span></td><td class="metric"><span class="val">0.468</span> <span class="sd">±0.011</span></td><td class="metric"><span class="val">1.599</span> <span class="sd">±0.024</span></td><td class="metric div-major"><span class="val">0.490</span> <span class="sd">±0.038</span></td><td class="metric"><span class="val">0.456</span> <span class="sd">±0.041</span></td><td class="metric"><span class="val">1.573</span> <span class="sd">±0.036</span></td><td class="metric div-major"><span class="val">0.457</span> <span class="sd">±0.036</span></td><td class="metric"><span class="val">0.430</span> <span class="sd">±0.028</span></td><td class="metric"><span class="val">1.578</span> <span class="sd">±0.032</span></td></tr>
+          <tr><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#00838f;margin-right:7px;vertical-align:middle"></span>Nesso-1<span class="tag zeroshot">zero-shot</span><span class="tag esm" title="frozen pretrained backbone">ESM-2</span><span class="tag leaked" title="trained on affinity data overlapping our PDBbind test set &mdash; leaked ceiling, excluded from best/second ranking">leaked</span></td><td class="metric div-major"><span class="val">0.670</span> <span class="sd">±0.000</span></td><td class="metric"><span class="val">0.663</span> <span class="sd">±0.000</span></td><td class="metric"><span class="val">1.410</span> <span class="sd">±0.000</span></td><td class="metric div-major"><span class="val">0.703</span> <span class="sd">±0.000</span></td><td class="metric"><span class="val">0.694</span> <span class="sd">±0.000</span></td><td class="metric"><span class="val">1.367</span> <span class="sd">±0.000</span></td><td class="metric div-major"><span class="val">0.707</span> <span class="sd">±0.000</span></td><td class="metric"><span class="val">0.698</span> <span class="sd">±0.000</span></td><td class="metric"><span class="val">1.354</span> <span class="sd">±0.000</span></td><td class="metric div-major"><span class="val">0.673</span> <span class="sd">±0.000</span></td><td class="metric"><span class="val">0.659</span> <span class="sd">±0.000</span></td><td class="metric"><span class="val">1.367</span> <span class="sd">±0.000</span></td></tr>
+          <tr><td class="col-modality cat-3d" rowspan="12">3D structure</td><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#469990;margin-right:7px;vertical-align:middle"></span>HBGSA<span class="tag supervised">supervised</span></td><td class="metric div-major"><span class="val">0.565</span> <span class="sd">±0.007</span></td><td class="metric"><span class="val">0.546</span> <span class="sd">±0.003</span></td><td class="metric"><span class="val">1.568</span> <span class="sd">±0.066</span></td><td class="metric div-major"><span class="val">0.551</span> <span class="sd">±0.019</span></td><td class="metric"><span class="val">0.530</span> <span class="sd">±0.008</span></td><td class="metric"><span class="val">1.569</span> <span class="sd">±0.069</span></td><td class="metric div-major"><span class="val">0.560</span> <span class="sd">±0.011</span></td><td class="metric"><span class="val">0.538</span> <span class="sd">±0.013</span></td><td class="metric"><span class="val">1.650</span> <span class="sd">±0.244</span></td><td class="metric div-major"><span class="val">0.578</span> <span class="sd">±0.020</span></td><td class="metric"><span class="val">0.554</span> <span class="sd">±0.012</span></td><td class="metric"><span class="val">1.504</span> <span class="sd">±0.133</span></td></tr>
           <tr><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#e6194B;margin-right:7px;vertical-align:middle"></span>EGNN<span class="tag supervised">supervised</span></td><td class="metric div-major"><span class="val">0.599</span> <span class="sd">±0.005</span></td><td class="metric"><span class="val">0.587</span> <span class="sd">±0.005</span></td><td class="metric"><span class="val">1.431</span> <span class="sd">±0.017</span></td><td class="metric div-major"><span class="val">0.614</span> <span class="sd">±0.003</span></td><td class="metric"><span class="val">0.593</span> <span class="sd">±0.002</span></td><td class="metric"><span class="val">1.409</span> <span class="sd">±0.002</span></td><td class="metric div-major"><span class="val">0.627</span> <span class="sd">±0.006</span></td><td class="metric"><span class="val">0.602</span> <span class="sd">±0.006</span></td><td class="metric"><span class="val">1.379</span> <span class="sd">±0.014</span></td><td class="metric div-major"><span class="val">0.593</span> <span class="sd">±0.004</span></td><td class="metric"><span class="val">0.559</span> <span class="sd">±0.003</span></td><td class="metric"><span class="val">1.408</span> <span class="sd">±0.009</span></td></tr>
           <tr><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#808000;margin-right:7px;vertical-align:middle"></span>EGNN + TargetDiff<span class="tag supervised">supervised</span></td><td class="metric div-major"><span class="val">0.600</span> <span class="sd">±0.004</span></td><td class="metric"><span class="val">0.589</span> <span class="sd">±0.003</span></td><td class="metric"><span class="val">1.426</span> <span class="sd">±0.015</span></td><td class="metric div-major"><span class="val">0.612</span> <span class="sd">±0.004</span></td><td class="metric"><span class="val">0.591</span> <span class="sd">±0.003</span></td><td class="metric"><span class="val">1.405</span> <span class="sd">±0.007</span></td><td class="metric div-major"><span class="val">0.619</span> <span class="sd">±0.003</span></td><td class="metric"><span class="val">0.594</span> <span class="sd">±0.003</span></td><td class="metric"><span class="val">1.385</span> <span class="sd">±0.004</span></td><td class="metric div-major"><span class="val">0.591</span> <span class="sd">±0.001</span></td><td class="metric"><span class="val">0.557</span> <span class="sd">±0.004</span></td><td class="metric"><span class="val">1.407</span> <span class="sd">±0.001</span></td></tr>
           <tr><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#000075;margin-right:7px;vertical-align:middle"></span>GET<span class="tag supervised">supervised</span></td><td class="metric div-major"><span class="val">0.596</span> <span class="sd">±0.005</span></td><td class="metric"><span class="val">0.591</span> <span class="sd">±0.005</span></td><td class="metric"><span class="val">1.428</span> <span class="sd">±0.008</span></td><td class="metric div-major"><span class="val">0.610</span> <span class="sd">±0.002</span></td><td class="metric"><span class="val">0.590</span> <span class="sd">±0.002</span></td><td class="metric"><span class="val">1.411</span> <span class="sd">±0.003</span></td><td class="metric div-major"><span class="val">0.618</span> <span class="sd">±0.004</span></td><td class="metric"><span class="val">0.594</span> <span class="sd">±0.002</span></td><td class="metric"><span class="val">1.391</span> <span class="sd">±0.004</span></td><td class="metric div-major"><span class="val">0.592</span> <span class="sd">±0.003</span></td><td class="metric"><span class="val">0.558</span> <span class="sd">±0.001</span></td><td class="metric"><span class="val">1.404</span> <span class="sd">±0.005</span></td></tr>
           <tr><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#f032e6;margin-right:7px;vertical-align:middle"></span>ProFSA<span class="tag pretrained">pretrained</span><span class="tag backbone" title="frozen pretrained backbone">ProFSA-pre</span></td><td class="metric div-major"><span class="val">0.626</span> <span class="sd">±0.005</span></td><td class="metric"><span class="val">0.597</span> <span class="sd">±0.007</span></td><td class="metric"><span class="val">1.518</span> <span class="sd">±0.016</span></td><td class="metric div-major"><span class="val">0.647</span> <span class="sd">±0.006</span></td><td class="metric"><span class="val">0.614</span> <span class="sd">±0.004</span></td><td class="metric"><span class="val">1.480</span> <span class="sd">±0.018</span></td><td class="metric div-major"><span class="val">0.654</span> <span class="sd">±0.007</span></td><td class="metric"><span class="val">0.619</span> <span class="sd">±0.007</span></td><td class="metric"><span class="val">1.445</span> <span class="sd">±0.066</span></td><td class="metric div-major best"><span class="val">0.651</span> <span class="sd">±0.003</span></td><td class="metric best"><span class="val">0.616</span> <span class="sd">±0.005</span></td><td class="metric best"><span class="val">1.367</span> <span class="sd">±0.011</span></td></tr>
           <tr><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#f58231;margin-right:7px;vertical-align:middle"></span>CheapNet<span class="tag supervised">supervised</span></td><td class="metric div-major"><span class="val">0.607</span> <span class="sd">±0.012</span></td><td class="metric"><span class="val">0.581</span> <span class="sd">±0.013</span></td><td class="metric"><span class="val">1.460</span> <span class="sd">±0.032</span></td><td class="metric div-major"><span class="val">0.643</span> <span class="sd">±0.004</span></td><td class="metric"><span class="val">0.608</span> <span class="sd">±0.007</span></td><td class="metric"><span class="val">1.399</span> <span class="sd">±0.005</span></td><td class="metric div-major"><span class="val">0.631</span> <span class="sd">±0.013</span></td><td class="metric"><span class="val">0.593</span> <span class="sd">±0.014</span></td><td class="metric"><span class="val">1.409</span> <span class="sd">±0.028</span></td><td class="metric div-major"><span class="val">0.588</span> <span class="sd">±0.029</span></td><td class="metric"><span class="val">0.545</span> <span class="sd">±0.034</span></td><td class="metric"><span class="val">1.466</span> <span class="sd">±0.054</span></td></tr>
           <tr><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#911eb4;margin-right:7px;vertical-align:middle"></span>BindNet<span class="tag supervised">supervised</span></td><td class="metric div-major"><span class="val">0.529</span> <span class="sd">±0.020</span></td><td class="metric"><span class="val">0.512</span> <span class="sd">±0.012</span></td><td class="metric"><span class="val">1.604</span> <span class="sd">±0.122</span></td><td class="metric div-major"><span class="val">0.532</span> <span class="sd">±0.030</span></td><td class="metric"><span class="val">0.501</span> <span class="sd">±0.028</span></td><td class="metric"><span class="val">1.523</span> <span class="sd">±0.050</span></td><td class="metric div-major"><span class="val">0.550</span> <span class="sd">±0.019</span></td><td class="metric"><span class="val">0.522</span> <span class="sd">±0.017</span></td><td class="metric"><span class="val">1.596</span> <span class="sd">±0.080</span></td><td class="metric div-major"><span class="val">0.484</span> <span class="sd">±0.012</span></td><td class="metric"><span class="val">0.464</span> <span class="sd">±0.010</span></td><td class="metric"><span class="val">1.583</span> <span class="sd">±0.076</span></td></tr>
-          <tr><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#42d4f4;margin-right:7px;vertical-align:middle"></span>HonestAffinity<span class="tag supervised">supervised</span><span class="tag esm" title="frozen pretrained backbone">ESM-2 650M</span></td><td class="metric div-major"><span class="val">0.457</span> <span class="sd">±0.043</span></td><td class="metric"><span class="val">0.443</span> <span class="sd">±0.048</span></td><td class="metric"><span class="val">1.617</span> <span class="sd">±0.011</span></td><td class="metric div-major"><span class="val">0.488</span> <span class="sd">±0.010</span></td><td class="metric"><span class="val">0.468</span> <span class="sd">±0.011</span></td><td class="metric"><span class="val">1.599</span> <span class="sd">±0.024</span></td><td class="metric div-major"><span class="val">0.490</span> <span class="sd">±0.038</span></td><td class="metric"><span class="val">0.456</span> <span class="sd">±0.041</span></td><td class="metric"><span class="val">1.573</span> <span class="sd">±0.036</span></td><td class="metric div-major"><span class="val">0.457</span> <span class="sd">±0.036</span></td><td class="metric"><span class="val">0.430</span> <span class="sd">±0.028</span></td><td class="metric"><span class="val">1.578</span> <span class="sd">±0.032</span></td></tr>
           <tr><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#9A6324;margin-right:7px;vertical-align:middle"></span>AEV-PLIG<span class="tag supervised">supervised</span></td><td class="metric div-major"><span class="val">0.522</span> <span class="sd">±0.019</span></td><td class="metric"><span class="val">0.492</span> <span class="sd">±0.019</span></td><td class="metric"><span class="val">1.617</span> <span class="sd">±0.004</span></td><td class="metric div-major"><span class="val">0.593</span> <span class="sd">±0.011</span></td><td class="metric"><span class="val">0.557</span> <span class="sd">±0.008</span></td><td class="metric"><span class="val">1.464</span> <span class="sd">±0.024</span></td><td class="metric div-major"><span class="val">0.589</span> <span class="sd">±0.014</span></td><td class="metric"><span class="val">0.550</span> <span class="sd">±0.018</span></td><td class="metric"><span class="val">1.458</span> <span class="sd">±0.021</span></td><td class="metric div-major"><span class="val">0.502</span> <span class="sd">±0.015</span></td><td class="metric"><span class="val">0.470</span> <span class="sd">±0.017</span></td><td class="metric"><span class="val">1.585</span> <span class="sd">±0.031</span></td></tr>
           <tr><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#808080;margin-right:7px;vertical-align:middle"></span>DSMBind<span class="tag zeroshot">zero-shot</span><span class="tag esm" title="frozen pretrained backbone">ESM-2 3B</span></td><td class="metric div-major"><span class="val">0.541</span> <span class="sd">±0.007</span></td><td class="metric"><span class="val">0.507</span> <span class="sd">±0.010</span></td><td class="metric"><span class="val">1.494</span> <span class="sd">±0.011</span></td><td class="metric div-major"><span class="val">0.565</span> <span class="sd">±0.011</span></td><td class="metric"><span class="val">0.527</span> <span class="sd">±0.016</span></td><td class="metric"><span class="val">1.472</span> <span class="sd">±0.009</span></td><td class="metric div-major"><span class="val">0.572</span> <span class="sd">±0.006</span></td><td class="metric"><span class="val">0.534</span> <span class="sd">±0.011</span></td><td class="metric"><span class="val">1.449</span> <span class="sd">±0.006</span></td><td class="metric div-major"><span class="val">0.569</span> <span class="sd">±0.013</span></td><td class="metric"><span class="val">0.535</span> <span class="sd">±0.013</span></td><td class="metric"><span class="val">1.438</span> <span class="sd">±0.018</span></td></tr>
           <tr><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#dcbeff;margin-right:7px;vertical-align:middle"></span>IPNet (frozen)<span class="tag pretrained">pretrained</span><span class="tag backbone" title="frozen pretrained backbone">affinity-pre</span><span class="tag leaked" title="trained on affinity data overlapping our PDBbind test set &mdash; leaked ceiling, excluded from best/second ranking">leaked</span></td><td class="metric div-major"><span class="val">0.583</span> <span class="sd">±0.007</span></td><td class="metric"><span class="val">0.550</span> <span class="sd">±0.005</span></td><td class="metric"><span class="val">1.464</span> <span class="sd">±0.012</span></td><td class="metric div-major"><span class="val">0.584</span> <span class="sd">±0.012</span></td><td class="metric"><span class="val">0.549</span> <span class="sd">±0.009</span></td><td class="metric"><span class="val">1.463</span> <span class="sd">±0.013</span></td><td class="metric div-major"><span class="val">0.601</span> <span class="sd">±0.013</span></td><td class="metric"><span class="val">0.558</span> <span class="sd">±0.012</span></td><td class="metric"><span class="val">1.430</span> <span class="sd">±0.012</span></td><td class="metric div-major"><span class="val">0.570</span> <span class="sd">±0.022</span></td><td class="metric"><span class="val">0.514</span> <span class="sd">±0.022</span></td><td class="metric"><span class="val">1.448</span> <span class="sd">±0.023</span></td></tr>
           <tr><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#fabed4;margin-right:7px;vertical-align:middle"></span>IPNet (scratch)<span class="tag supervised">supervised</span></td><td class="metric div-major"><span class="val">0.578</span> <span class="sd">±0.012</span></td><td class="metric"><span class="val">0.553</span> <span class="sd">±0.014</span></td><td class="metric"><span class="val">1.458</span> <span class="sd">±0.008</span></td><td class="metric div-major"><span class="val">0.603</span> <span class="sd">±0.007</span></td><td class="metric"><span class="val">0.565</span> <span class="sd">±0.006</span></td><td class="metric"><span class="val">1.438</span> <span class="sd">±0.020</span></td><td class="metric div-major"><span class="val">0.618</span> <span class="sd">±0.007</span></td><td class="metric"><span class="val">0.578</span> <span class="sd">±0.008</span></td><td class="metric"><span class="val">1.403</span> <span class="sd">±0.018</span></td><td class="metric div-major"><span class="val">0.557</span> <span class="sd">±0.039</span></td><td class="metric"><span class="val">0.532</span> <span class="sd">±0.021</span></td><td class="metric"><span class="val">1.438</span> <span class="sd">±0.046</span></td></tr>
-          <tr><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#00838f;margin-right:7px;vertical-align:middle"></span>Nesso-1<span class="tag zeroshot">zero-shot</span><span class="tag esm" title="frozen pretrained backbone">ESM-2</span><span class="tag leaked" title="trained on affinity data overlapping our PDBbind test set &mdash; leaked ceiling, excluded from best/second ranking">leaked</span></td><td class="metric div-major"><span class="val">0.670</span> <span class="sd">±0.000</span></td><td class="metric"><span class="val">0.663</span> <span class="sd">±0.000</span></td><td class="metric"><span class="val">1.410</span> <span class="sd">±0.000</span></td><td class="metric div-major"><span class="val">0.703</span> <span class="sd">±0.000</span></td><td class="metric"><span class="val">0.694</span> <span class="sd">±0.000</span></td><td class="metric"><span class="val">1.367</span> <span class="sd">±0.000</span></td><td class="metric div-major"><span class="val">0.707</span> <span class="sd">±0.000</span></td><td class="metric"><span class="val">0.698</span> <span class="sd">±0.000</span></td><td class="metric"><span class="val">1.354</span> <span class="sd">±0.000</span></td><td class="metric div-major"><span class="val">0.673</span> <span class="sd">±0.000</span></td><td class="metric"><span class="val">0.659</span> <span class="sd">±0.000</span></td><td class="metric"><span class="val">1.367</span> <span class="sd">±0.000</span></td></tr>
-          <tr class="grp-top"><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#4363d8;margin-right:7px;vertical-align:middle"></span>C<span class="tag pretrained">pretrained</span><span class="tag backbone" title="frozen pretrained backbone">voxel-MAE</span></td><td class="metric div-major"><span class="val">0.632</span> <span class="sd">±0.001</span></td><td class="metric"><span class="val">0.596</span> <span class="sd">±0.001</span></td><td class="metric"><span class="val">1.381</span> <span class="sd">±0.011</span></td><td class="metric div-major"><span class="val">0.636</span> <span class="sd">±0.001</span></td><td class="metric"><span class="val">0.606</span> <span class="sd">±0.000</span></td><td class="metric second"><span class="val">1.387</span> <span class="sd">±0.016</span></td><td class="metric div-major"><span class="val">0.646</span> <span class="sd">±0.002</span></td><td class="metric"><span class="val">0.612</span> <span class="sd">±0.000</span></td><td class="metric"><span class="val">1.464</span> <span class="sd">±0.065</span></td><td class="metric div-major"><span class="val">0.617</span> <span class="sd">±0.002</span></td><td class="metric"><span class="val">0.581</span> <span class="sd">±0.001</span></td><td class="metric"><span class="val">1.439</span> <span class="sd">±0.049</span></td></tr>
-          <tr><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#3cb44b;margin-right:7px;vertical-align:middle;border:2px solid #000"></span>C+D+G<span class="tag pretrained">pretrained</span><span class="tag backbone" title="frozen pretrained backbone">voxel-MAE</span></td><td class="metric div-major second"><span class="val">0.660</span> <span class="sd">±0.002</span></td><td class="metric second"><span class="val">0.644</span> <span class="sd">±0.001</span></td><td class="metric second"><span class="val">1.349</span> <span class="sd">±0.019</span></td><td class="metric div-major second"><span class="val">0.657</span> <span class="sd">±0.004</span></td><td class="metric best"><span class="val">0.640</span> <span class="sd">±0.001</span></td><td class="metric"><span class="val">1.430</span> <span class="sd">±0.052</span></td><td class="metric div-major second"><span class="val">0.659</span> <span class="sd">±0.003</span></td><td class="metric best"><span class="val">0.642</span> <span class="sd">±0.000</span></td><td class="metric best"><span class="val">1.333</span> <span class="sd">±0.009</span></td><td class="metric div-major"><span class="val">0.623</span> <span class="sd">±0.000</span></td><td class="metric"><span class="val">0.602</span> <span class="sd">±0.001</span></td><td class="metric second"><span class="val">1.370</span> <span class="sd">±0.011</span></td></tr>
+          <tr><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#4363d8;margin-right:7px;vertical-align:middle"></span>C<span class="tag pretrained">pretrained</span><span class="tag backbone" title="frozen pretrained backbone">voxel-MAE</span></td><td class="metric div-major"><span class="val">0.632</span> <span class="sd">±0.001</span></td><td class="metric"><span class="val">0.596</span> <span class="sd">±0.001</span></td><td class="metric"><span class="val">1.381</span> <span class="sd">±0.011</span></td><td class="metric div-major"><span class="val">0.636</span> <span class="sd">±0.001</span></td><td class="metric"><span class="val">0.606</span> <span class="sd">±0.000</span></td><td class="metric second"><span class="val">1.387</span> <span class="sd">±0.016</span></td><td class="metric div-major"><span class="val">0.646</span> <span class="sd">±0.002</span></td><td class="metric"><span class="val">0.612</span> <span class="sd">±0.000</span></td><td class="metric"><span class="val">1.464</span> <span class="sd">±0.065</span></td><td class="metric div-major"><span class="val">0.617</span> <span class="sd">±0.002</span></td><td class="metric"><span class="val">0.581</span> <span class="sd">±0.001</span></td><td class="metric"><span class="val">1.439</span> <span class="sd">±0.049</span></td></tr>
+          <tr><td class="col-modality cat-ours" rowspan="2">3D structure<br>+&#8202;density <b>(ours)</b></td><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#3cb44b;margin-right:7px;vertical-align:middle;border:2px solid #000"></span>C+D+G<span class="tag pretrained">pretrained</span><span class="tag backbone" title="frozen pretrained backbone">voxel-MAE</span></td><td class="metric div-major second"><span class="val">0.660</span> <span class="sd">±0.002</span></td><td class="metric second"><span class="val">0.644</span> <span class="sd">±0.001</span></td><td class="metric second"><span class="val">1.349</span> <span class="sd">±0.019</span></td><td class="metric div-major second"><span class="val">0.657</span> <span class="sd">±0.004</span></td><td class="metric best"><span class="val">0.640</span> <span class="sd">±0.001</span></td><td class="metric"><span class="val">1.430</span> <span class="sd">±0.052</span></td><td class="metric div-major second"><span class="val">0.659</span> <span class="sd">±0.003</span></td><td class="metric best"><span class="val">0.642</span> <span class="sd">±0.000</span></td><td class="metric best"><span class="val">1.333</span> <span class="sd">±0.009</span></td><td class="metric div-major"><span class="val">0.623</span> <span class="sd">±0.000</span></td><td class="metric"><span class="val">0.602</span> <span class="sd">±0.001</span></td><td class="metric second"><span class="val">1.370</span> <span class="sd">±0.011</span></td></tr>
           <tr><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#0b6b3a;margin-right:7px;vertical-align:middle"></span>C+D+G +corr<span class="tag pretrained">pretrained</span><span class="tag backbone" title="frozen pretrained backbone">voxel-MAE</span></td><td class="metric div-major best"><span class="val">0.665</span> <span class="sd">±0.001</span></td><td class="metric best"><span class="val">0.647</span> <span class="sd">±0.001</span></td><td class="metric best"><span class="val">1.325</span> <span class="sd">±0.001</span></td><td class="metric div-major best"><span class="val">0.659</span> <span class="sd">±0.001</span></td><td class="metric second"><span class="val">0.638</span> <span class="sd">±0.001</span></td><td class="metric best"><span class="val">1.356</span> <span class="sd">±0.015</span></td><td class="metric div-major best"><span class="val">0.661</span> <span class="sd">±0.002</span></td><td class="metric second"><span class="val">0.641</span> <span class="sd">±0.001</span></td><td class="metric second"><span class="val">1.378</span> <span class="sd">±0.034</span></td><td class="metric div-major second"><span class="val">0.626</span> <span class="sd">±0.001</span></td><td class="metric second"><span class="val">0.604</span> <span class="sd">±0.001</span></td><td class="metric"><span class="val">1.375</span> <span class="sd">±0.020</span></td></tr>
         </tbody>
       </table></div>
@@ -1370,6 +1384,101 @@
       </svg>
       </div>
     </section>
+
+    <h3 class="subsec-head"><span class="sn">1.2</span> CASF-2016 &amp; 2019 temporal holdout &mdash; held-out generalization</h3>
+    <p class="subsec-intro">Two held-out benchmarks under one <b>consistent criterion</b>: complexes with an electron-density
+      map (<b>ED-available</b>) that are <b>unseen by our method end-to-end</b> &mdash; excluded from the champion's SSL
+      pretraining (<b>PLINDER-v2</b>) <i>and</i> the downstream affinity split (<code>lp_edrscc_v2</code> train/val). CASF-2016 is
+      the standard core set (here its clean-92 subset meeting the criterion); the 2019 holdout is a <b>temporal</b> test
+      (deposited 2019+, so future chemistry). Method render tiers: <b>seq+SMILES</b> &rarr; <b>3D structure</b> &rarr;
+      <b>3D structure + density (ours)</b>.
+      <br><b>TBA rows</b> = not yet evaluated on this consolidated subset: <b>DSMBind, IPNet (frozen/scratch)</b>
+      (each needs its custom harness re-run on the new criterion); <b>BindNet</b> (evaluated on LP-PDBBind only, no held-out
+      harness). All other 1.1 baselines
+      are filled. <b>Nesso-1</b> is scored on its available subset (N&nbsp;marked&nbsp;*; ~128 very large multi-chain proteins
+      time out of its slow ESM pipeline).</p>
+
+    <section class="block">
+      <p class="table-title">Table 2 &nbsp;&middot;&nbsp; CASF-2016 &mdash; held-out <b>clean-92</b> (ED, unseen by pretrain + downstream)</p>
+      <p class="table-sub">The CASF-2016 core restricted to the 92 complexes that are ED-available and in <b>neither</b>
+        <code>lp_edrscc_v2</code> train/val <b>nor</b> PLINDER-v2 pretraining &mdash; the only truly held-out subset (the full
+        214 core overlaps training: 90 in train, 32 in val). On clean-92 the memorization advantage of the baselines
+        collapses and the frozen density probe <b>C+D+G</b> leads. <span class="tag leaked">leaked</span> rows (Nesso-1/PLAPT,
+        externally pretrained) are shown for reference but excluded from best. <b style="color:#a33f39">Small-<i>n</i>:</b>
+        bootstrap 95% CI on &rho; is &plusmn;~0.14 at n=92, so the top cluster is statistically tied &mdash; the 2019 holdout
+        (Table 3, larger n) is the sharper test. <b>best</b> &rho; in <b>bold</b>.</p>
+      <div class="table-wrap"><table class="results">
+        <thead>
+          <tr class="grp"><th class="col-modality" rowspan="2">Input</th><th class="col-method" rowspan="2">Method</th>
+          <th class="div-major" colspan="3">CASF-2016 (held-out ED, clean-92)<span class="nsub">N&nbsp;=&nbsp;92</span></th>
+          </tr>
+          <tr class="sub">
+          <th class="div-major">Pearson&nbsp;<i>r</i></th><th>Spearman&nbsp;&rho;</th><th>RMSE&nbsp;&darr;</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td class="col-modality cat-seq" rowspan="5">seq+SMILES</td><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#8a6d3b;margin-right:7px;vertical-align:middle"></span>PLAPT<span class="tag zeroshot">zero-shot</span><span class="tag leaked" title="trained on affinity data overlapping our PDBbind test set &mdash; leaked ceiling, excluded from best/second ranking">leaked</span></td><td class="metric div-major"><span class="val">0.780</span> <span class="sd">±0.000</span></td><td class="metric"><span class="val">0.760</span> <span class="sd">±0.000</span></td><td class="metric"><span class="val">1.320</span> <span class="sd">±0.000</span></td></tr>
+          <tr><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#00838f;margin-right:7px;vertical-align:middle"></span>Nesso-1<span class="tag zeroshot">zero-shot</span><span class="tag esm" title="frozen pretrained backbone">ESM-2</span><span class="tag leaked" title="trained on affinity data overlapping our PDBbind test set &mdash; leaked ceiling, excluded from best/second ranking">leaked</span></td><td class="metric div-major"><span class="val">0.621</span> <span class="sd">±0.000</span></td><td class="metric"><span class="val">0.631</span> <span class="sd">±0.000</span></td><td class="metric"><span class="val">1.721</span> <span class="sd">±0.000</span></td></tr>
+          <tr><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#a86a26;margin-right:7px;vertical-align:middle"></span>MolTrans<span class="tag supervised">supervised</span></td><td class="metric div-major"><span class="val">0.539</span> <span class="sd">±0.000</span></td><td class="metric"><span class="val">0.499</span> <span class="sd">±0.000</span></td><td class="metric"><span class="val">1.697</span> <span class="sd">±0.000</span></td></tr>
+          <tr><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#c98a3a;margin-right:7px;vertical-align:middle"></span>DeepDTA<span class="tag supervised">supervised</span></td><td class="metric div-major"><span class="val">0.550</span> <span class="sd">±0.000</span></td><td class="metric"><span class="val">0.488</span> <span class="sd">±0.000</span></td><td class="metric"><span class="val">1.684</span> <span class="sd">±0.000</span></td></tr>
+          <tr><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#42d4f4;margin-right:7px;vertical-align:middle"></span>HonestAffinity<span class="tag supervised">supervised</span><span class="tag esm" title="frozen pretrained backbone">ESM-2 650M</span></td><td class="metric div-major"><span class="tbd">TBA</span></td><td class="metric"><span class="tbd">TBA</span></td><td class="metric"><span class="tbd">TBA</span></td></tr>
+          <tr><td class="col-modality cat-3d" rowspan="12">3D structure</td><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#f032e6;margin-right:7px;vertical-align:middle"></span>ProFSA<span class="tag pretrained">pretrained</span><span class="tag backbone" title="frozen pretrained backbone">ProFSA-pre</span></td><td class="metric div-major best"><span class="val">0.717</span> <span class="sd">±0.010</span></td><td class="metric best"><span class="val">0.676</span> <span class="sd">±0.008</span></td><td class="metric"><span class="val">1.697</span> <span class="sd">±0.020</span></td></tr>
+          <tr><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#f58231;margin-right:7px;vertical-align:middle"></span>CheapNet<span class="tag supervised">supervised</span></td><td class="metric div-major"><span class="val">0.671</span> <span class="sd">±0.037</span></td><td class="metric"><span class="val">0.645</span> <span class="sd">±0.033</span></td><td class="metric"><span class="val">1.548</span> <span class="sd">±0.083</span></td></tr>
+          <tr><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#808000;margin-right:7px;vertical-align:middle"></span>EGNN + TargetDiff<span class="tag supervised">supervised</span></td><td class="metric div-major"><span class="val">0.651</span> <span class="sd">±0.015</span></td><td class="metric"><span class="val">0.639</span> <span class="sd">±0.017</span></td><td class="metric"><span class="val">1.581</span> <span class="sd">±0.031</span></td></tr>
+          <tr><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#e6194B;margin-right:7px;vertical-align:middle"></span>EGNN<span class="tag supervised">supervised</span></td><td class="metric div-major"><span class="val">0.643</span> <span class="sd">±0.022</span></td><td class="metric"><span class="val">0.632</span> <span class="sd">±0.022</span></td><td class="metric"><span class="val">1.568</span> <span class="sd">±0.009</span></td></tr>
+          <tr><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#000075;margin-right:7px;vertical-align:middle"></span>GET<span class="tag supervised">supervised</span></td><td class="metric div-major"><span class="val">0.639</span> <span class="sd">±0.008</span></td><td class="metric"><span class="val">0.625</span> <span class="sd">±0.009</span></td><td class="metric"><span class="val">1.573</span> <span class="sd">±0.003</span></td></tr>
+          <tr><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#4363d8;margin-right:7px;vertical-align:middle"></span>C<span class="tag pretrained">pretrained</span><span class="tag backbone" title="frozen pretrained backbone">voxel-MAE</span></td><td class="metric div-major"><span class="val">0.655</span> <span class="sd">±0.029</span></td><td class="metric"><span class="val">0.616</span> <span class="sd">±0.031</span></td><td class="metric"><span class="val">1.554</span> <span class="sd">±0.032</span></td></tr>
+          <tr><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#469990;margin-right:7px;vertical-align:middle"></span>HBGSA<span class="tag supervised">supervised</span></td><td class="metric div-major"><span class="val">0.610</span> <span class="sd">±0.025</span></td><td class="metric"><span class="val">0.596</span> <span class="sd">±0.033</span></td><td class="metric"><span class="val">1.676</span> <span class="sd">±0.096</span></td></tr>
+          <tr><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#9A6324;margin-right:7px;vertical-align:middle"></span>AEV-PLIG<span class="tag supervised">supervised</span></td><td class="metric div-major"><span class="val">0.485</span> <span class="sd">±0.055</span></td><td class="metric"><span class="val">0.441</span> <span class="sd">±0.051</span></td><td class="metric"><span class="val">1.938</span> <span class="sd">±0.129</span></td></tr>
+          <tr><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#911eb4;margin-right:7px;vertical-align:middle"></span>BindNet<span class="tag supervised">supervised</span></td><td class="metric div-major"><span class="tbd">TBA</span></td><td class="metric"><span class="tbd">TBA</span></td><td class="metric"><span class="tbd">TBA</span></td></tr>
+          <tr><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#808080;margin-right:7px;vertical-align:middle"></span>DSMBind<span class="tag zeroshot">zero-shot</span><span class="tag esm" title="frozen pretrained backbone">ESM-2 3B</span></td><td class="metric div-major"><span class="tbd">TBA</span></td><td class="metric"><span class="tbd">TBA</span></td><td class="metric"><span class="tbd">TBA</span></td></tr>
+          <tr><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#dcbeff;margin-right:7px;vertical-align:middle"></span>IPNet (frozen)<span class="tag pretrained">pretrained</span><span class="tag backbone" title="frozen pretrained backbone">affinity-pre</span><span class="tag leaked" title="trained on affinity data overlapping our PDBbind test set &mdash; leaked ceiling, excluded from best/second ranking">leaked</span></td><td class="metric div-major"><span class="tbd">TBA</span></td><td class="metric"><span class="tbd">TBA</span></td><td class="metric"><span class="tbd">TBA</span></td></tr>
+          <tr><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#fabed4;margin-right:7px;vertical-align:middle"></span>IPNet (scratch)<span class="tag supervised">supervised</span></td><td class="metric div-major"><span class="tbd">TBA</span></td><td class="metric"><span class="tbd">TBA</span></td><td class="metric"><span class="tbd">TBA</span></td></tr>
+          <tr><td class="col-modality cat-ours" rowspan="2">3D structure<br>+&#8202;density <b>(ours)</b></td><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#0b6b3a;margin-right:7px;vertical-align:middle"></span>C+D+G +corr<span class="tag pretrained">pretrained</span><span class="tag backbone" title="frozen pretrained backbone">voxel-MAE</span></td><td class="metric div-major"><span class="val">0.678</span> <span class="sd">±0.033</span></td><td class="metric"><span class="val">0.650</span> <span class="sd">±0.031</span></td><td class="metric best"><span class="val">1.534</span> <span class="sd">±0.045</span></td></tr>
+          <tr><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#3cb44b;margin-right:7px;vertical-align:middle;border:2px solid #000"></span>C+D+G<span class="tag pretrained">pretrained</span><span class="tag backbone" title="frozen pretrained backbone">voxel-MAE</span></td><td class="metric div-major"><span class="val">0.674</span> <span class="sd">±0.026</span></td><td class="metric"><span class="val">0.648</span> <span class="sd">±0.018</span></td><td class="metric"><span class="val">1.559</span> <span class="sd">±0.025</span></td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <section class="block">
+      <p class="table-title">Table 3 &nbsp;&middot;&nbsp; 2019 temporal holdout &mdash; <b>common ED set</b> (identical 444 complexes)</p>
+      <p class="table-sub">A genuinely new temporal test: PDBbind complexes deposited <b>2019+</b>, ED-available, and unseen by
+        both pretraining (PLINDER-v2) and the downstream split. All full-coverage methods scored on the <b>same
+        444 complexes</b> (intersection). <b>C+D+G leads &mdash; density &gt; coords (C+D+G&nbsp;&gt;&nbsp;C)
+        and both beat every baseline</b>; the seq+SMILES tier sits below 3D structure, and electron density adds the final
+        margin. Two methods can't reach the full ED set &mdash; <b>HBGSA</b> (loader resolves only <code>pbpp-2020</code>) and
+        <b>Nesso</b> (slow ESM) &mdash; so they are on their available subset (<b>N marked *</b>, excluded from ranking).
+        <span class="tag leaked">leaked</span> = externally pretrained (Nesso-1/PLAPT). <b>best</b> &rho; in <b>bold</b>.</p>
+      <div class="table-wrap"><table class="results">
+        <thead>
+          <tr class="grp"><th class="col-modality" rowspan="2">Input</th>
+            <th class="col-method" rowspan="2">Method</th>
+            <th class="div-major" colspan="4">2019 holdout &mdash; common ED set</th></tr>
+          <tr class="sub"><th class="div-major">Pearson&nbsp;<i>r</i></th><th>Spearman&nbsp;&rho;</th><th>RMSE&nbsp;&darr;</th><th>N</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="col-modality cat-seq" rowspan="5">seq+SMILES</td><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#00838f;margin-right:7px;vertical-align:middle"></span>Nesso-1<span class="tag zeroshot">zero-shot</span><span class="tag esm" title="frozen pretrained backbone">ESM-2</span><span class="tag leaked" title="trained on affinity data overlapping our PDBbind test set &mdash; leaked ceiling, excluded from best/second ranking">leaked</span></td><td class="metric div-major"><span class="val">0.690</span> <span class="sd">±0.000</span></td><td class="metric"><span class="val">0.679</span> <span class="sd">±0.000</span></td><td class="metric"><span class="val">1.468</span> <span class="sd">±0.000</span></td><td class="metric"><span class="sd">316*</span></td></tr>
+          <tr><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#c98a3a;margin-right:7px;vertical-align:middle"></span>DeepDTA<span class="tag supervised">supervised</span></td><td class="metric div-major"><span class="val">0.545</span> <span class="sd">±0.000</span></td><td class="metric"><span class="val">0.499</span> <span class="sd">±0.000</span></td><td class="metric"><span class="val">1.693</span> <span class="sd">±0.000</span></td><td class="metric"><span class="sd">444</span></td></tr>
+          <tr><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#8a6d3b;margin-right:7px;vertical-align:middle"></span>PLAPT<span class="tag zeroshot">zero-shot</span><span class="tag leaked" title="trained on affinity data overlapping our PDBbind test set &mdash; leaked ceiling, excluded from best/second ranking">leaked</span></td><td class="metric div-major"><span class="val">0.522</span> <span class="sd">±0.000</span></td><td class="metric"><span class="val">0.474</span> <span class="sd">±0.000</span></td><td class="metric"><span class="val">1.773</span> <span class="sd">±0.000</span></td><td class="metric"><span class="sd">444</span></td></tr>
+          <tr><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#a86a26;margin-right:7px;vertical-align:middle"></span>MolTrans<span class="tag supervised">supervised</span></td><td class="metric div-major"><span class="val">0.400</span> <span class="sd">±0.000</span></td><td class="metric"><span class="val">0.359</span> <span class="sd">±0.000</span></td><td class="metric"><span class="val">1.980</span> <span class="sd">±0.000</span></td><td class="metric"><span class="sd">444</span></td></tr>
+          <tr><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#42d4f4;margin-right:7px;vertical-align:middle"></span>HonestAffinity<span class="tag supervised">supervised</span><span class="tag esm" title="frozen pretrained backbone">ESM-2 650M</span></td><td class="metric div-major"><span class="tbd">TBA</span></td><td class="metric"><span class="tbd">TBA</span></td><td class="metric"><span class="tbd">TBA</span></td><td class="metric"><span class="tbd">TBA</span></td></tr>
+          <tr><td class="col-modality cat-3d" rowspan="12">3D structure</td><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#4363d8;margin-right:7px;vertical-align:middle"></span>C<span class="tag pretrained">pretrained</span><span class="tag backbone" title="frozen pretrained backbone">voxel-MAE</span></td><td class="metric div-major"><span class="val">0.615</span> <span class="sd">±0.018</span></td><td class="metric"><span class="val">0.590</span> <span class="sd">±0.023</span></td><td class="metric"><span class="val">1.584</span> <span class="sd">±0.025</span></td><td class="metric"><span class="sd">444</span></td></tr>
+          <tr><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#f58231;margin-right:7px;vertical-align:middle"></span>CheapNet<span class="tag supervised">supervised</span></td><td class="metric div-major"><span class="val">0.581</span> <span class="sd">±0.005</span></td><td class="metric"><span class="val">0.551</span> <span class="sd">±0.013</span></td><td class="metric"><span class="val">1.713</span> <span class="sd">±0.029</span></td><td class="metric"><span class="sd">444</span></td></tr>
+          <tr><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#e6194B;margin-right:7px;vertical-align:middle"></span>EGNN<span class="tag supervised">supervised</span></td><td class="metric div-major"><span class="val">0.539</span> <span class="sd">±0.003</span></td><td class="metric"><span class="val">0.521</span> <span class="sd">±0.002</span></td><td class="metric"><span class="val">1.724</span> <span class="sd">±0.017</span></td><td class="metric"><span class="sd">444</span></td></tr>
+          <tr><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#808000;margin-right:7px;vertical-align:middle"></span>EGNN + TargetDiff<span class="tag supervised">supervised</span></td><td class="metric div-major"><span class="val">0.527</span> <span class="sd">±0.011</span></td><td class="metric"><span class="val">0.514</span> <span class="sd">±0.008</span></td><td class="metric"><span class="val">1.726</span> <span class="sd">±0.024</span></td><td class="metric"><span class="sd">444</span></td></tr>
+          <tr><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#000075;margin-right:7px;vertical-align:middle"></span>GET<span class="tag supervised">supervised</span></td><td class="metric div-major"><span class="val">0.505</span> <span class="sd">±0.012</span></td><td class="metric"><span class="val">0.495</span> <span class="sd">±0.013</span></td><td class="metric"><span class="val">1.789</span> <span class="sd">±0.029</span></td><td class="metric"><span class="sd">444</span></td></tr>
+          <tr><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#f032e6;margin-right:7px;vertical-align:middle"></span>ProFSA<span class="tag pretrained">pretrained</span><span class="tag backbone" title="frozen pretrained backbone">ProFSA-pre</span></td><td class="metric div-major"><span class="val">0.476</span> <span class="sd">±0.006</span></td><td class="metric"><span class="val">0.492</span> <span class="sd">±0.011</span></td><td class="metric"><span class="val">1.824</span> <span class="sd">±0.029</span></td><td class="metric"><span class="sd">444</span></td></tr>
+          <tr><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#9A6324;margin-right:7px;vertical-align:middle"></span>AEV-PLIG<span class="tag supervised">supervised</span></td><td class="metric div-major"><span class="val">0.447</span> <span class="sd">±0.049</span></td><td class="metric"><span class="val">0.421</span> <span class="sd">±0.051</span></td><td class="metric"><span class="val">1.961</span> <span class="sd">±0.079</span></td><td class="metric"><span class="sd">444</span></td></tr>
+          <tr><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#469990;margin-right:7px;vertical-align:middle"></span>HBGSA<span class="tag supervised">supervised</span></td><td class="metric div-major"><span class="val">0.346</span> <span class="sd">±0.016</span></td><td class="metric"><span class="val">0.381</span> <span class="sd">±0.031</span></td><td class="metric"><span class="val">1.880</span> <span class="sd">±0.052</span></td><td class="metric"><span class="sd">139*</span></td></tr>
+          <tr><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#911eb4;margin-right:7px;vertical-align:middle"></span>BindNet<span class="tag supervised">supervised</span></td><td class="metric div-major"><span class="tbd">TBA</span></td><td class="metric"><span class="tbd">TBA</span></td><td class="metric"><span class="tbd">TBA</span></td><td class="metric"><span class="tbd">TBA</span></td></tr>
+          <tr><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#808080;margin-right:7px;vertical-align:middle"></span>DSMBind<span class="tag zeroshot">zero-shot</span><span class="tag esm" title="frozen pretrained backbone">ESM-2 3B</span></td><td class="metric div-major"><span class="tbd">TBA</span></td><td class="metric"><span class="tbd">TBA</span></td><td class="metric"><span class="tbd">TBA</span></td><td class="metric"><span class="tbd">TBA</span></td></tr>
+          <tr><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#dcbeff;margin-right:7px;vertical-align:middle"></span>IPNet (frozen)<span class="tag pretrained">pretrained</span><span class="tag backbone" title="frozen pretrained backbone">affinity-pre</span><span class="tag leaked" title="trained on affinity data overlapping our PDBbind test set &mdash; leaked ceiling, excluded from best/second ranking">leaked</span></td><td class="metric div-major"><span class="tbd">TBA</span></td><td class="metric"><span class="tbd">TBA</span></td><td class="metric"><span class="tbd">TBA</span></td><td class="metric"><span class="tbd">TBA</span></td></tr>
+          <tr><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#fabed4;margin-right:7px;vertical-align:middle"></span>IPNet (scratch)<span class="tag supervised">supervised</span></td><td class="metric div-major"><span class="tbd">TBA</span></td><td class="metric"><span class="tbd">TBA</span></td><td class="metric"><span class="tbd">TBA</span></td><td class="metric"><span class="tbd">TBA</span></td></tr>
+          <tr><td class="col-modality cat-ours" rowspan="2">3D structure<br>+&#8202;density <b>(ours)</b></td><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#3cb44b;margin-right:7px;vertical-align:middle;border:2px solid #000"></span>C+D+G<span class="tag pretrained">pretrained</span><span class="tag backbone" title="frozen pretrained backbone">voxel-MAE</span></td><td class="metric div-major"><span class="val">0.629</span> <span class="sd">±0.023</span></td><td class="metric best"><span class="val">0.607</span> <span class="sd">±0.026</span></td><td class="metric"><span class="val">1.559</span> <span class="sd">±0.033</span></td><td class="metric"><span class="sd">444</span></td></tr>
+          <tr><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#0b6b3a;margin-right:7px;vertical-align:middle"></span>C+D+G +corr<span class="tag pretrained">pretrained</span><span class="tag backbone" title="frozen pretrained backbone">voxel-MAE</span></td><td class="metric div-major"><span class="val">0.632</span> <span class="sd">±0.020</span></td><td class="metric"><span class="val">0.606</span> <span class="sd">±0.020</span></td><td class="metric"><span class="val">1.556</span> <span class="sd">±0.036</span></td><td class="metric"><span class="sd">444</span></td></tr>
+        </tbody>
+      </table></div>
+    </section>
   </div>
 
   <div class="doc-section">
@@ -1704,140 +1813,632 @@
 
   <div class="doc-section">
     <h2 class="section-head"><span class="sec-num" style="background:#566072">A</span> Appendix &mdash; CASF-2016 held-out evaluation</h2>
-    <p class="section-intro">The <b>same 12 methods, all trained on the <code>lp_edrscc_v2</code> train set</b>, evaluated on the
-      CASF-2016 core set (214 ED-available complexes, all Kd/Ki) &mdash; the HonestAffinity canonical-vs-leak-controlled
-      protocol. <b>CASF-2016</b> = all 214 (90 sit in the train &rarr; leaked/inflated); <b>CASF-2016&nbsp;&minus;train</b> =
-      the 124 not in the train. Their gap isolates the train-leakage effect.</p>
+    <p class="section-intro">Supporting figures for the CASF-2016 result in <b>&sect;1.2 (Table 2)</b>. The headline number there is the
+      held-out <b>clean-92</b> subset; the charts below add the per-metric bars and the <b>leakage analysis</b> that justifies
+      using clean-92 &mdash; the full 214 core overlaps training (90 in <code>lp_edrscc_v2</code> train, 32 in val), so the
+      leaky-214 &rarr; clean-92 collapse (e.g. CheapNet &rho; 0.836&rarr;0.645) exposes the baselines' memorization.</p>
 
     <section class="block">
-      <p class="table-title">Table A1 &nbsp;&middot;&nbsp; CASF-2016 &mdash; leaky (all 214) vs. non-train (124), sorted by non-train &rho;</p>
-      <p class="table-sub">Same trained models as &sect;1; each method predicts all 214, scored twice (all 214 = leaky;
-        the 124 held-out = non-train). <b>best</b> = best in each column. <i>BindNet is a single-seed estimate
-        (its 3-seed retrain was OOM-unstable); all other cells are 3&nbsp;seeds.</i></p>
-      <div class="table-wrap"><table class="results">
-        <thead>
-          <tr class="grp"><th class="col-method" rowspan="2">Method</th>
-          <th class="div-major" colspan="3">CASF-2016<span class="nsub">N&nbsp;=&nbsp;214</span></th>
-          <th class="div-major" colspan="3">CASF-2016 &minus;train<span class="nsub">N&nbsp;=&nbsp;124</span></th>
-          </tr>
-          <tr class="sub">
-          <th class="div-major">Pearson&nbsp;<i>r</i></th><th>Spearman&nbsp;&rho;</th><th>RMSE&nbsp;&darr;</th>
-          <th class="div-major">Pearson&nbsp;<i>r</i></th><th>Spearman&nbsp;&rho;</th><th>RMSE&nbsp;&darr;</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#00838f;margin-right:7px;vertical-align:middle"></span>Nesso-1<span class="tag zeroshot">zero-shot</span><span class="tag esm" title="frozen pretrained backbone">ESM-2</span><span class="tag leaked" title="trained on affinity data overlapping our PDBbind test set &mdash; leaked ceiling, excluded from best/second ranking">leaked</span></td><td class="metric div-major"><span class="val">0.674</span> <span class="sd">±0.000</span></td><td class="metric"><span class="val">0.672</span> <span class="sd">±0.000</span></td><td class="metric"><span class="val">1.713</span> <span class="sd">±0.000</span></td><td class="metric div-major"><span class="val">0.691</span> <span class="sd">±0.000</span></td><td class="metric"><span class="val">0.699</span> <span class="sd">±0.000</span></td><td class="metric"><span class="val">1.611</span> <span class="sd">±0.000</span></td></tr>
-          <tr><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#f58231;margin-right:7px;vertical-align:middle"></span>CheapNet<span class="tag supervised">supervised</span></td><td class="metric div-major best"><span class="val">0.851</span> <span class="sd">±0.012</span></td><td class="metric best"><span class="val">0.836</span> <span class="sd">±0.013</span></td><td class="metric best"><span class="val">1.131</span> <span class="sd">±0.053</span></td><td class="metric div-major"><span class="val">0.706</span> <span class="sd">±0.027</span></td><td class="metric best"><span class="val">0.682</span> <span class="sd">±0.027</span></td><td class="metric best"><span class="val">1.467</span> <span class="sd">±0.073</span></td></tr>
-          <tr><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#f032e6;margin-right:7px;vertical-align:middle"></span>ProFSA<span class="tag pretrained">pretrained</span><span class="tag backbone" title="frozen pretrained backbone">ProFSA-pre</span></td><td class="metric div-major"><span class="val">0.780</span> <span class="sd">±0.012</span></td><td class="metric"><span class="val">0.749</span> <span class="sd">±0.012</span></td><td class="metric"><span class="val">1.534</span> <span class="sd">±0.024</span></td><td class="metric div-major best"><span class="val">0.714</span> <span class="sd">±0.006</span></td><td class="metric"><span class="val">0.675</span> <span class="sd">±0.008</span></td><td class="metric"><span class="val">1.717</span> <span class="sd">±0.020</span></td></tr>
-          <tr><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#dcbeff;margin-right:7px;vertical-align:middle"></span>IPNet (frozen)<span class="tag pretrained">pretrained</span><span class="tag backbone" title="frozen pretrained backbone">affinity-pre</span><span class="tag leaked" title="trained on affinity data overlapping our PDBbind test set &mdash; leaked ceiling, excluded from best/second ranking">leaked</span></td><td class="metric div-major"><span class="val">0.787</span> <span class="sd">±0.010</span></td><td class="metric"><span class="val">0.765</span> <span class="sd">±0.007</span></td><td class="metric"><span class="val">1.336</span> <span class="sd">±0.013</span></td><td class="metric div-major"><span class="val">0.708</span> <span class="sd">±0.013</span></td><td class="metric"><span class="val">0.675</span> <span class="sd">±0.013</span></td><td class="metric"><span class="val">1.456</span> <span class="sd">±0.006</span></td></tr>
-          <tr><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#4363d8;margin-right:7px;vertical-align:middle"></span>C<span class="tag pretrained">pretrained</span><span class="tag backbone" title="frozen pretrained backbone">voxel-MAE</span></td><td class="metric div-major"><span class="val">0.751</span> <span class="sd">±0.008</span></td><td class="metric"><span class="val">0.724</span> <span class="sd">±0.008</span></td><td class="metric"><span class="val">1.454</span> <span class="sd">±0.005</span></td><td class="metric div-major"><span class="val">0.669</span> <span class="sd">±0.027</span></td><td class="metric"><span class="val">0.633</span> <span class="sd">±0.026</span></td><td class="metric"><span class="val">1.528</span> <span class="sd">±0.028</span></td></tr>
-          <tr><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#3cb44b;margin-right:7px;vertical-align:middle;border:2px solid #000"></span>C+D+G<span class="tag pretrained">pretrained</span><span class="tag backbone" title="frozen pretrained backbone">voxel-MAE</span></td><td class="metric div-major"><span class="val">0.732</span> <span class="sd">±0.007</span></td><td class="metric"><span class="val">0.703</span> <span class="sd">±0.007</span></td><td class="metric"><span class="val">1.504</span> <span class="sd">±0.034</span></td><td class="metric div-major"><span class="val">0.661</span> <span class="sd">±0.005</span></td><td class="metric"><span class="val">0.630</span> <span class="sd">±0.002</span></td><td class="metric"><span class="val">1.587</span> <span class="sd">±0.011</span></td></tr>
-          <tr><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#808080;margin-right:7px;vertical-align:middle"></span>DSMBind<span class="tag zeroshot">zero-shot</span><span class="tag esm" title="frozen pretrained backbone">ESM-2 3B</span></td><td class="metric div-major"><span class="val">0.684</span> <span class="sd">±0.029</span></td><td class="metric"><span class="val">0.677</span> <span class="sd">±0.029</span></td><td class="metric"><span class="val">1.620</span> <span class="sd">±0.048</span></td><td class="metric div-major"><span class="val">0.661</span> <span class="sd">±0.017</span></td><td class="metric"><span class="val">0.620</span> <span class="sd">±0.020</span></td><td class="metric"><span class="val">1.571</span> <span class="sd">±0.024</span></td></tr>
-          <tr><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#808000;margin-right:7px;vertical-align:middle"></span>EGNN + TargetDiff<span class="tag supervised">supervised</span></td><td class="metric div-major"><span class="val">0.673</span> <span class="sd">±0.008</span></td><td class="metric"><span class="val">0.684</span> <span class="sd">±0.004</span></td><td class="metric"><span class="val">1.596</span> <span class="sd">±0.029</span></td><td class="metric div-major"><span class="val">0.643</span> <span class="sd">±0.006</span></td><td class="metric"><span class="val">0.615</span> <span class="sd">±0.005</span></td><td class="metric"><span class="val">1.568</span> <span class="sd">±0.033</span></td></tr>
-          <tr><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#fabed4;margin-right:7px;vertical-align:middle"></span>IPNet (scratch)<span class="tag supervised">supervised</span></td><td class="metric div-major"><span class="val">0.687</span> <span class="sd">±0.020</span></td><td class="metric"><span class="val">0.675</span> <span class="sd">±0.013</span></td><td class="metric"><span class="val">1.583</span> <span class="sd">±0.079</span></td><td class="metric div-major"><span class="val">0.646</span> <span class="sd">±0.017</span></td><td class="metric"><span class="val">0.613</span> <span class="sd">±0.011</span></td><td class="metric"><span class="val">1.607</span> <span class="sd">±0.075</span></td></tr>
-          <tr><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#000075;margin-right:7px;vertical-align:middle"></span>GET<span class="tag supervised">supervised</span></td><td class="metric div-major"><span class="val">0.672</span> <span class="sd">±0.003</span></td><td class="metric"><span class="val">0.678</span> <span class="sd">±0.004</span></td><td class="metric"><span class="val">1.578</span> <span class="sd">±0.005</span></td><td class="metric div-major"><span class="val">0.639</span> <span class="sd">±0.003</span></td><td class="metric"><span class="val">0.611</span> <span class="sd">±0.005</span></td><td class="metric"><span class="val">1.549</span> <span class="sd">±0.009</span></td></tr>
-          <tr><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#e6194B;margin-right:7px;vertical-align:middle"></span>EGNN<span class="tag supervised">supervised</span></td><td class="metric div-major"><span class="val">0.684</span> <span class="sd">±0.001</span></td><td class="metric"><span class="val">0.688</span> <span class="sd">±0.004</span></td><td class="metric"><span class="val">1.558</span> <span class="sd">±0.011</span></td><td class="metric div-major"><span class="val">0.638</span> <span class="sd">±0.010</span></td><td class="metric"><span class="val">0.608</span> <span class="sd">±0.011</span></td><td class="metric"><span class="val">1.551</span> <span class="sd">±0.007</span></td></tr>
-          <tr><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#469990;margin-right:7px;vertical-align:middle"></span>HBGSA<span class="tag supervised">supervised</span></td><td class="metric div-major"><span class="val">0.708</span> <span class="sd">±0.062</span></td><td class="metric"><span class="val">0.696</span> <span class="sd">±0.056</span></td><td class="metric"><span class="val">1.532</span> <span class="sd">±0.118</span></td><td class="metric div-major"><span class="val">0.611</span> <span class="sd">±0.033</span></td><td class="metric"><span class="val">0.590</span> <span class="sd">±0.040</span></td><td class="metric"><span class="val">1.667</span> <span class="sd">±0.094</span></td></tr>
-          <tr><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#9A6324;margin-right:7px;vertical-align:middle"></span>AEV-PLIG<span class="tag supervised">supervised</span></td><td class="metric div-major"><span class="val">0.721</span> <span class="sd">±0.024</span></td><td class="metric"><span class="val">0.691</span> <span class="sd">±0.029</span></td><td class="metric"><span class="val">1.562</span> <span class="sd">±0.077</span></td><td class="metric div-major"><span class="val">0.564</span> <span class="sd">±0.044</span></td><td class="metric"><span class="val">0.542</span> <span class="sd">±0.042</span></td><td class="metric"><span class="val">1.827</span> <span class="sd">±0.107</span></td></tr>
-          <tr><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#42d4f4;margin-right:7px;vertical-align:middle"></span>HonestAffinity<span class="tag supervised">supervised</span><span class="tag esm" title="frozen pretrained backbone">ESM-2 650M</span></td><td class="metric div-major"><span class="val">0.693</span> <span class="sd">±0.052</span></td><td class="metric"><span class="val">0.661</span> <span class="sd">±0.050</span></td><td class="metric"><span class="val">1.529</span> <span class="sd">±0.108</span></td><td class="metric div-major"><span class="val">0.543</span> <span class="sd">±0.012</span></td><td class="metric"><span class="val">0.503</span> <span class="sd">±0.008</span></td><td class="metric"><span class="val">1.687</span> <span class="sd">±0.009</span></td></tr>
-          <tr><td class="col-method"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#911eb4;margin-right:7px;vertical-align:middle"></span>BindNet<span class="tag supervised">supervised</span></td><td class="metric div-major"><span class="val">0.386</span> <span class="sd">±0.000</span></td><td class="metric"><span class="val">0.458</span> <span class="sd">±0.000</span></td><td class="metric"><span class="val">2.257</span> <span class="sd">±0.000</span></td><td class="metric div-major"><span class="val">0.403</span> <span class="sd">±0.000</span></td><td class="metric"><span class="val">0.470</span> <span class="sd">±0.000</span></td><td class="metric"><span class="val">2.087</span> <span class="sd">±0.000</span></td></tr>
-        </tbody>
-      </table></div>
+      <p class="table-title">Figure A1 &nbsp;&middot;&nbsp; CASF-2016 clean-92 performance (from &sect;1.2 Table 2)</p>
+      <p class="table-sub">Same methods and values as Table A1. The two rows use shared axes;
+        higher r/&rho; and lower RMSE are better.</p>
+      <div class="table-wrap" style="padding:12px 16px 16px;">
+      <p class="figure-cap" style="text-align:left;font-weight:700;color:#1c2433;margin:16px 0 2px;font-size:13px;">CASF-2016 <span style="font-weight:400;color:#9aa3b2;">&mdash; N = 214 · includes 90 train-overlap complexes</span></p>
+      <svg viewBox="0 0 1130 256" width="100%" style="max-width:1130px;display:block;margin:0 auto" font-family="-apple-system,Segoe UI,Roboto,sans-serif">
+      <text x="195.0" y="15" font-size="11.5" font-weight="600" fill="#1c2433" text-anchor="middle">Pearson r</text>
+      <line x1="45.0" y1="203.3" x2="345.0" y2="203.3" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="40.0" y="206.3" font-size="8.5" fill="#9aa3b2" text-anchor="end">0.40</text>
+      <line x1="45.0" y1="169.8" x2="345.0" y2="169.8" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="40.0" y="172.8" font-size="8.5" fill="#9aa3b2" text-anchor="end">0.50</text>
+      <line x1="45.0" y1="136.4" x2="345.0" y2="136.4" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="40.0" y="139.4" font-size="8.5" fill="#9aa3b2" text-anchor="end">0.60</text>
+      <line x1="45.0" y1="102.9" x2="345.0" y2="102.9" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="40.0" y="105.9" font-size="8.5" fill="#9aa3b2" text-anchor="end">0.70</text>
+      <line x1="45.0" y1="69.5" x2="345.0" y2="69.5" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="40.0" y="72.5" font-size="8.5" fill="#9aa3b2" text-anchor="end">0.80</text>
+      <line x1="45.0" y1="36.0" x2="345.0" y2="36.0" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="40.0" y="39.0" font-size="8.5" fill="#9aa3b2" text-anchor="end">0.90</text>
+      <rect x="48.7" y="54.7" width="14.0" height="165.3" rx="2" fill="#8a6d3b"/>
+      <line x1="55.7" y1="54.7" x2="55.7" y2="54.7" stroke="#566072" stroke-width="1"/>
+      <line x1="52.7" y1="54.7" x2="58.7" y2="54.7" stroke="#566072" stroke-width="1"/>
+      <line x1="52.7" y1="54.7" x2="58.7" y2="54.7" stroke="#566072" stroke-width="1"/>
+      <text x="55.7" y="50.7" font-size="11" fill="#111" text-anchor="middle" font-weight="800">0.84</text>
+      <rect x="70.1" y="76.0" width="14.0" height="144.0" rx="2" fill="#f032e6"/>
+      <line x1="77.1" y1="72.1" x2="77.1" y2="79.9" stroke="#566072" stroke-width="1"/>
+      <line x1="74.1" y1="72.1" x2="80.1" y2="72.1" stroke="#566072" stroke-width="1"/>
+      <line x1="74.1" y1="79.9" x2="80.1" y2="79.9" stroke="#566072" stroke-width="1"/>
+      <text x="77.1" y="68.1" font-size="9.5" fill="#5b6678" text-anchor="middle" font-weight="700" text-decoration="underline">0.78</text>
+      <rect x="91.6" y="87.6" width="14.0" height="132.4" rx="2" fill="#0b6b3a"/>
+      <line x1="98.6" y1="82.7" x2="98.6" y2="92.5" stroke="#566072" stroke-width="1"/>
+      <line x1="95.6" y1="82.7" x2="101.6" y2="82.7" stroke="#566072" stroke-width="1"/>
+      <line x1="95.6" y1="92.5" x2="101.6" y2="92.5" stroke="#566072" stroke-width="1"/>
+      <text x="98.6" y="78.7" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.75</text>
+      <rect x="113.0" y="92.3" width="14.0" height="127.7" rx="2" fill="#3cb44b" stroke="#000" stroke-width="2.5"/>
+      <line x1="120.0" y1="89.9" x2="120.0" y2="94.7" stroke="#566072" stroke-width="1"/>
+      <line x1="117.0" y1="89.9" x2="123.0" y2="89.9" stroke="#566072" stroke-width="1"/>
+      <line x1="117.0" y1="94.7" x2="123.0" y2="94.7" stroke="#566072" stroke-width="1"/>
+      <text x="120.0" y="85.9" font-size="8" fill="#1d5a3a" text-anchor="middle" font-weight="600">0.73</text>
+      <rect x="134.4" y="327.7" width="14.0" height="0.0" rx="2" fill="#f58231"/>
+      <line x1="141.4" y1="326.8" x2="141.4" y2="328.5" stroke="#566072" stroke-width="1"/>
+      <line x1="138.4" y1="326.8" x2="144.4" y2="326.8" stroke="#566072" stroke-width="1"/>
+      <line x1="138.4" y1="328.5" x2="144.4" y2="328.5" stroke="#566072" stroke-width="1"/>
+      <text x="141.4" y="322.8" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.03</text>
+      <rect x="155.9" y="112.0" width="14.0" height="108.0" rx="2" fill="#808000"/>
+      <line x1="162.9" y1="109.5" x2="162.9" y2="114.5" stroke="#566072" stroke-width="1"/>
+      <line x1="159.9" y1="109.5" x2="165.9" y2="109.5" stroke="#566072" stroke-width="1"/>
+      <line x1="159.9" y1="114.5" x2="165.9" y2="114.5" stroke="#566072" stroke-width="1"/>
+      <text x="162.9" y="105.5" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.67</text>
+      <rect x="177.3" y="108.2" width="14.0" height="111.8" rx="2" fill="#e6194B"/>
+      <line x1="184.3" y1="107.8" x2="184.3" y2="108.6" stroke="#566072" stroke-width="1"/>
+      <line x1="181.3" y1="107.8" x2="187.3" y2="107.8" stroke="#566072" stroke-width="1"/>
+      <line x1="181.3" y1="108.6" x2="187.3" y2="108.6" stroke="#566072" stroke-width="1"/>
+      <text x="184.3" y="103.8" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.68</text>
+      <rect x="198.7" y="111.7" width="14.0" height="108.3" rx="2" fill="#00838f" opacity="0.38"/>
+      <line x1="205.7" y1="111.7" x2="205.7" y2="111.7" stroke="#566072" stroke-width="1"/>
+      <line x1="202.7" y1="111.7" x2="208.7" y2="111.7" stroke="#566072" stroke-width="1"/>
+      <line x1="202.7" y1="111.7" x2="208.7" y2="111.7" stroke="#566072" stroke-width="1"/>
+      <text x="205.7" y="107.7" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.67</text>
+      <rect x="220.1" y="112.3" width="14.0" height="107.7" rx="2" fill="#000075"/>
+      <line x1="227.1" y1="111.2" x2="227.1" y2="113.5" stroke="#566072" stroke-width="1"/>
+      <line x1="224.1" y1="111.2" x2="230.1" y2="111.2" stroke="#566072" stroke-width="1"/>
+      <line x1="224.1" y1="113.5" x2="230.1" y2="113.5" stroke="#566072" stroke-width="1"/>
+      <text x="227.1" y="107.2" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.67</text>
+      <rect x="241.6" y="85.8" width="14.0" height="134.2" rx="2" fill="#4363d8"/>
+      <line x1="248.6" y1="83.0" x2="248.6" y2="88.7" stroke="#566072" stroke-width="1"/>
+      <line x1="245.6" y1="83.0" x2="251.6" y2="83.0" stroke="#566072" stroke-width="1"/>
+      <line x1="245.6" y1="88.7" x2="251.6" y2="88.7" stroke="#566072" stroke-width="1"/>
+      <text x="248.6" y="79.0" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.75</text>
+      <rect x="263.0" y="218.1" width="14.0" height="1.9" rx="2" fill="#469990"/>
+      <line x1="270.0" y1="209.6" x2="270.0" y2="226.7" stroke="#566072" stroke-width="1"/>
+      <line x1="267.0" y1="209.6" x2="273.0" y2="209.6" stroke="#566072" stroke-width="1"/>
+      <line x1="267.0" y1="226.7" x2="273.0" y2="226.7" stroke="#566072" stroke-width="1"/>
+      <text x="270.0" y="205.6" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.36</text>
+      <rect x="284.4" y="136.1" width="14.0" height="83.9" rx="2" fill="#a86a26"/>
+      <line x1="291.4" y1="136.1" x2="291.4" y2="136.1" stroke="#566072" stroke-width="1"/>
+      <line x1="288.4" y1="136.1" x2="294.4" y2="136.1" stroke="#566072" stroke-width="1"/>
+      <line x1="288.4" y1="136.1" x2="294.4" y2="136.1" stroke="#566072" stroke-width="1"/>
+      <text x="291.4" y="132.1" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.60</text>
+      <rect x="305.9" y="101.2" width="14.0" height="118.8" rx="2" fill="#c98a3a"/>
+      <line x1="312.9" y1="101.2" x2="312.9" y2="101.2" stroke="#566072" stroke-width="1"/>
+      <line x1="309.9" y1="101.2" x2="315.9" y2="101.2" stroke="#566072" stroke-width="1"/>
+      <line x1="309.9" y1="101.2" x2="315.9" y2="101.2" stroke="#566072" stroke-width="1"/>
+      <text x="312.9" y="97.2" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.71</text>
+      <rect x="327.3" y="95.9" width="14.0" height="124.1" rx="2" fill="#9A6324"/>
+      <line x1="334.3" y1="88.0" x2="334.3" y2="103.8" stroke="#566072" stroke-width="1"/>
+      <line x1="331.3" y1="88.0" x2="337.3" y2="88.0" stroke="#566072" stroke-width="1"/>
+      <line x1="331.3" y1="103.8" x2="337.3" y2="103.8" stroke="#566072" stroke-width="1"/>
+      <text x="334.3" y="84.0" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.72</text>
+      <line x1="45.0" y1="220.0" x2="345.0" y2="220.0" stroke="#aeb6c4" stroke-width="1.5"/>
+      <text x="575.0" y="15" font-size="11.5" font-weight="600" fill="#1c2433" text-anchor="middle">Spearman &rho;</text>
+      <line x1="425.0" y1="203.3" x2="725.0" y2="203.3" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="420.0" y="206.3" font-size="8.5" fill="#9aa3b2" text-anchor="end">0.40</text>
+      <line x1="425.0" y1="169.8" x2="725.0" y2="169.8" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="420.0" y="172.8" font-size="8.5" fill="#9aa3b2" text-anchor="end">0.50</text>
+      <line x1="425.0" y1="136.4" x2="725.0" y2="136.4" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="420.0" y="139.4" font-size="8.5" fill="#9aa3b2" text-anchor="end">0.60</text>
+      <line x1="425.0" y1="102.9" x2="725.0" y2="102.9" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="420.0" y="105.9" font-size="8.5" fill="#9aa3b2" text-anchor="end">0.70</text>
+      <line x1="425.0" y1="69.5" x2="725.0" y2="69.5" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="420.0" y="72.5" font-size="8.5" fill="#9aa3b2" text-anchor="end">0.80</text>
+      <line x1="425.0" y1="36.0" x2="725.0" y2="36.0" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="420.0" y="39.0" font-size="8.5" fill="#9aa3b2" text-anchor="end">0.90</text>
+      <rect x="428.7" y="58.9" width="14.0" height="161.1" rx="2" fill="#8a6d3b"/>
+      <line x1="435.7" y1="58.9" x2="435.7" y2="58.9" stroke="#566072" stroke-width="1"/>
+      <line x1="432.7" y1="58.9" x2="438.7" y2="58.9" stroke="#566072" stroke-width="1"/>
+      <line x1="432.7" y1="58.9" x2="438.7" y2="58.9" stroke="#566072" stroke-width="1"/>
+      <text x="435.7" y="54.9" font-size="11" fill="#111" text-anchor="middle" font-weight="800">0.83</text>
+      <rect x="450.1" y="86.4" width="14.0" height="133.6" rx="2" fill="#f032e6"/>
+      <line x1="457.1" y1="82.5" x2="457.1" y2="90.4" stroke="#566072" stroke-width="1"/>
+      <line x1="454.1" y1="82.5" x2="460.1" y2="82.5" stroke="#566072" stroke-width="1"/>
+      <line x1="454.1" y1="90.4" x2="460.1" y2="90.4" stroke="#566072" stroke-width="1"/>
+      <text x="457.1" y="78.5" font-size="9.5" fill="#5b6678" text-anchor="middle" font-weight="700" text-decoration="underline">0.75</text>
+      <rect x="471.6" y="95.0" width="14.0" height="125.0" rx="2" fill="#0b6b3a"/>
+      <line x1="478.6" y1="89.1" x2="478.6" y2="101.0" stroke="#566072" stroke-width="1"/>
+      <line x1="475.6" y1="89.1" x2="481.6" y2="89.1" stroke="#566072" stroke-width="1"/>
+      <line x1="475.6" y1="101.0" x2="481.6" y2="101.0" stroke="#566072" stroke-width="1"/>
+      <text x="478.6" y="85.1" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.72</text>
+      <rect x="493.0" y="101.9" width="14.0" height="118.1" rx="2" fill="#3cb44b" stroke="#000" stroke-width="2.5"/>
+      <line x1="500.0" y1="99.5" x2="500.0" y2="104.2" stroke="#566072" stroke-width="1"/>
+      <line x1="497.0" y1="99.5" x2="503.0" y2="99.5" stroke="#566072" stroke-width="1"/>
+      <line x1="497.0" y1="104.2" x2="503.0" y2="104.2" stroke="#566072" stroke-width="1"/>
+      <text x="500.0" y="95.5" font-size="8" fill="#1d5a3a" text-anchor="middle" font-weight="600">0.70</text>
+      <rect x="514.4" y="224.9" width="14.0" height="0.0" rx="2" fill="#f58231"/>
+      <line x1="521.4" y1="222.3" x2="521.4" y2="227.6" stroke="#566072" stroke-width="1"/>
+      <line x1="518.4" y1="222.3" x2="524.4" y2="222.3" stroke="#566072" stroke-width="1"/>
+      <line x1="518.4" y1="227.6" x2="524.4" y2="227.6" stroke="#566072" stroke-width="1"/>
+      <text x="521.4" y="218.3" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.34</text>
+      <rect x="535.9" y="108.1" width="14.0" height="111.9" rx="2" fill="#808000"/>
+      <line x1="542.9" y1="106.9" x2="542.9" y2="109.3" stroke="#566072" stroke-width="1"/>
+      <line x1="539.9" y1="106.9" x2="545.9" y2="106.9" stroke="#566072" stroke-width="1"/>
+      <line x1="539.9" y1="109.3" x2="545.9" y2="109.3" stroke="#566072" stroke-width="1"/>
+      <text x="542.9" y="102.9" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.68</text>
+      <rect x="557.3" y="107.0" width="14.0" height="113.0" rx="2" fill="#e6194B"/>
+      <line x1="564.3" y1="105.7" x2="564.3" y2="108.3" stroke="#566072" stroke-width="1"/>
+      <line x1="561.3" y1="105.7" x2="567.3" y2="105.7" stroke="#566072" stroke-width="1"/>
+      <line x1="561.3" y1="108.3" x2="567.3" y2="108.3" stroke="#566072" stroke-width="1"/>
+      <text x="564.3" y="101.7" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.69</text>
+      <rect x="578.7" y="112.1" width="14.0" height="107.9" rx="2" fill="#00838f" opacity="0.38"/>
+      <line x1="585.7" y1="112.1" x2="585.7" y2="112.1" stroke="#566072" stroke-width="1"/>
+      <line x1="582.7" y1="112.1" x2="588.7" y2="112.1" stroke="#566072" stroke-width="1"/>
+      <line x1="582.7" y1="112.1" x2="588.7" y2="112.1" stroke="#566072" stroke-width="1"/>
+      <text x="585.7" y="108.1" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.67</text>
+      <rect x="600.1" y="110.4" width="14.0" height="109.6" rx="2" fill="#000075"/>
+      <line x1="607.1" y1="109.1" x2="607.1" y2="111.7" stroke="#566072" stroke-width="1"/>
+      <line x1="604.1" y1="109.1" x2="610.1" y2="109.1" stroke="#566072" stroke-width="1"/>
+      <line x1="604.1" y1="111.7" x2="610.1" y2="111.7" stroke="#566072" stroke-width="1"/>
+      <text x="607.1" y="105.1" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.68</text>
+      <rect x="621.6" y="95.0" width="14.0" height="125.0" rx="2" fill="#4363d8"/>
+      <line x1="628.6" y1="92.3" x2="628.6" y2="97.8" stroke="#566072" stroke-width="1"/>
+      <line x1="625.6" y1="92.3" x2="631.6" y2="92.3" stroke="#566072" stroke-width="1"/>
+      <line x1="625.6" y1="97.8" x2="631.6" y2="97.8" stroke="#566072" stroke-width="1"/>
+      <text x="628.6" y="88.3" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.72</text>
+      <rect x="643.0" y="210.9" width="14.0" height="9.1" rx="2" fill="#469990"/>
+      <line x1="650.0" y1="199.6" x2="650.0" y2="222.1" stroke="#566072" stroke-width="1"/>
+      <line x1="647.0" y1="199.6" x2="653.0" y2="199.6" stroke="#566072" stroke-width="1"/>
+      <line x1="647.0" y1="222.1" x2="653.0" y2="222.1" stroke="#566072" stroke-width="1"/>
+      <text x="650.0" y="195.6" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.38</text>
+      <rect x="664.4" y="142.8" width="14.0" height="77.2" rx="2" fill="#a86a26"/>
+      <line x1="671.4" y1="142.8" x2="671.4" y2="142.8" stroke="#566072" stroke-width="1"/>
+      <line x1="668.4" y1="142.8" x2="674.4" y2="142.8" stroke="#566072" stroke-width="1"/>
+      <line x1="668.4" y1="142.8" x2="674.4" y2="142.8" stroke="#566072" stroke-width="1"/>
+      <text x="671.4" y="138.8" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.58</text>
+      <rect x="685.9" y="113.4" width="14.0" height="106.6" rx="2" fill="#c98a3a"/>
+      <line x1="692.9" y1="113.4" x2="692.9" y2="113.4" stroke="#566072" stroke-width="1"/>
+      <line x1="689.9" y1="113.4" x2="695.9" y2="113.4" stroke="#566072" stroke-width="1"/>
+      <line x1="689.9" y1="113.4" x2="695.9" y2="113.4" stroke="#566072" stroke-width="1"/>
+      <text x="692.9" y="109.4" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.67</text>
+      <rect x="707.3" y="105.9" width="14.0" height="114.1" rx="2" fill="#9A6324"/>
+      <line x1="714.3" y1="96.3" x2="714.3" y2="115.4" stroke="#566072" stroke-width="1"/>
+      <line x1="711.3" y1="96.3" x2="717.3" y2="96.3" stroke="#566072" stroke-width="1"/>
+      <line x1="711.3" y1="115.4" x2="717.3" y2="115.4" stroke="#566072" stroke-width="1"/>
+      <text x="714.3" y="92.3" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.69</text>
+      <line x1="425.0" y1="220.0" x2="725.0" y2="220.0" stroke="#aeb6c4" stroke-width="1.5"/>
+      <text x="955.0" y="15" font-size="11.5" font-weight="600" fill="#1c2433" text-anchor="middle">RMSE</text>
+      <line x1="805.0" y1="220.0" x2="1105.0" y2="220.0" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="800.0" y="223.0" font-size="8.5" fill="#9aa3b2" text-anchor="end">1.00</text>
+      <line x1="805.0" y1="185.9" x2="1105.0" y2="185.9" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="800.0" y="188.9" font-size="8.5" fill="#9aa3b2" text-anchor="end">1.25</text>
+      <line x1="805.0" y1="151.9" x2="1105.0" y2="151.9" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="800.0" y="154.9" font-size="8.5" fill="#9aa3b2" text-anchor="end">1.50</text>
+      <line x1="805.0" y1="117.8" x2="1105.0" y2="117.8" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="800.0" y="120.8" font-size="8.5" fill="#9aa3b2" text-anchor="end">1.75</text>
+      <line x1="805.0" y1="83.7" x2="1105.0" y2="83.7" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="800.0" y="86.7" font-size="8.5" fill="#9aa3b2" text-anchor="end">2.00</text>
+      <line x1="805.0" y1="49.6" x2="1105.0" y2="49.6" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="800.0" y="52.6" font-size="8.5" fill="#9aa3b2" text-anchor="end">2.25</text>
+      <rect x="808.7" y="197.1" width="14.0" height="22.9" rx="2" fill="#8a6d3b"/>
+      <line x1="815.7" y1="197.1" x2="815.7" y2="197.1" stroke="#566072" stroke-width="1"/>
+      <line x1="812.7" y1="197.1" x2="818.7" y2="197.1" stroke="#566072" stroke-width="1"/>
+      <line x1="812.7" y1="197.1" x2="818.7" y2="197.1" stroke="#566072" stroke-width="1"/>
+      <text x="815.7" y="193.1" font-size="11" fill="#111" text-anchor="middle" font-weight="800">1.17</text>
+      <rect x="830.1" y="147.1" width="14.0" height="72.9" rx="2" fill="#f032e6"/>
+      <line x1="837.1" y1="143.8" x2="837.1" y2="150.5" stroke="#566072" stroke-width="1"/>
+      <line x1="834.1" y1="143.8" x2="840.1" y2="143.8" stroke="#566072" stroke-width="1"/>
+      <line x1="834.1" y1="150.5" x2="840.1" y2="150.5" stroke="#566072" stroke-width="1"/>
+      <text x="837.1" y="139.8" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">1.53</text>
+      <rect x="851.6" y="158.4" width="14.0" height="61.6" rx="2" fill="#0b6b3a"/>
+      <line x1="858.6" y1="150.5" x2="858.6" y2="166.3" stroke="#566072" stroke-width="1"/>
+      <line x1="855.6" y1="150.5" x2="861.6" y2="150.5" stroke="#566072" stroke-width="1"/>
+      <line x1="855.6" y1="166.3" x2="861.6" y2="166.3" stroke="#566072" stroke-width="1"/>
+      <text x="858.6" y="146.5" font-size="9.5" fill="#5b6678" text-anchor="middle" font-weight="700" text-decoration="underline">1.45</text>
+      <rect x="873.0" y="151.3" width="14.0" height="68.7" rx="2" fill="#3cb44b" stroke="#000" stroke-width="2.5"/>
+      <line x1="880.0" y1="146.6" x2="880.0" y2="156.0" stroke="#566072" stroke-width="1"/>
+      <line x1="877.0" y1="146.6" x2="883.0" y2="146.6" stroke="#566072" stroke-width="1"/>
+      <line x1="877.0" y1="156.0" x2="883.0" y2="156.0" stroke="#566072" stroke-width="1"/>
+      <text x="880.0" y="142.6" font-size="8" fill="#1d5a3a" text-anchor="middle" font-weight="600">1.50</text>
+      <rect x="894.4" y="-4543.0" width="14.0" height="4763.0" rx="2" fill="#f58231"/>
+      <line x1="901.4" y1="-5640.5" x2="901.4" y2="-3445.4" stroke="#566072" stroke-width="1"/>
+      <line x1="898.4" y1="-5640.5" x2="904.4" y2="-5640.5" stroke="#566072" stroke-width="1"/>
+      <line x1="898.4" y1="-3445.4" x2="904.4" y2="-3445.4" stroke="#566072" stroke-width="1"/>
+      <text x="901.4" y="-5644.5" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">35.95</text>
+      <rect x="915.9" y="138.8" width="14.0" height="81.2" rx="2" fill="#808000"/>
+      <line x1="922.9" y1="134.9" x2="922.9" y2="142.7" stroke="#566072" stroke-width="1"/>
+      <line x1="919.9" y1="134.9" x2="925.9" y2="134.9" stroke="#566072" stroke-width="1"/>
+      <line x1="919.9" y1="142.7" x2="925.9" y2="142.7" stroke="#566072" stroke-width="1"/>
+      <text x="922.9" y="130.9" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">1.60</text>
+      <rect x="937.3" y="144.0" width="14.0" height="76.0" rx="2" fill="#e6194B"/>
+      <line x1="944.3" y1="142.5" x2="944.3" y2="145.5" stroke="#566072" stroke-width="1"/>
+      <line x1="941.3" y1="142.5" x2="947.3" y2="142.5" stroke="#566072" stroke-width="1"/>
+      <line x1="941.3" y1="145.5" x2="947.3" y2="145.5" stroke="#566072" stroke-width="1"/>
+      <text x="944.3" y="138.5" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">1.56</text>
+      <rect x="958.7" y="122.8" width="14.0" height="97.2" rx="2" fill="#00838f" opacity="0.38"/>
+      <line x1="965.7" y1="122.8" x2="965.7" y2="122.8" stroke="#566072" stroke-width="1"/>
+      <line x1="962.7" y1="122.8" x2="968.7" y2="122.8" stroke="#566072" stroke-width="1"/>
+      <line x1="962.7" y1="122.8" x2="968.7" y2="122.8" stroke="#566072" stroke-width="1"/>
+      <text x="965.7" y="118.8" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">1.71</text>
+      <rect x="980.1" y="141.2" width="14.0" height="78.8" rx="2" fill="#000075"/>
+      <line x1="987.1" y1="140.5" x2="987.1" y2="141.9" stroke="#566072" stroke-width="1"/>
+      <line x1="984.1" y1="140.5" x2="990.1" y2="140.5" stroke="#566072" stroke-width="1"/>
+      <line x1="984.1" y1="141.9" x2="990.1" y2="141.9" stroke="#566072" stroke-width="1"/>
+      <text x="987.1" y="136.5" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">1.58</text>
+      <rect x="1001.6" y="158.1" width="14.0" height="61.9" rx="2" fill="#4363d8"/>
+      <line x1="1008.6" y1="157.4" x2="1008.6" y2="158.7" stroke="#566072" stroke-width="1"/>
+      <line x1="1005.6" y1="157.4" x2="1011.6" y2="157.4" stroke="#566072" stroke-width="1"/>
+      <line x1="1005.6" y1="158.7" x2="1011.6" y2="158.7" stroke="#566072" stroke-width="1"/>
+      <text x="1008.6" y="153.4" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">1.45</text>
+      <rect x="1023.0" y="110.6" width="14.0" height="109.4" rx="2" fill="#469990"/>
+      <line x1="1030.0" y1="105.5" x2="1030.0" y2="115.6" stroke="#566072" stroke-width="1"/>
+      <line x1="1027.0" y1="105.5" x2="1033.0" y2="105.5" stroke="#566072" stroke-width="1"/>
+      <line x1="1027.0" y1="115.6" x2="1033.0" y2="115.6" stroke="#566072" stroke-width="1"/>
+      <text x="1030.0" y="101.5" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">1.80</text>
+      <rect x="1044.4" y="123.0" width="14.0" height="97.0" rx="2" fill="#a86a26"/>
+      <line x1="1051.4" y1="123.0" x2="1051.4" y2="123.0" stroke="#566072" stroke-width="1"/>
+      <line x1="1048.4" y1="123.0" x2="1054.4" y2="123.0" stroke="#566072" stroke-width="1"/>
+      <line x1="1048.4" y1="123.0" x2="1054.4" y2="123.0" stroke="#566072" stroke-width="1"/>
+      <text x="1051.4" y="119.0" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">1.71</text>
+      <rect x="1065.9" y="150.3" width="14.0" height="69.7" rx="2" fill="#c98a3a"/>
+      <line x1="1072.9" y1="150.3" x2="1072.9" y2="150.3" stroke="#566072" stroke-width="1"/>
+      <line x1="1069.9" y1="150.3" x2="1075.9" y2="150.3" stroke="#566072" stroke-width="1"/>
+      <line x1="1069.9" y1="150.3" x2="1075.9" y2="150.3" stroke="#566072" stroke-width="1"/>
+      <text x="1072.9" y="146.3" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">1.51</text>
+      <rect x="1087.3" y="143.4" width="14.0" height="76.6" rx="2" fill="#9A6324"/>
+      <line x1="1094.3" y1="132.9" x2="1094.3" y2="153.8" stroke="#566072" stroke-width="1"/>
+      <line x1="1091.3" y1="132.9" x2="1097.3" y2="132.9" stroke="#566072" stroke-width="1"/>
+      <line x1="1091.3" y1="153.8" x2="1097.3" y2="153.8" stroke="#566072" stroke-width="1"/>
+      <text x="1094.3" y="128.9" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">1.56</text>
+      <line x1="805.0" y1="220.0" x2="1105.0" y2="220.0" stroke="#aeb6c4" stroke-width="1.5"/>
+      <text x="955.0" y="248" font-size="9" fill="#b04a2f" text-anchor="middle">&#8595; lower is better</text>
+      </svg>
+      <p class="figure-cap" style="text-align:left;font-weight:700;color:#1c2433;margin:16px 0 2px;font-size:13px;">CASF-2016 − train <span style="font-weight:400;color:#9aa3b2;">&mdash; N = 124 · exact train members removed</span></p>
+      <svg viewBox="0 0 1130 256" width="100%" style="max-width:1130px;display:block;margin:0 auto" font-family="-apple-system,Segoe UI,Roboto,sans-serif">
+      <text x="195.0" y="15" font-size="11.5" font-weight="600" fill="#1c2433" text-anchor="middle">Pearson r</text>
+      <line x1="45.0" y1="203.3" x2="345.0" y2="203.3" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="40.0" y="206.3" font-size="8.5" fill="#9aa3b2" text-anchor="end">0.40</text>
+      <line x1="45.0" y1="169.8" x2="345.0" y2="169.8" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="40.0" y="172.8" font-size="8.5" fill="#9aa3b2" text-anchor="end">0.50</text>
+      <line x1="45.0" y1="136.4" x2="345.0" y2="136.4" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="40.0" y="139.4" font-size="8.5" fill="#9aa3b2" text-anchor="end">0.60</text>
+      <line x1="45.0" y1="102.9" x2="345.0" y2="102.9" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="40.0" y="105.9" font-size="8.5" fill="#9aa3b2" text-anchor="end">0.70</text>
+      <line x1="45.0" y1="69.5" x2="345.0" y2="69.5" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="40.0" y="72.5" font-size="8.5" fill="#9aa3b2" text-anchor="end">0.80</text>
+      <line x1="45.0" y1="36.0" x2="345.0" y2="36.0" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="40.0" y="39.0" font-size="8.5" fill="#9aa3b2" text-anchor="end">0.90</text>
+      <rect x="48.7" y="68.4" width="14.0" height="151.6" rx="2" fill="#8a6d3b"/>
+      <line x1="55.7" y1="68.4" x2="55.7" y2="68.4" stroke="#566072" stroke-width="1"/>
+      <line x1="52.7" y1="68.4" x2="58.7" y2="68.4" stroke="#566072" stroke-width="1"/>
+      <line x1="52.7" y1="68.4" x2="58.7" y2="68.4" stroke="#566072" stroke-width="1"/>
+      <text x="55.7" y="64.4" font-size="11" fill="#111" text-anchor="middle" font-weight="800">0.80</text>
+      <rect x="70.1" y="98.2" width="14.0" height="121.8" rx="2" fill="#f032e6"/>
+      <line x1="77.1" y1="96.1" x2="77.1" y2="100.2" stroke="#566072" stroke-width="1"/>
+      <line x1="74.1" y1="96.1" x2="80.1" y2="96.1" stroke="#566072" stroke-width="1"/>
+      <line x1="74.1" y1="100.2" x2="80.1" y2="100.2" stroke="#566072" stroke-width="1"/>
+      <text x="77.1" y="92.1" font-size="9.5" fill="#5b6678" text-anchor="middle" font-weight="700" text-decoration="underline">0.71</text>
+      <rect x="91.6" y="110.6" width="14.0" height="109.4" rx="2" fill="#0b6b3a"/>
+      <line x1="98.6" y1="103.4" x2="98.6" y2="117.8" stroke="#566072" stroke-width="1"/>
+      <line x1="95.6" y1="103.4" x2="101.6" y2="103.4" stroke="#566072" stroke-width="1"/>
+      <line x1="95.6" y1="117.8" x2="101.6" y2="117.8" stroke="#566072" stroke-width="1"/>
+      <text x="98.6" y="99.4" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.68</text>
+      <rect x="113.0" y="115.8" width="14.0" height="104.2" rx="2" fill="#3cb44b" stroke="#000" stroke-width="2.5"/>
+      <line x1="120.0" y1="114.0" x2="120.0" y2="117.6" stroke="#566072" stroke-width="1"/>
+      <line x1="117.0" y1="114.0" x2="123.0" y2="114.0" stroke="#566072" stroke-width="1"/>
+      <line x1="117.0" y1="117.6" x2="123.0" y2="117.6" stroke="#566072" stroke-width="1"/>
+      <text x="120.0" y="110.0" font-size="8" fill="#1d5a3a" text-anchor="middle" font-weight="600">0.66</text>
+      <rect x="134.4" y="327.7" width="14.0" height="0.0" rx="2" fill="#f58231"/>
+      <line x1="141.4" y1="326.8" x2="141.4" y2="328.5" stroke="#566072" stroke-width="1"/>
+      <line x1="138.4" y1="326.8" x2="144.4" y2="326.8" stroke="#566072" stroke-width="1"/>
+      <line x1="138.4" y1="328.5" x2="144.4" y2="328.5" stroke="#566072" stroke-width="1"/>
+      <text x="141.4" y="322.8" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.03</text>
+      <rect x="155.9" y="122.0" width="14.0" height="98.0" rx="2" fill="#808000"/>
+      <line x1="162.9" y1="120.1" x2="162.9" y2="124.0" stroke="#566072" stroke-width="1"/>
+      <line x1="159.9" y1="120.1" x2="165.9" y2="120.1" stroke="#566072" stroke-width="1"/>
+      <line x1="159.9" y1="124.0" x2="165.9" y2="124.0" stroke="#566072" stroke-width="1"/>
+      <text x="162.9" y="116.1" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.64</text>
+      <rect x="177.3" y="123.6" width="14.0" height="96.4" rx="2" fill="#e6194B"/>
+      <line x1="184.3" y1="120.1" x2="184.3" y2="127.1" stroke="#566072" stroke-width="1"/>
+      <line x1="181.3" y1="120.1" x2="187.3" y2="120.1" stroke="#566072" stroke-width="1"/>
+      <line x1="181.3" y1="127.1" x2="187.3" y2="127.1" stroke="#566072" stroke-width="1"/>
+      <text x="184.3" y="116.1" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.64</text>
+      <rect x="198.7" y="105.9" width="14.0" height="114.1" rx="2" fill="#00838f" opacity="0.38"/>
+      <line x1="205.7" y1="105.9" x2="205.7" y2="105.9" stroke="#566072" stroke-width="1"/>
+      <line x1="202.7" y1="105.9" x2="208.7" y2="105.9" stroke="#566072" stroke-width="1"/>
+      <line x1="202.7" y1="105.9" x2="208.7" y2="105.9" stroke="#566072" stroke-width="1"/>
+      <text x="205.7" y="101.9" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.69</text>
+      <rect x="220.1" y="123.3" width="14.0" height="96.7" rx="2" fill="#000075"/>
+      <line x1="227.1" y1="122.3" x2="227.1" y2="124.4" stroke="#566072" stroke-width="1"/>
+      <line x1="224.1" y1="122.3" x2="230.1" y2="122.3" stroke="#566072" stroke-width="1"/>
+      <line x1="224.1" y1="124.4" x2="230.1" y2="124.4" stroke="#566072" stroke-width="1"/>
+      <text x="227.1" y="118.3" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.64</text>
+      <rect x="241.6" y="113.1" width="14.0" height="106.9" rx="2" fill="#4363d8"/>
+      <line x1="248.6" y1="104.0" x2="248.6" y2="122.2" stroke="#566072" stroke-width="1"/>
+      <line x1="245.6" y1="104.0" x2="251.6" y2="104.0" stroke="#566072" stroke-width="1"/>
+      <line x1="245.6" y1="122.2" x2="251.6" y2="122.2" stroke="#566072" stroke-width="1"/>
+      <text x="248.6" y="100.0" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.67</text>
+      <rect x="263.0" y="218.1" width="14.0" height="1.9" rx="2" fill="#469990"/>
+      <line x1="270.0" y1="209.6" x2="270.0" y2="226.7" stroke="#566072" stroke-width="1"/>
+      <line x1="267.0" y1="209.6" x2="273.0" y2="209.6" stroke="#566072" stroke-width="1"/>
+      <line x1="267.0" y1="226.7" x2="273.0" y2="226.7" stroke="#566072" stroke-width="1"/>
+      <text x="270.0" y="205.6" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.36</text>
+      <rect x="284.4" y="149.9" width="14.0" height="70.1" rx="2" fill="#a86a26"/>
+      <line x1="291.4" y1="149.9" x2="291.4" y2="149.9" stroke="#566072" stroke-width="1"/>
+      <line x1="288.4" y1="149.9" x2="294.4" y2="149.9" stroke="#566072" stroke-width="1"/>
+      <line x1="288.4" y1="149.9" x2="294.4" y2="149.9" stroke="#566072" stroke-width="1"/>
+      <text x="291.4" y="145.9" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.56</text>
+      <rect x="305.9" y="139.2" width="14.0" height="80.8" rx="2" fill="#c98a3a"/>
+      <line x1="312.9" y1="139.2" x2="312.9" y2="139.2" stroke="#566072" stroke-width="1"/>
+      <line x1="309.9" y1="139.2" x2="315.9" y2="139.2" stroke="#566072" stroke-width="1"/>
+      <line x1="309.9" y1="139.2" x2="315.9" y2="139.2" stroke="#566072" stroke-width="1"/>
+      <text x="312.9" y="135.2" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.59</text>
+      <rect x="327.3" y="148.4" width="14.0" height="71.6" rx="2" fill="#9A6324"/>
+      <line x1="334.3" y1="133.6" x2="334.3" y2="163.2" stroke="#566072" stroke-width="1"/>
+      <line x1="331.3" y1="133.6" x2="337.3" y2="133.6" stroke="#566072" stroke-width="1"/>
+      <line x1="331.3" y1="163.2" x2="337.3" y2="163.2" stroke="#566072" stroke-width="1"/>
+      <text x="334.3" y="129.6" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.56</text>
+      <line x1="45.0" y1="220.0" x2="345.0" y2="220.0" stroke="#aeb6c4" stroke-width="1.5"/>
+      <text x="575.0" y="15" font-size="11.5" font-weight="600" fill="#1c2433" text-anchor="middle">Spearman &rho;</text>
+      <line x1="425.0" y1="203.3" x2="725.0" y2="203.3" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="420.0" y="206.3" font-size="8.5" fill="#9aa3b2" text-anchor="end">0.40</text>
+      <line x1="425.0" y1="169.8" x2="725.0" y2="169.8" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="420.0" y="172.8" font-size="8.5" fill="#9aa3b2" text-anchor="end">0.50</text>
+      <line x1="425.0" y1="136.4" x2="725.0" y2="136.4" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="420.0" y="139.4" font-size="8.5" fill="#9aa3b2" text-anchor="end">0.60</text>
+      <line x1="425.0" y1="102.9" x2="725.0" y2="102.9" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="420.0" y="105.9" font-size="8.5" fill="#9aa3b2" text-anchor="end">0.70</text>
+      <line x1="425.0" y1="69.5" x2="725.0" y2="69.5" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="420.0" y="72.5" font-size="8.5" fill="#9aa3b2" text-anchor="end">0.80</text>
+      <line x1="425.0" y1="36.0" x2="725.0" y2="36.0" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="420.0" y="39.0" font-size="8.5" fill="#9aa3b2" text-anchor="end">0.90</text>
+      <rect x="428.7" y="72.2" width="14.0" height="147.8" rx="2" fill="#8a6d3b"/>
+      <line x1="435.7" y1="72.2" x2="435.7" y2="72.2" stroke="#566072" stroke-width="1"/>
+      <line x1="432.7" y1="72.2" x2="438.7" y2="72.2" stroke="#566072" stroke-width="1"/>
+      <line x1="432.7" y1="72.2" x2="438.7" y2="72.2" stroke="#566072" stroke-width="1"/>
+      <text x="435.7" y="68.2" font-size="11" fill="#111" text-anchor="middle" font-weight="800">0.79</text>
+      <rect x="450.1" y="111.2" width="14.0" height="108.8" rx="2" fill="#f032e6"/>
+      <line x1="457.1" y1="108.4" x2="457.1" y2="114.0" stroke="#566072" stroke-width="1"/>
+      <line x1="454.1" y1="108.4" x2="460.1" y2="108.4" stroke="#566072" stroke-width="1"/>
+      <line x1="454.1" y1="114.0" x2="460.1" y2="114.0" stroke="#566072" stroke-width="1"/>
+      <text x="457.1" y="104.4" font-size="9.5" fill="#5b6678" text-anchor="middle" font-weight="700" text-decoration="underline">0.68</text>
+      <rect x="471.6" y="118.8" width="14.0" height="101.2" rx="2" fill="#0b6b3a"/>
+      <line x1="478.6" y1="111.4" x2="478.6" y2="126.2" stroke="#566072" stroke-width="1"/>
+      <line x1="475.6" y1="111.4" x2="481.6" y2="111.4" stroke="#566072" stroke-width="1"/>
+      <line x1="475.6" y1="126.2" x2="481.6" y2="126.2" stroke="#566072" stroke-width="1"/>
+      <text x="478.6" y="107.4" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.65</text>
+      <rect x="493.0" y="126.4" width="14.0" height="93.6" rx="2" fill="#3cb44b" stroke="#000" stroke-width="2.5"/>
+      <line x1="500.0" y1="125.9" x2="500.0" y2="126.9" stroke="#566072" stroke-width="1"/>
+      <line x1="497.0" y1="125.9" x2="503.0" y2="125.9" stroke="#566072" stroke-width="1"/>
+      <line x1="497.0" y1="126.9" x2="503.0" y2="126.9" stroke="#566072" stroke-width="1"/>
+      <text x="500.0" y="121.9" font-size="8" fill="#1d5a3a" text-anchor="middle" font-weight="600">0.63</text>
+      <rect x="514.4" y="224.9" width="14.0" height="0.0" rx="2" fill="#f58231"/>
+      <line x1="521.4" y1="222.3" x2="521.4" y2="227.6" stroke="#566072" stroke-width="1"/>
+      <line x1="518.4" y1="222.3" x2="524.4" y2="222.3" stroke="#566072" stroke-width="1"/>
+      <line x1="518.4" y1="227.6" x2="524.4" y2="227.6" stroke="#566072" stroke-width="1"/>
+      <text x="521.4" y="218.3" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.34</text>
+      <rect x="535.9" y="131.4" width="14.0" height="88.6" rx="2" fill="#808000"/>
+      <line x1="542.9" y1="129.7" x2="542.9" y2="133.0" stroke="#566072" stroke-width="1"/>
+      <line x1="539.9" y1="129.7" x2="545.9" y2="129.7" stroke="#566072" stroke-width="1"/>
+      <line x1="539.9" y1="133.0" x2="545.9" y2="133.0" stroke="#566072" stroke-width="1"/>
+      <text x="542.9" y="125.7" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.61</text>
+      <rect x="557.3" y="133.8" width="14.0" height="86.2" rx="2" fill="#e6194B"/>
+      <line x1="564.3" y1="130.2" x2="564.3" y2="137.3" stroke="#566072" stroke-width="1"/>
+      <line x1="561.3" y1="130.2" x2="567.3" y2="130.2" stroke="#566072" stroke-width="1"/>
+      <line x1="561.3" y1="137.3" x2="567.3" y2="137.3" stroke="#566072" stroke-width="1"/>
+      <text x="564.3" y="126.2" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.61</text>
+      <rect x="578.7" y="103.1" width="14.0" height="116.9" rx="2" fill="#00838f" opacity="0.38"/>
+      <line x1="585.7" y1="103.1" x2="585.7" y2="103.1" stroke="#566072" stroke-width="1"/>
+      <line x1="582.7" y1="103.1" x2="588.7" y2="103.1" stroke="#566072" stroke-width="1"/>
+      <line x1="582.7" y1="103.1" x2="588.7" y2="103.1" stroke="#566072" stroke-width="1"/>
+      <text x="585.7" y="99.1" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.70</text>
+      <rect x="600.1" y="132.6" width="14.0" height="87.4" rx="2" fill="#000075"/>
+      <line x1="607.1" y1="131.1" x2="607.1" y2="134.1" stroke="#566072" stroke-width="1"/>
+      <line x1="604.1" y1="131.1" x2="610.1" y2="131.1" stroke="#566072" stroke-width="1"/>
+      <line x1="604.1" y1="134.1" x2="610.1" y2="134.1" stroke="#566072" stroke-width="1"/>
+      <text x="607.1" y="127.1" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.61</text>
+      <rect x="621.6" y="125.3" width="14.0" height="94.7" rx="2" fill="#4363d8"/>
+      <line x1="628.6" y1="116.5" x2="628.6" y2="134.0" stroke="#566072" stroke-width="1"/>
+      <line x1="625.6" y1="116.5" x2="631.6" y2="116.5" stroke="#566072" stroke-width="1"/>
+      <line x1="625.6" y1="134.0" x2="631.6" y2="134.0" stroke="#566072" stroke-width="1"/>
+      <text x="628.6" y="112.5" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.63</text>
+      <rect x="643.0" y="210.9" width="14.0" height="9.1" rx="2" fill="#469990"/>
+      <line x1="650.0" y1="199.6" x2="650.0" y2="222.1" stroke="#566072" stroke-width="1"/>
+      <line x1="647.0" y1="199.6" x2="653.0" y2="199.6" stroke="#566072" stroke-width="1"/>
+      <line x1="647.0" y1="222.1" x2="653.0" y2="222.1" stroke="#566072" stroke-width="1"/>
+      <text x="650.0" y="195.6" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.38</text>
+      <rect x="664.4" y="158.7" width="14.0" height="61.3" rx="2" fill="#a86a26"/>
+      <line x1="671.4" y1="158.7" x2="671.4" y2="158.7" stroke="#566072" stroke-width="1"/>
+      <line x1="668.4" y1="158.7" x2="674.4" y2="158.7" stroke="#566072" stroke-width="1"/>
+      <line x1="668.4" y1="158.7" x2="674.4" y2="158.7" stroke="#566072" stroke-width="1"/>
+      <text x="671.4" y="154.7" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.53</text>
+      <rect x="685.9" y="155.2" width="14.0" height="64.8" rx="2" fill="#c98a3a"/>
+      <line x1="692.9" y1="155.2" x2="692.9" y2="155.2" stroke="#566072" stroke-width="1"/>
+      <line x1="689.9" y1="155.2" x2="695.9" y2="155.2" stroke="#566072" stroke-width="1"/>
+      <line x1="689.9" y1="155.2" x2="695.9" y2="155.2" stroke="#566072" stroke-width="1"/>
+      <text x="692.9" y="151.2" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.54</text>
+      <rect x="707.3" y="155.6" width="14.0" height="64.4" rx="2" fill="#9A6324"/>
+      <line x1="714.3" y1="141.5" x2="714.3" y2="169.7" stroke="#566072" stroke-width="1"/>
+      <line x1="711.3" y1="141.5" x2="717.3" y2="141.5" stroke="#566072" stroke-width="1"/>
+      <line x1="711.3" y1="169.7" x2="717.3" y2="169.7" stroke="#566072" stroke-width="1"/>
+      <text x="714.3" y="137.5" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.54</text>
+      <line x1="425.0" y1="220.0" x2="725.0" y2="220.0" stroke="#aeb6c4" stroke-width="1.5"/>
+      <text x="955.0" y="15" font-size="11.5" font-weight="600" fill="#1c2433" text-anchor="middle">RMSE</text>
+      <line x1="805.0" y1="220.0" x2="1105.0" y2="220.0" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="800.0" y="223.0" font-size="8.5" fill="#9aa3b2" text-anchor="end">1.00</text>
+      <line x1="805.0" y1="185.9" x2="1105.0" y2="185.9" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="800.0" y="188.9" font-size="8.5" fill="#9aa3b2" text-anchor="end">1.25</text>
+      <line x1="805.0" y1="151.9" x2="1105.0" y2="151.9" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="800.0" y="154.9" font-size="8.5" fill="#9aa3b2" text-anchor="end">1.50</text>
+      <line x1="805.0" y1="117.8" x2="1105.0" y2="117.8" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="800.0" y="120.8" font-size="8.5" fill="#9aa3b2" text-anchor="end">1.75</text>
+      <line x1="805.0" y1="83.7" x2="1105.0" y2="83.7" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="800.0" y="86.7" font-size="8.5" fill="#9aa3b2" text-anchor="end">2.00</text>
+      <line x1="805.0" y1="49.6" x2="1105.0" y2="49.6" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="800.0" y="52.6" font-size="8.5" fill="#9aa3b2" text-anchor="end">2.25</text>
+      <rect x="808.7" y="185.2" width="14.0" height="34.8" rx="2" fill="#8a6d3b"/>
+      <line x1="815.7" y1="185.2" x2="815.7" y2="185.2" stroke="#566072" stroke-width="1"/>
+      <line x1="812.7" y1="185.2" x2="818.7" y2="185.2" stroke="#566072" stroke-width="1"/>
+      <line x1="812.7" y1="185.2" x2="818.7" y2="185.2" stroke="#566072" stroke-width="1"/>
+      <text x="815.7" y="181.2" font-size="11" fill="#111" text-anchor="middle" font-weight="800">1.26</text>
+      <rect x="830.1" y="122.3" width="14.0" height="97.7" rx="2" fill="#f032e6"/>
+      <line x1="837.1" y1="119.5" x2="837.1" y2="125.1" stroke="#566072" stroke-width="1"/>
+      <line x1="834.1" y1="119.5" x2="840.1" y2="119.5" stroke="#566072" stroke-width="1"/>
+      <line x1="834.1" y1="125.1" x2="840.1" y2="125.1" stroke="#566072" stroke-width="1"/>
+      <text x="837.1" y="115.5" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">1.72</text>
+      <rect x="851.6" y="146.1" width="14.0" height="73.9" rx="2" fill="#0b6b3a"/>
+      <line x1="858.6" y1="140.8" x2="858.6" y2="151.5" stroke="#566072" stroke-width="1"/>
+      <line x1="855.6" y1="140.8" x2="861.6" y2="140.8" stroke="#566072" stroke-width="1"/>
+      <line x1="855.6" y1="151.5" x2="861.6" y2="151.5" stroke="#566072" stroke-width="1"/>
+      <text x="858.6" y="136.8" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">1.54</text>
+      <rect x="873.0" y="140.1" width="14.0" height="79.9" rx="2" fill="#3cb44b" stroke="#000" stroke-width="2.5"/>
+      <line x1="880.0" y1="138.6" x2="880.0" y2="141.5" stroke="#566072" stroke-width="1"/>
+      <line x1="877.0" y1="138.6" x2="883.0" y2="138.6" stroke="#566072" stroke-width="1"/>
+      <line x1="877.0" y1="141.5" x2="883.0" y2="141.5" stroke="#566072" stroke-width="1"/>
+      <text x="880.0" y="134.6" font-size="8" fill="#1d5a3a" text-anchor="middle" font-weight="600">1.59</text>
+      <rect x="894.4" y="-4543.0" width="14.0" height="4763.0" rx="2" fill="#f58231"/>
+      <line x1="901.4" y1="-5640.5" x2="901.4" y2="-3445.4" stroke="#566072" stroke-width="1"/>
+      <line x1="898.4" y1="-5640.5" x2="904.4" y2="-5640.5" stroke="#566072" stroke-width="1"/>
+      <line x1="898.4" y1="-3445.4" x2="904.4" y2="-3445.4" stroke="#566072" stroke-width="1"/>
+      <text x="901.4" y="-5644.5" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">35.95</text>
+      <rect x="915.9" y="142.6" width="14.0" height="77.4" rx="2" fill="#808000"/>
+      <line x1="922.9" y1="138.2" x2="922.9" y2="147.1" stroke="#566072" stroke-width="1"/>
+      <line x1="919.9" y1="138.2" x2="925.9" y2="138.2" stroke="#566072" stroke-width="1"/>
+      <line x1="919.9" y1="147.1" x2="925.9" y2="147.1" stroke="#566072" stroke-width="1"/>
+      <text x="922.9" y="134.2" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">1.57</text>
+      <rect x="937.3" y="144.9" width="14.0" height="75.1" rx="2" fill="#e6194B"/>
+      <line x1="944.3" y1="144.0" x2="944.3" y2="145.8" stroke="#566072" stroke-width="1"/>
+      <line x1="941.3" y1="144.0" x2="947.3" y2="144.0" stroke="#566072" stroke-width="1"/>
+      <line x1="941.3" y1="145.8" x2="947.3" y2="145.8" stroke="#566072" stroke-width="1"/>
+      <text x="944.3" y="140.0" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">1.55</text>
+      <rect x="958.7" y="136.8" width="14.0" height="83.2" rx="2" fill="#00838f" opacity="0.38"/>
+      <line x1="965.7" y1="136.8" x2="965.7" y2="136.8" stroke="#566072" stroke-width="1"/>
+      <line x1="962.7" y1="136.8" x2="968.7" y2="136.8" stroke="#566072" stroke-width="1"/>
+      <line x1="962.7" y1="136.8" x2="968.7" y2="136.8" stroke="#566072" stroke-width="1"/>
+      <text x="965.7" y="132.8" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">1.61</text>
+      <rect x="980.1" y="145.2" width="14.0" height="74.8" rx="2" fill="#000075"/>
+      <line x1="987.1" y1="144.0" x2="987.1" y2="146.5" stroke="#566072" stroke-width="1"/>
+      <line x1="984.1" y1="144.0" x2="990.1" y2="144.0" stroke="#566072" stroke-width="1"/>
+      <line x1="984.1" y1="146.5" x2="990.1" y2="146.5" stroke="#566072" stroke-width="1"/>
+      <text x="987.1" y="140.0" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">1.55</text>
+      <rect x="1001.6" y="148.1" width="14.0" height="71.9" rx="2" fill="#4363d8"/>
+      <line x1="1008.6" y1="144.3" x2="1008.6" y2="151.9" stroke="#566072" stroke-width="1"/>
+      <line x1="1005.6" y1="144.3" x2="1011.6" y2="144.3" stroke="#566072" stroke-width="1"/>
+      <line x1="1005.6" y1="151.9" x2="1011.6" y2="151.9" stroke="#566072" stroke-width="1"/>
+      <text x="1008.6" y="140.3" font-size="9.5" fill="#5b6678" text-anchor="middle" font-weight="700" text-decoration="underline">1.53</text>
+      <rect x="1023.0" y="110.6" width="14.0" height="109.4" rx="2" fill="#469990"/>
+      <line x1="1030.0" y1="105.5" x2="1030.0" y2="115.6" stroke="#566072" stroke-width="1"/>
+      <line x1="1027.0" y1="105.5" x2="1033.0" y2="105.5" stroke="#566072" stroke-width="1"/>
+      <line x1="1027.0" y1="115.6" x2="1033.0" y2="115.6" stroke="#566072" stroke-width="1"/>
+      <text x="1030.0" y="101.5" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">1.80</text>
+      <rect x="1044.4" y="131.0" width="14.0" height="89.0" rx="2" fill="#a86a26"/>
+      <line x1="1051.4" y1="131.0" x2="1051.4" y2="131.0" stroke="#566072" stroke-width="1"/>
+      <line x1="1048.4" y1="131.0" x2="1054.4" y2="131.0" stroke="#566072" stroke-width="1"/>
+      <line x1="1048.4" y1="131.0" x2="1054.4" y2="131.0" stroke="#566072" stroke-width="1"/>
+      <text x="1051.4" y="127.0" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">1.65</text>
+      <rect x="1065.9" y="137.2" width="14.0" height="82.8" rx="2" fill="#c98a3a"/>
+      <line x1="1072.9" y1="137.2" x2="1072.9" y2="137.2" stroke="#566072" stroke-width="1"/>
+      <line x1="1069.9" y1="137.2" x2="1075.9" y2="137.2" stroke="#566072" stroke-width="1"/>
+      <line x1="1069.9" y1="137.2" x2="1075.9" y2="137.2" stroke="#566072" stroke-width="1"/>
+      <text x="1072.9" y="133.2" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">1.61</text>
+      <rect x="1087.3" y="107.3" width="14.0" height="112.7" rx="2" fill="#9A6324"/>
+      <line x1="1094.3" y1="92.7" x2="1094.3" y2="121.8" stroke="#566072" stroke-width="1"/>
+      <line x1="1091.3" y1="92.7" x2="1097.3" y2="92.7" stroke="#566072" stroke-width="1"/>
+      <line x1="1091.3" y1="121.8" x2="1097.3" y2="121.8" stroke="#566072" stroke-width="1"/>
+      <text x="1094.3" y="88.7" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">1.83</text>
+      <line x1="805.0" y1="220.0" x2="1105.0" y2="220.0" stroke="#aeb6c4" stroke-width="1.5"/>
+      <text x="955.0" y="248" font-size="9" fill="#b04a2f" text-anchor="middle">&#8595; lower is better</text>
+      </svg>
+      <div class="legend" style="justify-content:center;margin-top:10px;gap:13px;"><span><span style="width:12px;height:12px;border-radius:3px;background:#8a6d3b;display:inline-block;opacity:.38"></span> PLAPT</span> <span><span style="width:12px;height:12px;border-radius:3px;background:#f032e6;display:inline-block"></span> ProFSA</span> <span><span style="width:12px;height:12px;border-radius:3px;background:#0b6b3a;display:inline-block"></span> C+D+G +corr</span> <span><span style="width:12px;height:12px;border-radius:3px;background:#3cb44b;display:inline-block;border:2px solid #000"></span> C+D+G</span> <span><span style="width:12px;height:12px;border-radius:3px;background:#f58231;display:inline-block"></span> CheapNet</span> <span><span style="width:12px;height:12px;border-radius:3px;background:#808000;display:inline-block"></span> EGNN + TargetDiff</span> <span><span style="width:12px;height:12px;border-radius:3px;background:#e6194B;display:inline-block"></span> EGNN</span> <span><span style="width:12px;height:12px;border-radius:3px;background:#00838f;display:inline-block;opacity:.38"></span> Nesso-1</span> <span><span style="width:12px;height:12px;border-radius:3px;background:#000075;display:inline-block"></span> GET</span> <span><span style="width:12px;height:12px;border-radius:3px;background:#4363d8;display:inline-block"></span> C</span> <span><span style="width:12px;height:12px;border-radius:3px;background:#469990;display:inline-block"></span> HBGSA</span> <span><span style="width:12px;height:12px;border-radius:3px;background:#a86a26;display:inline-block"></span> MolTrans</span> <span><span style="width:12px;height:12px;border-radius:3px;background:#c98a3a;display:inline-block"></span> DeepDTA</span> <span><span style="width:12px;height:12px;border-radius:3px;background:#9A6324;display:inline-block"></span> AEV-PLIG</span></div>
+      <p class="figure-cap">Whiskers = &plusmn;1 std over three seeds. Faded bars are leaked rows;
+        the black border marks C+D+G.</p>
+      </div>
     </section>
 
     <section class="block">
-      <p class="table-title">Figure A1 &nbsp;&middot;&nbsp; CASF-2016 leakage gap per method</p>
+      <p class="table-title">Figure A2 &nbsp;&middot;&nbsp; CASF-2016 leakage gap per method</p>
       <div class="table-wrap" style="padding:16px 18px 12px;">
-      <svg viewBox="0 0 910 488" width="100%" style="max-width:910px;display:block;margin:0 auto" font-family="-apple-system,Segoe UI,Roboto,sans-serif">
+      <svg viewBox="0 0 910 514" width="100%" style="max-width:910px;display:block;margin:0 auto" font-family="-apple-system,Segoe UI,Roboto,sans-serif">
       <text x="455" y="20" font-size="12.5" font-weight="700" fill="#1c2433" text-anchor="middle">CASF-2016 leakage gap &mdash; non-train (honest) &rarr; leaky (train-overlap), Spearman &rho;</text>
-      <line x1="205.0" y1="40" x2="205.0" y2="436" stroke="#eceff3" stroke-width="1"/>
-      <text x="205.0" y="451" font-size="9" fill="#9aa3b2" text-anchor="middle">0.4</text>
-      <line x1="346.3" y1="40" x2="346.3" y2="436" stroke="#eceff3" stroke-width="1"/>
-      <text x="346.3" y="451" font-size="9" fill="#9aa3b2" text-anchor="middle">0.5</text>
-      <line x1="487.6" y1="40" x2="487.6" y2="436" stroke="#eceff3" stroke-width="1"/>
-      <text x="487.6" y="451" font-size="9" fill="#9aa3b2" text-anchor="middle">0.6</text>
-      <line x1="628.9" y1="40" x2="628.9" y2="436" stroke="#eceff3" stroke-width="1"/>
-      <text x="628.9" y="451" font-size="9" fill="#9aa3b2" text-anchor="middle">0.7</text>
-      <line x1="770.2" y1="40" x2="770.2" y2="436" stroke="#eceff3" stroke-width="1"/>
-      <text x="770.2" y="451" font-size="9" fill="#9aa3b2" text-anchor="middle">0.8</text>
+      <line x1="205.0" y1="40" x2="205.0" y2="462" stroke="#eceff3" stroke-width="1"/>
+      <text x="205.0" y="477" font-size="9" fill="#9aa3b2" text-anchor="middle">0.4</text>
+      <line x1="346.3" y1="40" x2="346.3" y2="462" stroke="#eceff3" stroke-width="1"/>
+      <text x="346.3" y="477" font-size="9" fill="#9aa3b2" text-anchor="middle">0.5</text>
+      <line x1="487.6" y1="40" x2="487.6" y2="462" stroke="#eceff3" stroke-width="1"/>
+      <text x="487.6" y="477" font-size="9" fill="#9aa3b2" text-anchor="middle">0.6</text>
+      <line x1="628.9" y1="40" x2="628.9" y2="462" stroke="#eceff3" stroke-width="1"/>
+      <text x="628.9" y="477" font-size="9" fill="#9aa3b2" text-anchor="middle">0.7</text>
+      <line x1="770.2" y1="40" x2="770.2" y2="462" stroke="#eceff3" stroke-width="1"/>
+      <text x="770.2" y="477" font-size="9" fill="#9aa3b2" text-anchor="middle">0.8</text>
       <text x="195" y="62" font-size="10.5" fill="#1c2433" text-anchor="end">HonestAffinity</text>
       <line x1="350.2" y1="59.0" x2="573.4" y2="59.0" stroke="#d64545" stroke-width="2.6" opacity=".85"/>
       <circle cx="350.2" cy="59.0" r="4.3" fill="#d64545"/>
       <circle cx="573.4" cy="59.0" r="4.3" fill="#fff" stroke="#d64545" stroke-width="2"/>
       <text x="581.4" y="62" font-size="9" fill="#d64545" font-weight="600">+0.158</text>
-      <text x="195" y="88" font-size="10.5" fill="#1c2433" text-anchor="end">CheapNet</text>
-      <line x1="603.7" y1="85.0" x2="821.5" y2="85.0" stroke="#d64545" stroke-width="2.6" opacity=".85"/>
-      <circle cx="603.7" cy="85.0" r="4.3" fill="#d64545"/>
-      <circle cx="821.5" cy="85.0" r="4.3" fill="#fff" stroke="#d64545" stroke-width="2"/>
-      <text x="829.5" y="88" font-size="9" fill="#d64545" font-weight="600">+0.154</text>
-      <text x="195" y="114" font-size="10.5" fill="#1c2433" text-anchor="end">AEV-PLIG</text>
-      <line x1="406.3" y1="111.0" x2="616.4" y2="111.0" stroke="#d64545" stroke-width="2.6" opacity=".85"/>
-      <circle cx="406.3" cy="111.0" r="4.3" fill="#d64545"/>
-      <circle cx="616.4" cy="111.0" r="4.3" fill="#fff" stroke="#d64545" stroke-width="2"/>
-      <text x="624.4" y="114" font-size="9" fill="#d64545" font-weight="600">+0.149</text>
-      <text x="195" y="140" font-size="10.5" fill="#1c2433" text-anchor="end">HBGSA</text>
-      <line x1="473.6" y1="137.0" x2="623.1" y2="137.0" stroke="#d64545" stroke-width="2.6" opacity=".85"/>
-      <circle cx="473.6" cy="137.0" r="4.3" fill="#d64545"/>
-      <circle cx="623.1" cy="137.0" r="4.3" fill="#fff" stroke="#d64545" stroke-width="2"/>
-      <text x="631.1" y="140" font-size="9" fill="#d64545" font-weight="600">+0.106</text>
-      <text x="195" y="166" font-size="10.5" fill="#1c2433" text-anchor="end">C</text>
-      <line x1="534.5" y1="163.0" x2="662.2" y2="163.0" stroke="#3f7fc4" stroke-width="2.6" opacity=".85"/>
-      <circle cx="534.5" cy="163.0" r="4.3" fill="#3f7fc4"/>
-      <circle cx="662.2" cy="163.0" r="4.3" fill="#fff" stroke="#3f7fc4" stroke-width="2"/>
-      <text x="670.2" y="166" font-size="9" fill="#3f7fc4" font-weight="600">+0.090</text>
-      <text x="195" y="192" font-size="10.5" fill="#1c2433" text-anchor="end">IPNet (frozen)</text>
-      <line x1="593.0" y1="189.0" x2="720.5" y2="189.0" stroke="#3f7fc4" stroke-width="2.6" opacity=".85"/>
-      <circle cx="593.0" cy="189.0" r="4.3" fill="#3f7fc4"/>
-      <circle cx="720.5" cy="189.0" r="4.3" fill="#fff" stroke="#3f7fc4" stroke-width="2"/>
-      <text x="728.5" y="192" font-size="9" fill="#3f7fc4" font-weight="600">+0.090</text>
-      <text x="195" y="218" font-size="10.5" fill="#1c2433" text-anchor="end">EGNN</text>
-      <line x1="498.6" y1="215.0" x2="611.6" y2="215.0" stroke="#3f7fc4" stroke-width="2.6" opacity=".85"/>
-      <circle cx="498.6" cy="215.0" r="4.3" fill="#3f7fc4"/>
-      <circle cx="611.6" cy="215.0" r="4.3" fill="#fff" stroke="#3f7fc4" stroke-width="2"/>
-      <text x="619.6" y="218" font-size="9" fill="#3f7fc4" font-weight="600">+0.080</text>
-      <text x="195" y="244" font-size="10.5" fill="#1c2433" text-anchor="end">ProFSA</text>
-      <line x1="594.0" y1="241.0" x2="698.6" y2="241.0" stroke="#3f7fc4" stroke-width="2.6" opacity=".85"/>
-      <circle cx="594.0" cy="241.0" r="4.3" fill="#3f7fc4"/>
-      <circle cx="698.6" cy="241.0" r="4.3" fill="#fff" stroke="#3f7fc4" stroke-width="2"/>
-      <text x="706.6" y="244" font-size="9" fill="#3f7fc4" font-weight="600">+0.074</text>
-      <text x="195" y="270" font-size="10.5" fill="#1c2433" text-anchor="end">C+D+G</text>
-      <line x1="529.7" y1="267.0" x2="633.3" y2="267.0" stroke="#3f7fc4" stroke-width="2.6" opacity=".85"/>
-      <circle cx="529.7" cy="267.0" r="4.3" fill="#3f7fc4"/>
-      <circle cx="633.3" cy="267.0" r="4.3" fill="#fff" stroke="#3f7fc4" stroke-width="2"/>
-      <text x="641.3" y="270" font-size="9" fill="#3f7fc4" font-weight="600">+0.073</text>
-      <text x="195" y="296" font-size="10.5" fill="#1c2433" text-anchor="end">EGNN + TargetDiff</text>
-      <line x1="508.6" y1="293.0" x2="606.8" y2="293.0" stroke="#3f7fc4" stroke-width="2.6" opacity=".85"/>
-      <circle cx="508.6" cy="293.0" r="4.3" fill="#3f7fc4"/>
-      <circle cx="606.8" cy="293.0" r="4.3" fill="#fff" stroke="#3f7fc4" stroke-width="2"/>
-      <text x="614.8" y="296" font-size="9" fill="#3f7fc4" font-weight="600">+0.069</text>
-      <text x="195" y="322" font-size="10.5" fill="#1c2433" text-anchor="end">GET</text>
-      <line x1="503.5" y1="319.0" x2="597.2" y2="319.0" stroke="#3f7fc4" stroke-width="2.6" opacity=".85"/>
-      <circle cx="503.5" cy="319.0" r="4.3" fill="#3f7fc4"/>
-      <circle cx="597.2" cy="319.0" r="4.3" fill="#fff" stroke="#3f7fc4" stroke-width="2"/>
-      <text x="605.2" y="322" font-size="9" fill="#3f7fc4" font-weight="600">+0.066</text>
-      <text x="195" y="348" font-size="10.5" fill="#1c2433" text-anchor="end">IPNet (scratch)</text>
-      <line x1="506.3" y1="345.0" x2="593.7" y2="345.0" stroke="#3f7fc4" stroke-width="2.6" opacity=".85"/>
-      <circle cx="506.3" cy="345.0" r="4.3" fill="#3f7fc4"/>
-      <circle cx="593.7" cy="345.0" r="4.3" fill="#fff" stroke="#3f7fc4" stroke-width="2"/>
-      <text x="601.7" y="348" font-size="9" fill="#3f7fc4" font-weight="600">+0.062</text>
-      <text x="195" y="374" font-size="10.5" fill="#1c2433" text-anchor="end">DSMBind</text>
-      <line x1="515.9" y1="371.0" x2="596.3" y2="371.0" stroke="#3f7fc4" stroke-width="2.6" opacity=".85"/>
-      <circle cx="515.9" cy="371.0" r="4.3" fill="#3f7fc4"/>
-      <circle cx="596.3" cy="371.0" r="4.3" fill="#fff" stroke="#3f7fc4" stroke-width="2"/>
-      <text x="604.3" y="374" font-size="9" fill="#3f7fc4" font-weight="600">+0.057</text>
-      <text x="195" y="400" font-size="10.5" fill="#1c2433" text-anchor="end">BindNet</text>
-      <line x1="303.9" y1="397.0" x2="287.0" y2="397.0" stroke="#9aa3b2" stroke-width="2.6" opacity=".85"/>
-      <circle cx="303.9" cy="397.0" r="4.3" fill="#9aa3b2"/>
-      <circle cx="287.0" cy="397.0" r="4.3" fill="#fff" stroke="#9aa3b2" stroke-width="2"/>
-      <text x="311.9" y="400" font-size="9" fill="#9aa3b2" font-weight="600">-0.012</text>
-      <text x="195" y="426" font-size="10.5" fill="#1c2433" text-anchor="end">Nesso-1</text>
-      <line x1="627.9" y1="423.0" x2="590.1" y2="423.0" stroke="#9aa3b2" stroke-width="2.6" opacity=".85"/>
-      <circle cx="627.9" cy="423.0" r="4.3" fill="#9aa3b2"/>
-      <circle cx="590.1" cy="423.0" r="4.3" fill="#fff" stroke="#9aa3b2" stroke-width="2"/>
-      <text x="635.9" y="426" font-size="9" fill="#9aa3b2" font-weight="600">-0.027</text>
-      <circle cx="205" cy="475" r="4.3" fill="#5b6678"/><text x="214" y="478" font-size="9.5" fill="#5b6678">non-train (honest / OOD)</text>
-      <circle cx="380" cy="475" r="4.3" fill="#fff" stroke="#5b6678" stroke-width="2"/><text x="389" y="478" font-size="9.5" fill="#5b6678">leaky (incl. 90 train-overlap)</text>
-      <text x="605" y="478" font-size="9.5" fill="#d64545" font-weight="600">red = big leak (&ge;0.10)</text>
+      <text x="195" y="88" font-size="10.5" fill="#1c2433" text-anchor="end">AEV-PLIG</text>
+      <line x1="406.3" y1="85.0" x2="616.4" y2="85.0" stroke="#d64545" stroke-width="2.6" opacity=".85"/>
+      <circle cx="406.3" cy="85.0" r="4.3" fill="#d64545"/>
+      <circle cx="616.4" cy="85.0" r="4.3" fill="#fff" stroke="#d64545" stroke-width="2"/>
+      <text x="624.4" y="88" font-size="9" fill="#d64545" font-weight="600">+0.149</text>
+      <text x="195" y="114" font-size="10.5" fill="#1c2433" text-anchor="end">C</text>
+      <line x1="534.5" y1="111.0" x2="662.2" y2="111.0" stroke="#3f7fc4" stroke-width="2.6" opacity=".85"/>
+      <circle cx="534.5" cy="111.0" r="4.3" fill="#3f7fc4"/>
+      <circle cx="662.2" cy="111.0" r="4.3" fill="#fff" stroke="#3f7fc4" stroke-width="2"/>
+      <text x="670.2" y="114" font-size="9" fill="#3f7fc4" font-weight="600">+0.090</text>
+      <text x="195" y="140" font-size="10.5" fill="#1c2433" text-anchor="end">IPNet (frozen)</text>
+      <line x1="593.0" y1="137.0" x2="720.5" y2="137.0" stroke="#3f7fc4" stroke-width="2.6" opacity=".85"/>
+      <circle cx="593.0" cy="137.0" r="4.3" fill="#3f7fc4"/>
+      <circle cx="720.5" cy="137.0" r="4.3" fill="#fff" stroke="#3f7fc4" stroke-width="2"/>
+      <text x="728.5" y="140" font-size="9" fill="#3f7fc4" font-weight="600">+0.090</text>
+      <text x="195" y="166" font-size="10.5" fill="#1c2433" text-anchor="end">EGNN</text>
+      <line x1="498.6" y1="163.0" x2="611.6" y2="163.0" stroke="#3f7fc4" stroke-width="2.6" opacity=".85"/>
+      <circle cx="498.6" cy="163.0" r="4.3" fill="#3f7fc4"/>
+      <circle cx="611.6" cy="163.0" r="4.3" fill="#fff" stroke="#3f7fc4" stroke-width="2"/>
+      <text x="619.6" y="166" font-size="9" fill="#3f7fc4" font-weight="600">+0.080</text>
+      <text x="195" y="192" font-size="10.5" fill="#1c2433" text-anchor="end">ProFSA</text>
+      <line x1="594.0" y1="189.0" x2="698.6" y2="189.0" stroke="#3f7fc4" stroke-width="2.6" opacity=".85"/>
+      <circle cx="594.0" cy="189.0" r="4.3" fill="#3f7fc4"/>
+      <circle cx="698.6" cy="189.0" r="4.3" fill="#fff" stroke="#3f7fc4" stroke-width="2"/>
+      <text x="706.6" y="192" font-size="9" fill="#3f7fc4" font-weight="600">+0.074</text>
+      <text x="195" y="218" font-size="10.5" fill="#1c2433" text-anchor="end">C+D+G</text>
+      <line x1="529.7" y1="215.0" x2="633.3" y2="215.0" stroke="#3f7fc4" stroke-width="2.6" opacity=".85"/>
+      <circle cx="529.7" cy="215.0" r="4.3" fill="#3f7fc4"/>
+      <circle cx="633.3" cy="215.0" r="4.3" fill="#fff" stroke="#3f7fc4" stroke-width="2"/>
+      <text x="641.3" y="218" font-size="9" fill="#3f7fc4" font-weight="600">+0.073</text>
+      <text x="195" y="244" font-size="10.5" fill="#1c2433" text-anchor="end">C+D+G +corr</text>
+      <line x1="561.7" y1="241.0" x2="662.2" y2="241.0" stroke="#3f7fc4" stroke-width="2.6" opacity=".85"/>
+      <circle cx="561.7" cy="241.0" r="4.3" fill="#3f7fc4"/>
+      <circle cx="662.2" cy="241.0" r="4.3" fill="#fff" stroke="#3f7fc4" stroke-width="2"/>
+      <text x="670.2" y="244" font-size="9" fill="#3f7fc4" font-weight="600">+0.071</text>
+      <text x="195" y="270" font-size="10.5" fill="#1c2433" text-anchor="end">EGNN + TargetDiff</text>
+      <line x1="508.6" y1="267.0" x2="606.8" y2="267.0" stroke="#3f7fc4" stroke-width="2.6" opacity=".85"/>
+      <circle cx="508.6" cy="267.0" r="4.3" fill="#3f7fc4"/>
+      <circle cx="606.8" cy="267.0" r="4.3" fill="#fff" stroke="#3f7fc4" stroke-width="2"/>
+      <text x="614.8" y="270" font-size="9" fill="#3f7fc4" font-weight="600">+0.069</text>
+      <text x="195" y="296" font-size="10.5" fill="#1c2433" text-anchor="end">GET</text>
+      <line x1="503.5" y1="293.0" x2="597.2" y2="293.0" stroke="#3f7fc4" stroke-width="2.6" opacity=".85"/>
+      <circle cx="503.5" cy="293.0" r="4.3" fill="#3f7fc4"/>
+      <circle cx="597.2" cy="293.0" r="4.3" fill="#fff" stroke="#3f7fc4" stroke-width="2"/>
+      <text x="605.2" y="296" font-size="9" fill="#3f7fc4" font-weight="600">+0.066</text>
+      <text x="195" y="322" font-size="10.5" fill="#1c2433" text-anchor="end">IPNet (scratch)</text>
+      <line x1="506.3" y1="319.0" x2="593.7" y2="319.0" stroke="#3f7fc4" stroke-width="2.6" opacity=".85"/>
+      <circle cx="506.3" cy="319.0" r="4.3" fill="#3f7fc4"/>
+      <circle cx="593.7" cy="319.0" r="4.3" fill="#fff" stroke="#3f7fc4" stroke-width="2"/>
+      <text x="601.7" y="322" font-size="9" fill="#3f7fc4" font-weight="600">+0.062</text>
+      <text x="195" y="348" font-size="10.5" fill="#1c2433" text-anchor="end">DSMBind</text>
+      <line x1="515.9" y1="345.0" x2="596.3" y2="345.0" stroke="#3f7fc4" stroke-width="2.6" opacity=".85"/>
+      <circle cx="515.9" cy="345.0" r="4.3" fill="#3f7fc4"/>
+      <circle cx="596.3" cy="345.0" r="4.3" fill="#fff" stroke="#3f7fc4" stroke-width="2"/>
+      <text x="604.3" y="348" font-size="9" fill="#3f7fc4" font-weight="600">+0.057</text>
+      <text x="195" y="374" font-size="10.5" fill="#1c2433" text-anchor="end">HBGSA</text>
+      <line x1="172.9" y1="371.0" x2="172.9" y2="371.0" stroke="#9aa3b2" stroke-width="2.6" opacity=".85"/>
+      <circle cx="172.9" cy="371.0" r="4.3" fill="#9aa3b2"/>
+      <circle cx="172.9" cy="371.0" r="4.3" fill="#fff" stroke="#9aa3b2" stroke-width="2"/>
+      <text x="180.9" y="374" font-size="9" fill="#9aa3b2" font-weight="600">+0.000</text>
+      <text x="195" y="400" font-size="10.5" fill="#1c2433" text-anchor="end">CheapNet</text>
+      <line x1="113.5" y1="397.0" x2="113.5" y2="397.0" stroke="#9aa3b2" stroke-width="2.6" opacity=".85"/>
+      <circle cx="113.5" cy="397.0" r="4.3" fill="#9aa3b2"/>
+      <circle cx="113.5" cy="397.0" r="4.3" fill="#fff" stroke="#9aa3b2" stroke-width="2"/>
+      <text x="121.5" y="400" font-size="9" fill="#9aa3b2" font-weight="600">+0.000</text>
+      <text x="195" y="426" font-size="10.5" fill="#1c2433" text-anchor="end">BindNet</text>
+      <line x1="303.9" y1="423.0" x2="287.0" y2="423.0" stroke="#9aa3b2" stroke-width="2.6" opacity=".85"/>
+      <circle cx="303.9" cy="423.0" r="4.3" fill="#9aa3b2"/>
+      <circle cx="287.0" cy="423.0" r="4.3" fill="#fff" stroke="#9aa3b2" stroke-width="2"/>
+      <text x="311.9" y="426" font-size="9" fill="#9aa3b2" font-weight="600">-0.012</text>
+      <text x="195" y="452" font-size="10.5" fill="#1c2433" text-anchor="end">Nesso-1</text>
+      <line x1="627.9" y1="449.0" x2="590.1" y2="449.0" stroke="#9aa3b2" stroke-width="2.6" opacity=".85"/>
+      <circle cx="627.9" cy="449.0" r="4.3" fill="#9aa3b2"/>
+      <circle cx="590.1" cy="449.0" r="4.3" fill="#fff" stroke="#9aa3b2" stroke-width="2"/>
+      <text x="635.9" y="452" font-size="9" fill="#9aa3b2" font-weight="600">-0.027</text>
+      <circle cx="205" cy="501" r="4.3" fill="#5b6678"/><text x="214" y="504" font-size="9.5" fill="#5b6678">non-train (honest / OOD)</text>
+      <circle cx="380" cy="501" r="4.3" fill="#fff" stroke="#5b6678" stroke-width="2"/><text x="389" y="504" font-size="9.5" fill="#5b6678">leaky (incl. 90 train-overlap)</text>
+      <text x="605" y="504" font-size="9.5" fill="#d64545" font-weight="600">red = big leak (&ge;0.10)</text>
       </svg>
       <p class="figure-cap">Each method: honest <b>non-train</b> &rho; (filled dot) &rarr; <b>leaky</b> &rho; (open dot, includes
         the 90 train-overlap complexes). Line length = leakage inflation, sorted top-to-bottom.
@@ -1859,6 +2460,256 @@
         curated affinity range (pKd std&nbsp;1.98 vs&nbsp;1.77). That is why every method scores <i>higher</i> here than on the
         sequence-clustered LP no-leak tiers in &sect;1 &mdash; those are the stricter novel-target test. Difficulty ordering:
         CASF-leaky&nbsp;&gt;&nbsp;CASF-&minus;train&nbsp;&gt;&nbsp;LP no-leak tiers.
+      </div>
+    </section>
+  </div>
+
+  <div class="doc-section">
+    <h2 class="section-head"><span class="sec-num" style="background:#566072">A2</span> Appendix &mdash; 2019 temporal holdout (uncontaminated)</h2>
+    <p class="section-intro">Supporting figure for the 2019 holdout result in <b>&sect;1.2 (Table 3)</b> &mdash; the same common-ED-set
+      metrics rendered as bars.</p>
+    <section class="block">
+      <p class="table-title">Figure A3 &nbsp;&middot;&nbsp; 2019 holdout &mdash; common ED set (444 complexes)</p>
+      <p class="table-sub">Every full-coverage method on the identical 444-complex ED set; higher r/&rho; and lower
+        RMSE are better. The seq+SMILES tier sits below 3D structure, and electron density (ours) adds the final margin.</p>
+      <div class="table-wrap" style="padding:16px 18px 12px;">
+      <svg viewBox="0 0 1130 256" width="100%" style="max-width:1130px;display:block;margin:0 auto" font-family="-apple-system,Segoe UI,Roboto,sans-serif">
+      <text x="195.0" y="15" font-size="11.5" font-weight="600" fill="#1c2433" text-anchor="middle">Pearson r</text>
+      <line x1="45.0" y1="220.0" x2="345.0" y2="220.0" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="40.0" y="223.0" font-size="8.5" fill="#9aa3b2" text-anchor="end">0.35</text>
+      <line x1="45.0" y1="195.1" x2="345.0" y2="195.1" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="40.0" y="198.1" font-size="8.5" fill="#9aa3b2" text-anchor="end">0.40</text>
+      <line x1="45.0" y1="170.3" x2="345.0" y2="170.3" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="40.0" y="173.3" font-size="8.5" fill="#9aa3b2" text-anchor="end">0.45</text>
+      <line x1="45.0" y1="145.4" x2="345.0" y2="145.4" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="40.0" y="148.4" font-size="8.5" fill="#9aa3b2" text-anchor="end">0.50</text>
+      <line x1="45.0" y1="120.5" x2="345.0" y2="120.5" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="40.0" y="123.5" font-size="8.5" fill="#9aa3b2" text-anchor="end">0.55</text>
+      <line x1="45.0" y1="95.7" x2="345.0" y2="95.7" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="40.0" y="98.7" font-size="8.5" fill="#9aa3b2" text-anchor="end">0.60</text>
+      <line x1="45.0" y1="70.8" x2="345.0" y2="70.8" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="40.0" y="73.8" font-size="8.5" fill="#9aa3b2" text-anchor="end">0.65</text>
+      <line x1="45.0" y1="45.9" x2="345.0" y2="45.9" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="40.0" y="48.9" font-size="8.5" fill="#9aa3b2" text-anchor="end">0.70</text>
+      <rect x="50.5" y="81.1" width="14.0" height="138.9" rx="2" fill="#3cb44b" stroke="#000" stroke-width="2.5"/>
+      <line x1="57.5" y1="69.9" x2="57.5" y2="92.4" stroke="#566072" stroke-width="1"/>
+      <line x1="54.5" y1="69.9" x2="60.5" y2="69.9" stroke="#566072" stroke-width="1"/>
+      <line x1="54.5" y1="92.4" x2="60.5" y2="92.4" stroke="#566072" stroke-width="1"/>
+      <text x="57.5" y="65.9" font-size="9.5" fill="#1d5a3a" text-anchor="middle" font-weight="700" text-decoration="underline">0.63</text>
+      <rect x="75.5" y="79.6" width="14.0" height="140.4" rx="2" fill="#0b6b3a"/>
+      <line x1="82.5" y1="69.6" x2="82.5" y2="89.6" stroke="#566072" stroke-width="1"/>
+      <line x1="79.5" y1="69.6" x2="85.5" y2="69.6" stroke="#566072" stroke-width="1"/>
+      <line x1="79.5" y1="89.6" x2="85.5" y2="89.6" stroke="#566072" stroke-width="1"/>
+      <text x="82.5" y="65.6" font-size="11" fill="#111" text-anchor="middle" font-weight="800">0.63</text>
+      <rect x="100.5" y="88.3" width="14.0" height="131.7" rx="2" fill="#4363d8"/>
+      <line x1="107.5" y1="79.3" x2="107.5" y2="97.3" stroke="#566072" stroke-width="1"/>
+      <line x1="104.5" y1="79.3" x2="110.5" y2="79.3" stroke="#566072" stroke-width="1"/>
+      <line x1="104.5" y1="97.3" x2="110.5" y2="97.3" stroke="#566072" stroke-width="1"/>
+      <text x="107.5" y="75.3" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.61</text>
+      <rect x="125.5" y="105.1" width="14.0" height="114.9" rx="2" fill="#f58231"/>
+      <line x1="132.5" y1="102.9" x2="132.5" y2="107.4" stroke="#566072" stroke-width="1"/>
+      <line x1="129.5" y1="102.9" x2="135.5" y2="102.9" stroke="#566072" stroke-width="1"/>
+      <line x1="129.5" y1="107.4" x2="135.5" y2="107.4" stroke="#566072" stroke-width="1"/>
+      <text x="132.5" y="98.9" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.58</text>
+      <rect x="150.5" y="126.0" width="14.0" height="94.0" rx="2" fill="#e6194B"/>
+      <line x1="157.5" y1="124.7" x2="157.5" y2="127.3" stroke="#566072" stroke-width="1"/>
+      <line x1="154.5" y1="124.7" x2="160.5" y2="124.7" stroke="#566072" stroke-width="1"/>
+      <line x1="154.5" y1="127.3" x2="160.5" y2="127.3" stroke="#566072" stroke-width="1"/>
+      <text x="157.5" y="120.7" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.54</text>
+      <rect x="175.5" y="131.8" width="14.0" height="88.2" rx="2" fill="#808000"/>
+      <line x1="182.5" y1="126.4" x2="182.5" y2="137.3" stroke="#566072" stroke-width="1"/>
+      <line x1="179.5" y1="126.4" x2="185.5" y2="126.4" stroke="#566072" stroke-width="1"/>
+      <line x1="179.5" y1="137.3" x2="185.5" y2="137.3" stroke="#566072" stroke-width="1"/>
+      <text x="182.5" y="122.4" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.53</text>
+      <rect x="200.5" y="122.8" width="14.0" height="97.2" rx="2" fill="#c98a3a"/>
+      <line x1="207.5" y1="122.8" x2="207.5" y2="122.8" stroke="#566072" stroke-width="1"/>
+      <line x1="204.5" y1="122.8" x2="210.5" y2="122.8" stroke="#566072" stroke-width="1"/>
+      <line x1="204.5" y1="122.8" x2="210.5" y2="122.8" stroke="#566072" stroke-width="1"/>
+      <text x="207.5" y="118.8" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.55</text>
+      <rect x="225.5" y="142.9" width="14.0" height="77.1" rx="2" fill="#000075"/>
+      <line x1="232.5" y1="137.1" x2="232.5" y2="148.8" stroke="#566072" stroke-width="1"/>
+      <line x1="229.5" y1="137.1" x2="235.5" y2="137.1" stroke="#566072" stroke-width="1"/>
+      <line x1="229.5" y1="148.8" x2="235.5" y2="148.8" stroke="#566072" stroke-width="1"/>
+      <text x="232.5" y="133.1" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.50</text>
+      <rect x="250.5" y="157.5" width="14.0" height="62.5" rx="2" fill="#f032e6"/>
+      <line x1="257.5" y1="154.7" x2="257.5" y2="160.3" stroke="#566072" stroke-width="1"/>
+      <line x1="254.5" y1="154.7" x2="260.5" y2="154.7" stroke="#566072" stroke-width="1"/>
+      <line x1="254.5" y1="160.3" x2="260.5" y2="160.3" stroke="#566072" stroke-width="1"/>
+      <text x="257.5" y="150.7" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.48</text>
+      <rect x="275.5" y="134.7" width="14.0" height="85.3" rx="2" fill="#8a6d3b"/>
+      <line x1="282.5" y1="134.7" x2="282.5" y2="134.7" stroke="#566072" stroke-width="1"/>
+      <line x1="279.5" y1="134.7" x2="285.5" y2="134.7" stroke="#566072" stroke-width="1"/>
+      <line x1="279.5" y1="134.7" x2="285.5" y2="134.7" stroke="#566072" stroke-width="1"/>
+      <text x="282.5" y="130.7" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.52</text>
+      <rect x="300.5" y="172.0" width="14.0" height="48.0" rx="2" fill="#9A6324"/>
+      <line x1="307.5" y1="147.5" x2="307.5" y2="196.5" stroke="#566072" stroke-width="1"/>
+      <line x1="304.5" y1="147.5" x2="310.5" y2="147.5" stroke="#566072" stroke-width="1"/>
+      <line x1="304.5" y1="196.5" x2="310.5" y2="196.5" stroke="#566072" stroke-width="1"/>
+      <text x="307.5" y="143.5" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.45</text>
+      <rect x="325.5" y="195.0" width="14.0" height="25.0" rx="2" fill="#a86a26"/>
+      <line x1="332.5" y1="195.0" x2="332.5" y2="195.0" stroke="#566072" stroke-width="1"/>
+      <line x1="329.5" y1="195.0" x2="335.5" y2="195.0" stroke="#566072" stroke-width="1"/>
+      <line x1="329.5" y1="195.0" x2="335.5" y2="195.0" stroke="#566072" stroke-width="1"/>
+      <text x="332.5" y="191.0" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.40</text>
+      <line x1="45.0" y1="220.0" x2="345.0" y2="220.0" stroke="#aeb6c4" stroke-width="1.5"/>
+      <text x="575.0" y="15" font-size="11.5" font-weight="600" fill="#1c2433" text-anchor="middle">Spearman &rho;</text>
+      <line x1="425.0" y1="220.0" x2="725.0" y2="220.0" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="420.0" y="223.0" font-size="8.5" fill="#9aa3b2" text-anchor="end">0.35</text>
+      <line x1="425.0" y1="195.1" x2="725.0" y2="195.1" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="420.0" y="198.1" font-size="8.5" fill="#9aa3b2" text-anchor="end">0.40</text>
+      <line x1="425.0" y1="170.3" x2="725.0" y2="170.3" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="420.0" y="173.3" font-size="8.5" fill="#9aa3b2" text-anchor="end">0.45</text>
+      <line x1="425.0" y1="145.4" x2="725.0" y2="145.4" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="420.0" y="148.4" font-size="8.5" fill="#9aa3b2" text-anchor="end">0.50</text>
+      <line x1="425.0" y1="120.5" x2="725.0" y2="120.5" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="420.0" y="123.5" font-size="8.5" fill="#9aa3b2" text-anchor="end">0.55</text>
+      <line x1="425.0" y1="95.7" x2="725.0" y2="95.7" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="420.0" y="98.7" font-size="8.5" fill="#9aa3b2" text-anchor="end">0.60</text>
+      <line x1="425.0" y1="70.8" x2="725.0" y2="70.8" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="420.0" y="73.8" font-size="8.5" fill="#9aa3b2" text-anchor="end">0.65</text>
+      <line x1="425.0" y1="45.9" x2="725.0" y2="45.9" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="420.0" y="48.9" font-size="8.5" fill="#9aa3b2" text-anchor="end">0.70</text>
+      <rect x="430.5" y="92.3" width="14.0" height="127.7" rx="2" fill="#3cb44b" stroke="#000" stroke-width="2.5"/>
+      <line x1="437.5" y1="79.2" x2="437.5" y2="105.4" stroke="#566072" stroke-width="1"/>
+      <line x1="434.5" y1="79.2" x2="440.5" y2="79.2" stroke="#566072" stroke-width="1"/>
+      <line x1="434.5" y1="105.4" x2="440.5" y2="105.4" stroke="#566072" stroke-width="1"/>
+      <text x="437.5" y="75.2" font-size="11" fill="#111" text-anchor="middle" font-weight="800">0.61</text>
+      <rect x="455.5" y="92.5" width="14.0" height="127.5" rx="2" fill="#0b6b3a"/>
+      <line x1="462.5" y1="82.8" x2="462.5" y2="102.3" stroke="#566072" stroke-width="1"/>
+      <line x1="459.5" y1="82.8" x2="465.5" y2="82.8" stroke="#566072" stroke-width="1"/>
+      <line x1="459.5" y1="102.3" x2="465.5" y2="102.3" stroke="#566072" stroke-width="1"/>
+      <text x="462.5" y="78.8" font-size="9.5" fill="#5b6678" text-anchor="middle" font-weight="700" text-decoration="underline">0.61</text>
+      <rect x="480.5" y="100.7" width="14.0" height="119.3" rx="2" fill="#4363d8"/>
+      <line x1="487.5" y1="89.5" x2="487.5" y2="111.9" stroke="#566072" stroke-width="1"/>
+      <line x1="484.5" y1="89.5" x2="490.5" y2="89.5" stroke="#566072" stroke-width="1"/>
+      <line x1="484.5" y1="111.9" x2="490.5" y2="111.9" stroke="#566072" stroke-width="1"/>
+      <text x="487.5" y="85.5" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.59</text>
+      <rect x="505.5" y="119.8" width="14.0" height="100.2" rx="2" fill="#f58231"/>
+      <line x1="512.5" y1="113.4" x2="512.5" y2="126.3" stroke="#566072" stroke-width="1"/>
+      <line x1="509.5" y1="113.4" x2="515.5" y2="113.4" stroke="#566072" stroke-width="1"/>
+      <line x1="509.5" y1="126.3" x2="515.5" y2="126.3" stroke="#566072" stroke-width="1"/>
+      <text x="512.5" y="109.4" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.55</text>
+      <rect x="530.5" y="135.1" width="14.0" height="84.9" rx="2" fill="#e6194B"/>
+      <line x1="537.5" y1="134.2" x2="537.5" y2="136.1" stroke="#566072" stroke-width="1"/>
+      <line x1="534.5" y1="134.2" x2="540.5" y2="134.2" stroke="#566072" stroke-width="1"/>
+      <line x1="534.5" y1="136.1" x2="540.5" y2="136.1" stroke="#566072" stroke-width="1"/>
+      <text x="537.5" y="130.2" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.52</text>
+      <rect x="555.5" y="138.6" width="14.0" height="81.4" rx="2" fill="#808000"/>
+      <line x1="562.5" y1="134.8" x2="562.5" y2="142.4" stroke="#566072" stroke-width="1"/>
+      <line x1="559.5" y1="134.8" x2="565.5" y2="134.8" stroke="#566072" stroke-width="1"/>
+      <line x1="559.5" y1="142.4" x2="565.5" y2="142.4" stroke="#566072" stroke-width="1"/>
+      <text x="562.5" y="130.8" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.51</text>
+      <rect x="580.5" y="145.9" width="14.0" height="74.1" rx="2" fill="#c98a3a"/>
+      <line x1="587.5" y1="145.9" x2="587.5" y2="145.9" stroke="#566072" stroke-width="1"/>
+      <line x1="584.5" y1="145.9" x2="590.5" y2="145.9" stroke="#566072" stroke-width="1"/>
+      <line x1="584.5" y1="145.9" x2="590.5" y2="145.9" stroke="#566072" stroke-width="1"/>
+      <text x="587.5" y="141.9" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.50</text>
+      <rect x="605.5" y="148.1" width="14.0" height="71.9" rx="2" fill="#000075"/>
+      <line x1="612.5" y1="141.8" x2="612.5" y2="154.4" stroke="#566072" stroke-width="1"/>
+      <line x1="609.5" y1="141.8" x2="615.5" y2="141.8" stroke="#566072" stroke-width="1"/>
+      <line x1="609.5" y1="154.4" x2="615.5" y2="154.4" stroke="#566072" stroke-width="1"/>
+      <text x="612.5" y="137.8" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.49</text>
+      <rect x="630.5" y="149.3" width="14.0" height="70.7" rx="2" fill="#f032e6"/>
+      <line x1="637.5" y1="144.1" x2="637.5" y2="154.5" stroke="#566072" stroke-width="1"/>
+      <line x1="634.5" y1="144.1" x2="640.5" y2="144.1" stroke="#566072" stroke-width="1"/>
+      <line x1="634.5" y1="154.5" x2="640.5" y2="154.5" stroke="#566072" stroke-width="1"/>
+      <text x="637.5" y="140.1" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.49</text>
+      <rect x="655.5" y="158.4" width="14.0" height="61.6" rx="2" fill="#8a6d3b"/>
+      <line x1="662.5" y1="158.4" x2="662.5" y2="158.4" stroke="#566072" stroke-width="1"/>
+      <line x1="659.5" y1="158.4" x2="665.5" y2="158.4" stroke="#566072" stroke-width="1"/>
+      <line x1="659.5" y1="158.4" x2="665.5" y2="158.4" stroke="#566072" stroke-width="1"/>
+      <text x="662.5" y="154.4" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.47</text>
+      <rect x="680.5" y="184.8" width="14.0" height="35.2" rx="2" fill="#9A6324"/>
+      <line x1="687.5" y1="159.2" x2="687.5" y2="210.4" stroke="#566072" stroke-width="1"/>
+      <line x1="684.5" y1="159.2" x2="690.5" y2="159.2" stroke="#566072" stroke-width="1"/>
+      <line x1="684.5" y1="210.4" x2="690.5" y2="210.4" stroke="#566072" stroke-width="1"/>
+      <text x="687.5" y="155.2" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.42</text>
+      <rect x="705.5" y="215.5" width="14.0" height="4.5" rx="2" fill="#a86a26"/>
+      <line x1="712.5" y1="215.5" x2="712.5" y2="215.5" stroke="#566072" stroke-width="1"/>
+      <line x1="709.5" y1="215.5" x2="715.5" y2="215.5" stroke="#566072" stroke-width="1"/>
+      <line x1="709.5" y1="215.5" x2="715.5" y2="215.5" stroke="#566072" stroke-width="1"/>
+      <text x="712.5" y="211.5" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">0.36</text>
+      <line x1="425.0" y1="220.0" x2="725.0" y2="220.0" stroke="#aeb6c4" stroke-width="1.5"/>
+      <text x="955.0" y="15" font-size="11.5" font-weight="600" fill="#1c2433" text-anchor="middle">RMSE</text>
+      <line x1="805.0" y1="220.0" x2="1105.0" y2="220.0" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="800.0" y="223.0" font-size="8.5" fill="#9aa3b2" text-anchor="end">1.30</text>
+      <line x1="805.0" y1="186.5" x2="1105.0" y2="186.5" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="800.0" y="189.5" font-size="8.5" fill="#9aa3b2" text-anchor="end">1.40</text>
+      <line x1="805.0" y1="153.1" x2="1105.0" y2="153.1" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="800.0" y="156.1" font-size="8.5" fill="#9aa3b2" text-anchor="end">1.50</text>
+      <line x1="805.0" y1="119.6" x2="1105.0" y2="119.6" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="800.0" y="122.6" font-size="8.5" fill="#9aa3b2" text-anchor="end">1.60</text>
+      <line x1="805.0" y1="86.2" x2="1105.0" y2="86.2" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="800.0" y="89.2" font-size="8.5" fill="#9aa3b2" text-anchor="end">1.70</text>
+      <line x1="805.0" y1="52.7" x2="1105.0" y2="52.7" stroke="#e6e9ef" stroke-width="1"/>
+      <text x="800.0" y="55.7" font-size="8.5" fill="#9aa3b2" text-anchor="end">1.80</text>
+      <rect x="810.5" y="133.5" width="14.0" height="86.5" rx="2" fill="#3cb44b" stroke="#000" stroke-width="2.5"/>
+      <line x1="817.5" y1="122.4" x2="817.5" y2="144.6" stroke="#566072" stroke-width="1"/>
+      <line x1="814.5" y1="122.4" x2="820.5" y2="122.4" stroke="#566072" stroke-width="1"/>
+      <line x1="814.5" y1="144.6" x2="820.5" y2="144.6" stroke="#566072" stroke-width="1"/>
+      <text x="817.5" y="118.4" font-size="9.5" fill="#1d5a3a" text-anchor="middle" font-weight="700" text-decoration="underline">1.56</text>
+      <rect x="835.5" y="134.5" width="14.0" height="85.5" rx="2" fill="#0b6b3a"/>
+      <line x1="842.5" y1="122.5" x2="842.5" y2="146.5" stroke="#566072" stroke-width="1"/>
+      <line x1="839.5" y1="122.5" x2="845.5" y2="122.5" stroke="#566072" stroke-width="1"/>
+      <line x1="839.5" y1="146.5" x2="845.5" y2="146.5" stroke="#566072" stroke-width="1"/>
+      <text x="842.5" y="118.5" font-size="11" fill="#111" text-anchor="middle" font-weight="800">1.56</text>
+      <rect x="860.5" y="125.1" width="14.0" height="94.9" rx="2" fill="#4363d8"/>
+      <line x1="867.5" y1="116.8" x2="867.5" y2="133.3" stroke="#566072" stroke-width="1"/>
+      <line x1="864.5" y1="116.8" x2="870.5" y2="116.8" stroke="#566072" stroke-width="1"/>
+      <line x1="864.5" y1="133.3" x2="870.5" y2="133.3" stroke="#566072" stroke-width="1"/>
+      <text x="867.5" y="112.8" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">1.58</text>
+      <rect x="885.5" y="82.0" width="14.0" height="138.0" rx="2" fill="#f58231"/>
+      <line x1="892.5" y1="72.2" x2="892.5" y2="91.7" stroke="#566072" stroke-width="1"/>
+      <line x1="889.5" y1="72.2" x2="895.5" y2="72.2" stroke="#566072" stroke-width="1"/>
+      <line x1="889.5" y1="91.7" x2="895.5" y2="91.7" stroke="#566072" stroke-width="1"/>
+      <text x="892.5" y="68.2" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">1.71</text>
+      <rect x="910.5" y="78.1" width="14.0" height="141.9" rx="2" fill="#e6194B"/>
+      <line x1="917.5" y1="72.6" x2="917.5" y2="83.6" stroke="#566072" stroke-width="1"/>
+      <line x1="914.5" y1="72.6" x2="920.5" y2="72.6" stroke="#566072" stroke-width="1"/>
+      <line x1="914.5" y1="83.6" x2="920.5" y2="83.6" stroke="#566072" stroke-width="1"/>
+      <text x="917.5" y="68.6" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">1.72</text>
+      <rect x="935.5" y="77.4" width="14.0" height="142.6" rx="2" fill="#808000"/>
+      <line x1="942.5" y1="69.2" x2="942.5" y2="85.6" stroke="#566072" stroke-width="1"/>
+      <line x1="939.5" y1="69.2" x2="945.5" y2="69.2" stroke="#566072" stroke-width="1"/>
+      <line x1="939.5" y1="85.6" x2="945.5" y2="85.6" stroke="#566072" stroke-width="1"/>
+      <text x="942.5" y="65.2" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">1.73</text>
+      <rect x="960.5" y="88.5" width="14.0" height="131.5" rx="2" fill="#c98a3a"/>
+      <line x1="967.5" y1="88.5" x2="967.5" y2="88.5" stroke="#566072" stroke-width="1"/>
+      <line x1="964.5" y1="88.5" x2="970.5" y2="88.5" stroke="#566072" stroke-width="1"/>
+      <line x1="964.5" y1="88.5" x2="970.5" y2="88.5" stroke="#566072" stroke-width="1"/>
+      <text x="967.5" y="84.5" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">1.69</text>
+      <rect x="985.5" y="56.3" width="14.0" height="163.7" rx="2" fill="#000075"/>
+      <line x1="992.5" y1="46.6" x2="992.5" y2="66.1" stroke="#566072" stroke-width="1"/>
+      <line x1="989.5" y1="46.6" x2="995.5" y2="46.6" stroke="#566072" stroke-width="1"/>
+      <line x1="989.5" y1="66.1" x2="995.5" y2="66.1" stroke="#566072" stroke-width="1"/>
+      <text x="992.5" y="42.6" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">1.79</text>
+      <rect x="1010.5" y="44.8" width="14.0" height="175.2" rx="2" fill="#f032e6"/>
+      <line x1="1017.5" y1="35.0" x2="1017.5" y2="54.6" stroke="#566072" stroke-width="1"/>
+      <line x1="1014.5" y1="35.0" x2="1020.5" y2="35.0" stroke="#566072" stroke-width="1"/>
+      <line x1="1014.5" y1="54.6" x2="1020.5" y2="54.6" stroke="#566072" stroke-width="1"/>
+      <text x="1017.5" y="31.0" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">1.82</text>
+      <rect x="1035.5" y="61.8" width="14.0" height="158.2" rx="2" fill="#8a6d3b"/>
+      <line x1="1042.5" y1="61.8" x2="1042.5" y2="61.8" stroke="#566072" stroke-width="1"/>
+      <line x1="1039.5" y1="61.8" x2="1045.5" y2="61.8" stroke="#566072" stroke-width="1"/>
+      <line x1="1039.5" y1="61.8" x2="1045.5" y2="61.8" stroke="#566072" stroke-width="1"/>
+      <text x="1042.5" y="57.8" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">1.77</text>
+      <rect x="1060.5" y="-1.1" width="14.0" height="221.1" rx="2" fill="#9A6324"/>
+      <line x1="1067.5" y1="-27.6" x2="1067.5" y2="25.4" stroke="#566072" stroke-width="1"/>
+      <line x1="1064.5" y1="-27.6" x2="1070.5" y2="-27.6" stroke="#566072" stroke-width="1"/>
+      <line x1="1064.5" y1="25.4" x2="1070.5" y2="25.4" stroke="#566072" stroke-width="1"/>
+      <text x="1067.5" y="-31.6" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">1.96</text>
+      <rect x="1085.5" y="-7.6" width="14.0" height="227.6" rx="2" fill="#a86a26"/>
+      <line x1="1092.5" y1="-7.6" x2="1092.5" y2="-7.6" stroke="#566072" stroke-width="1"/>
+      <line x1="1089.5" y1="-7.6" x2="1095.5" y2="-7.6" stroke="#566072" stroke-width="1"/>
+      <line x1="1089.5" y1="-7.6" x2="1095.5" y2="-7.6" stroke="#566072" stroke-width="1"/>
+      <text x="1092.5" y="-11.6" font-size="8" fill="#5b6678" text-anchor="middle" font-weight="600">1.98</text>
+      <line x1="805.0" y1="220.0" x2="1105.0" y2="220.0" stroke="#aeb6c4" stroke-width="1.5"/>
+      <text x="955.0" y="248" font-size="9" fill="#b04a2f" text-anchor="middle">&#8595; lower is better</text>
+      </svg>
+      <div class="legend" style="justify-content:center;margin-top:10px;gap:13px;"><span><span style="width:12px;height:12px;border-radius:3px;background:#3cb44b;display:inline-block;border:2px solid #000"></span> C+D+G</span> <span><span style="width:12px;height:12px;border-radius:3px;background:#0b6b3a;display:inline-block"></span> C+D+G +corr</span> <span><span style="width:12px;height:12px;border-radius:3px;background:#4363d8;display:inline-block"></span> C</span> <span><span style="width:12px;height:12px;border-radius:3px;background:#f58231;display:inline-block"></span> CheapNet</span> <span><span style="width:12px;height:12px;border-radius:3px;background:#e6194B;display:inline-block"></span> EGNN</span> <span><span style="width:12px;height:12px;border-radius:3px;background:#808000;display:inline-block"></span> EGNN + TargetDiff</span> <span><span style="width:12px;height:12px;border-radius:3px;background:#c98a3a;display:inline-block"></span> DeepDTA</span> <span><span style="width:12px;height:12px;border-radius:3px;background:#000075;display:inline-block"></span> GET</span> <span><span style="width:12px;height:12px;border-radius:3px;background:#f032e6;display:inline-block"></span> ProFSA</span> <span><span style="width:12px;height:12px;border-radius:3px;background:#8a6d3b;display:inline-block"></span> PLAPT</span> <span><span style="width:12px;height:12px;border-radius:3px;background:#9A6324;display:inline-block"></span> AEV-PLIG</span> <span><span style="width:12px;height:12px;border-radius:3px;background:#a86a26;display:inline-block"></span> MolTrans</span></div>
+      <p class="figure-cap">Values are the Table A2 common-ED-set metrics. Per panel, the <b>best</b> value is bold and the
+        <span style="text-decoration:underline">second</span> is underlined. The black border marks C+D+G;
+        faded Nesso-1/PLAPT are externally-pretrained leaked references.</p>
       </div>
     </section>
   </div>

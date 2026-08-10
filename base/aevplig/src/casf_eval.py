@@ -325,6 +325,8 @@ def main():
     ap.add_argument("--batch_size", type=int, default=128)
     ap.add_argument("--lr",         type=float, default=0.00012291937615434127)
     ap.add_argument("--device",     type=str, default="cuda")
+    ap.add_argument("--casf_csv",   type=str, default=os.path.join(SPLITS_DIR, "casf2016_eval.csv"))
+    ap.add_argument("--tag",        type=str, default="")
     args = ap.parse_args()
 
     os.makedirs(CASF_OUT, exist_ok=True)
@@ -342,7 +344,7 @@ def main():
     print(f"  {len(graphs)} graphs loaded")
 
     # ── CASF-2016 manifest ────────────────────────────────────────────────────
-    casf_df = pd.read_csv(os.path.join(SPLITS_DIR, "casf2016_eval.csv"))
+    casf_df = pd.read_csv(args.casf_csv)
     casf_df["pid"] = casf_df["pid"].str.lower()
     casf_pids_all  = casf_df["pid"].tolist()
     casf_pk        = dict(zip(casf_df["pid"], casf_df["pK"]))
@@ -472,7 +474,7 @@ def main():
         "wall_s":   round(time.time() - t0, 1),
     }
 
-    out_json = os.path.join(CASF_OUT, "AEV.json")
+    out_json = os.path.join(CASF_OUT, f"AEV{args.tag}.json")
     with open(out_json, "w") as h:
         json.dump(result, h, indent=2)
     print(f"\nsaved -> {out_json}")
@@ -486,7 +488,7 @@ def main():
     for i, (seed, P) in enumerate(zip(args.seeds, all_preds)):
         pred_df[f"pred_seed{seed}"] = P
     pred_df["pred_ensemble"] = np.mean(np.stack(all_preds), axis=0)
-    pred_df.to_csv(os.path.join(CASF_OUT, "AEV_preds.csv"), index=False)
+    pred_df.to_csv(os.path.join(CASF_OUT, f"AEV{args.tag}_preds.csv"), index=False)
     print(f"saved -> {os.path.join(CASF_OUT, 'AEV_preds.csv')}")
 
 

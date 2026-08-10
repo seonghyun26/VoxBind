@@ -1,0 +1,16 @@
+sequences:
+- protein:
+    id: A
+    sequence: GEYVVEKVLDRRVVKGKVEYLLKWKGFSDEDNTWEPEENLDCPDLIAEFLQSQK
+- protein:
+    id: B
+    sequence: GEYVVEKVLDRRVVKGKVEYLLKWKGFSDEDNTWEPEENLDCPDLIAEFLQS
+- protein:
+    id: C
+    sequence: KQTARSTG
+- ligand:
+    id: L
+    smiles: '[NH4][C@H](C(=O)N[C@H](C(=O)N[C@H](C(=O)N[C@H](C(=O)N[C@H](C(=O)N[C@@H](CCCCN(C)(C)C)C(=O)N[C@H](C(=O)N[C@H](C(=O)NCC(=O)O)[C@H](O)C)CO)CCCNC(N)N)C)[C@H](O)C)CCC(=O)N)CCCC[NH4]'
+properties:
+- affinity:
+    binder: L

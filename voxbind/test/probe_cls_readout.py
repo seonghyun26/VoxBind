@@ -25,9 +25,9 @@ _spec = importlib.util.spec_from_file_location("probe01c", VOX / "dataset" / "01
 P = importlib.util.module_from_spec(_spec); _spec.loader.exec_module(P)
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-EXP_DIR = VOX / "exps" / "260705_ar_cvit_100m_v2_mask075"
+EXP_DIR = VOX / "model_zoo" / "champion"   # stable pointer → current best encoder (cfg + ckpt)
 EPOCH, VOXV, COND = 49, "v5", "atomblob_density_gradmag"
-CACHE = VOX / "test" / "cls_tokens_champion.pt"
+CACHE = VOX / "test" / "cls_tokens_champion_f32.pt"
 SEEDS = (0, 1, 2)
 
 
@@ -54,7 +54,7 @@ def extract():
         nG = tok.shape[1] // npatch
         tok = tok.reshape(B, nG, npatch, D).mean(1)             # (B, npatch, D) per-patch
         for i, pid in enumerate(bpids):
-            toks[pid] = tok[i].half().cpu().clone()
+            toks[pid] = tok[i].float().cpu().clone()
     print(f"extracted {len(toks)} complexes; per-patch shape {next(iter(toks.values())).shape}")
     torch.save({"toks": toks, "smap": smap}, CACHE)
     return {"toks": toks, "smap": smap}
@@ -62,15 +62,13 @@ def extract():
 
 # ── heads ────────────────────────────────────────────────────────────────────
 class MeanMLP(nn.Module):
-    def __init__(self, d, mu, sd, hidden=128, dropout=0.1):
+    """Matches the canonical frozen probe: mean-pool patches -> raw features -> MLP2 (no z-score)."""
+    def __init__(self, d, hidden=128, dropout=0.1):
         super().__init__()
-        self.register_buffer("mu", mu); self.register_buffer("sd", sd)
         self.net = nn.Sequential(nn.Linear(d, hidden), nn.SiLU(), nn.Dropout(dropout), nn.Linear(hidden, 1))
 
     def forward(self, x):                                       # x:(B,npatch,D)
-        g = x.mean(1)
-        g = (g - self.mu) / self.sd
-        return self.net(g).squeeze(-1)
+        return self.net(x.mean(1)).squeeze(-1)
 
 
 class CLSReadout(nn.Module):
@@ -106,11 +104,7 @@ def train_head(kind, data, seed, max_epochs=300, patience=30, bs=64):
     torch.manual_seed(seed); np.random.seed(seed)
     Xtr, ytr = data["train"]; Xva, yva = data["val"]; Xte, yte = data["test"]
     npatch, D = Xtr.shape[1], Xtr.shape[2]
-    if kind == "mean":
-        g = Xtr.mean(1); mu = g.mean(0); sd = g.std(0) + 1e-6
-        model = MeanMLP(D, mu, sd).to(DEVICE)
-    else:
-        model = CLSReadout(D, npatch).to(DEVICE)
+    model = (MeanMLP(D) if kind == "mean" else CLSReadout(D, npatch)).to(DEVICE)
     opt = torch.optim.Adam(model.parameters(), lr=1e-3, weight_decay=1e-4)
     lossf = nn.MSELoss()
     Xtr_d, ytr_d = Xtr.to(DEVICE), ytr.to(DEVICE)

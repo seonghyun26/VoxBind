@@ -1,0 +1,19 @@
+sequences:
+- protein:
+    id: A
+    sequence: LLIEPARIEEEELTLTILRQTGGLGISIAGGKGSTPYKGDDEGIFISRVSEEGPAARAGVRVGDKLLEVNGVALQGAEHHEAVEALRGAGTAVQMRVWRERM
+- protein:
+    id: B
+    sequence: EPARIEEEELTLTILRGLGISIAGGKGSTPYKGDDEGIFISRVSEEGPAARAGVRVGDKLLEVNGVALQGAEHHEAVEALRGAGTAVQMRVWRERM
+- protein:
+    id: C
+    sequence: PHTNETL
+- protein:
+    id: D
+    sequence: PHTNETL
+- ligand:
+    id: L
+    smiles: '[NH3]1[C@H](C(=O)N[C@H](C(=O)N[C@H](C(=O)N[C@H](C(=O)N[C@H](C(=O)N[C@H](C(=O)N[C@@H](COP(=O)(O)O)C(=O)N[C@H](C(=O)O)CC(C)C)[C@H](O)C)CCC(=O)O)CC(=O)N)[C@H](O)C)Cc2nc[nH]c2)CCC1'
+properties:
+- affinity:
+    binder: L

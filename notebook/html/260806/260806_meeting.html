@@ -706,6 +706,11 @@
     box-shadow: var(--shadow);
   }
 
+  .figure-card.ablation-figure {
+    max-width: 502px;
+    margin: 0 auto 22px;
+  }
+
   .figure-card img {
     display: block;
     width: 100%;
@@ -1148,115 +1153,83 @@
       The encoder, data, mask, and frozen-probe protocol are matched.
     </p>
 
-    <figure class="figure-card">
+    <figure class="figure-card ablation-figure">
       <!-- MFODFC_BAR_START -->
-      <svg viewBox="0 0 1130 294" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="mfodfc-title mfodfc-desc">
+      <svg viewBox="0 0 502 294" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="mfodfc-title mfodfc-desc">
       <title id="mfodfc-title">mFo–DFc channel trial comparison</title>
       <desc id="mfodfc-desc">The C+D+G champion is best on every metric; Trial 2 is the best added-channel trial.</desc>
-      <rect x="8" y="7" width="266" height="275" rx="10" fill="#fbfcfe" stroke="#dce3eb"/>
-      <text x="141" y="31" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="700" fill="#17202b">Test Pearson r</text>
-      <text x="141" y="50" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="10" font-weight="650" fill="#657284">higher is better</text>
-      <line x1="47" y1="235.0" x2="262" y2="235.0" stroke="#e2e7ed" stroke-width="1"/>
-      <text x="42" y="238.5" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.58</text>
-      <line x1="47" y1="151.5" x2="262" y2="151.5" stroke="#e2e7ed" stroke-width="1"/>
-      <text x="42" y="155.0" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.62</text>
-      <line x1="47" y1="68.0" x2="262" y2="68.0" stroke="#e2e7ed" stroke-width="1"/>
-      <text x="42" y="71.5" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.67</text>
-      <line x1="47" y1="235" x2="262" y2="235" stroke="#8995a4" stroke-width="1"/>
-      <line x1="47" y1="86.6" x2="262" y2="86.6" stroke="#a33f39" stroke-width="1.3" stroke-dasharray="5 3"/>
-      <text x="260" y="83.6" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8" font-weight="700" fill="#a33f39">SOTA 0.660</text>
-      <rect x="62.4" y="86.6" width="30.0" height="148.4" rx="3" fill="#2f6f4f" stroke="#19472e" stroke-width="1.2"/>
-      <text x="77.4" y="80.6" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">0.660</text>
-      <text x="77.4" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#19472e">Base</text>
-      <rect x="115.1" y="145.9" width="30.0" height="89.1" rx="3" fill="#9aafca" stroke="#7188a7" stroke-width="1.2"/>
-      <text x="130.1" y="139.9" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">0.628</text>
-      <text x="130.1" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#7188a7">T1</text>
-      <rect x="167.9" y="136.7" width="30.0" height="98.3" rx="3" fill="#315f9b" stroke="#183d68" stroke-width="1.2"/>
-      <text x="182.9" y="130.7" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">0.633</text>
-      <text x="182.9" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#183d68">T2</text>
-      <rect x="220.6" y="197.9" width="30.0" height="37.1" rx="3" fill="#9aafca" stroke="#7188a7" stroke-width="1.2"/>
-      <text x="235.6" y="191.9" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">0.600</text>
-      <text x="235.6" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#7188a7">T3</text>
-      <rect x="288" y="7" width="266" height="275" rx="10" fill="#fbfcfe" stroke="#dce3eb"/>
-      <text x="421" y="31" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="700" fill="#17202b">Test Spearman ρ</text>
-      <text x="421" y="50" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="10" font-weight="650" fill="#657284">higher is better</text>
-      <line x1="327" y1="235.0" x2="542" y2="235.0" stroke="#e2e7ed" stroke-width="1"/>
-      <text x="322" y="238.5" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.57</text>
-      <line x1="327" y1="151.5" x2="542" y2="151.5" stroke="#e2e7ed" stroke-width="1"/>
-      <text x="322" y="155.0" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.61</text>
-      <line x1="327" y1="68.0" x2="542" y2="68.0" stroke="#e2e7ed" stroke-width="1"/>
-      <text x="322" y="71.5" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.66</text>
-      <line x1="327" y1="235" x2="542" y2="235" stroke="#8995a4" stroke-width="1"/>
-      <line x1="327" y1="97.7" x2="542" y2="97.7" stroke="#a33f39" stroke-width="1.3" stroke-dasharray="5 3"/>
-      <text x="540" y="94.7" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8" font-weight="700" fill="#a33f39">SOTA 0.644</text>
-      <rect x="342.4" y="97.7" width="30.0" height="137.3" rx="3" fill="#2f6f4f" stroke="#19472e" stroke-width="1.2"/>
-      <text x="357.4" y="91.7" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">0.644</text>
-      <text x="357.4" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#19472e">Base</text>
-      <rect x="395.1" y="158.9" width="30.0" height="76.1" rx="3" fill="#9aafca" stroke="#7188a7" stroke-width="1.2"/>
-      <text x="410.1" y="152.9" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">0.611</text>
-      <text x="410.1" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#7188a7">T1</text>
-      <rect x="447.9" y="145.9" width="30.0" height="89.1" rx="3" fill="#315f9b" stroke="#183d68" stroke-width="1.2"/>
-      <text x="462.9" y="139.9" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">0.618</text>
-      <text x="462.9" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#183d68">T2</text>
-      <rect x="500.6" y="201.6" width="30.0" height="33.4" rx="3" fill="#9aafca" stroke="#7188a7" stroke-width="1.2"/>
-      <text x="515.6" y="195.6" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">0.588</text>
-      <text x="515.6" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#7188a7">T3</text>
-      <rect x="568" y="7" width="266" height="275" rx="10" fill="#fbfcfe" stroke="#dce3eb"/>
-      <text x="701" y="31" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="700" fill="#17202b">Test RMSE</text>
-      <text x="701" y="50" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="10" font-weight="650" fill="#657284">lower is better</text>
-      <line x1="607" y1="235.0" x2="822" y2="235.0" stroke="#e2e7ed" stroke-width="1"/>
-      <text x="602" y="238.5" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">1.32</text>
-      <line x1="607" y1="151.5" x2="822" y2="151.5" stroke="#e2e7ed" stroke-width="1"/>
-      <text x="602" y="155.0" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">1.41</text>
-      <line x1="607" y1="68.0" x2="822" y2="68.0" stroke="#e2e7ed" stroke-width="1"/>
-      <text x="602" y="71.5" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">1.50</text>
-      <line x1="607" y1="235" x2="822" y2="235" stroke="#8995a4" stroke-width="1"/>
-      <line x1="607" y1="208.1" x2="822" y2="208.1" stroke="#a33f39" stroke-width="1.3" stroke-dasharray="5 3"/>
-      <text x="820" y="205.1" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8" font-weight="700" fill="#a33f39">SOTA 1.349</text>
-      <rect x="622.4" y="208.1" width="30.0" height="26.9" rx="3" fill="#2f6f4f" stroke="#19472e" stroke-width="1.2"/>
-      <text x="637.4" y="202.1" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">1.349</text>
-      <text x="637.4" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#19472e">Base</text>
-      <rect x="675.1" y="132.0" width="30.0" height="103.0" rx="3" fill="#9aafca" stroke="#7188a7" stroke-width="1.2"/>
-      <text x="690.1" y="126.0" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">1.431</text>
-      <text x="690.1" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#7188a7">T1</text>
-      <rect x="727.9" y="132.0" width="30.0" height="103.0" rx="3" fill="#315f9b" stroke="#183d68" stroke-width="1.2"/>
-      <text x="742.9" y="126.0" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">1.431</text>
-      <text x="742.9" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#183d68">T2</text>
-      <rect x="780.6" y="89.3" width="30.0" height="145.7" rx="3" fill="#9aafca" stroke="#7188a7" stroke-width="1.2"/>
-      <text x="795.6" y="83.3" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">1.477</text>
-      <text x="795.6" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#7188a7">T3</text>
-      <rect x="848" y="7" width="266" height="275" rx="10" fill="#fbfcfe" stroke="#dce3eb"/>
-      <text x="981" y="31" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="700" fill="#17202b">Best val ρ</text>
-      <text x="981" y="50" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="10" font-weight="650" fill="#657284">higher is better</text>
-      <line x1="887" y1="235.0" x2="1102" y2="235.0" stroke="#e2e7ed" stroke-width="1"/>
-      <text x="882" y="238.5" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.48</text>
-      <line x1="887" y1="151.5" x2="1102" y2="151.5" stroke="#e2e7ed" stroke-width="1"/>
-      <text x="882" y="155.0" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.52</text>
-      <line x1="887" y1="68.0" x2="1102" y2="68.0" stroke="#e2e7ed" stroke-width="1"/>
-      <text x="882" y="71.5" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.56</text>
-      <line x1="887" y1="235" x2="1102" y2="235" stroke="#8995a4" stroke-width="1"/>
-      <line x1="887" y1="97.2" x2="1102" y2="97.2" stroke="#a33f39" stroke-width="1.3" stroke-dasharray="5 3"/>
-      <text x="1100" y="94.2" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8" font-weight="700" fill="#a33f39">SOTA 0.546</text>
-      <rect x="902.4" y="97.2" width="30.0" height="137.8" rx="3" fill="#2f6f4f" stroke="#19472e" stroke-width="1.2"/>
-      <text x="917.4" y="91.2" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">0.546</text>
-      <text x="917.4" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#19472e">Base</text>
-      <rect x="955.1" y="145.2" width="30.0" height="89.8" rx="3" fill="#9aafca" stroke="#7188a7" stroke-width="1.2"/>
-      <text x="970.1" y="139.2" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">0.523</text>
-      <text x="970.1" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#7188a7">T1</text>
-      <rect x="1007.9" y="120.2" width="30.0" height="114.8" rx="3" fill="#315f9b" stroke="#183d68" stroke-width="1.2"/>
-      <text x="1022.9" y="114.2" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">0.535</text>
-      <text x="1022.9" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#183d68">T2</text>
-      <rect x="1060.6" y="189.1" width="30.0" height="45.9" rx="3" fill="#9aafca" stroke="#7188a7" stroke-width="1.2"/>
-      <text x="1075.6" y="183.1" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">0.502</text>
-      <text x="1075.6" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#7188a7">T3</text>
-      <text x="565" y="278" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="10" fill="#657284">Base = champion · T1–T3 = matched trials</text>
+      <rect x="3.0" y="7" width="160.0" height="275" rx="10" fill="#fbfcfe" stroke="#dce3eb"/>
+      <text x="83.0" y="31" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="700" fill="#17202b">Test Pearson r</text>
+      <text x="83.0" y="50" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="10" font-weight="650" fill="#657284">higher is better</text>
+      <line x1="37.0" y1="235.0" x2="156.0" y2="235.0" stroke="#e2e7ed" stroke-width="1"/>
+      <text x="32.0" y="238.5" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.58</text>
+      <line x1="37.0" y1="151.5" x2="156.0" y2="151.5" stroke="#e2e7ed" stroke-width="1"/>
+      <text x="32.0" y="155.0" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.62</text>
+      <line x1="37.0" y1="68.0" x2="156.0" y2="68.0" stroke="#e2e7ed" stroke-width="1"/>
+      <text x="32.0" y="71.5" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.67</text>
+      <line x1="37.0" y1="235" x2="156.0" y2="235" stroke="#8995a4" stroke-width="1"/>
+      <rect x="58.5" y="86.6" width="14.0" height="148.4" rx="3" fill="#2f6f4f" stroke="#19472e" stroke-width="1.2"/>
+      <text x="65.5" y="80.6" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8" font-weight="700" fill="#273241">0.660</text>
+      <text x="65.5" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8.5" font-weight="650" fill="#19472e">Base</text>
+      <rect x="80.5" y="145.9" width="14.0" height="89.1" rx="3" fill="#9aafca" stroke="#7188a7" stroke-width="1.2"/>
+      <text x="87.5" y="139.9" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8" font-weight="700" fill="#273241">0.628</text>
+      <text x="87.5" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8.5" font-weight="650" fill="#7188a7">T1</text>
+      <rect x="102.5" y="136.7" width="14.0" height="98.3" rx="3" fill="#315f9b" stroke="#183d68" stroke-width="1.2"/>
+      <text x="109.5" y="130.7" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8" font-weight="700" fill="#273241">0.633</text>
+      <text x="109.5" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8.5" font-weight="650" fill="#183d68">T2</text>
+      <rect x="124.5" y="197.9" width="14.0" height="37.1" rx="3" fill="#9aafca" stroke="#7188a7" stroke-width="1.2"/>
+      <text x="131.5" y="191.9" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8" font-weight="700" fill="#273241">0.600</text>
+      <text x="131.5" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8.5" font-weight="650" fill="#7188a7">T3</text>
+      <rect x="171.0" y="7" width="160.0" height="275" rx="10" fill="#fbfcfe" stroke="#dce3eb"/>
+      <text x="251.0" y="31" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="700" fill="#17202b">Test Spearman ρ</text>
+      <text x="251.0" y="50" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="10" font-weight="650" fill="#657284">higher is better</text>
+      <line x1="205.0" y1="235.0" x2="324.0" y2="235.0" stroke="#e2e7ed" stroke-width="1"/>
+      <text x="200.0" y="238.5" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.57</text>
+      <line x1="205.0" y1="151.5" x2="324.0" y2="151.5" stroke="#e2e7ed" stroke-width="1"/>
+      <text x="200.0" y="155.0" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.61</text>
+      <line x1="205.0" y1="68.0" x2="324.0" y2="68.0" stroke="#e2e7ed" stroke-width="1"/>
+      <text x="200.0" y="71.5" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.66</text>
+      <line x1="205.0" y1="235" x2="324.0" y2="235" stroke="#8995a4" stroke-width="1"/>
+      <rect x="226.5" y="97.7" width="14.0" height="137.3" rx="3" fill="#2f6f4f" stroke="#19472e" stroke-width="1.2"/>
+      <text x="233.5" y="91.7" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8" font-weight="700" fill="#273241">0.644</text>
+      <text x="233.5" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8.5" font-weight="650" fill="#19472e">Base</text>
+      <rect x="248.5" y="158.9" width="14.0" height="76.1" rx="3" fill="#9aafca" stroke="#7188a7" stroke-width="1.2"/>
+      <text x="255.5" y="152.9" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8" font-weight="700" fill="#273241">0.611</text>
+      <text x="255.5" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8.5" font-weight="650" fill="#7188a7">T1</text>
+      <rect x="270.5" y="145.9" width="14.0" height="89.1" rx="3" fill="#315f9b" stroke="#183d68" stroke-width="1.2"/>
+      <text x="277.5" y="139.9" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8" font-weight="700" fill="#273241">0.618</text>
+      <text x="277.5" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8.5" font-weight="650" fill="#183d68">T2</text>
+      <rect x="292.5" y="201.6" width="14.0" height="33.4" rx="3" fill="#9aafca" stroke="#7188a7" stroke-width="1.2"/>
+      <text x="299.5" y="195.6" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8" font-weight="700" fill="#273241">0.588</text>
+      <text x="299.5" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8.5" font-weight="650" fill="#7188a7">T3</text>
+      <rect x="339.0" y="7" width="160.0" height="275" rx="10" fill="#fbfcfe" stroke="#dce3eb"/>
+      <text x="419.0" y="31" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="700" fill="#17202b">Test RMSE</text>
+      <text x="419.0" y="50" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="10" font-weight="650" fill="#657284">lower is better</text>
+      <line x1="373.0" y1="235.0" x2="492.0" y2="235.0" stroke="#e2e7ed" stroke-width="1"/>
+      <text x="368.0" y="238.5" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">1.32</text>
+      <line x1="373.0" y1="151.5" x2="492.0" y2="151.5" stroke="#e2e7ed" stroke-width="1"/>
+      <text x="368.0" y="155.0" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">1.41</text>
+      <line x1="373.0" y1="68.0" x2="492.0" y2="68.0" stroke="#e2e7ed" stroke-width="1"/>
+      <text x="368.0" y="71.5" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">1.50</text>
+      <line x1="373.0" y1="235" x2="492.0" y2="235" stroke="#8995a4" stroke-width="1"/>
+      <rect x="394.5" y="208.1" width="14.0" height="26.9" rx="3" fill="#2f6f4f" stroke="#19472e" stroke-width="1.2"/>
+      <text x="401.5" y="202.1" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8" font-weight="700" fill="#273241">1.349</text>
+      <text x="401.5" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8.5" font-weight="650" fill="#19472e">Base</text>
+      <rect x="416.5" y="132.0" width="14.0" height="103.0" rx="3" fill="#9aafca" stroke="#7188a7" stroke-width="1.2"/>
+      <text x="423.5" y="126.0" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8" font-weight="700" fill="#273241">1.431</text>
+      <text x="423.5" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8.5" font-weight="650" fill="#7188a7">T1</text>
+      <rect x="438.5" y="132.0" width="14.0" height="103.0" rx="3" fill="#315f9b" stroke="#183d68" stroke-width="1.2"/>
+      <text x="445.5" y="126.0" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8" font-weight="700" fill="#273241">1.431</text>
+      <text x="445.5" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8.5" font-weight="650" fill="#183d68">T2</text>
+      <rect x="460.5" y="89.3" width="14.0" height="145.7" rx="3" fill="#9aafca" stroke="#7188a7" stroke-width="1.2"/>
+      <text x="467.5" y="83.3" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8" font-weight="700" fill="#273241">1.477</text>
+      <text x="467.5" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8.5" font-weight="650" fill="#7188a7">T3</text>
       </svg>
       <!-- MFODFC_BAR_END -->
       <figcaption>
         <b>Figure 4 · mFo–DFc channel trials.</b>
         Bars are three-seed means. Base is the C+D+G champion; higher r/ρ and lower RMSE are better.
-        The <span style="color:#a33f39;font-weight:700">dashed red line</span> is the Figure 1 SOTA
-        (C+D+G headline champion) — every mFo–DFc trial stays below it. Δρ is reported in Table 3.
+        Δρ is reported in Table 3.
       </figcaption>
     </figure>
 
@@ -1272,7 +1245,6 @@
             <th>Test r↑</th>
             <th>Test ρ↑</th>
             <th>RMSE↓</th>
-            <th>Best val ρ</th>
             <th>Δρ</th>
           </tr>
         </thead>
@@ -1282,7 +1254,6 @@
             <td><span class="val">0.660</span></td>
             <td><span class="val">0.644</span></td>
             <td><span class="val">1.349</span></td>
-            <td><span class="val">0.546</span></td>
             <td><span class="val">0.000</span></td>
           </tr>
           <tr>
@@ -1290,7 +1261,6 @@
             <td><span class="val">0.628</span></td>
             <td><span class="val">0.611</span></td>
             <td><span class="val">1.431</span></td>
-            <td><span class="val">0.523</span></td>
             <td class="shift"><span class="val">−0.033</span></td>
           </tr>
           <tr>
@@ -1298,7 +1268,6 @@
             <td><span class="val">0.633</span></td>
             <td><span class="val">0.618</span></td>
             <td><span class="val">1.431</span></td>
-            <td><span class="val">0.535</span></td>
             <td class="shift"><span class="val">−0.026</span></td>
           </tr>
           <tr>
@@ -1306,7 +1275,6 @@
             <td><span class="val">0.600</span></td>
             <td><span class="val">0.588</span></td>
             <td><span class="val">1.477</span></td>
-            <td><span class="val">0.502</span></td>
             <td class="shift"><span class="val">−0.056</span></td>
           </tr>
         </tbody>
@@ -1858,128 +1826,85 @@
       Same frozen champion features and <code>lp_edrscc_v2</code> split; only the probe head changes.
     </p>
 
-    <figure class="figure-card">
+    <figure class="figure-card ablation-figure">
       <!-- MLP_BAR_START -->
-      <svg viewBox="0 0 1130 294" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="mlp-title mlp-desc">
+      <svg viewBox="0 0 502 294" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="mlp-title mlp-desc">
       <title id="mlp-title">MLP-head trial comparison</title>
-      <desc id="mlp-desc">The matched mean-pool champion is best on test Spearman correlation. Trial 3 is pending.</desc>
-      <rect x="8" y="7" width="266" height="275" rx="10" fill="#fbfcfe" stroke="#dce3eb"/>
-      <text x="141" y="31" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="700" fill="#17202b">Test Pearson r</text>
-      <text x="141" y="50" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="10" font-weight="650" fill="#657284">higher is better</text>
-      <line x1="47" y1="235.0" x2="262" y2="235.0" stroke="#e2e7ed" stroke-width="1"/>
-      <text x="42" y="238.5" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.63</text>
-      <line x1="47" y1="151.5" x2="262" y2="151.5" stroke="#e2e7ed" stroke-width="1"/>
-      <text x="42" y="155.0" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.65</text>
-      <line x1="47" y1="68.0" x2="262" y2="68.0" stroke="#e2e7ed" stroke-width="1"/>
-      <text x="42" y="71.5" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.67</text>
-      <line x1="47" y1="235" x2="262" y2="235" stroke="#8995a4" stroke-width="1"/>
-      <line x1="47" y1="109.8" x2="262" y2="109.8" stroke="#a33f39" stroke-width="1.3" stroke-dasharray="5 3"/>
-      <text x="260" y="106.8" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8" font-weight="700" fill="#a33f39">SOTA 0.660</text>
-      <rect x="62.4" y="126.5" width="30.0" height="108.5" rx="3" fill="#2f6f4f" stroke="#19472e" stroke-width="1.2"/>
-      <text x="77.4" y="120.5" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">0.656</text>
-      <text x="77.4" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#19472e">Base</text>
-      <rect x="115.1" y="151.5" width="30.0" height="83.5" rx="3" fill="#9aafca" stroke="#7188a7" stroke-width="1.2"/>
-      <text x="130.1" y="145.5" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">0.650</text>
-      <text x="130.1" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#7188a7">T1</text>
-      <rect x="167.9" y="172.4" width="30.0" height="62.6" rx="3" fill="#315f9b" stroke="#7188a7" stroke-width="1.2"/>
-      <text x="182.9" y="166.4" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">0.645</text>
-      <text x="182.9" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#7188a7">T2</text>
-      <rect x="220.6" y="207" width="30.0" height="28" rx="3" fill="none" stroke="#9aa3b2" stroke-width="1.2" stroke-dasharray="4 3"/>
-      <text x="235.6" y="201" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8.5" font-weight="650" fill="#7d8795">pending</text>
-      <text x="235.6" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#7188a7">T3</text>
-      <rect x="288" y="7" width="266" height="275" rx="10" fill="#fbfcfe" stroke="#dce3eb"/>
-      <text x="421" y="31" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="700" fill="#17202b">Test Spearman ρ</text>
-      <text x="421" y="50" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="10" font-weight="650" fill="#657284">higher is better</text>
-      <line x1="327" y1="235.0" x2="542" y2="235.0" stroke="#e2e7ed" stroke-width="1"/>
-      <text x="322" y="238.5" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.61</text>
-      <line x1="327" y1="151.5" x2="542" y2="151.5" stroke="#e2e7ed" stroke-width="1"/>
-      <text x="322" y="155.0" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.63</text>
-      <line x1="327" y1="68.0" x2="542" y2="68.0" stroke="#e2e7ed" stroke-width="1"/>
-      <text x="322" y="71.5" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.65</text>
-      <line x1="327" y1="235" x2="542" y2="235" stroke="#8995a4" stroke-width="1"/>
-      <line x1="327" y1="93.1" x2="542" y2="93.1" stroke="#a33f39" stroke-width="1.3" stroke-dasharray="5 3"/>
-      <text x="540" y="90.1" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8" font-weight="700" fill="#a33f39">SOTA 0.644</text>
-      <rect x="342.4" y="105.6" width="30.0" height="129.4" rx="3" fill="#2f6f4f" stroke="#19472e" stroke-width="1.2"/>
-      <text x="357.4" y="99.6" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">0.641</text>
-      <text x="357.4" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#19472e">Base</text>
-      <rect x="395.1" y="134.8" width="30.0" height="100.2" rx="3" fill="#9aafca" stroke="#7188a7" stroke-width="1.2"/>
-      <text x="410.1" y="128.8" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">0.634</text>
-      <text x="410.1" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#7188a7">T1</text>
-      <rect x="447.9" y="172.4" width="30.0" height="62.6" rx="3" fill="#315f9b" stroke="#7188a7" stroke-width="1.2"/>
-      <text x="462.9" y="166.4" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">0.625</text>
-      <text x="462.9" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#7188a7">T2</text>
-      <rect x="500.6" y="207" width="30.0" height="28" rx="3" fill="none" stroke="#9aa3b2" stroke-width="1.2" stroke-dasharray="4 3"/>
-      <text x="515.6" y="201" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8.5" font-weight="650" fill="#7d8795">pending</text>
-      <text x="515.6" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#7188a7">T3</text>
-      <rect x="568" y="7" width="266" height="275" rx="10" fill="#fbfcfe" stroke="#dce3eb"/>
-      <text x="701" y="31" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="700" fill="#17202b">Test RMSE</text>
-      <text x="701" y="50" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="10" font-weight="650" fill="#657284">lower is better</text>
-      <line x1="607" y1="235.0" x2="822" y2="235.0" stroke="#e2e7ed" stroke-width="1"/>
-      <text x="602" y="238.5" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">1.34</text>
-      <line x1="607" y1="151.5" x2="822" y2="151.5" stroke="#e2e7ed" stroke-width="1"/>
-      <text x="602" y="155.0" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">1.44</text>
-      <line x1="607" y1="68.0" x2="822" y2="68.0" stroke="#e2e7ed" stroke-width="1"/>
-      <text x="602" y="71.5" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">1.54</text>
-      <line x1="607" y1="235" x2="822" y2="235" stroke="#8995a4" stroke-width="1"/>
-      <line x1="607" y1="227.5" x2="822" y2="227.5" stroke="#a33f39" stroke-width="1.3" stroke-dasharray="5 3"/>
-      <text x="820" y="224.5" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8" font-weight="700" fill="#a33f39">SOTA 1.349</text>
-      <rect x="622.4" y="168.2" width="30.0" height="66.8" rx="3" fill="#2f6f4f" stroke="#19472e" stroke-width="1.2"/>
-      <text x="637.4" y="162.2" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">1.420</text>
-      <text x="637.4" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#19472e">Base</text>
-      <rect x="675.1" y="192.4" width="30.0" height="42.6" rx="3" fill="#9aafca" stroke="#7188a7" stroke-width="1.2"/>
-      <text x="690.1" y="186.4" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">1.391</text>
-      <text x="690.1" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#7188a7">T1</text>
-      <rect x="727.9" y="94.7" width="30.0" height="140.3" rx="3" fill="#315f9b" stroke="#7188a7" stroke-width="1.2"/>
-      <text x="742.9" y="88.7" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">1.508</text>
-      <text x="742.9" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#7188a7">T2</text>
-      <rect x="780.6" y="207" width="30.0" height="28" rx="3" fill="none" stroke="#9aa3b2" stroke-width="1.2" stroke-dasharray="4 3"/>
-      <text x="795.6" y="201" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8.5" font-weight="650" fill="#7d8795">pending</text>
-      <text x="795.6" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#7188a7">T3</text>
-      <rect x="848" y="7" width="266" height="275" rx="10" fill="#fbfcfe" stroke="#dce3eb"/>
-      <text x="981" y="31" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="700" fill="#17202b">Best val ρ</text>
-      <text x="981" y="50" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="10" font-weight="650" fill="#657284">higher is better</text>
-      <line x1="887" y1="235.0" x2="1102" y2="235.0" stroke="#e2e7ed" stroke-width="1"/>
-      <text x="882" y="238.5" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.50</text>
-      <line x1="887" y1="151.5" x2="1102" y2="151.5" stroke="#e2e7ed" stroke-width="1"/>
-      <text x="882" y="155.0" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.54</text>
-      <line x1="887" y1="68.0" x2="1102" y2="68.0" stroke="#e2e7ed" stroke-width="1"/>
-      <text x="882" y="71.5" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.58</text>
-      <line x1="887" y1="235" x2="1102" y2="235" stroke="#8995a4" stroke-width="1"/>
-      <line x1="887" y1="139.0" x2="1102" y2="139.0" stroke="#a33f39" stroke-width="1.3" stroke-dasharray="5 3"/>
-      <text x="1100" y="136.0" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8" font-weight="700" fill="#a33f39">SOTA 0.546</text>
-      <rect x="902.4" y="139.0" width="30.0" height="96.0" rx="3" fill="#2f6f4f" stroke="#19472e" stroke-width="1.2"/>
-      <text x="917.4" y="133.0" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">0.546</text>
-      <text x="917.4" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#19472e">Base</text>
-      <rect x="955.1" y="103.5" width="30.0" height="131.5" rx="3" fill="#9aafca" stroke="#7188a7" stroke-width="1.2"/>
-      <text x="970.1" y="97.5" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">0.563</text>
-      <text x="970.1" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#7188a7">T1</text>
-      <rect x="1007.9" y="178.6" width="30.0" height="56.4" rx="3" fill="#315f9b" stroke="#7188a7" stroke-width="1.2"/>
-      <text x="1022.9" y="172.6" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">0.527</text>
-      <text x="1022.9" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#7188a7">T2</text>
-      <rect x="1060.6" y="207" width="30.0" height="28" rx="3" fill="none" stroke="#9aa3b2" stroke-width="1.2" stroke-dasharray="4 3"/>
-      <text x="1075.6" y="201" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8.5" font-weight="650" fill="#7d8795">pending</text>
-      <text x="1075.6" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#7188a7">T3</text>
-      <text x="565" y="278" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="10" fill="#657284">Base = champion · T1–T3 = matched trials</text>
+      <desc id="mlp-desc">The canonical C+D+G champion is best on test Spearman correlation.</desc>
+      <rect x="3.0" y="7" width="160.0" height="275" rx="10" fill="#fbfcfe" stroke="#dce3eb"/>
+      <text x="83.0" y="31" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="700" fill="#17202b">Test Pearson r</text>
+      <text x="83.0" y="50" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="10" font-weight="650" fill="#657284">higher is better</text>
+      <line x1="37.0" y1="235.0" x2="156.0" y2="235.0" stroke="#e2e7ed" stroke-width="1"/>
+      <text x="32.0" y="238.5" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.63</text>
+      <line x1="37.0" y1="151.5" x2="156.0" y2="151.5" stroke="#e2e7ed" stroke-width="1"/>
+      <text x="32.0" y="155.0" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.65</text>
+      <line x1="37.0" y1="68.0" x2="156.0" y2="68.0" stroke="#e2e7ed" stroke-width="1"/>
+      <text x="32.0" y="71.5" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.67</text>
+      <line x1="37.0" y1="235" x2="156.0" y2="235" stroke="#8995a4" stroke-width="1"/>
+      <rect x="69.5" y="109.8" width="14.0" height="125.2" rx="3" fill="#2f6f4f" stroke="#19472e" stroke-width="1.2"/>
+      <text x="76.5" y="103.8" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8" font-weight="700" fill="#273241">0.660</text>
+      <text x="76.5" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8.5" font-weight="650" fill="#19472e">Base</text>
+      <rect x="91.5" y="151.5" width="14.0" height="83.5" rx="3" fill="#9aafca" stroke="#7188a7" stroke-width="1.2"/>
+      <text x="98.5" y="145.5" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8" font-weight="700" fill="#273241">0.650</text>
+      <text x="98.5" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8.5" font-weight="650" fill="#7188a7">T1</text>
+      <rect x="113.5" y="172.4" width="14.0" height="62.6" rx="3" fill="#315f9b" stroke="#7188a7" stroke-width="1.2"/>
+      <text x="120.5" y="166.4" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8" font-weight="700" fill="#273241">0.645</text>
+      <text x="120.5" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8.5" font-weight="650" fill="#7188a7">T2</text>
+      <rect x="171.0" y="7" width="160.0" height="275" rx="10" fill="#fbfcfe" stroke="#dce3eb"/>
+      <text x="251.0" y="31" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="700" fill="#17202b">Test Spearman ρ</text>
+      <text x="251.0" y="50" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="10" font-weight="650" fill="#657284">higher is better</text>
+      <line x1="205.0" y1="235.0" x2="324.0" y2="235.0" stroke="#e2e7ed" stroke-width="1"/>
+      <text x="200.0" y="238.5" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.61</text>
+      <line x1="205.0" y1="151.5" x2="324.0" y2="151.5" stroke="#e2e7ed" stroke-width="1"/>
+      <text x="200.0" y="155.0" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.63</text>
+      <line x1="205.0" y1="68.0" x2="324.0" y2="68.0" stroke="#e2e7ed" stroke-width="1"/>
+      <text x="200.0" y="71.5" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.65</text>
+      <line x1="205.0" y1="235" x2="324.0" y2="235" stroke="#8995a4" stroke-width="1"/>
+      <rect x="237.5" y="93.1" width="14.0" height="141.9" rx="3" fill="#2f6f4f" stroke="#19472e" stroke-width="1.2"/>
+      <text x="244.5" y="87.1" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8" font-weight="700" fill="#273241">0.644</text>
+      <text x="244.5" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8.5" font-weight="650" fill="#19472e">Base</text>
+      <rect x="259.5" y="134.8" width="14.0" height="100.2" rx="3" fill="#9aafca" stroke="#7188a7" stroke-width="1.2"/>
+      <text x="266.5" y="128.8" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8" font-weight="700" fill="#273241">0.634</text>
+      <text x="266.5" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8.5" font-weight="650" fill="#7188a7">T1</text>
+      <rect x="281.5" y="172.4" width="14.0" height="62.6" rx="3" fill="#315f9b" stroke="#7188a7" stroke-width="1.2"/>
+      <text x="288.5" y="166.4" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8" font-weight="700" fill="#273241">0.625</text>
+      <text x="288.5" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8.5" font-weight="650" fill="#7188a7">T2</text>
+      <rect x="339.0" y="7" width="160.0" height="275" rx="10" fill="#fbfcfe" stroke="#dce3eb"/>
+      <text x="419.0" y="31" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="700" fill="#17202b">Test RMSE</text>
+      <text x="419.0" y="50" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="10" font-weight="650" fill="#657284">lower is better</text>
+      <line x1="373.0" y1="235.0" x2="492.0" y2="235.0" stroke="#e2e7ed" stroke-width="1"/>
+      <text x="368.0" y="238.5" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">1.34</text>
+      <line x1="373.0" y1="151.5" x2="492.0" y2="151.5" stroke="#e2e7ed" stroke-width="1"/>
+      <text x="368.0" y="155.0" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">1.44</text>
+      <line x1="373.0" y1="68.0" x2="492.0" y2="68.0" stroke="#e2e7ed" stroke-width="1"/>
+      <text x="368.0" y="71.5" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">1.54</text>
+      <line x1="373.0" y1="235" x2="492.0" y2="235" stroke="#8995a4" stroke-width="1"/>
+      <rect x="405.5" y="227.5" width="14.0" height="7.5" rx="3" fill="#2f6f4f" stroke="#19472e" stroke-width="1.2"/>
+      <text x="412.5" y="221.5" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8" font-weight="700" fill="#273241">1.349</text>
+      <text x="412.5" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8.5" font-weight="650" fill="#19472e">Base</text>
+      <rect x="427.5" y="192.4" width="14.0" height="42.6" rx="3" fill="#9aafca" stroke="#7188a7" stroke-width="1.2"/>
+      <text x="434.5" y="186.4" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8" font-weight="700" fill="#273241">1.391</text>
+      <text x="434.5" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8.5" font-weight="650" fill="#7188a7">T1</text>
+      <rect x="449.5" y="94.7" width="14.0" height="140.3" rx="3" fill="#315f9b" stroke="#7188a7" stroke-width="1.2"/>
+      <text x="456.5" y="88.7" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8" font-weight="700" fill="#273241">1.508</text>
+      <text x="456.5" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8.5" font-weight="650" fill="#7188a7">T2</text>
       </svg>
       <!-- MLP_BAR_END -->
       <figcaption>
         <b>Figure 2 · MLP-head trials.</b>
-        Base is the matched mean-pool champion. Higher r/ρ and lower RMSE are better;
-        Trial 3 is pending. The <span style="color:#a33f39;font-weight:700">dashed red line</span>
-        is the Figure 1 SOTA (C+D+G headline champion).
+        Base is the canonical C+D+G champion. Higher r/ρ and lower RMSE are better.
       </figcaption>
     </figure>
 
     <h3 class="table-title">Table 1 · MLP-head trials</h3>
     <p class="table-sub">
-      Mean over three seeds. Δρ is versus the matched champion rerun.
+      Mean over three seeds. Δρ is versus the canonical C+D+G champion.
     </p>
     <div class="table-wrap">
       <table class="results mini-table">
         <thead>
           <tr>
             <th class="col-method">Trial</th>
-            <th>Best val ρ</th>
             <th>Test r↑</th>
             <th>Test ρ↑</th>
             <th>RMSE↓</th>
@@ -1989,31 +1914,27 @@
         <tbody>
           <tr class="ours">
             <td class="col-method">Champion (baseline)</td>
-            <td><span class="val">0.546</span></td>
-            <td><span class="val">0.656</span></td>
-            <td><span class="val">0.641</span></td>
-            <td><span class="val">1.420</span></td>
+            <td><span class="val">0.660</span></td>
+            <td><span class="val">0.644</span></td>
+            <td><span class="val">1.349</span></td>
             <td><span class="val">0.000</span></td>
           </tr>
           <tr>
             <td class="col-method">Trial 1</td>
-            <td><span class="val">0.563</span></td>
             <td><span class="val">0.650</span></td>
             <td><span class="val">0.634</span></td>
             <td><span class="val">1.391</span></td>
-            <td class="shift"><span class="val">−0.007</span></td>
+            <td class="shift"><span class="val">−0.010</span></td>
           </tr>
           <tr>
             <td class="col-method">Trial 2</td>
-            <td><span class="val">0.527</span></td>
             <td><span class="val">0.645</span></td>
             <td><span class="val">0.625</span></td>
             <td><span class="val">1.508</span></td>
-            <td class="shift"><span class="val">−0.016</span></td>
+            <td class="shift"><span class="val">−0.019</span></td>
           </tr>
           <tr>
             <td class="col-method">Trial 3</td>
-            <td class="na">—</td>
             <td class="na">—</td>
             <td class="na">—</td>
             <td class="na">—</td>
@@ -2027,7 +1948,9 @@
       <b>Trial details.</b>
       <ul>
         <li><b>Shared:</b> frozen 100M v2 mask0.75 encoder, split 3850 / 817 / 1320, three probe seeds.</li>
-        <li><b>Champion:</b> mean-pool all tokens → 2-layer MLP; feature dim 640.</li>
+        <li><b>Champion:</b> canonical C+D+G score; mean-pool all tokens → 2-layer MLP; dim 640.</li>
+        <li><b>Check:</b> the head-design harness reproduced the baseline at ρ 0.641; the table uses
+          the canonical 0.644 baseline consistently across Sections 1.1–1.3.</li>
         <li><b>Trial 1:</b> concatenate ligand and pocket pools; feature dim 1280.</li>
         <li><b>Trial 2:</b> add product and absolute-difference interactions; feature dim 2560.</li>
         <li><b>Trial 3:</b> cross-attention pooling; deprioritized after larger heads overfit.</li>
@@ -2035,7 +1958,7 @@
     </div>
 
     <div class="callout">
-      <strong>Result.</strong> Mean-pool MLP remains best: ρ 0.641 versus 0.634 for concat and
+      <strong>Result.</strong> Mean-pool MLP remains best: ρ 0.644 versus 0.634 for concat and
       0.625 for bilinear. Larger interaction heads overfit; cross-attention is deprioritized.
     </div>
   </section>
@@ -2052,135 +1975,99 @@
       it is the new C+D+G champion — same ranking as the MSE head with a lower RMSE, at no encoder cost.
     </p>
 
-    <figure class="figure-card">
+    <figure class="figure-card ablation-figure">
       <!-- LOSS_BAR_START -->
-      <svg viewBox="0 0 1130 294" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="loss-title loss-desc">
+      <svg viewBox="0 0 502 294" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="loss-title loss-desc">
       <title id="loss-title">Loss-term trial comparison</title>
       <desc id="loss-desc">MSE + Pearson-correlation term (T1) is the best probe-head loss — highest r/ρ and lowest RMSE.</desc>
-      <rect x="8" y="7" width="266" height="275" rx="10" fill="#fbfcfe" stroke="#dce3eb"/>
-      <text x="141" y="31" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="700" fill="#17202b">Test Pearson r</text>
-      <text x="141" y="50" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="10" font-weight="650" fill="#657284">higher is better</text>
-      <line x1="47" y1="223.1" x2="262" y2="223.1" stroke="#e2e7ed" stroke-width="1"/>
-      <text x="42" y="226.6" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.66</text>
-      <line x1="47" y1="151.5" x2="262" y2="151.5" stroke="#e2e7ed" stroke-width="1"/>
-      <text x="42" y="155.0" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.66</text>
-      <line x1="47" y1="79.9" x2="262" y2="79.9" stroke="#e2e7ed" stroke-width="1"/>
-      <text x="42" y="83.4" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.67</text>
-      <line x1="47" y1="235" x2="262" y2="235" stroke="#8995a4" stroke-width="1"/>
-      <line x1="47" y1="163.4" x2="262" y2="163.4" stroke="#a33f39" stroke-width="1.3" stroke-dasharray="5 3"/>
-      <text x="260" y="160.4" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8" font-weight="700" fill="#a33f39">SOTA 0.660</text>
-      <rect x="59.9" y="163.4" width="24.5" height="71.6" rx="3" fill="#2f6f4f" stroke="#19472e" stroke-width="1.2"/>
-      <text x="72.1" y="157.4" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">0.660</text>
-      <text x="72.1" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#19472e">Base</text>
-      <rect x="102.1" y="103.8" width="24.5" height="131.2" rx="3" fill="#315f9b" stroke="#183d68" stroke-width="1.2"/>
-      <text x="114.3" y="97.8" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">0.665</text>
-      <text x="114.3" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#183d68">T1</text>
-      <rect x="144.3" y="127.6" width="24.5" height="107.4" rx="3" fill="#9aafca" stroke="#7188a7" stroke-width="1.2"/>
-      <text x="156.5" y="121.6" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">0.663</text>
-      <text x="156.5" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#7188a7">T2</text>
-      <rect x="186.5" y="199.2" width="24.5" height="35.8" rx="3" fill="#9aafca" stroke="#7188a7" stroke-width="1.2"/>
-      <text x="198.7" y="193.2" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">0.657</text>
-      <text x="198.7" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#7188a7">T3</text>
-      <rect x="228.7" y="139.6" width="24.5" height="95.4" rx="3" fill="#9aafca" stroke="#7188a7" stroke-width="1.2"/>
-      <text x="240.9" y="133.6" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">0.662</text>
-      <text x="240.9" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#7188a7">T4</text>
-      <rect x="288" y="7" width="266" height="275" rx="10" fill="#fbfcfe" stroke="#dce3eb"/>
-      <text x="421" y="31" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="700" fill="#17202b">Test Spearman ρ</text>
-      <text x="421" y="50" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="10" font-weight="650" fill="#657284">higher is better</text>
-      <line x1="327" y1="235.0" x2="542" y2="235.0" stroke="#e2e7ed" stroke-width="1"/>
-      <text x="322" y="238.5" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.64</text>
-      <line x1="327" y1="151.5" x2="542" y2="151.5" stroke="#e2e7ed" stroke-width="1"/>
-      <text x="322" y="155.0" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.64</text>
-      <line x1="327" y1="68.0" x2="542" y2="68.0" stroke="#e2e7ed" stroke-width="1"/>
-      <text x="322" y="71.5" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.65</text>
-      <line x1="327" y1="235" x2="542" y2="235" stroke="#8995a4" stroke-width="1"/>
-      <line x1="327" y1="151.5" x2="542" y2="151.5" stroke="#a33f39" stroke-width="1.3" stroke-dasharray="5 3"/>
-      <text x="540" y="148.5" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8" font-weight="700" fill="#a33f39">SOTA 0.644</text>
-      <rect x="339.9" y="151.5" width="24.5" height="83.5" rx="3" fill="#2f6f4f" stroke="#19472e" stroke-width="1.2"/>
-      <text x="352.1" y="145.5" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">0.644</text>
-      <text x="352.1" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#19472e">Base</text>
-      <rect x="382.1" y="95.8" width="24.5" height="139.2" rx="3" fill="#315f9b" stroke="#183d68" stroke-width="1.2"/>
-      <text x="394.3" y="89.8" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">0.648</text>
-      <text x="394.3" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#183d68">T1</text>
-      <rect x="424.3" y="109.8" width="24.5" height="125.2" rx="3" fill="#9aafca" stroke="#7188a7" stroke-width="1.2"/>
-      <text x="436.5" y="103.8" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">0.647</text>
-      <text x="436.5" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#7188a7">T2</text>
-      <rect x="466.5" y="193.2" width="24.5" height="41.8" rx="3" fill="#9aafca" stroke="#7188a7" stroke-width="1.2"/>
-      <text x="478.7" y="187.2" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">0.641</text>
-      <text x="478.7" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#7188a7">T3</text>
-      <rect x="508.7" y="151.5" width="24.5" height="83.5" rx="3" fill="#9aafca" stroke="#7188a7" stroke-width="1.2"/>
-      <text x="520.9" y="145.5" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">0.644</text>
-      <text x="520.9" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#7188a7">T4</text>
-      <rect x="568" y="7" width="266" height="275" rx="10" fill="#fbfcfe" stroke="#dce3eb"/>
-      <text x="701" y="31" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="700" fill="#17202b">Test RMSE</text>
-      <text x="701" y="50" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="10" font-weight="650" fill="#657284">lower is better</text>
-      <line x1="607" y1="235.0" x2="822" y2="235.0" stroke="#e2e7ed" stroke-width="1"/>
-      <text x="602" y="238.5" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">1.32</text>
-      <line x1="607" y1="151.5" x2="822" y2="151.5" stroke="#e2e7ed" stroke-width="1"/>
-      <text x="602" y="155.0" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">1.35</text>
-      <line x1="607" y1="68.0" x2="822" y2="68.0" stroke="#e2e7ed" stroke-width="1"/>
-      <text x="602" y="71.5" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">1.38</text>
-      <line x1="607" y1="235" x2="822" y2="235" stroke="#8995a4" stroke-width="1"/>
-      <line x1="607" y1="154.3" x2="822" y2="154.3" stroke="#a33f39" stroke-width="1.3" stroke-dasharray="5 3"/>
-      <text x="820" y="151.3" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8" font-weight="700" fill="#a33f39">SOTA 1.349</text>
-      <rect x="619.9" y="154.3" width="24.5" height="80.7" rx="3" fill="#2f6f4f" stroke="#19472e" stroke-width="1.2"/>
-      <text x="632.1" y="148.3" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">1.349</text>
-      <text x="632.1" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#19472e">Base</text>
-      <rect x="662.1" y="173.8" width="24.5" height="61.2" rx="3" fill="#315f9b" stroke="#183d68" stroke-width="1.2"/>
-      <text x="674.3" y="167.8" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">1.342</text>
-      <text x="674.3" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#183d68">T1</text>
-      <rect x="704.3" y="123.7" width="24.5" height="111.3" rx="3" fill="#9aafca" stroke="#7188a7" stroke-width="1.2"/>
-      <text x="716.5" y="117.7" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">1.360</text>
-      <text x="716.5" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#7188a7">T2</text>
-      <rect x="746.5" y="101.4" width="24.5" height="133.6" rx="3" fill="#9aafca" stroke="#7188a7" stroke-width="1.2"/>
-      <text x="758.7" y="95.4" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">1.368</text>
-      <text x="758.7" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#7188a7">T3</text>
-      <rect x="788.7" y="81.9" width="24.5" height="153.1" rx="3" fill="#9aafca" stroke="#7188a7" stroke-width="1.2"/>
-      <text x="800.9" y="75.9" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">1.375</text>
-      <text x="800.9" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#7188a7">T4</text>
-      <rect x="848" y="7" width="266" height="275" rx="10" fill="#fbfcfe" stroke="#dce3eb"/>
-      <text x="981" y="31" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="700" fill="#17202b">Best val ρ</text>
-      <text x="981" y="50" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="10" font-weight="650" fill="#657284">higher is better</text>
-      <line x1="887" y1="235.0" x2="1102" y2="235.0" stroke="#e2e7ed" stroke-width="1"/>
-      <text x="882" y="238.5" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.54</text>
-      <line x1="887" y1="151.5" x2="1102" y2="151.5" stroke="#e2e7ed" stroke-width="1"/>
-      <text x="882" y="155.0" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.56</text>
-      <line x1="887" y1="68.0" x2="1102" y2="68.0" stroke="#e2e7ed" stroke-width="1"/>
-      <text x="882" y="71.5" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.57</text>
-      <line x1="887" y1="235" x2="1102" y2="235" stroke="#8995a4" stroke-width="1"/>
-      <line x1="887" y1="201.6" x2="1102" y2="201.6" stroke="#a33f39" stroke-width="1.3" stroke-dasharray="5 3"/>
-      <text x="1100" y="198.6" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8" font-weight="700" fill="#a33f39">SOTA 0.546</text>
-      <rect x="899.9" y="201.6" width="24.5" height="33.4" rx="3" fill="#2f6f4f" stroke="#19472e" stroke-width="1.2"/>
-      <text x="912.1" y="195.6" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">0.546</text>
-      <text x="912.1" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#19472e">Base</text>
-      <rect x="942.1" y="145.9" width="24.5" height="89.1" rx="3" fill="#315f9b" stroke="#183d68" stroke-width="1.2"/>
-      <text x="954.3" y="139.9" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">0.556</text>
-      <text x="954.3" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#183d68">T1</text>
-      <rect x="984.3" y="145.9" width="24.5" height="89.1" rx="3" fill="#9aafca" stroke="#7188a7" stroke-width="1.2"/>
-      <text x="996.5" y="139.9" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">0.556</text>
-      <text x="996.5" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#7188a7">T2</text>
-      <rect x="1026.5" y="107.0" width="24.5" height="128.0" rx="3" fill="#9aafca" stroke="#7188a7" stroke-width="1.2"/>
-      <text x="1038.7" y="101.0" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">0.563</text>
-      <text x="1038.7" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#7188a7">T3</text>
-      <rect x="1068.7" y="129.2" width="24.5" height="105.8" rx="3" fill="#9aafca" stroke="#7188a7" stroke-width="1.2"/>
-      <text x="1080.9" y="123.2" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" fill="#273241">0.559</text>
-      <text x="1080.9" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="650" fill="#7188a7">T4</text>
-      <text x="565" y="278" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="10" fill="#657284">Base = champion · T1–T4 = matched trials</text>
+      <rect x="3.0" y="7" width="160.0" height="275" rx="10" fill="#fbfcfe" stroke="#dce3eb"/>
+      <text x="83.0" y="31" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="700" fill="#17202b">Test Pearson r</text>
+      <text x="83.0" y="50" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="10" font-weight="650" fill="#657284">higher is better</text>
+      <line x1="37.0" y1="223.1" x2="156.0" y2="223.1" stroke="#e2e7ed" stroke-width="1"/>
+      <text x="32.0" y="226.6" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.66</text>
+      <line x1="37.0" y1="151.5" x2="156.0" y2="151.5" stroke="#e2e7ed" stroke-width="1"/>
+      <text x="32.0" y="155.0" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.66</text>
+      <line x1="37.0" y1="79.9" x2="156.0" y2="79.9" stroke="#e2e7ed" stroke-width="1"/>
+      <text x="32.0" y="83.4" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.67</text>
+      <line x1="37.0" y1="235" x2="156.0" y2="235" stroke="#8995a4" stroke-width="1"/>
+      <rect x="47.5" y="163.4" width="14.0" height="71.6" rx="3" fill="#2f6f4f" stroke="#19472e" stroke-width="1.2"/>
+      <text x="54.5" y="157.4" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8" font-weight="700" fill="#273241">0.660</text>
+      <text x="54.5" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8.5" font-weight="650" fill="#19472e">Base</text>
+      <rect x="69.5" y="103.8" width="14.0" height="131.2" rx="3" fill="#315f9b" stroke="#183d68" stroke-width="1.2"/>
+      <text x="76.5" y="97.8" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8" font-weight="700" fill="#273241">0.665</text>
+      <text x="76.5" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8.5" font-weight="650" fill="#183d68">T1</text>
+      <rect x="91.5" y="127.6" width="14.0" height="107.4" rx="3" fill="#9aafca" stroke="#7188a7" stroke-width="1.2"/>
+      <text x="98.5" y="121.6" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8" font-weight="700" fill="#273241">0.663</text>
+      <text x="98.5" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8.5" font-weight="650" fill="#7188a7">T2</text>
+      <rect x="113.5" y="199.2" width="14.0" height="35.8" rx="3" fill="#9aafca" stroke="#7188a7" stroke-width="1.2"/>
+      <text x="120.5" y="193.2" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8" font-weight="700" fill="#273241">0.657</text>
+      <text x="120.5" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8.5" font-weight="650" fill="#7188a7">T3</text>
+      <rect x="135.5" y="139.6" width="14.0" height="95.4" rx="3" fill="#9aafca" stroke="#7188a7" stroke-width="1.2"/>
+      <text x="142.5" y="133.6" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8" font-weight="700" fill="#273241">0.662</text>
+      <text x="142.5" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8.5" font-weight="650" fill="#7188a7">T4</text>
+      <rect x="171.0" y="7" width="160.0" height="275" rx="10" fill="#fbfcfe" stroke="#dce3eb"/>
+      <text x="251.0" y="31" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="700" fill="#17202b">Test Spearman ρ</text>
+      <text x="251.0" y="50" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="10" font-weight="650" fill="#657284">higher is better</text>
+      <line x1="205.0" y1="235.0" x2="324.0" y2="235.0" stroke="#e2e7ed" stroke-width="1"/>
+      <text x="200.0" y="238.5" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.64</text>
+      <line x1="205.0" y1="151.5" x2="324.0" y2="151.5" stroke="#e2e7ed" stroke-width="1"/>
+      <text x="200.0" y="155.0" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.64</text>
+      <line x1="205.0" y1="68.0" x2="324.0" y2="68.0" stroke="#e2e7ed" stroke-width="1"/>
+      <text x="200.0" y="71.5" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">0.65</text>
+      <line x1="205.0" y1="235" x2="324.0" y2="235" stroke="#8995a4" stroke-width="1"/>
+      <rect x="215.5" y="151.5" width="14.0" height="83.5" rx="3" fill="#2f6f4f" stroke="#19472e" stroke-width="1.2"/>
+      <text x="222.5" y="145.5" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8" font-weight="700" fill="#273241">0.644</text>
+      <text x="222.5" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8.5" font-weight="650" fill="#19472e">Base</text>
+      <rect x="237.5" y="95.8" width="14.0" height="139.2" rx="3" fill="#315f9b" stroke="#183d68" stroke-width="1.2"/>
+      <text x="244.5" y="89.8" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8" font-weight="700" fill="#273241">0.648</text>
+      <text x="244.5" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8.5" font-weight="650" fill="#183d68">T1</text>
+      <rect x="259.5" y="109.8" width="14.0" height="125.2" rx="3" fill="#9aafca" stroke="#7188a7" stroke-width="1.2"/>
+      <text x="266.5" y="103.8" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8" font-weight="700" fill="#273241">0.647</text>
+      <text x="266.5" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8.5" font-weight="650" fill="#7188a7">T2</text>
+      <rect x="281.5" y="193.2" width="14.0" height="41.8" rx="3" fill="#9aafca" stroke="#7188a7" stroke-width="1.2"/>
+      <text x="288.5" y="187.2" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8" font-weight="700" fill="#273241">0.641</text>
+      <text x="288.5" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8.5" font-weight="650" fill="#7188a7">T3</text>
+      <rect x="303.5" y="151.5" width="14.0" height="83.5" rx="3" fill="#9aafca" stroke="#7188a7" stroke-width="1.2"/>
+      <text x="310.5" y="145.5" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8" font-weight="700" fill="#273241">0.644</text>
+      <text x="310.5" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8.5" font-weight="650" fill="#7188a7">T4</text>
+      <rect x="339.0" y="7" width="160.0" height="275" rx="10" fill="#fbfcfe" stroke="#dce3eb"/>
+      <text x="419.0" y="31" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="700" fill="#17202b">Test RMSE</text>
+      <text x="419.0" y="50" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="10" font-weight="650" fill="#657284">lower is better</text>
+      <line x1="373.0" y1="235.0" x2="492.0" y2="235.0" stroke="#e2e7ed" stroke-width="1"/>
+      <text x="368.0" y="238.5" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">1.32</text>
+      <line x1="373.0" y1="151.5" x2="492.0" y2="151.5" stroke="#e2e7ed" stroke-width="1"/>
+      <text x="368.0" y="155.0" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">1.35</text>
+      <line x1="373.0" y1="68.0" x2="492.0" y2="68.0" stroke="#e2e7ed" stroke-width="1"/>
+      <text x="368.0" y="71.5" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" fill="#778396">1.38</text>
+      <line x1="373.0" y1="235" x2="492.0" y2="235" stroke="#8995a4" stroke-width="1"/>
+      <rect x="383.5" y="154.3" width="14.0" height="80.7" rx="3" fill="#2f6f4f" stroke="#19472e" stroke-width="1.2"/>
+      <text x="390.5" y="148.3" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8" font-weight="700" fill="#273241">1.349</text>
+      <text x="390.5" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8.5" font-weight="650" fill="#19472e">Base</text>
+      <rect x="405.5" y="173.8" width="14.0" height="61.2" rx="3" fill="#315f9b" stroke="#183d68" stroke-width="1.2"/>
+      <text x="412.5" y="167.8" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8" font-weight="700" fill="#273241">1.342</text>
+      <text x="412.5" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8.5" font-weight="650" fill="#183d68">T1</text>
+      <rect x="427.5" y="123.7" width="14.0" height="111.3" rx="3" fill="#9aafca" stroke="#7188a7" stroke-width="1.2"/>
+      <text x="434.5" y="117.7" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8" font-weight="700" fill="#273241">1.360</text>
+      <text x="434.5" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8.5" font-weight="650" fill="#7188a7">T2</text>
+      <rect x="449.5" y="101.4" width="14.0" height="133.6" rx="3" fill="#9aafca" stroke="#7188a7" stroke-width="1.2"/>
+      <text x="456.5" y="95.4" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8" font-weight="700" fill="#273241">1.368</text>
+      <text x="456.5" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8.5" font-weight="650" fill="#7188a7">T3</text>
+      <rect x="471.5" y="81.9" width="14.0" height="153.1" rx="3" fill="#9aafca" stroke="#7188a7" stroke-width="1.2"/>
+      <text x="478.5" y="75.9" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8" font-weight="700" fill="#273241">1.375</text>
+      <text x="478.5" y="253" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8.5" font-weight="650" fill="#7188a7">T4</text>
       </svg>
       <!-- LOSS_BAR_END -->
       <figcaption>
         <b>Figure 3 · Loss-term trials (v2 test, 3 seeds).</b>
         Base = matched MSE champion. T1 = MSE + Pearson, T2 = MSE + RankNet, T3 = MSE + GAR,
         T4 = Huber + Pearson (all auxiliary-weight 3). T1 (navy) is best on r, ρ, and RMSE.
-        The <span style="color:#a33f39;font-weight:700">dashed red line</span> is the Figure 1 SOTA
-        (C+D+G headline champion) — T1 pushes past it on r/ρ and RMSE.
       </figcaption>
     </figure>
 
     <h3 class="table-title">Table 2 · Probe-head loss terms — v2 test (3 seeds)</h3>
     <p class="table-sub">
-      Auxiliary-term weight 3; metrics are Pearson r / Spearman ρ / RMSE / best val ρ (mean over
-      three seeds). Δρ is versus the MSE champion. Best clean value per column in bold.
+      Auxiliary-term weight 3; metrics are means over three seeds. Δρ is versus the MSE champion.
+      Best clean value per column in bold.
     </p>
     <div class="table-wrap">
       <table class="results mini-table">
@@ -2190,7 +2077,6 @@
             <th>Test r↑</th>
             <th>Test ρ↑</th>
             <th>RMSE↓</th>
-            <th>Best val ρ</th>
             <th>Δρ</th>
           </tr>
         </thead>
@@ -2200,7 +2086,6 @@
             <td><span class="val">0.660</span></td>
             <td><span class="val">0.644</span></td>
             <td><span class="val">1.349</span></td>
-            <td><span class="val">0.546</span></td>
             <td><span class="val">0.000</span></td>
           </tr>
           <tr>
@@ -2208,7 +2093,6 @@
             <td class="best"><span class="val">0.665</span></td>
             <td class="best"><span class="val">0.648</span></td>
             <td class="best"><span class="val">1.342</span></td>
-            <td><span class="val">0.556</span></td>
             <td><span class="val">+0.003</span></td>
           </tr>
           <tr>
@@ -2216,7 +2100,6 @@
             <td><span class="val">0.663</span></td>
             <td><span class="val">0.647</span></td>
             <td><span class="val">1.360</span></td>
-            <td><span class="val">0.556</span></td>
             <td><span class="val">+0.003</span></td>
           </tr>
           <tr>
@@ -2224,7 +2107,6 @@
             <td><span class="val">0.657</span></td>
             <td><span class="val">0.641</span></td>
             <td><span class="val">1.368</span></td>
-            <td><span class="val">0.563</span></td>
             <td class="shift"><span class="val">−0.003</span></td>
           </tr>
           <tr>
@@ -2232,7 +2114,6 @@
             <td><span class="val">0.662</span></td>
             <td><span class="val">0.644</span></td>
             <td><span class="val">1.375</span></td>
-            <td><span class="val">0.559</span></td>
             <td><span class="val">0.000</span></td>
           </tr>
         </tbody>
@@ -2253,44 +2134,43 @@
             <th>Test r↑</th>
             <th>Test ρ↑</th>
             <th>RMSE↓</th>
-            <th>Best val ρ</th>
           </tr>
         </thead>
         <tbody>
           <tr class="ours">
             <td class="col-method">0 · MSE</td>
             <td><span class="val">0.660</span></td><td><span class="val">0.644</span></td>
-            <td><span class="val">1.349</span></td><td><span class="val">0.546</span></td>
+            <td><span class="val">1.349</span></td>
           </tr>
           <tr>
             <td class="col-method">0.5</td>
             <td><span class="val">0.659</span></td><td><span class="val">0.643</span></td>
-            <td><span class="val">1.341</span></td><td><span class="val">0.549</span></td>
+            <td><span class="val">1.341</span></td>
           </tr>
           <tr>
             <td class="col-method">1</td>
             <td><span class="val">0.660</span></td><td><span class="val">0.645</span></td>
-            <td><span class="val">1.350</span></td><td><span class="val">0.550</span></td>
+            <td><span class="val">1.350</span></td>
           </tr>
           <tr>
             <td class="col-method">2</td>
             <td><span class="val">0.664</span></td><td><span class="val">0.647</span></td>
-            <td><span class="val">1.352</span></td><td><span class="val">0.554</span></td>
+            <td><span class="val">1.352</span></td>
           </tr>
           <tr>
             <td class="col-method">3</td>
             <td class="best"><span class="val">0.665</span></td><td class="best"><span class="val">0.648</span></td>
-            <td><span class="val">1.342</span></td><td><span class="val">0.556</span></td>
+            <td><span class="val">1.342</span></td>
           </tr>
           <tr class="ours">
             <td class="col-method">5 · champion</td>
             <td class="best"><span class="val">0.665</span></td><td><span class="val">0.647</span></td>
-            <td class="best"><span class="val">1.325</span></td><td><span class="val">0.559</span></td>
+            <td class="best"><span class="val">1.325</span></td>
           </tr>
           <tr>
             <td class="col-method">10</td>
             <td><span class="val">0.662</span></td><td><span class="val">0.645</span></td>
-            <td><span class="val">1.353</span></td><td><span class="val">0.561</span></td>
+            <td><span class="val">1.353</span></td>
           </tr>
         </tbody>
       </table>

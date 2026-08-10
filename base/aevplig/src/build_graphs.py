@@ -31,8 +31,8 @@ RDLogger.DisableLog("rdApp.*")
 
 # ── repo paths ───────────────────────────────────────────────────────────────
 HERE      = os.path.dirname(os.path.abspath(__file__))
-BASE_DIR  = os.path.dirname(HERE)                                   # aevplig_baseline/
-REPO_DIR  = os.path.dirname(BASE_DIR)                               # VoxBind/
+BASE_DIR  = os.path.dirname(HERE)                                   # base/aevplig/
+REPO_DIR  = os.path.dirname(os.path.dirname(BASE_DIR))              # VoxBind/ (base/aevplig → base → VoxBind)
 SPLIT_CSV = os.path.join(REPO_DIR, "voxbind", "splits", "lp_edrscc_v2.csv")
 PDBBIND   = os.path.join(REPO_DIR, "voxbind", "dataset", "data", "pdbbind")
 STRUCT_BASES = [
@@ -43,8 +43,8 @@ ATOM_KEYS_CSV = os.path.join(BASE_DIR, "data", "PDB_Atom_Keys.csv")
 
 
 def resolve_complex(pid):
-    """Return (protein_pdb, ligand_path) from the first local base that has both,
-    preferring mol2 (the reference reader) then sdf."""
+    """Return (protein_pdb, mol2_or_None, sdf_or_None) from the first local base with the protein.
+    Both ligand paths are returned so read_ligand can fall back mol2 → sdf."""
     for base in STRUCT_BASES:
         d = os.path.join(base, pid)
         prot = os.path.join(d, f"{pid}_protein.pdb")
@@ -52,25 +52,37 @@ def resolve_complex(pid):
             continue
         mol2 = os.path.join(d, f"{pid}_ligand.mol2")
         sdf = os.path.join(d, f"{pid}_ligand.sdf")
-        if os.path.exists(mol2):
-            return prot, mol2, "mol2"
-        if os.path.exists(sdf):
-            return prot, sdf, "sdf"
+        return prot, (mol2 if os.path.exists(mol2) else None), (sdf if os.path.exists(sdf) else None)
     return None, None, None
 
 
-def read_ligand(ligand_path, kind):
-    """RDKit mol with explicit Hs+coords, mirroring the reference pipeline."""
-    if kind == "mol2":
-        mol = Chem.MolFromMol2File(ligand_path)
-    else:
-        mol = next(iter(Chem.SDMolSupplier(ligand_path, sanitize=True, removeHs=False)), None)
+def read_ligand(mol2, sdf):
+    """RDKit mol with explicit Hs+coords. Robust 3-tier read (obabel-built holdout ligands often
+    fail the strict mol2/sanitized-SDF readers): mol2 (reference reader) → SDF sanitized →
+    SDF unsanitized + best-effort sanitize (skip kekulize). Recovers the obabel-valence cases."""
+    mol = None
+    if mol2 and os.path.exists(mol2):
+        mol = Chem.MolFromMol2File(mol2)
+    if mol is None and sdf and os.path.exists(sdf):
+        mol = next(iter(Chem.SDMolSupplier(sdf, sanitize=True, removeHs=False)), None)
+    if mol is None and sdf and os.path.exists(sdf):
+        mol = next(iter(Chem.SDMolSupplier(sdf, sanitize=False, removeHs=False)), None)
+        if mol is not None:
+            try:
+                mol.UpdatePropertyCache(strict=False)
+                Chem.SanitizeMol(
+                    mol,
+                    sanitizeOps=Chem.SanitizeFlags.SANITIZE_ALL ^ Chem.SanitizeFlags.SANITIZE_KEKULIZE,
+                    catchErrors=True,
+                )
+            except Exception:
+                pass
     if mol is None:
         return None
     try:
         mol = Chem.AddHs(mol, addCoords=True)
     except Exception:
-        return None
+        pass  # keep the heavy-atom mol; AEV featurisation can still proceed
     return mol
 
 
@@ -224,14 +236,17 @@ def mol_to_graph(mol, mol_df, aevs):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default=os.path.join(BASE_DIR, "graphs", "aevplig_edrscc_graphs.pickle"))
+    ap.add_argument("--split", default=None,
+                    help="split name under voxbind/splits (e.g. holdout2019_eval); default lp_edrscc_v2")
     ap.add_argument("--limit", type=int, default=0, help="debug: only first N pids")
     args = ap.parse_args()
 
-    sp = pd.read_csv(SPLIT_CSV)
+    split_csv = os.path.join(REPO_DIR, "voxbind", "splits", f"{args.split}.csv") if args.split else SPLIT_CSV
+    sp = pd.read_csv(split_csv)
     pids = sp["pid"].astype(str).str.lower().tolist()
     if args.limit:
         pids = pids[:args.limit]
-    print(f"split pids: {len(pids)}  (from {SPLIT_CSV})")
+    print(f"split pids: {len(pids)}  (from {split_csv})")
 
     atom_keys = pd.read_csv(ATOM_KEYS_CSV, sep=",")
     atom_map = pd.DataFrame(pd.unique(atom_keys["ATOM_TYPE"]))
@@ -250,11 +265,11 @@ def main():
     failed_featurize = []
 
     for pid in tqdm(pids):
-        prot, lig, kind = resolve_complex(pid)
+        prot, mol2, sdf = resolve_complex(pid)
         if prot is None:
             failed_read.append((pid, "no_structure"))
             continue
-        mol = read_ligand(lig, kind)
+        mol = read_ligand(mol2, sdf)
         if mol is None:
             failed_read.append((pid, "rdkit_none"))
             continue

@@ -1,0 +1,19 @@
+sequences:
+- protein:
+    id: A
+    sequence: ATFGMGDRVRKKSGAAWQGQIVGWYCTNLTPEGYAVESEAHPGSVQIYPVAALERI
+- protein:
+    id: B
+    sequence: ATFGMGDRVRKKSGAAWQGQIVGWYCTNLTPEGYAVESEAHPGSVQIYPVAALERI
+- protein:
+    id: C
+    sequence: ATFGMGDRVRKKSGAAWQGQIVGWYCTNLTPEGYAVESEAHPGSVQIYPVAALERI
+- protein:
+    id: D
+    sequence: ATFGMGDRVRKKSGAAWQGQIVGWYCTNLTPEGYAVESEAHPGSVQIYPVAALERI
+- ligand:
+    id: L
+    smiles: COCC[C@@H](O)CO
+properties:
+- affinity:
+    binder: L

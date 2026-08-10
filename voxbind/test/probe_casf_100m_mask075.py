@@ -9,6 +9,7 @@ Outputs:
 Usage:
     cd voxbind && CUDA_VISIBLE_DEVICES=4 python test/probe_casf_100m_mask075.py
 """
+import argparse
 import csv
 import json
 import os
@@ -17,6 +18,22 @@ import numpy as np
 import torch
 import torch.nn as nn
 from scipy.stats import pearsonr, spearmanr
+
+
+def _pearson_term(p, y):
+    """1 - Pearson r over the batch (GenScore-style aux). Scale-free."""
+    p = p - p.mean(); y = y - y.mean()
+    return 1.0 - (p * y).sum() / (p.norm() * y.norm() + 1e-8)
+
+
+def build_loss(spec, aux_weight):
+    """spec: 'mse' (default) or 'mse+corr' (MSE + aux_weight*(1-Pearson))."""
+    mse = nn.MSELoss()
+    if spec == "mse":
+        return lambda p, y: mse(p, y)
+    if spec == "mse+corr":
+        return lambda p, y: mse(p, y) + aux_weight * _pearson_term(p, y)
+    raise ValueError(f"unknown --loss {spec!r} (use mse | mse+corr)")
 
 REPO = "/home/shpark/prj-denovo/VoxBind"
 FD   = f"{REPO}/voxbind/dataset/data/pdbbind/features"
@@ -77,8 +94,10 @@ def metrics(y, yhat, mask=None):
                 rmse=float(np.sqrt(((y - yhat) ** 2).mean())), n=int(len(y)))
 
 
-def train_predict(feats, pK, v2, casf_pids, seed):
+def train_predict(feats, pK, v2, casf_pids, seed, loss_fn=None):
     torch.manual_seed(seed); np.random.seed(seed)
+    if loss_fn is None:
+        loss_fn = build_loss("mse", 0.0)
 
     def arrs(pids):
         pids = [p for p in pids if p in feats and p in pK]
@@ -103,7 +122,6 @@ def train_predict(feats, pK, v2, casf_pids, seed):
 
     model = MLP(Xtr.shape[1], HP["hidden"], HP["dropout"]).to(DEVICE)
     opt = torch.optim.Adam(model.parameters(), lr=HP["lr"], weight_decay=HP["wd"])
-    lossf = nn.MSELoss()
     best, best_state, bad = 1e9, None, 0
     n = Xtr_t.size(0)
 
@@ -112,8 +130,10 @@ def train_predict(feats, pK, v2, casf_pids, seed):
         perm = torch.randperm(n, device=DEVICE)
         for i in range(0, n, HP["bs"]):
             idx = perm[i:i + HP["bs"]]
+            if idx.numel() < 4:
+                continue
             opt.zero_grad()
-            lossf(model(Xtr_t[idx]), ytr_t[idx]).backward()
+            loss_fn(model(Xtr_t[idx]), ytr_t[idx]).backward()
             opt.step()
         model.eval()
         with torch.no_grad():
@@ -134,15 +154,30 @@ def train_predict(feats, pK, v2, casf_pids, seed):
 
 
 def main():
-    print(f"Loading features from: {FEAT_PATH}")
-    feats = load_feats(FEAT_PATH)
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--loss", default="mse", help="probe-head loss: mse (default) | mse+corr")
+    ap.add_argument("--aux_weight", type=float, default=5.0, help="Pearson-aux weight for mse+corr")
+    ap.add_argument("--feat", default=FEAT_PATH, help="feature cache to probe (default = CDG champion)")
+    ap.add_argument("--model", default="CDG_100m_mask075", help="model name for output json")
+    ap.add_argument("--out", default=None, help="override output json path")
+    args = ap.parse_args()
+    loss_fn = build_loss(args.loss, args.aux_weight)
+    tag = "" if args.loss == "mse" else f"_corr{args.aux_weight:g}"
+
+    print(f"Loading features from: {args.feat}")
+    print(f"loss = {args.loss}" + (f" (aux_weight {args.aux_weight:g})" if args.loss != "mse" else ""))
+    feats = load_feats(args.feat)
     print(f"Loaded {len(feats):,} feature vectors (dim={next(iter(feats.values())).shape[0]})")
 
     pK = load_pK()
     v2 = v2_split()
     casf_pids, nontrain = casf_eval()
 
-    print(f"CASF eval: {len(casf_pids)} leaky | {len(nontrain)} non-train | device={DEVICE}\n")
+    # clean = CASF pids NOT in our lp_edrscc_v2 train OR val (nontrain only removes train,
+    # so it still contains ~32 val-overlap complexes; clean removes both → truly held out).
+    clean_set = {p for p in casf_pids if v2.get(p) not in ("train", "val")}
+    print(f"CASF eval: {len(casf_pids)} leaky | {len(nontrain)} non-train | "
+          f"{len(clean_set)} clean (not in v2 train/val) | device={DEVICE}\n")
 
     # Check coverage
     missing = [p for p in casf_pids if p not in feats]
@@ -151,17 +186,21 @@ def main():
     else:
         print(f"All {len(casf_pids)} CASF pids covered by feature bundle.")
 
-    per = {"leaky": [], "nontrain": []}
+    per = {"leaky": [], "nontrain": [], "clean": []}
     for s in range(HP["seeds"]):
         print(f"  seed {s}...")
-        te_pids, yte, pte = train_predict(feats, pK, v2, casf_pids, s)
+        te_pids, yte, pte = train_predict(feats, pK, v2, casf_pids, s, loss_fn=loss_fn)
         nt_mask = np.array([p in nontrain for p in te_pids])
+        cl_mask = np.array([p in clean_set for p in te_pids])
         lm = metrics(yte, pte)
         nm = metrics(yte, pte, mask=nt_mask)
+        cm = metrics(yte, pte, mask=cl_mask)
         per["leaky"].append(lm)
         per["nontrain"].append(nm)
-        print(f"    leaky   n={lm['n']} ρ={lm['spearman']:.3f} r={lm['pearson']:.3f} rmse={lm['rmse']:.3f}")
+        per["clean"].append(cm)
+        print(f"    leaky    n={lm['n']} ρ={lm['spearman']:.3f} r={lm['pearson']:.3f} rmse={lm['rmse']:.3f}")
         print(f"    nontrain n={nm['n']} ρ={nm['spearman']:.3f} r={nm['pearson']:.3f} rmse={nm['rmse']:.3f}")
+        print(f"    clean    n={cm['n']} ρ={cm['spearman']:.3f} r={cm['pearson']:.3f} rmse={cm['rmse']:.3f}")
 
     def agg(lst):
         out = {}
@@ -172,14 +211,16 @@ def main():
         return out
 
     res = {
-        "model": "CDG_100m_mask075",
+        "model": f"{args.model}{tag}",
         "encoder": "260705_ar_cvit_100m_v2_mask075 (epoch 49)",
-        "train": "lp_edrscc_v2 train (frozen-encoder + MLP head, 3 seeds)",
+        "train": f"lp_edrscc_v2 train (frozen-encoder + MLP head, 3 seeds); loss={args.loss}"
+                 + (f" aux_weight={args.aux_weight:g}" if args.loss != "mse" else ""),
         "leaky": agg(per["leaky"]),
         "nontrain": agg(per["nontrain"]),
+        "clean": agg(per["clean"]),
     }
     os.makedirs(OUT, exist_ok=True)
-    out_path = f"{OUT}/CDG_100m_mask075.json"
+    out_path = args.out or f"{OUT}/{args.model}{tag}.json"
     json.dump(res, open(out_path, "w"), indent=2)
     print(f"\nResult written to: {out_path}")
     print(f"leaky(n={res['leaky']['n']})   ρ={res['leaky']['spearman']['mean']:.3f}±{res['leaky']['spearman']['std']:.3f}  "

@@ -30,6 +30,10 @@ STRUCT_BASES = [
     # local copy vendored in the VoxBind repo (present on every server; same layout as
     # profsa/dsmbind STRUCT_BASES) — preferred so runs don't depend on the prj-ligand mount.
     REPO_DIR / "voxbind" / "dataset" / "data" / "pdbbind" / "structures" / "pbpp-2020",
+    # 2019 temporal-holdout structures (RCSB protein.pdb + pocket.pdb + obabel ligand),
+    # built by dataset/prep_holdout_baseline_structs.py — not in the pbpp-2020 layout, so
+    # add explicitly or the holdout manifest resolves only the ~167 pbpp-2020 overlaps.
+    REPO_DIR / "voxbind" / "dataset" / "data" / "pdbbind" / "structures" / "misato_qm_built",
     REPO_DIR / "voxbind" / "dataset" / "data" / "pdbbind" / "structures",
     Path("/home/shpark/prj-ligand/targetdiff/data/pdbbind_v2020/pocket_10_general/structures/pbpp-2020"),
     Path("/home/shpark/prj-ligand/targetdiff/data/pdbbind_v2020/pocket_10_general/structures"),

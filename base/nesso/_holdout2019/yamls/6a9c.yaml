@@ -1,0 +1,16 @@
+sequences:
+- protein:
+    id: B
+    sequence: MSKLPQVKALYPYTAANDEELSFKVGDIITILEKDEGWWKGELNGQEGWIPNNYVKEILEHHHHHH
+- protein:
+    id: A
+    sequence: MSKLPQVKALYPYTAANDEELSFKVGDIITILEKDEGWWKGELNGQEGWIPNNYVKEIL
+- protein:
+    id: E
+    sequence: KVAPPIPHR
+- ligand:
+    id: L
+    smiles: '[NH4][C@H](C(=O)N[C@H](C(=O)N[C@H](C(=O)N1[C@H](C(=O)N2[C@H](C(=O)N[C@H](C(=O)N3[C@H](C(=O)N[C@H](C(=O)N[C@H](C(=O)O)CCCNC(N)N)Cc4nc[nH]c4)CCC3)[C@H](CC)C)CCC2)CCC1)C)C(C)C)CCCC[NH4]'
+properties:
+- affinity:
+    binder: L

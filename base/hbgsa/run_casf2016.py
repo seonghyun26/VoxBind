@@ -9,6 +9,7 @@ Correct HonestAffinity protocol (matches GET/EGNN/ProFSA):
 - Write base/_casf/HBGSA.json.
 """
 from __future__ import annotations
+import os
 
 import json
 import sys
@@ -27,7 +28,7 @@ OUT_DIR.mkdir(parents=True, exist_ok=True)
 sys.path.insert(0, str(SRC_DIR))
 
 from config import DEFAULT_SPLIT_CSV, SPLITS_DIR
-CASF_CSV        = REPO_DIR / "voxbind" / "splits" / "casf2016_eval.csv"
+CASF_CSV        = Path(os.environ.get("CASF_CSV_OVERRIDE", str(REPO_DIR / "voxbind" / "splits" / "casf2016_eval.csv")))
 CASF_TEST_SPLIT = SPLITS_DIR / "casf2016_testonly_split.csv"   # all 214 CASF pids → test
 
 
@@ -233,7 +234,7 @@ def compute_and_write_json(all_preds, seeds=(0, 1, 2), tag="casf2016_hbgsa_3p06m
             "n": n_nontrain,
         },
     }
-    out_path = OUT_DIR / "HBGSA.json"
+    out_path = OUT_DIR / ("HBGSA" + os.environ.get("HBGSA_TAG","") + ".json")
     out_path.write_text(json.dumps(result, indent=2))
     print(f"\n[done] written → {out_path}")
     print(json.dumps(result, indent=2))

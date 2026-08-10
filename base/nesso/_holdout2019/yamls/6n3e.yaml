@@ -1,0 +1,13 @@
+sequences:
+- protein:
+    id: A
+    sequence: MRHERVVIIKNMFHPMDFEDDPLVLNEIREDLRVECSKFGQIRKLLLFDRHPDGVASVSFRDPEEADYCIQTLDGRWFGGRQITAQAWDGTTDY
+- protein:
+    id: B
+    sequence: NRWDETP
+- ligand:
+    id: L
+    smiles: '[NH4][C@H](C(=O)N[C@H](C(=O)N[C@H](C(=O)N[C@H](C(=O)N[C@H](C(=O)N[C@H](C(=O)N1[C@H](C(=O)O)CCC1)[C@H](O)C)CCC(=O)O)CC(=O)O)Cc1c[nH]c2c1cccc2)CCCNC(N)N)CC(=O)N'
+properties:
+- affinity:
+    binder: L

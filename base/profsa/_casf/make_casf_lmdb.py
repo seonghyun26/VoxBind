@@ -27,7 +27,7 @@ RDLogger.DisableLog("rdApp.*")
 HERE = os.path.dirname(os.path.abspath(__file__))
 PROFSA_ROOT = os.path.dirname(HERE)                             # base/profsa/
 REPO = os.path.dirname(os.path.dirname(PROFSA_ROOT))           # VoxBind/
-CASF_CSV = os.path.join(REPO, "voxbind", "splits", "casf2016_eval.csv")
+CASF_CSV = os.environ.get("CASF_CSV_OVERRIDE", os.path.join(REPO, "voxbind", "splits", "casf2016_eval.csv"))
 STRUCT_BASES = [
     os.path.join(REPO, "voxbind", "dataset", "data", "pdbbind", "structures", "pbpp-2020"),
     os.path.join(REPO, "voxbind", "dataset", "data", "pdbbind", "structures", "misato_qm_built"),
@@ -135,7 +135,7 @@ def write_lmdb(entries, path):
 
 
 def main():
-    out_dir = os.path.join(PROFSA_ROOT, "data", "dataset", "casf2016")
+    out_dir = os.environ.get("PROFSA_OUT_DIR", os.path.join(PROFSA_ROOT, "data", "dataset", "casf2016"))
     os.makedirs(out_dir, exist_ok=True)
 
     # Copy dictionaries from edrscc dataset
