@@ -243,7 +243,7 @@ def expected_voxelize_metadata(args: argparse.Namespace) -> dict:
         "element_filter": args.element_filter,
         "ligand_vdw": bool(args.ligand_vdw),
         "ligand_radius": None if args.ligand_vdw else LIGAND_RAD,
-        "pocket_radius": "element_vdw",
+        "pocket_radius": (LIGAND_RAD if args.pocket_uniform else "element_vdw"),
         "density_enabled": not bool(args.no_density),
         "density_mode": None if args.no_density else "v1_global_zscore_crop_clip_zscore",
         "index_csv": str(Path(args.index_csv).expanduser().resolve()),
@@ -382,6 +382,7 @@ def voxelize_complex(
     voxelizer: Voxelizer,
     device: str,
     ligand_vdw: bool = False,
+    pocket_uniform: bool = False,
     ligand_center: "torch.Tensor | None" = None,
     n_lig_ch: int = N_LIG_CH,
     lig_rad_override: "torch.Tensor | None" = None,
@@ -410,7 +411,10 @@ def voxelize_complex(
         lig_rad = _VDW_RADIUS_LUT[lig_ch]                # element-wise vdW (ligand_radius<=0 path)
     else:
         lig_rad = torch.full_like(lig_ch, LIGAND_RAD, dtype=torch.float32)
-    poc_rad = _VDW_RADIUS_LUT[poc_ch]
+    if pocket_uniform:
+        poc_rad = torch.full_like(poc_ch, LIGAND_RAD, dtype=torch.float32)
+    else:
+        poc_rad = _VDW_RADIUS_LUT[poc_ch]
 
     # Voxelizer expects (B, N, *) shapes; B=1 here.
     lig_dict = {
@@ -580,6 +584,7 @@ def run_voxelize(args: argparse.Namespace) -> None:
             v_atom, lig_com = voxelize_complex(
                 lig_xyz, lig_ch, poc_xyz, poc_ch, voxelizer, args.device,
                 ligand_vdw=args.ligand_vdw,
+                pocket_uniform=args.pocket_uniform,
                 ligand_center=lig_center,
                 n_lig_ch=n_lig_ch,
                 lig_rad_override=lig_rad if other_channel else None,
@@ -1041,6 +1046,9 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Limit to first N complexes (0 = all). Smoke testing.")
     pv.add_argument("--no_density", action="store_true",
                     help="Skip CCP4 crop (atom voxels only)")
+    pv.add_argument("--pocket_uniform", action="store_true",
+                    help="Uniform LIGAND_RAD pocket blobs instead of element-wise vdW "
+                         "(match an encoder trained with pocket_radius>0).")
     pv.add_argument("--ligand_vdw", action="store_true",
                     help="Element-wise vdW ligand radii (mirrors crossdocked_xray "
                          "ligand_radius<=0) instead of the uniform 0.5 A blob. Match "

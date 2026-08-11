@@ -17,6 +17,23 @@ the training log, and `checkpoint_e0049.pth.tar` (probe reads `encoder_state_dic
 
 All ChannelViT `[7,4,2]`, 60-100M params, frozen mean-pool MLP probe on `lp_edrscc_v2` (Kd/Ki, 3850/817/1320, 3 seeds).
 
+## Stable pointers (track the current best without renaming)
+
+Version-agnostic symlinks point at whatever is currently best, so code/scripts can reference a
+fixed path and a new champion is adopted by just **repointing the symlink** (relative → portable):
+
+| pointer | → current target |
+|---|---|
+| `champion` | `champion_100m_v2_mask075` (C+D+G best encoder) |
+| `coords` | `coords_100m_v2_mask075` (matched coords-only control) |
+
+Use `--exp_dir model_zoo/champion` in the probe (each target dir is self-contained: `cfg.yaml` +
+`checkpoint_e0049.pth.tar`). To promote a new champion: add its folder here, then
+`ln -sfn <new_folder> champion`. The exps checkpoint that was cleaned up is restored via a relative
+symlink back into this zoo (`exps/260705_ar_cvit_100m_v2_mask075/checkpoint_e0049.pth.tar`).
+Best **probe-head recipe** on the champion encoder (head-only, 260806): MSE + Pearson-aux (λ=5) →
+ρ 0.647 / r 0.665 / RMSE 1.325 (vs 0.644 / 0.660 / 1.349 mean-pool MSE).
+
 ## Two-tower encoders (for VoxBind pocket-adapter transfer)
 
 Separate ~45M pocket / ligand ChannelViT-MAE encoders (260806, PLINDER v2 holo, protein_vdw mask +

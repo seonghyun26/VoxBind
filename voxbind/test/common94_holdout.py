@@ -94,6 +94,11 @@ PREDS = {
     "EGNN + TargetDiff": seed_jsonl(f"{REPO}/base/get/_casf_get/preds/preds_EGNN_TD_holdout2019_seed*.jsonl"),
     "CheapNet":    seed_jsonl(f"{REPO}/base/cheapnet/_edrscc/data_holdout2019/preds_casf_seed*.jsonl", valid_range=(0, 14)),
     "ProFSA":      seed_csv(f"{REPO}/base/profsa/_casf/preds_holdout2019_seed*.csv"),
+    "HonestAffinity": seed_csv(f"{REPO}/base/_casf/HonestAffinity_holdout2019_preds_seed*.csv"),
+    "IPNet (frozen)": seed_csv(f"{REPO}/base/_casf/IPNet_frozen_holdout2019_preds_seed*.csv"),
+    "IPNet (scratch)": seed_csv(f"{REPO}/base/_casf/IPNet_scratch_holdout2019_preds_seed*.csv"),
+    "BindNet":     seed_csv(f"{REPO}/base/_casf/BindNet_holdout2019_preds_seed*.csv"),
+    "DSMBind":     seed_csv(f"{REPO}/base/_casf/DSMBind_holdout2019_preds.csv"),
     "HBGSA":       hbgsa(),
     "AEV-PLIG":    aev(),
     "Nesso-1":     nesso(),
@@ -137,11 +142,17 @@ def metr_seeds(m, seedlist, common):
     return {"r": ms(rs), "rho": ms(rhos), "rmse": ms(rmses)}
 
 
+# Leaked methods (trained on affinity data overlapping the eval complexes) must NOT define the
+# common set — otherwise their coverage shrinks it and their memorization sets the bar. They are
+# reported as references on whatever subset of the common they cover (flagged partial/leaked).
+LEAKED = {"Nesso-1"}
+
+
 def main():
     avg = {m: avg_of(v) for m, v in PREDS.items()}
     cov = {m: set(avg[m]) & ED_AVAIL for m in PREDS}
-    full = [m for m in PREDS if len(cov[m]) >= MIN_COV]        # define the common
-    low = [m for m in PREDS if len(cov[m]) < MIN_COV]          # HBGSA, Nesso, …
+    full = [m for m in PREDS if len(cov[m]) >= MIN_COV and m not in LEAKED]  # define common (non-leaked)
+    low = [m for m in PREDS if m not in full]                 # partial-coverage + leaked references
     common = set(ED_AVAIL)
     for m in full:
         common &= cov[m]

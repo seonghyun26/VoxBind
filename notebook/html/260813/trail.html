@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Experiment trail · 260813</title>
+<style>
+ :root{--ink:#1c2433;--ink-soft:#5b6678;--ink-faint:#7a8699;--line:#e3e7ee;--bg:#f5f6f8;--card:#fff;
+  --green:#2f6f4f;--green-bg:#eaf5ee;--blue:#38559b;--blue-bg:#e7eefb;--warn:#9a6112;--warn-bg:#fcf3e0;
+  --danger:#a33f39;--shadow:0 1px 2px rgba(20,30,50,.04),0 8px 24px rgba(20,30,50,.05);}
+ *{box-sizing:border-box;} body{margin:0;background:var(--bg);color:var(--ink);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.5;}
+ .page{max-width:1120px;margin:0 auto;padding:44px 22px 90px;}
+ header.doc{border-bottom:2px solid var(--ink);padding-bottom:18px;margin-bottom:14px;}
+ .eyebrow{text-transform:uppercase;letter-spacing:.14em;font-size:11px;font-weight:700;color:var(--green);}
+ h1{font-size:27px;margin:8px 0 4px;letter-spacing:-.01em;} .sub{color:var(--ink-soft);font-size:14px;}
+ .goal{margin:14px 0 6px;padding:12px 16px;background:var(--green-bg);border:1px solid #cfe6d8;border-radius:10px;font-size:14px;}
+ .goal b{color:var(--green);}
+ h2{display:flex;align-items:center;gap:10px;font-size:14px;text-transform:uppercase;letter-spacing:.08em;margin:32px 0 11px;}
+ .pill{font-size:11px;font-weight:800;padding:3px 10px;border-radius:999px;letter-spacing:.04em;}
+ .pill.run{color:var(--blue);background:var(--blue-bg);} .pill.q{color:var(--warn);background:var(--warn-bg);} .pill.done{color:var(--green);background:var(--green-bg);}
+ .cnt{color:var(--ink-faint);font-weight:600;font-size:12px;}
+ table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden;box-shadow:var(--shadow);margin-bottom:6px;}
+ th,td{padding:9px 13px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top;}
+ th{background:#f6f8fa;color:var(--ink-faint);font-size:11px;text-transform:uppercase;letter-spacing:.05em;}
+ tbody tr:last-child td{border-bottom:0;}
+ td.code{white-space:nowrap;} .num{display:inline-block;color:var(--ink-faint);font-weight:700;font-size:11.5px;font-family:ui-monospace,Menlo,monospace;margin-right:7px;}
+ .cn{display:inline-block;font-weight:700;font-size:12.5px;color:var(--blue);background:var(--blue-bg);padding:1px 8px;border-radius:6px;font-family:ui-monospace,Menlo,monospace;}
+ td.name{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--ink-soft);white-space:nowrap;}
+ td.what{color:var(--ink-soft);font-size:13.5px;} td.res{font-weight:700;white-space:nowrap;font-size:13px;}
+ .win{color:var(--green);} .fail{color:var(--danger);} .flat{color:var(--warn);} .na{color:var(--ink-faint);font-weight:500;}
+ .tag{display:inline-block;font-size:10.5px;font-weight:700;padding:1px 7px;border-radius:5px;margin-right:5px;background:#eef1f5;color:var(--ink-soft);}
+ footer{margin-top:36px;color:var(--ink-faint);font-size:12.5px;border-top:1px solid var(--line);padding-top:14px;}
+ code{background:#f0f2f5;padding:1px 5px;border-radius:4px;font-size:.9em;}
+</style></head><body><div class="page">
+ <header class="doc"><div class="eyebrow">Experiment trail · 260813</div>
+ <h1>CDG encoder — beat the champion</h1>
+ <div class="sub">Affinity regression on <code>lp_edrscc_v2</code> (test ρ / val ρ, 3 seeds). Each run has a <b>#num</b> + codename.</div></header>
+ <div class="goal"><b>Goal:</b> beat the champion CDG encoder (<b>test ρ 0.644 / val ρ 0.546</b>). Only the <b>3-encoder ensemble (0.656)</b> and the <b>mse+corr probe head (0.647)</b> have beaten it — single-encoder recipe changes keep hitting the plateau.</div>
+ <h2><span class="pill run">Running</span><span class="cnt">2</span></h2>
+<table><thead><tr><th>Code</th><th>Experiment</th><th>What it checks</th><th>Result (test ρ / val ρ)</th></tr></thead>
+<tbody>
+<tr><td class="code"><span class="num">#01</span><span class="cn">bold-olive</span></td><td class="name">260813_cdg_100m_v2_g7411</td><td class="what"><span class="tag">arch</span><b>Channel separation</b>: density &amp; gradmag as separate ChannelViT groups <b>[7,4,1,1]</b> vs champion's grouped [7,4,2].</td><td class="res na">GPU 0-3 · training (chain)</td></tr>
+<tr><td class="code"><span class="num">#03</span><span class="cn">neat-grape</span></td><td class="name">260810_cdg_100m_v2_uniflig_vdwpoc</td><td class="what"><span class="tag">radius</span><b>Original VoxBind representation</b>: uniform ligand (0.5) + vdW pocket (−1). Isolates the 260603 ligand→vdW gain (vs champion vdW/vdW 0.644 and full-uniform 0.468). Probes on v5 (matched, no build).</td><td class="res na">GPU 4-7 · training</td></tr>
+</tbody></table>
+ <h2><span class="pill q">Queued</span><span class="cnt">0</span></h2>
+<table><thead><tr><th>Code</th><th>Experiment</th><th>What it checks</th><th>Result (test ρ / val ρ)</th></tr></thead>
+<tbody>
+
+</tbody></table>
+ <h2><span class="pill done">Done</span><span class="cnt">13</span></h2>
+<table><thead><tr><th>Code</th><th>Experiment</th><th>What it checks</th><th>Result (test ρ / val ρ)</th></tr></thead>
+<tbody>
+<tr><td class="code"><span class="num">#02</span><span class="cn">spry-lemon</span></td><td class="name">260810_cdg_100m_v2_atommask050</td><td class="what"><span class="tag">masking</span>Does atom-biased masking (ratio 0.5) beat champion at <b>full 100M</b>? (with 46M controls, isolates the idea.)</td><td class="res flat">0.624 / 0.524 — atom-mask HURTS at 100M too</td></tr>
+<tr><td class="code"><span class="num">#04</span><span class="cn">glossy-cocoa</span></td><td class="name">vdw_vs_uniform_matched</td><td class="what"><span class="tag">radius</span><b>vdW vs uniform atom radius</b>, each probed on <b>matched</b> voxels. vdW keeps physical steric size; uniform blobs lose it.</td><td class="res win">vdW 0.644 vs uniform 0.468 — <b>vdW ESSENTIAL (+0.176)</b></td></tr>
+<tr><td class="code"><span class="num">#05</span><span class="cn">mild-olive</span></td><td class="name">260810_cdg_45m_v2_unifmask050</td><td class="what"><span class="tag">masking</span>46M UNIFORM-mask control for the atom-mask run (both 46M, mask 0.5). Isolates masking strategy.</td><td class="res flat">0.629 / 0.538 — &gt; atom_biased 0.612 (atom-mask HURTS −0.017)</td></tr>
+<tr><td class="code"><span class="num">#06</span><span class="cn">mild-melon</span></td><td class="name">ENSEMBLE_x3_mse+corr</td><td class="what"><span class="tag">ensemble</span>Concat champion + v3_m090 + v3_m095 features → one head. Diverse encoders (v2/v3, different masks) are complementary.</td><td class="res win">0.656 / 0.591 ✓ BEST</td></tr>
+<tr><td class="code"><span class="num">#07</span><span class="cn">keen-grape</span></td><td class="name">champion_mse+corr_head</td><td class="what"><span class="tag">head</span>Add a Pearson-correlation aux term to the probe MLP loss (GenScore-style).</td><td class="res win">0.647 / 0.559 ✓</td></tr>
+<tr><td class="code"><span class="num">#08</span><span class="cn">crisp-pecan</span></td><td class="name">260705_champion_v2_m075_g742</td><td class="what"><span class="tag">baseline</span>The reference: 100M ChannelViT, PLINDER-v2, mask 0.75, groups [7,4,2].</td><td class="res na">0.644 / 0.546 (ref)</td></tr>
+<tr><td class="code"><span class="num">#09</span><span class="cn">bold-apple</span></td><td class="name">260806_cdg_100m_v2_ep100</td><td class="what"><span class="tag">schedule</span>Undertraining? Train 100 epochs instead of 50.</td><td class="res flat">e25 0.653 ≈ e50 0.636 — SATURATED</td></tr>
+<tr><td class="code"><span class="num">#10</span><span class="cn">snug-quince</span></td><td class="name">260808_cdg_100m_v3_m075</td><td class="what"><span class="tag">data×mask</span>Clean v3 data at champion's mask 0.75 (v3 previously only 0.85–0.95).</td><td class="res flat">0.632 / 0.562 — v3 wants high mask</td></tr>
+<tr><td class="code"><span class="num">#11</span><span class="cn">crisp-melon</span></td><td class="name">260809_cdg_100m_v2_m075_rope3d</td><td class="what"><span class="tag">pos-enc</span>Swap learnable position encoding → axial 3D RoPE.</td><td class="res fail">0.622 / 0.542 — HURTS</td></tr>
+<tr><td class="code"><span class="num">#12</span><span class="cn">bold-lychee</span></td><td class="name">260809_cdg_45m_v2_atommask050</td><td class="what"><span class="tag">masking</span>User idea: mask near atoms (empty space wasteful). 46M + atom_biased mask 0.5 together.</td><td class="res flat">0.612 / 0.528 — size-confounded → controls running</td></tr>
+<tr><td class="code"><span class="num">#13</span><span class="cn">wild-fig</span></td><td class="name">260806_cdg_100m_v2_d2vaux05</td><td class="what"><span class="tag">objective</span>New pretraining objective: data2vec latent-prediction aux on top of MAE.</td><td class="res fail">0.572 / 0.507 — HURTS (−0.07)</td></tr>
+<tr><td class="code"><span class="num">#14</span><span class="cn">wild-olive</span></td><td class="name">260808_cdg_100m_v2_m075_uniformrad</td><td class="what"><span class="tag">radius</span>Uniform atom radius (0.5), probed on matched uniform voxels.</td><td class="res fail">0.468 / 0.375 — uniform radius MUCH worse than vdW</td></tr>
+<tr><td class="code"><span class="num">#15</span><span class="cn">keen-lychee</span></td><td class="name">GET_baseline_lba30_lba60</td><td class="what"><span class="tag">baseline</span>External E(3)-equiv baseline on protein-novelty splits.</td><td class="res na">0.517 / 0.562 (&lt; our 0.569/0.613)</td></tr>
+</tbody></table>
+ <footer>260813 · <code>notebook/html/260813/trail.html</code> · built by <code>build_trail.py</code> (codes = md5(name), stable). Baselines below champion: ProFSA 0.597 · GET 0.591 · AEV 0.550 · HBGSA 0.533 · DSMBind 0.363.</footer>
+</div></body></html>

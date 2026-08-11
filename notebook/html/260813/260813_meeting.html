@@ -51,6 +51,10 @@
              padding: 0 8px; border-radius: 6px; background: #eef1f6; color: var(--ink-soft);
              font-size: 11px; font-weight: 760; }
   .table-sub { max-width: 1100px; margin: 0 0 17px; color: var(--ink-soft); font-size: 13.3px; line-height: 1.6; }
+  .criteria { margin: 0 0 19px; padding: 14px 18px 10px 36px; border-left: 4px solid var(--accent);
+              border-radius: 8px; background: var(--card); color: var(--ink-soft); font-size: 13px; line-height: 1.55; }
+  .criteria li { margin: 0 0 5px; }
+  .criteria b { color: var(--ink); font-weight: 680; }
   .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px;
                 background: var(--card); box-shadow: var(--shadow); }
   table.results { width: 100%; min-width: 680px; border-collapse: collapse; font-variant-numeric: tabular-nums; }
@@ -101,31 +105,23 @@
 
   <section class="doc-section" id="binding-affinity">
     <h2 class="section-head"><span class="sec-num">1</span>Binding affinity</h2>
-    <p class="section-intro">Held-out affinity evaluation on CASF-2016 and the 2019 temporal set.</p>
-
-    <section class="block" id="casf-2016">
-      <h3 class="subsection-head"><span class="sub-lab">1.1</span>CASF-2016</h3>
-      <p class="table-sub">Compare clean and overlap-affected cohorts with one matched evaluation pipeline.</p>
-      <div class="table-wrap">
-        <table class="results">
-          <thead><tr><th class="col-method">Method</th><th>Cohort</th><th>N</th><th>Pearson r</th><th>Spearman ρ</th><th>RMSE</th></tr></thead>
-          <tbody>
-            <tr><td class="col-method placeholder">Method</td><td>Clean</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td></tr>
-            <tr><td class="col-method placeholder">Method</td><td>Overlap check</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
+    <p class="section-intro">Held-out affinity evaluation on the CASF-2019 temporal set.</p>
 
     <section class="block" id="casf-2019">
-      <h3 class="subsection-head"><span class="sub-lab">1.2</span>CASF-2019 / temporal holdout</h3>
-      <p class="table-sub">Use the common-complex cohort for direct method comparison; report larger cohorts separately.</p>
+      <h3 class="subsection-head"><span class="sub-lab">1.1</span>CASF-2019 / temporal holdout</h3>
+      <p class="table-sub">Select one identical 444-complex cohort for direct comparison across full-coverage methods.</p>
+      <ul class="criteria">
+        <li><b>Temporal:</b> PDBbind complexes deposited in 2019 or later with Kd/Ki labels.</li>
+        <li><b>Downstream-clean:</b> exclude <code>lp_edrscc_v2</code> train/val members.</li>
+        <li><b>Pretraining-clean:</b> exclude PLINDER-v2 SSL pretraining overlap.</li>
+        <li><b>Input-ready:</b> require a valid electron-density crop.</li>
+        <li><b>Matched cohort:</b> intersect predictions from methods covering at least 400 density-ready complexes → <b>N = 444</b>.</li>
+      </ul>
       <div class="table-wrap">
         <table class="results">
           <thead><tr><th class="col-method">Method</th><th>Cohort</th><th>N</th><th>Pearson r</th><th>Spearman ρ</th><th>RMSE</th></tr></thead>
           <tbody>
-            <tr><td class="col-method placeholder">Method</td><td>Common set</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td></tr>
-            <tr><td class="col-method placeholder">Method</td><td>Available set</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td></tr>
+            <tr><td class="col-method placeholder">Method</td><td>Common ED set</td><td>444</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td></tr>
           </tbody>
         </table>
       </div>
