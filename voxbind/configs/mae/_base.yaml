@@ -10,6 +10,11 @@ block_size: 8
 mask_ratio: 0.6
 mask_strategy: atom_biased
 mask_atom_tau: 1.0
+# Variable mask-ratio (R2MAE): if BOTH set and max>min, each training batch draws
+# r ~ U[min,max] instead of the fixed mask_ratio (train-only; val stays fixed).
+# null = disabled → identical to fixed mask_ratio.
+mask_ratio_min: null
+mask_ratio_max: null
 density_channel_weight: 0.1
 gradmag_channel_weight: 0.1
 density_weight_warmup_epochs: 0

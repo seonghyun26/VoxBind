@@ -9,6 +9,7 @@ data_file: data_train.pt       # train/val source tuples; test always uses data_
 crops_dir: ${oc.env:VOXBIND_DATA_ROOT,dataset/data}/pretrain/xray_crops_aligned_v5
 ccp4_dir: ${oc.env:VOXBIND_DATA_ROOT,dataset/data}/ccp4
 resample_dir: ''               # "" → frozen-crops path (no on-the-fly resample)
+in_vocab_only: false           # true → v2.2: drop out-of-vocab-ligand complexes at load time
 ligand_radius: -1              # element-wise vdW radii (lig + poc) — "ligvdw"
 pocket_radius: -1
 use_xray: true

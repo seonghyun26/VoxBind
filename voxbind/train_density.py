@@ -169,6 +169,8 @@ class MAEPrefetcher:
         mask_strategy: str = "uniform",
         mask_atom_tau: float = 1.0,
         mask_n_seeds: int = 4,
+        mask_ratio_min: float = None,
+        mask_ratio_max: float = None,
         modal_mask_prob: float = 0.0,
         density_visible: bool = False,
         lig_mask_thresh: float = 0.1,
@@ -209,6 +211,17 @@ class MAEPrefetcher:
         self.sigma_noise = sigma_noise
         self.block_size = block_size
         self.mask_ratio = mask_ratio
+        # Optional variable mask-ratio (R2MAE): if both bounds are set and max>min, each
+        # training batch draws r ~ U[min,max] instead of the fixed mask_ratio (see forward).
+        self.mask_ratio_min = mask_ratio_min
+        self.mask_ratio_max = mask_ratio_max
+        self._var_ratio = (
+            mask_ratio_min is not None and mask_ratio_max is not None
+            and float(mask_ratio_max) > float(mask_ratio_min)
+        )
+        if self._var_ratio:
+            print(f">> [MAEPrefetcher] VARIABLE mask_ratio ~ U[{mask_ratio_min}, {mask_ratio_max}] "
+                  f"(per-batch, train-only); fixed fallback = {mask_ratio}", flush=True)
         self.generator = generator
         self.pretext_style = pretext_style
         self.corruption_ops = tuple(corruption_ops)
@@ -390,14 +403,25 @@ class MAEPrefetcher:
 
                 B = x_clean.shape[0]
                 G = x_clean.shape[-1]
+                # Variable mask-ratio (R2MAE-style): when a [min,max] range is configured,
+                # draw a fresh r ~ U[min,max] PER BATCH so one encoder is trained across a
+                # spread of masking difficulty — a cheap single-model analog of a mask-ratio
+                # ensemble. TRAIN-ONLY: val uses a fixed ratio in evaluate(), so val loss
+                # stays comparable across epochs. Falls back to the fixed self.mask_ratio.
+                if self._var_ratio:
+                    _gdev = self.generator.device if self.generator is not None else device
+                    _u = torch.rand((), device=_gdev, generator=self.generator).item()
+                    ratio = self.mask_ratio_min + (self.mask_ratio_max - self.mask_ratio_min) * _u
+                else:
+                    ratio = self.mask_ratio
                 if self.mask_strategy == "atom_biased":
                     mask = make_atom_biased_block_mask(
-                        atoms_sum, self.block_size, self.mask_ratio,
+                        atoms_sum, self.block_size, ratio,
                         tau=self.mask_atom_tau, generator=self.generator,
                     )
                 elif self.mask_strategy == "cluster":
                     mask = make_cluster_mask(
-                        atoms_sum, self.block_size, self.mask_ratio,
+                        atoms_sum, self.block_size, ratio,
                         n_seeds=self.mask_n_seeds, generator=self.generator,
                     )
                 elif self.mask_strategy == "ligand":
@@ -407,7 +431,7 @@ class MAEPrefetcher:
                     # mirrors the de-novo placement task. Small mask_ratio ≈ ligand footprint.
                     lig_sum = v_lig.sum(dim=1, keepdim=True)
                     mask = make_atom_biased_block_mask(
-                        lig_sum, self.block_size, self.mask_ratio,
+                        lig_sum, self.block_size, ratio,
                         tau=self.mask_atom_tau, generator=self.generator,
                     )
                 elif self.mask_strategy == "interface":
@@ -415,11 +439,11 @@ class MAEPrefetcher:
                     # reconstruct it from its surroundings → learn interaction structure.
                     mask = make_interface_mask(
                         v_lig.sum(dim=1, keepdim=True), v_poc.sum(dim=1, keepdim=True),
-                        self.block_size, self.mask_ratio,
+                        self.block_size, ratio,
                         tau=self.mask_atom_tau, generator=self.generator,
                     )
                 else:
-                    mask = make_block_mask(B, G, self.block_size, self.mask_ratio, device)
+                    mask = make_block_mask(B, G, self.block_size, ratio, device)
                 # mask: (B, 1, G, G, G) — broadcasts across all input channels
 
                 # apo augmentation (opt-in): for a random `apo_prob` fraction of samples, DELETE
@@ -490,7 +514,7 @@ class MAEPrefetcher:
                     # the SAME complex → the augmentation pair for the InfoNCE aux loss. The
                     # encoder is pulled to map both maskings of a complex to the same vector.
                     if self.contrastive:
-                        mask_b = make_block_mask(B, G, self.block_size, self.mask_ratio, device)
+                        mask_b = make_block_mask(B, G, self.block_size, ratio, device)
                         x_in_b = x_noisy[:, :n_in_enc] * (~mask_b).to(x_noisy.dtype)
                 elif self.pretext_style == "denoise":
                     # Recovery-from-noise: the FULL noised input (no masking); the recon
@@ -1774,6 +1798,8 @@ def run(cfg: DictConfig, method: str) -> None:
             mask_strategy=str(cfg.mae.get("mask_strategy", "uniform")),
             mask_atom_tau=float(cfg.mae.get("mask_atom_tau", 1.0)),
             mask_n_seeds=int(cfg.mae.get("mask_n_seeds", 4)),
+            mask_ratio_min=cfg.mae.get("mask_ratio_min", None),
+            mask_ratio_max=cfg.mae.get("mask_ratio_max", None),
             modal_mask_prob=float(cfg.mae.get("modal_mask_prob", 0.0)),
             density_visible=bool(cfg.mae.get("density_visible", False)),
             lig_mask_thresh=float(cfg.mae.get("lig_mask_thresh", 0.1)),

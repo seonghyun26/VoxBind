@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>VoxBind — dataset versions and frozen v4 corpus</title>
+<title>VoxBind — density-pretrain dataset versions</title>
 <style>
   :root {
     --ink:#1c2433; --ink-soft:#5b6678; --line:#e3e7ee; --line-strong:#aeb6c4;
@@ -37,6 +37,7 @@
     color:var(--ink-soft); font-weight:700; padding:7px 12px; border-top:2px solid var(--line-strong); }
   .v1 { color:#1a7f37; font-weight:600; } .v2 { color:#bc4c00; font-weight:600; } .v21 { color:#2b5fd0; font-weight:600; }
   .v22 { color:#8e44ad; font-weight:600; } .v4 { color:#0b7285; font-weight:650; }
+  .v2p2 { color:#b5179e; font-weight:600; }
   .yes { color:var(--good); font-weight:600; } .no { color:var(--bad); } .mut { color:var(--ink-soft); font-size:12.5px; }
   td.best { background:var(--best-bg); } td.best .val, td.best b { color:#1d5a3a; }
   .metric .val { font-weight:560; } .metric .sd { color:#9aa3b2; font-size:10.5px; }
@@ -56,49 +57,61 @@
 
 <header class="doc">
   <div class="date">2026 · 08 · 01 — Datasets</div>
-  <h1>Density-pretrain dataset versions and frozen v4 corpus</h1>
+  <h1>Density-pretrain dataset versions</h1>
   <p class="lead">Ligand-matched X-ray electron-density corpora for VoxBind MAE pretraining. Frozen affinity probe on
     <code>lp_edrscc_v2</code> (Kd/Ki; 3850/817/1320); all metrics = 3 probe seeds (Pearson&nbsp;r / Spearman&nbsp;&rho; / RMSE).
-    <span class="v4">v4</span> extends the corpus with independently trainable apo pocket states from PLINDER first,
-    then AHoJ, while retaining apo&ndash;holo correspondence as optional metadata.</p>
+    <span class="mut">The v4 apo/holo pocket-state corpus &mdash; built + trained but below champion, parked &mdash; is in
+    <a href="#appendix-v4">Appendix&nbsp;A</a>.</span></p>
 </header>
 
 <div class="doc-section">
   <h2 class="section-head"><span class="sec-num">1</span> Dataset versions &mdash; size &amp; recipe</h2>
   <section class="block">
-    <p class="table-title">Table 1 &nbsp;&middot;&nbsp; Dataset generations (v4 accepted and training-ready)</p>
-    <p class="table-sub">v1 = curated · v2 = max-coverage · v2.1 = curated at scale · <span class="v22">v3</span> =
-      density-pose-diverse holo · <span class="v4">v4</span> = leakage-safe experimental apo + holo pocket states.
-      Counts are frozen from the accepted local-density build; alternative-holo expansion remains deferred.</p>
+    <p class="table-title">Table 1 &nbsp;&middot;&nbsp; Dataset generations</p>
+    <p class="table-sub">v1 = curated · v2 = max-coverage · <span class="v21">v2.1</span> = curated at scale ·
+      <span class="v2p2">v2.2</span> = v2 in-vocab-only (7-element ligand vocab, out-of-vocab complexes dropped) ·
+      <span class="v22">v3</span> = density-pose-diverse holo. Counts are frozen from the local-density build.
+      The v4 apo/holo pocket-state corpus is in <a href="#appendix-v4">Appendix&nbsp;A</a>.</p>
     <div class="table-wrap">
     <table class="results">
       <thead><tr>
         <th class="col-method">property</th><th class="v1">v1</th><th class="v2">v2</th><th class="v21">v2.1 (clean)</th>
-        <th class="v22">v3</th><th class="v4">v4 (frozen)</th>
+        <th class="v2p2">v2.2 (in-vocab)</th><th class="v22">v3</th>
       </tr></thead>
       <tbody>
         <tr class="grp-label"><td colspan="6">Size &amp; composition</td></tr>
-        <tr><td class="col-method">data file</td><td class="mut">plinder.pt</td><td class="mut">…_v2_perelem.pt</td><td class="mut">…_v2p1_perelem.pt</td><td class="mut">…_v3_perelem.pt</td><td><code>data_train_plinder_v4_perelem.pt</code><div class="mut">legacy tuples + manifest + pair edges; shared CCP4 cache</div></td></tr>
-        <tr><td class="col-method">tuples / pocket states</td><td>17,720</td><td>113,874</td><td>37,859</td><td>71,694</td><td><b>89,922</b><div class="mut">72,409 holo · 17,513 apo; loader: 11,417 train + 100 val after cluster cap</div></td></tr>
-        <tr><td class="col-method">unique PDB</td><td>17,720</td><td>41,806</td><td>34,294</td><td>40,007</td><td><b>39,959</b><div class="mut">39,933 with holo · 11,507 with apo; maps shared across pockets</div></td></tr>
-        <tr><td class="col-method">unique chemotypes (CCD)</td><td class="mut">~13k</td><td>21,669</td><td>18,478</td><td>20,983</td><td>20,983 holo base<div class="mut">apo is ligand-free, not a new chemotype</div></td></tr>
-        <tr><td class="col-method">pocket states</td><td colspan="4">holo only</td><td><b>apo + holo</b><div class="mut">pairing optional; state always retained; holo_alt deferred</div></td></tr>
-        <tr><td class="col-method">intent</td><td>curated</td><td>max-coverage</td><td>curated @ scale</td><td>pose-diverse clean</td><td>experimental pocket-state representation learning</td></tr>
+        <tr><td class="col-method">data file</td><td class="mut">plinder.pt</td><td class="mut">…_v2_perelem.pt</td><td class="mut">…_v2p1_perelem.pt</td><td class="mut">…_v2p1_atomblob7.pt</td><td class="mut">…_v3_perelem.pt</td></tr>
+        <tr><td class="col-method">tuples / pocket states</td><td>17,720</td><td>113,874</td><td>37,859</td><td>108,165</td><td>71,694</td></tr>
+        <tr><td class="col-method">unique PDB</td><td>17,720</td><td>41,806</td><td>34,294</td><td>39,931</td><td>40,007</td></tr>
+        <tr><td class="col-method">unique chemotypes (CCD)</td><td class="mut">~13k</td><td>21,669</td><td>18,478</td><td>20,278</td><td>20,983</td></tr>
+        <tr><td class="col-method">pocket states</td><td colspan="5">holo only</td></tr>
+        <tr><td class="col-method">intent</td><td>curated</td><td>max-coverage</td><td>curated @ scale</td><td>clean 7-vocab (no 8th ch)</td><td>pose-diverse clean</td></tr>
         <tr class="grp-label"><td colspan="6">Selection recipe</td></tr>
-        <tr><td class="col-method">ligand RSCC &ge; 0.8</td><td class="yes">yes</td><td class="yes">yes</td><td class="yes">yes</td><td class="yes">yes</td><td>holo: yes<div class="mut">apo: not applicable</div></td></tr>
-        <tr><td class="col-method"><b>pocket</b> RSCC &ge; 0.8</td><td class="no">no</td><td class="no">no</td><td class="yes">yes</td><td class="yes">yes</td><td>holo: yes<div class="mut">apo: atom-density coverage gate</div></td></tr>
-        <tr><td class="col-method">resolution cap</td><td class="yes">&le; 2.5 &Aring;</td><td class="no">none</td><td class="yes">&le; 2.5 &Aring;</td><td class="yes">&le; 3.0 &Aring;</td><td>holo &le; 3.0 &Aring;<div class="mut">apo candidates &le; 2.5 &Aring;</div></td></tr>
-        <tr><td class="col-method">dedup</td><td>by PDB<div class="mut">1 lig / structure</div></td><td class="no">none<div class="mut">all copies kept</div></td><td>by PDB+CCD<div class="mut">1 / (struct, ligand)</div></td><td class="v22">density-pose<div class="mut">&tau; 0.85 · keep distinct poses</div></td><td><code>PDB + canonical pocket residues</code><div class="mut">cross-source; state/conformation preserved</div></td></tr>
-        <tr><td class="col-method">multi-ligand / structure</td><td class="no">no (single)</td><td class="yes">yes</td><td class="yes">yes</td><td class="yes">yes</td><td class="yes">multiple physical pockets retained</td></tr>
-        <tr><td class="col-method">split / leakage unit</td><td>train only</td><td>PLINDER row</td><td>PLINDER row</td><td>PLINDER row</td><td><b>merged pocket component</b><div class="mut">apo/holo pairs + exact UniProt + PDB + MMS co-assigned</div></td></tr>
-        <tr><td class="col-method">protected downstream PDB</td><td colspan="4" class="mut">not propagated through pocket components</td><td>2,293 IDs<div class="mut">1,477 test · 816 validation</div></td></tr>
-        <tr><td class="col-method">element vocab</td><td>in-vocab only<div class="mut">7 lig elements</div></td><td>+ &ldquo;other&rdquo;<div class="mut">Br/I/B/Se/metal</div></td><td>+ &ldquo;other&rdquo;</td><td>+ &ldquo;other&rdquo;</td><td>same holo vocab<div class="mut">apo emits zero ligand atoms</div></td></tr>
-        <tr><td class="col-method">canonical pocket / grid</td><td colspan="4" class="mut">ligand-centred crop</td><td>protein heavy atoms &le; 10 &Aring;<div class="mut">64<sup>3</sup> · 0.25 &Aring;/voxel · 16 &Aring; cube</div></td></tr>
-        <tr><td class="col-method">density provenance</td><td colspan="4" class="mut">holo crystal map</td><td>same experimental PDB as coordinates<div class="mut">paired crystals superposed into one local frame</div></td></tr>
-        <tr><td class="col-method">heavy atoms</td><td colspan="4" class="mut">6 &ndash; 50 ligand heavy atoms · no covalent</td><td>holo: 6 &ndash; 50<div class="mut">apo: no ligand requirement</div></td></tr>
-        <tr><td class="col-method">current build status</td><td colspan="4" class="yes">frozen corpora</td><td class="yes"><b>accepted · training-ready</b><div class="mut">17,657 pair edges; A1&ndash;A5 and MMS leakage checks: 0 violations</div></td></tr>
+        <tr><td class="col-method">ligand RSCC &ge; 0.8</td><td class="yes">yes</td><td class="yes">yes</td><td class="yes">yes</td><td class="yes">yes</td><td class="yes">yes</td></tr>
+        <tr><td class="col-method"><b>pocket</b> RSCC &ge; 0.8</td><td class="no">no</td><td class="no">no</td><td class="yes">yes</td><td class="no">no</td><td class="yes">yes</td></tr>
+        <tr><td class="col-method">resolution cap</td><td class="yes">&le; 2.5 &Aring;</td><td class="no">none</td><td class="yes">&le; 2.5 &Aring;</td><td class="no">none</td><td class="yes">&le; 3.0 &Aring;</td></tr>
+        <tr><td class="col-method">dedup</td><td>by PDB<div class="mut">1 lig / structure</div></td><td class="no">none<div class="mut">all copies kept</div></td><td>by PDB+CCD<div class="mut">1 / (struct, ligand)</div></td><td class="no">none<div class="mut">inherits v2</div></td><td class="v22">density-pose<div class="mut">&tau; 0.85 · keep distinct poses</div></td></tr>
+        <tr><td class="col-method">multi-ligand / structure</td><td class="no">no (single)</td><td class="yes">yes</td><td class="yes">yes</td><td class="yes">yes</td><td class="yes">yes</td></tr>
+        <tr><td class="col-method">split / leakage unit</td><td>train only</td><td>PLINDER row</td><td>PLINDER row</td><td>PLINDER row</td><td>PLINDER row</td></tr>
+        <tr><td class="col-method">element vocab</td><td>in-vocab only<div class="mut">7 lig elements</div></td><td>+ &ldquo;other&rdquo;<div class="mut">Br/I/B/Se/metal</div></td><td>+ &ldquo;other&rdquo;</td><td class="v2p2"><b>in-vocab only</b><div class="mut">7 lig elem · drop 5,709 OOV complexes</div></td><td>+ &ldquo;other&rdquo;</td></tr>
+        <tr><td class="col-method">canonical pocket / grid</td><td colspan="5" class="mut">ligand-centred crop · 64<sup>3</sup> · 0.25 &Aring;/voxel · 16 &Aring; cube</td></tr>
+        <tr><td class="col-method">density provenance</td><td colspan="5" class="mut">holo crystal map</td></tr>
+        <tr><td class="col-method">heavy atoms</td><td colspan="5" class="mut">6 &ndash; 50 ligand heavy atoms · no covalent</td></tr>
+        <tr><td class="col-method">current build status</td><td colspan="3" class="yes">frozen corpora</td><td class="mut">built on irteam<div class="mut">local rebuild: <code>04c_build_v2p1_atomblob7.py</code></div></td><td class="yes">frozen</td></tr>
       </tbody>
     </table>
+    </div>
+    <div class="notes">
+      <b><span class="v2p2">v2.2</span> = v2, minus the ~5% of complexes whose ligand carries an out-of-vocab heavy atom</b>
+      (Br/I/B/Se/metal). It differs from v2 on <i>one</i> axis only &mdash; element vocab &mdash; so the 7-element ligand
+      channels (C/O/N/S/F/Cl/P) carry every atom and <b>no 8th &ldquo;other&rdquo; channel is needed</b>. This is the clean
+      counterpart to how the running v2 jobs already train: with <code>n_lig_ch=7</code> the loader
+      (<code>crossdocked_density_box.py:122</code>, <code>atoms_channel &lt; 7</code>) <b>drops the out-of-vocab atom from
+      the input but leaves it in the density target</b> &mdash; a 5,709-complex input/target mismatch that v2.2 removes by
+      excluding those complexes outright. <b>Cost is negligible:</b> atomblob7 (v2.2, 7-ch) &rho;&nbsp;0.617 vs atomblob8
+      (full v2, 8-ch) &rho;&nbsp;0.624 &mdash; within ~1&sigma; (see &sect;3). NB: the on-disk tuple file is named
+      <code>…_v2p1_atomblob7.pt</code> (a legacy label); it is <i>not</i> the clean-recipe <span class="v21">v2.1</span>
+      (37,859) &mdash; the two share a name prefix but are different corpora.
     </div>
     <div class="notes">
       <b>dedup vs multi-ligand are orthogonal.</b> <b>multi-ligand</b> keeps <i>different</i> ligands from one structure
@@ -143,109 +156,7 @@
 </div>
 
 <div class="doc-section">
-  <h2 class="section-head"><span class="sec-num">3</span> <span class="v4">Frozen v4</span> &mdash; independent pocket states, optional pairs</h2>
-
-  <section class="block">
-    <p class="table-title">Table 2 &nbsp;&middot;&nbsp; frozen v4 source funnel and training materialization</p>
-    <p class="table-sub">Counts below are from the accepted 2026-08-01 local-density build. A data point is one experimentally observed
-      <b>structure &times; physical pocket &times; state</b>.
-      Different pockets in the same PDB and genuine alternative apo conformations are retained.</p>
-    <div class="table-wrap">
-    <table class="results">
-      <thead><tr>
-        <th class="col-method">source / stage</th><th>pocket-state candidates</th><th>unique density maps</th><th>new disk</th>
-      </tr></thead>
-      <tbody>
-        <tr><td class="col-method">PLINDER v3 holo base</td><td>70,923 passed exact canonicalization<div class="mut">70,780 retained after cross-source / logical-pocket dedup</div></td><td>39,888 retained PDB</td><td class="yes">shared maps already local</td></tr>
-        <tr><td class="col-method"><span class="v4">PLINDER linked apo</span></td><td>2,403 built before merged dedup<div class="mut">1,456 retained pocket states</div></td><td>219 retained apo PDB</td><td class="yes">shared maps already local</td></tr>
-        <tr><td class="col-method"><span class="v4">AHoJ v2c local gate</span></td><td>20,459 validated apo&ndash;holo pairs<div class="mut">17,686 exclusive rows retained + 2,303 rows marked both</div></td><td>11,452 validated apo PDB<div class="mut">16,057 apo + 1,629 query-holo exclusive rows after dedup</div></td><td>37.42 GiB source archive<div class="mut">candidate tuples reuse the shared map cache</div></td></tr>
-        <tr><td class="col-method">accepted merged corpus</td><td><b>89,922 pocket states</b><div class="mut">72,349 canonical pockets · 17,657 pair edges</div></td><td><b>39,959 experimental maps</b><div class="mut">one CCP4 per PDB, never one copy per pocket</div></td><td class="yes">A1&ndash;A5 pass</td></tr>
-        <tr><td class="col-method">leakage-safe split</td><td>12,675 train · 2,781 val · 74,466 test<div class="mut">1,645 / 115 / 254 disjoint merged clusters</div></td><td>protected set: 1,477 test + 816 val PDB IDs</td><td class="yes">cluster intersections = 0</td></tr>
-        <tr><td class="col-method">materialized legacy loader</td><td><b>11,417 train + 100 val</b><div class="mut">128-sample per-cluster cap; exact positional manifest</div></td><td>all 11,517 rows density-available</td><td>85 MiB tuple file<div class="mut">24 MiB manifest</div></td></tr>
-      </tbody>
-    </table>
-    </div>
-    <div class="notes">
-      <b>Capacity gate.</b> The official <a href="https://apoholo.cz/db/archive">AHoJ v2c</a> archive
-      (40,181,598,291 bytes; 37.42&nbsp;GiB) was downloaded once with size + MD5 verification. Its nested archive was
-      not expanded wholesale: relationship metadata was streamed to compact Parquet and only candidates with local
-      deposited coordinates plus an experimental map entered the build. The frozen corpus references the shared
-      <code>dataset/data/ccp4</code> cache, so multiple pockets from one PDB do not duplicate the map on disk.
-    </div>
-  </section>
-
-  <section class="block" style="margin-top:34px">
-    <p class="table-title">v4 storage model</p>
-    <div class="card">
-      <p><code>samples</code> &mdash; one unique apo or holo pocket state. Required fields:
-        <code>sample_id</code>, <code>source</code>, <code>state</code>, <code>pdb_id</code>,
-        chain/model identifiers, canonical pocket ID, pocket residues/atoms, crop centre, density-file ID,
-        experimental method/resolution, and quality flags. Holo samples carry their real ligand; apo samples set
-        <code>ligand_present=false</code> and emit zero ligand atoms.</p>
-      <p><code>pair_edges</code> &mdash; optional relationships, not required training records. Each edge stores
-        <code>sample_id_a</code>, <code>sample_id_b</code>, relation/source IDs, pocket RMSD, the rigid
-        <code>R_a_to_b</code>/<code>t_a_to_b</code> alignment, final split, and canonical pocket ID. One sample may
-        participate in many edges.</p>
-      <p><code>density_files</code> &mdash; one record per deposited experimental map. Many pocket samples may reference
-        the same map, so full CCP4 data are never copied per pocket.</p>
-    </div>
-  </section>
-
-  <section class="block" style="margin-top:34px">
-    <p class="table-title">Canonical pocket rule</p>
-    <div class="notes">
-      <ul>
-        <li><b>Use the VoxBind definition.</b> A canonical holo pocket contains every protein heavy atom whose nearest
-          holo-ligand heavy atom is within <b>10&nbsp;&Aring;</b>. Transfer that identity to the mapped apo partner; never
-          substitute AHoJ's native 4.5&nbsp;&Aring; definition.</li>
-        <li><b>Keep the model-facing VoxBind grid.</b> Resample each structure's own experimental map to a
-          <b>64<sup>3</sup> grid at 0.25&nbsp;&Aring;/voxel</b> (16&nbsp;&Aring; cube). For paired states, first
-          superpose the transferred pocket atoms and then sample both crystals in the same local frame; shared voxel
-          indices are never assumed from the deposited unit cells.</li>
-        <li><b>Do not collapse by PDB.</b> Keep spatially distinct pockets from the same structure and keep genuine
-          alternative experimental conformations as future independently identified states.</li>
-        <li><b>Collapse the same physical pocket.</b> Within a deposited structure/chain set, group mappings by mapped
-          residue signature plus the canonical pocket identity; remove symmetry/logical copies while retaining
-          spatially distinct pockets.</li>
-        <li><b>Separate samples from relationships.</b> If several holo queries map to the same apo pocket, store the
-          apo atoms/density once and attach several <code>pair_edges</code>.</li>
-        <li><b>Preserve source-state density.</b> Apo coordinates use the apo PDB map; holo coordinates and ligand use
-          the holo PDB map. Never transfer a holo map into an apo sample. Non-protein solvent/ions can still contribute
-          to the experimental density; a visualization-only dry mask is never training data.</li>
-      </ul>
-    </div>
-  </section>
-
-  <section class="block" style="margin-top:34px">
-    <p class="table-title">Frozen implementation</p>
-    <div class="card">
-      <p><b>0 &middot; Freeze inputs.</b> Pin the v3 holo selection, PLINDER release/link hashes, AHoJ v2c archive
-        size/checksum, PDBe retrieval date, thresholds, and downstream leakage exclusions in a v4 manifest.
-        The protected set contains affinity val/test PDBs plus both receptor and ligand-source PDBs from
-        CrossDocked2020 test.</p>
-      <p><b>1 &middot; PLINDER apo first.</b> Intersect linked apo structures with v3; require X-ray apo resolution
-        &le;&nbsp;2.5&nbsp;&Aring;, pocket identity &ge;&nbsp;99%, pocket lDDT &ge;&nbsp;80%, complete single-chain mapping,
-        deposited apo coordinates, and a non-empty apo CCP4 map. Retain all valid pocket-state links initially.</p>
-      <p><b>2 &middot; Validate and canonicalize.</b> Align mapped pocket residues, reject failed/low-identity fits,
-        empty or oversized crops, weak/invalid density and nearby organic ligands, then collapse only duplicate
-        physical apo pockets. Write independent PLINDER state samples plus optional pair edges.</p>
-      <p><b>3 &middot; Reuse shared maps.</b> Point every state to the canonical CCP4 cache and never materialize one map
-        copy per pocket.</p>
-      <p><b>4 &middot; AHoJ metadata second.</b> Stream the official v2c archive without wholesale extraction; require exact
-        query-ligand and apo-pocket correspondence and deduplicate against PLINDER. Alternative-holo relations remain
-        metadata-only until target-ligand identity can be resolved without ambiguity.</p>
-      <p><b>5 &middot; Gate selected AHoJ experiments.</b> Admit only selected structures with local original mmCIF + CCP4
-        data, repeat the same geometry and experimental-density validation, and append independent samples plus edges.</p>
-      <p><b>6 &middot; Split and freeze.</b> Seed with PLINDER
-        <code>pocket_fident__50__weak__component</code>, propagate the protected PDBs, and union exact UniProt,
-        shared-PDB, apo&ndash;holo, interface, and official PLINDER MMS relationships. Unanchored AHoJ pockets are excluded
-        from this frozen build. Resolve collisions as test &gt; validation &gt; train and require A1&ndash;A5 in acceptance.</p>
-    </div>
-  </section>
-</div>
-
-<div class="doc-section">
-  <h2 class="section-head"><span class="sec-num">4</span> Probe results per version</h2>
+  <h2 class="section-head"><span class="sec-num">3</span> Probe results per version</h2>
   <section class="block">
     <p class="table-title">Table 3 &nbsp;&middot;&nbsp; C+D+G ChannelViT [7,4,2] &mdash; <code>lp_edrscc_v2</code></p>
     <div class="table-wrap">
@@ -262,9 +173,17 @@
         <tr><td class="col-method mut">&nbsp;&nbsp;&#8627; best seed</td><td class="mut">0.660</td><td class="mut">0.641</td><td class="mut">1.350</td></tr>
         <tr><td class="col-method"><span class="v21">v2.1</span> · 100M · mask0.75 · 50ep</td><td>0.650</td><td>0.632</td><td>1.366</td></tr>
         <tr><td class="col-method"><span class="v22">v3</span> · 100M · mask0.75 · 50ep · +HCS0.15</td><td>0.646</td><td>0.632</td><td>1.389</td></tr>
+        <tr><td class="col-method"><span class="v2p2">v2.2</span> · 45.7M · atomblob7 7-ch · [7,4,1,1]</td><td>0.637<div class="mut">±0.010</div></td><td>0.617<div class="mut">±0.006</div></td><td class="mut">&mdash;</td></tr>
+        <tr><td class="col-method mut">&nbsp;&nbsp;&#8627; atomblob8 (v2 full, 8-ch) &mdash; keeps the &ldquo;other&rdquo; channel</td><td class="mut">&mdash;</td><td class="mut">0.624</td><td class="mut">&mdash;</td></tr>
       </tbody>
     </table>
     </div>
+    <div class="notes"><b>The 8th &ldquo;other&rdquo; channel barely matters:</b> atomblob8 (full v2, 8-ch) &rho;&nbsp;0.624 vs
+      <span class="v2p2">v2.2</span> atomblob7 (clean 107k, 7-ch) &rho;&nbsp;0.617 &mdash; <b>+0.008&nbsp;&rho;, within ~1&sigma;</b>.
+      And this &Delta; conflates two changes at once (the 8th channel <i>and</i> 5% more complexes), so modelling the rare
+      out-of-vocab atoms at all buys essentially nothing. For scale &mdash; going element &rarr; role-occupancy costs
+      &minus;0.065&nbsp;&rho; &mdash; the vocab/8th-channel question is a rounding error next to the atom-encoding choice.
+      (atomblob7/8 rows are [7,4,1,1] 45.7M; &rho;/r only, from <code>results_h200.html</code>.)</div>
   </section>
 
   <section class="block" style="margin-top:34px">
@@ -288,7 +207,7 @@
 </div>
 
 <div class="doc-section">
-  <h2 class="section-head"><span class="sec-num">5</span> Takeaways</h2>
+  <h2 class="section-head"><span class="sec-num">4</span> Takeaways</h2>
   <div class="notes">
     <ul>
       <li><b>Canonical best (results.html Table 1) = C+D+G, pretrained on <span class="v1">PLINDER v1</span></b> &mdash;
@@ -307,7 +226,7 @@
 </div>
 
 <div class="doc-section">
-  <h2 class="section-head"><span class="sec-num">6</span> Data acquisition &amp; preprocessing pipeline</h2>
+  <h2 class="section-head"><span class="sec-num">5</span> Data acquisition &amp; preprocessing pipeline</h2>
   <p class="table-sub">How a PLINDER entry travels from PDBe to the training loop &mdash; five stages under
     <code>voxbind/dataset/plinder/</code>, every artifact landing in <code>voxbind/dataset/data/</code> (git-ignored).
     The mFo-DFc difference-map channel (added 2026&#8209;08&#8209;01) mirrors the same stages in parallel <code>_diff</code> dirs.</p>
@@ -363,7 +282,7 @@
     <table class="results">
       <thead><tr><th class="col-method">artifact</th><th>size</th><th>tier</th><th>note</th></tr></thead>
       <tbody>
-        <tr><td class="col-method"><code>ccp4/</code> raw 2Fo-Fc maps</td><td>228 G</td><td class="mut">cold (build input)</td><td class="mut">shared across v2/v3/v4; read only to build boxes</td></tr>
+        <tr><td class="col-method"><code>ccp4/</code> raw 2Fo-Fc maps</td><td>228 G</td><td class="mut">cold (build input)</td><td class="mut">shared across v2/v3; read only to build boxes</td></tr>
         <tr><td class="col-method"><code>cif/</code> deposited models</td><td>46 G</td><td class="mut">cold (build input)</td><td class="mut">read only to build tuples</td></tr>
         <tr><td class="col-method"><code>&hellip;_perelem/box116.dat</code> &times;N</td><td>176 G each</td><td class="yes">hot (train)</td><td class="mut">2Fo-Fc + mFo-DFc = 2 boxes today</td></tr>
         <tr><td class="col-method"><code>data_train_&hellip;_perelem.pt</code></td><td>~1 G</td><td class="yes">hot (train)</td><td class="mut">atom tuples</td></tr>
@@ -386,15 +305,123 @@
           (176 G &rarr; ~99 G/box).</li>
         <li><b>Relative / env-rooted paths</b> &mdash; <code>resample.json</code> hard-codes absolute <code>/home/shpark/&hellip;</code>
           <code>ccp4_dir</code> (cross-server-fragile); a <code>VOXBIND_DATA_ROOT</code> prefix makes the whole tree portable.</li>
-        <li><b>Reuse boxes across versions</b> &mdash; v2/v3/v4 sharing a (PDB, pose) can reference one canonical box row
+        <li><b>Reuse boxes across versions</b> &mdash; v2/v3 sharing a (PDB, pose) can reference one canonical box row
           instead of rebuilding, since maps are already deduplicated in the shared cache.</li>
       </ul>
     </div>
   </section>
 </div>
 
-<p class="foot">VoxBind · experimental-density pretraining · v4 built by
-  <code>dataset/v4/build_ahoj_local.py</code> + <code>build_corpus.py</code> + <code>acceptance.py</code> · legacy tuple
-  layout retained for the existing loader · frozen 2026-08-01.</p>
+<div class="doc-section" id="appendix-v4">
+  <h2 class="section-head"><span class="sec-num" style="background:var(--warn)">A</span>
+    <span class="v4">v4</span> &mdash; independent apo/holo pocket states (parked)</h2>
+
+  <div class="card" style="border-color:#f0d9a8;background:#fff8ec">
+    <p style="color:#7a5a12"><b>Status.</b> v4 was <b>built, trained (3 runs, all 50&nbsp;ep), and probed</b> &mdash; it is
+      not vaporware. But its best affinity probe (apoholo &rho;&nbsp;0.622) sits <b>below the C+D+G champion
+      (&rho;&nbsp;0.644)</b> and even the matched v1/v2 (&rho;&nbsp;0.637), so it never entered <code>results.html</code>
+      or the campaign tracker. Kept here as an archived design + outcome record; <span class="v4">v4</span> is <b>not</b>
+      one of the v1&ndash;v3 generations above. It extends the corpus with independently trainable apo pocket states from
+      PLINDER first, then AHoJ, retaining apo&ndash;holo correspondence as optional metadata.</p>
+  </div>
+
+  <section class="block" style="margin-top:26px">
+    <p class="table-title">Table A1 &nbsp;&middot;&nbsp; frozen v4 source funnel and training materialization</p>
+    <p class="table-sub">Accepted 2026-08-01 local-density build. A data point is one experimentally observed
+      <b>structure &times; physical pocket &times; state</b>; distinct pockets in one PDB and genuine alternative apo
+      conformations are retained.</p>
+    <div class="table-wrap">
+    <table class="results">
+      <thead><tr>
+        <th class="col-method">source / stage</th><th>pocket-state candidates</th><th>unique density maps</th><th>new disk</th>
+      </tr></thead>
+      <tbody>
+        <tr><td class="col-method">PLINDER v3 holo base</td><td>70,923 passed canonicalization<div class="mut">70,780 after cross-source dedup</div></td><td>39,888 PDB</td><td class="yes">maps already local</td></tr>
+        <tr><td class="col-method"><span class="v4">PLINDER linked apo</span></td><td>2,403 built<div class="mut">1,456 retained states</div></td><td>219 apo PDB</td><td class="yes">maps already local</td></tr>
+        <tr><td class="col-method"><span class="v4">AHoJ v2c local gate</span></td><td>20,459 validated apo&ndash;holo pairs<div class="mut">17,686 exclusive rows + 2,303 both</div></td><td>11,452 apo PDB</td><td>37.42 GiB archive</td></tr>
+        <tr><td class="col-method">accepted merged corpus</td><td><b>89,922 pocket states</b><div class="mut">72,349 canonical · 17,657 pair edges</div></td><td><b>39,959 maps</b><div class="mut">one CCP4 per PDB</div></td><td class="yes">A1&ndash;A5 pass</td></tr>
+        <tr><td class="col-method">leakage-safe split</td><td>12,675 train · 2,781 val · 74,466 test<div class="mut">1,645 / 115 / 254 disjoint clusters</div></td><td>protected: 1,477 test + 816 val PDB</td><td class="yes">cluster intersections = 0</td></tr>
+        <tr><td class="col-method">materialized loader</td><td><b>11,417 train + 100 val</b><div class="mut">128-sample per-cluster cap</div></td><td>all 11,517 density-available</td><td>85 MiB tuples<div class="mut">24 MiB manifest</div></td></tr>
+      </tbody>
+    </table>
+    </div>
+  </section>
+
+  <section class="block" style="margin-top:34px">
+    <p class="table-title">Table A2 &nbsp;&middot;&nbsp; v4 probe outcome &mdash; why it was parked</p>
+    <p class="table-sub">Frozen C+D+G encoder pretrained on v4; affinity probe on <code>lp_edrscc_v2</code> (3850/817/1320, 3 seeds mean).</p>
+    <div class="table-wrap">
+    <table class="results">
+      <thead><tr><th class="col-method">encoder / run</th><th>Pearson r</th><th>Spearman &rho;</th><th>RMSE</th></tr></thead>
+      <tbody>
+        <tr><td class="col-method best"><b>C+D+G champion</b> (v2 · 100M · mask0.75) <span class="mut">ref</span></td><td class="best"><b>0.660</b></td><td class="best"><b>0.644</b></td><td class="best"><b>1.349</b></td></tr>
+        <tr><td class="col-method mut">matched v1 / v2 (40M · mask0.5) <span class="mut">ref</span></td><td class="mut">~0.656</td><td class="mut">0.637</td><td class="mut">1.353</td></tr>
+        <tr><td class="col-method"><span class="v4">v4</span> · apoholo (260802_ar_cvit_100m_apoholo_m075)</td><td>0.642</td><td>0.622</td><td>1.378</td></tr>
+        <tr><td class="col-method"><span class="v4">v4</span> · winrecipe (260801_ar_cvit_100m_v4_m075_winrecipe)</td><td>0.589</td><td>0.561</td><td>1.557</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <div class="notes">Three runs trained on v4 to 50&nbsp;ep and probed: <code>winrecipe</code> (&rho;&nbsp;0.561, regressed),
+      <code>apoholo</code> (&rho;&nbsp;0.622, best v4), <code>twotower_pocket</code> (two-tower apo/holo). None beat the
+      champion (0.644) or matched v1/v2 (0.637). <b>NB:</b> the old <code>probe_results_v4.csv</code> (2704/580/1310,
+      &rho;&nbsp;0.26, "dual-head") is a <i>different</i> lineage &mdash; the old CrossDocked density-v4 dual-head, not this
+      PLINDER apo/holo v4.</div>
+  </section>
+
+  <section class="block" style="margin-top:34px">
+    <p class="table-title">v4 storage model</p>
+    <div class="card">
+      <p><code>samples</code> &mdash; one unique apo or holo pocket state (<code>sample_id</code>, <code>source</code>,
+        <code>state</code>, <code>pdb_id</code>, chain/model ids, canonical pocket ID, pocket residues/atoms, crop centre,
+        density-file ID, method/resolution, quality flags). Holo carries its ligand; apo sets
+        <code>ligand_present=false</code> and emits zero ligand atoms.</p>
+      <p><code>pair_edges</code> &mdash; optional relationships (<code>sample_id_a/b</code>, relation/source IDs, pocket RMSD,
+        rigid <code>R_a_to_b</code>/<code>t_a_to_b</code>, split, canonical pocket ID). One sample may join many edges.</p>
+      <p><code>density_files</code> &mdash; one record per deposited map; many pocket samples reference the same map, so CCP4
+        data are never copied per pocket.</p>
+    </div>
+  </section>
+
+  <section class="block" style="margin-top:34px">
+    <p class="table-title">Canonical pocket rule</p>
+    <div class="notes">
+      <ul>
+        <li><b>VoxBind definition.</b> A canonical holo pocket = every protein heavy atom whose nearest holo-ligand heavy
+          atom is within <b>10&nbsp;&Aring;</b>; transfer that identity to the mapped apo partner (never AHoJ's 4.5&nbsp;&Aring;).</li>
+        <li><b>Model-facing grid.</b> Resample each structure's own map to <b>64<sup>3</sup> @ 0.25&nbsp;&Aring;/voxel</b>
+          (16&nbsp;&Aring; cube); for pairs, superpose the transferred pocket atoms then sample both crystals in one frame.</li>
+        <li><b>Do not collapse by PDB;</b> keep spatially distinct pockets and genuine alternative conformations.
+          <b>Collapse the same physical pocket</b> (mapped-residue signature + canonical identity) to drop symmetry copies.</li>
+        <li><b>Separate samples from relationships;</b> store shared apo atoms/density once, attach several
+          <code>pair_edges</code>.</li>
+        <li><b>Preserve source-state density.</b> Apo coords use the apo map; holo coords + ligand use the holo map. Never
+          transfer a holo map into an apo sample.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="block" style="margin-top:34px">
+    <p class="table-title">Artifacts on disk &amp; build</p>
+    <div class="notes">
+      <ul>
+        <li><b>Metadata build</b> &mdash; <code>dataset/data/v4/</code>: <code>manifest.parquet</code>,
+          <code>pair_edges.parquet</code>, <code>canonical_plinder_samples.parquet</code>, <code>ahoj_relations.parquet</code>,
+          <code>build_report.json</code>, <code>coverage_report.md</code> + logs (frozen 2026-08-01).</li>
+        <li><b>Training loader</b> &mdash; <code>dataset/data/pretrain/data_train_plinder_v4_perelem.pt</code> (11,417 train +
+          100 val) + <code>xray_resample_plinder_v4_perelem/</code> (density boxes shared with the base v2 cache).</li>
+        <li><b>Build code</b> &mdash; <code>dataset/v4/build_ahoj_local.py</code> + <code>build_corpus.py</code> +
+          <code>acceptance.py</code>; apo pairs via <code>dataset/plinder/06_build_apo_pairs.py</code>.</li>
+        <li><b>Frozen implementation.</b> Freeze inputs (v3 holo selection, PLINDER/AHoJ hashes, thresholds, downstream
+          leakage exclusions) &rarr; PLINDER apo first (X-ray &le;2.5&nbsp;&Aring;, pocket identity &ge;99%, lDDT &ge;80%)
+          &rarr; validate/canonicalize &rarr; reuse shared maps &rarr; AHoJ metadata second (exact query-ligand + apo-pocket
+          correspondence, dedup vs PLINDER) &rarr; gate selected AHoJ experiments &rarr; split on
+          <code>pocket_fident__50__weak__component</code> with protected PDBs, resolve collisions test&nbsp;&gt;&nbsp;val&nbsp;&gt;&nbsp;train, require A1&ndash;A5.</li>
+      </ul>
+    </div>
+  </section>
+</div>
+
+<p class="foot">VoxBind · experimental-density pretraining · dataset generations v1 &ndash; v3 (+ Appendix&nbsp;A: v4 apo/holo,
+  parked) · frozen local-density build · 2026-08-11.</p>
 
 </div></body></html>

@@ -189,6 +189,7 @@ class DatasetCrossDockedDensity(DatasetCrossDockedXray):
         cache_size: int = 32,
         verbose: bool = False,
         raw_density: bool = False,
+        in_vocab_only: bool = False,
     ):
         # Parent loads tuples + size filter + radius LUTs and the per-worker grid cache.
         # Disable the parent's frozen-crop subset/normalize: we select via the resample
@@ -258,6 +259,18 @@ class DatasetCrossDockedDensity(DatasetCrossDockedXray):
                     f"match (subset_xray_only={subset_xray_only}, n_total={n_total}, split={split})."
                 )
             self._subset_indices = kept
+
+        # v2.2 in-vocab filter: drop complexes whose LIGAND carries an out-of-vocab atom
+        # (atoms_channel >= n_lig_ch). Reuses the SAME tuples + density (index-remapped, NO
+        # rebuild): with n_lig_ch=7 such an atom is dropped from the model INPUT but stays in the
+        # density TARGET, so excluding those complexes removes that input/target mismatch (= v2.2).
+        if in_vocab_only:
+            base = self._subset_indices if self._subset_indices is not None else list(range(n_total))
+            before = len(base)
+            base = [i for i in base if int(self.data[i][1]["atoms_channel"].max()) < n_lig_ch]
+            self._subset_indices = base
+            print(f"[in_vocab_only] v2.2 filter ({split}): {before} -> {len(base)} kept "
+                  f"(dropped {before - len(base)} OOV-ligand complexes)", flush=True)
 
         # Raw-grid LRU (separate from the parent's z-scored .map cache).
         self._raw_grid_cache: OrderedDict = OrderedDict()

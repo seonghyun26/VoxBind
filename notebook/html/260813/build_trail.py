@@ -13,15 +13,24 @@ NOUN = ("lemon grape mango peach melon berry plum lime cherry olive apple pear "
 
 # section, name, what-it-checks, result, css-class-for-result
 EXP = [
-  ("run",  "260813_cdg_100m_v2_g7411", "arch",
-   "<b>Channel separation</b>: density &amp; gradmag as separate ChannelViT groups <b>[7,4,1,1]</b> vs champion's grouped [7,4,2].",
-   "GPU 0-3 · training (chain)", "na"),
+  ("done", "260813_cdg_100m_v2_g7411", "arch",
+   "<b>Channel separation</b>: density &amp; gradmag as separate ChannelViT groups <b>[7,4,1,1]</b> vs champion's grouped [7,4,2]. Trained on v2 (atomblob7 input/target mismatch — clean v2.2 re-run in flight).",
+   "[7,4,1,1] test ρ <b>0.624</b> / val 0.559 &lt; champion [7,4,2] 0.646 (−0.022) — channel separation HURTS", "flat"),
   ("done", "260810_cdg_100m_v2_atommask050", "masking",
    "Does atom-biased masking (ratio 0.5) beat champion at <b>full 100M</b>? (with 46M controls, isolates the idea.)",
    "0.624 / 0.524 — atom-mask HURTS at 100M too", "flat"),
-  ("run",  "260810_cdg_100m_v2_uniflig_vdwpoc", "radius",
-   "<b>Original VoxBind representation</b>: uniform ligand (0.5) + vdW pocket (−1). Isolates the 260603 ligand→vdW gain (vs champion vdW/vdW 0.644 and full-uniform 0.468). Probes on v5 (matched, no build).",
+  ("done", "260810_cdg_100m_v2_uniflig_vdwpoc", "radius",
+   "<b>Original VoxBind representation</b>: uniform ligand (0.5) + vdW pocket (−1). Isolates the 260603 ligand→vdW gain. Uniform-lig voxels cover only 779/1320 test → both re-scored on the matched 779 (<code>test/compare_uniflig_champion.py</code>).",
+   "uniform-lig <b>0.567</b> vs matched champion vdW-lig <b>0.611</b> → <b>vdW-lig +0.044</b> (mask-confounded; ~+0.03 pure) — orig-VoxBind repr worse, confirms 260603 lig→vdW", "flat"),
+  ("run",  "260813_cdg_100m_v2_varmask6090", "masking",
+   "<b>Variable mask-ratio (R2MAE)</b>: ONE champion-recipe encoder that draws <code>r ~ U[0.60,0.90]</code> per batch (train-only; val fixed). Internalises the mask-ratio diversity that helped the v3 ensemble (+0.007) into a single encoder at <b>1× inference cost</b>. New <code>mae.mask_ratio_min/max</code> knobs.",
+   "GPU 0-3 · training", "na"),
+  ("run",  "260813_cdg_100m_v22_g7411", "data",
+   "<b>v2.2 clean [7,4,1,1]</b>: same channel-separation recipe as g7411 but on <b>v2.2</b> (v2 minus 5,709 out-of-vocab-ligand complexes) — fixes the atomblob7 input/target mismatch. Built as a <b>zero-disk load-time filter</b> (<code>dset.in_vocab_only</code>) reusing v2 tuples+density; the 176GB rebuild was impossible (disk 99%).",
    "GPU 4-7 · training", "na"),
+  ("q",    "260813_cdg_100m_v22_varmask6090", "data",
+   "<b>v2.2 variant of #04 varmask</b>: R2MAE (<code>r~U[0.6,0.9]</code>) on v2.2 (in-vocab). Auto-launches on the first free lane via detached <code>scripts/queue_v22varmask.sh</code> (<code>run_varmask.sh --in_vocab</code>).",
+   "queued · first free lane", "na"),
   ("done", "vdw_vs_uniform_matched", "radius",
    "<b>vdW vs uniform atom radius</b>, each probed on <b>matched</b> voxels. vdW keeps physical steric size; uniform blobs lose it.",
    "vdW 0.644 vs uniform 0.468 — <b>vdW ESSENTIAL (+0.176)</b>", "win"),
@@ -31,6 +40,9 @@ EXP = [
   ("done", "ENSEMBLE_x3_mse+corr", "ensemble",
    "Concat champion + v3_m090 + v3_m095 features → one head. Diverse encoders (v2/v3, different masks) are complementary.",
    "0.656 / 0.591 ✓ BEST", "win"),
+  ("done", "v3_maskonly_ensemble_085_090_095", "ensemble",
+   "<b>STRICT mask-ONLY ensemble</b> (v3 {085,090,095}: identical data+arch+uniform mask, ONLY <code>mask_ratio</code> differs — no data confound). Does ensembling 2+ beat each single purely from mask diversity?",
+   "best pair 085+095 <b>0.651</b> &gt; best single 0.644 (<b>+0.007</b>); pairs beat their own members → mask-diversity is a REAL, confound-free gain", "win"),
   ("done", "champion_mse+corr_head", "head",
    "Add a Pearson-correlation aux term to the probe MLP loss (GenScore-style).",
    "0.647 / 0.559 ✓", "win"),
@@ -114,14 +126,15 @@ HTML = f"""<!DOCTYPE html>
  .pill{{font-size:11px;font-weight:800;padding:3px 10px;border-radius:999px;letter-spacing:.04em;}}
  .pill.run{{color:var(--blue);background:var(--blue-bg);}} .pill.q{{color:var(--warn);background:var(--warn-bg);}} .pill.done{{color:var(--green);background:var(--green-bg);}}
  .cnt{{color:var(--ink-faint);font-weight:600;font-size:12px;}}
- table{{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden;box-shadow:var(--shadow);margin-bottom:6px;}}
- th,td{{padding:9px 13px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top;}}
+ table{{width:100%;table-layout:fixed;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden;box-shadow:var(--shadow);margin-bottom:6px;}}
+ th,td{{padding:9px 13px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top;overflow-wrap:anywhere;}}
+ th:nth-child(1),td:nth-child(1){{width:140px;}} th:nth-child(2),td:nth-child(2){{width:172px;}} th:nth-child(4),td:nth-child(4){{width:196px;}}
  th{{background:#f6f8fa;color:var(--ink-faint);font-size:11px;text-transform:uppercase;letter-spacing:.05em;}}
  tbody tr:last-child td{{border-bottom:0;}}
  td.code{{white-space:nowrap;}} .num{{display:inline-block;color:var(--ink-faint);font-weight:700;font-size:11.5px;font-family:ui-monospace,Menlo,monospace;margin-right:7px;}}
  .cn{{display:inline-block;font-weight:700;font-size:12.5px;color:var(--blue);background:var(--blue-bg);padding:1px 8px;border-radius:6px;font-family:ui-monospace,Menlo,monospace;}}
- td.name{{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--ink-soft);white-space:nowrap;}}
- td.what{{color:var(--ink-soft);font-size:13.5px;}} td.res{{font-weight:700;white-space:nowrap;font-size:13px;}}
+ td.name{{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--ink-soft);}}
+ td.what{{color:var(--ink-soft);font-size:13.5px;}} td.res{{font-weight:700;font-size:13px;}}
  .win{{color:var(--green);}} .fail{{color:var(--danger);}} .flat{{color:var(--warn);}} .na{{color:var(--ink-faint);font-weight:500;}}
  .tag{{display:inline-block;font-size:10.5px;font-weight:700;padding:1px 7px;border-radius:5px;margin-right:5px;background:#eef1f5;color:var(--ink-soft);}}
  footer{{margin-top:36px;color:var(--ink-faint);font-size:12.5px;border-top:1px solid var(--line);padding-top:14px;}}

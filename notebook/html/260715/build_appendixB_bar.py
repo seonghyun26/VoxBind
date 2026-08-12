@@ -85,33 +85,40 @@ def svg(rank_labels=False, value_decimals=3):
             yy = y(t)
             out.append(f'<line x1="{x0:.1f}" y1="{yy:.1f}" x2="{x1:.1f}" y2="{yy:.1f}" stroke="#e6e9ef" stroke-width="1"/>')
             out.append(f'<text x="{x0-5:.1f}" y="{yy+3:.1f}" font-size="8.5" fill="#9aa3b2" text-anchor="end">{t:.2f}</text>')
-        # per-panel best / second by value (r/ρ higher = better, RMSE lower = better)
-        _pv = sorted(((i, METHODS[i][3 + p["key"]][0]) for i in range(n) if METHODS[i][2] != "leaked"),
+        # per-panel best / second by value (r/ρ higher = better, RMSE lower = better).
+        # leaked methods and None values (metric not applicable in this panel) never rank.
+        _pv = sorted(((i, METHODS[i][3 + p["key"]][0]) for i in range(n)
+                      if METHODS[i][2] != "leaked" and METHODS[i][3 + p["key"]][0] is not None),
                      key=lambda t: t[1], reverse=(p["key"] != 2))
         _best_i = _pv[0][0] if _pv else -1
         _second_i = _pv[1][0] if len(_pv) > 1 else -1
         # bars
         for i, (name, color, best, *metrics) in enumerate(METHODS):
             m, sd = metrics[p["key"]]
+            if m is None:                       # metric N/A in this panel (e.g. RMSE off the pK scale)
+                continue
             cx = x0 + pitch * (i + 0.5)
             bx = cx - BARW / 2
-            by = y(m)
+            by = max(TOP, min(BASE, y(m)))
             h = max(0.0, BASE - by)
-            stroke = ' stroke="#000" stroke-width="2.5"' if best is True else ''
+            # Black outline marks the best non-leaked method in this metric panel.
+            stroke = ' stroke="#000" stroke-width="2.5"' if i == _best_i else ''
             op = ' opacity="0.38"' if best == "leaked" else ''   # leaked (Nesso, IPNet-frozen) faded
             out.append(f'<rect x="{bx:.1f}" y="{by:.1f}" width="{BARW}" height="{h:.1f}" rx="2" fill="{color}"{stroke}{op}/>')
-            # whisker (±sd)
-            yhi, ylo = y(m + sd), y(m - sd)
-            out.append(f'<line x1="{cx:.1f}" y1="{yhi:.1f}" x2="{cx:.1f}" y2="{ylo:.1f}" stroke="#566072" stroke-width="1"/>')
-            out.append(f'<line x1="{cx-3:.1f}" y1="{yhi:.1f}" x2="{cx+3:.1f}" y2="{yhi:.1f}" stroke="#566072" stroke-width="1"/>')
-            out.append(f'<line x1="{cx-3:.1f}" y1="{ylo:.1f}" x2="{cx+3:.1f}" y2="{ylo:.1f}" stroke="#566072" stroke-width="1"/>')
-            lab = "#1d5a3a" if best is True else "#5b6678"
+            # Clip variance whiskers at the visible y-domain.
+            yhi = max(TOP, min(BASE, y(m + sd)))
+            ylo = max(TOP, min(BASE, y(m - sd)))
+            out.append(f'<line x1="{cx:.1f}" y1="{yhi:.1f}" x2="{cx:.1f}" y2="{ylo:.1f}" stroke="#566072" stroke-width="1"{op}/>')
+            out.append(f'<line x1="{cx-3:.1f}" y1="{yhi:.1f}" x2="{cx+3:.1f}" y2="{yhi:.1f}" stroke="#566072" stroke-width="1"{op}/>')
+            out.append(f'<line x1="{cx-3:.1f}" y1="{ylo:.1f}" x2="{cx+3:.1f}" y2="{ylo:.1f}" stroke="#566072" stroke-width="1"{op}/>')
+            lab = "#1d5a3a" if i == _best_i else "#5b6678"
             weight, deco, fs = "600", "", "8"
             if rank_labels and i == _best_i:
                 weight, fs, lab = "800", "11", "#111"        # best → bold + much larger + dark
             elif rank_labels and i == _second_i:
                 weight, deco, fs = "700", ' text-decoration="underline"', "9.5"   # second → underline + bold + larger
-            out.append(f'<text x="{cx:.1f}" y="{yhi-4:.1f}" font-size="{fs}" fill="{lab}" text-anchor="middle" '
+            label_y = max(TOP + 9, yhi - 4)
+            out.append(f'<text x="{cx:.1f}" y="{label_y:.1f}" font-size="{fs}" fill="{lab}" text-anchor="middle" '
                        f'font-weight="{weight}"{deco}>{m:.{value_decimals}f}</text>')
         # baseline
         out.append(f'<line x1="{x0:.1f}" y1="{BASE:.1f}" x2="{x1:.1f}" y2="{BASE:.1f}" stroke="#aeb6c4" stroke-width="1.5"/>')
@@ -121,15 +128,27 @@ def svg(rank_labels=False, value_decimals=3):
     return "\n      ".join(out)
 
 
-def legend():
-    items = []
-    for name, color, best, *_ in METHODS:
-        bd = ";border:2px solid #000" if best is True else ""
-        nm = name
-        items.append(f'<span><span style="width:12px;height:12px;border-radius:3px;background:{color};'
-                     f'display:inline-block{bd}"></span> {nm}</span>')
-    return ('<div class="legend" style="justify-content:center;margin-top:8px;gap:13px;">'
-            + " ".join(items) + "</div>")
+def legend(methods=None, leaked_names=()):
+    """Method legend with leaked references faded and isolated on a final row."""
+    methods = METHODS if methods is None else methods
+    leaked_names = set(leaked_names)
+    clean, leaked = [], []
+    for name, color, best, *_ in methods:
+        is_leaked = best == "leaked" or name in leaked_names
+        opacity = ";opacity:.38" if is_leaked else ""
+        item = (f'<span><span style="width:12px;height:12px;border-radius:3px;background:{color};'
+                f'display:inline-block{opacity}"></span> {name}</span>')
+        (leaked if is_leaked else clean).append(item)
+
+    rows = [('<div class="legend" style="justify-content:center;margin-top:8px;gap:13px;">'
+             + " ".join(clean) + "</div>")]
+    if leaked:
+        rows.append(
+            '<div class="legend" style="justify-content:center;margin-top:5px;gap:13px;">'
+            '<span style="font-weight:600;color:#9aa3b2;">leaked</span> '
+            + " ".join(leaked) + "</div>"
+        )
+    return "\n      ".join(rows)
 
 
 def appendix_b():

@@ -48,6 +48,9 @@ def _make_dataset(cfg, split: str, aug: bool):
                 cache_size=cfg.dset.get("cache_size", 32),
                 # raw_density: skip arcsinh+z-score, feed native unclipped map values.
                 raw_density=cfg.dset.get("raw_density", False),
+                # v2.2: drop out-of-vocab-ligand complexes at load time (in-vocab-only corpus,
+                # reuses v2 tuples+density; fixes the atomblob7 input/target mismatch).
+                in_vocab_only=cfg.dset.get("in_vocab_only", False),
             )
             # Fast precomputed-box path (opt-in): when dset.box_path is set, resample the 64³
             # from a precomputed 96³ canonical box instead of the full ccp4 map — identical aug
