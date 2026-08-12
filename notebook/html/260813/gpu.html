@@ -1,0 +1,154 @@
+<style>
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:1180px;
+margin:2rem auto;padding:0 1.5rem;line-height:1.6;color:#1a1a1a;background:#fff}
+h1{font-size:1.7rem;border-bottom:2px solid #e5e5e5;padding-bottom:.4rem;margin-bottom:.3rem}
+h2{font-size:1.25rem;margin-top:2.4rem;border-left:4px solid #666;padding-left:.6rem}
+h3{font-size:1rem;margin-top:1.5rem;color:#333}
+.meta{color:#666;font-size:.9rem;margin-bottom:1.5rem}
+table{border-collapse:collapse;margin:.8rem 0;font-size:.88rem;width:100%}
+th,td{border:1px solid #ddd;padding:.42rem .6rem;text-align:left;vertical-align:top}
+th{background:#f6f6f6;font-weight:600}
+td.num{text-align:right;font-variant-numeric:tabular-nums}
+.run{background:#e8f5e9}.wait{background:#fff8e1}.done{background:#f5f5f5}
+.best{font-weight:700;color:#0a7d33}.warn{color:#c0392b}
+.tag{display:inline-block;padding:.05rem .4rem;border-radius:3px;font-size:.78rem;
+border:1px solid #ccc;background:#fafafa;white-space:nowrap}
+.note{background:#f8f9fa;border-left:3px solid #999;padding:.6rem .9rem;margin:.9rem 0;font-size:.9rem}
+code{background:#f0f0f0;padding:.08rem .3rem;border-radius:3px;font-size:.86em}
+small{color:#666}
+@media(prefers-color-scheme:dark){
+body{background:#151515;color:#e8e8e8}h1{border-color:#333}h2{border-color:#777}h3{color:#ccc}
+th{background:#222}th,td{border-color:#333}.meta,small{color:#aaa}
+.run{background:#16311a}.wait{background:#332b12}.done{background:#1e1e1e}
+.tag{background:#1e1e1e;border-color:#444}.note{background:#1c1c1c;border-color:#666}
+code{background:#1e1e1e}}
+:root[data-theme="dark"] body{background:#151515;color:#e8e8e8}
+:root[data-theme="light"] body{background:#fff;color:#1a1a1a}
+</style>
+
+<h1>GPU 실험 현황 · VoxBind</h1>
+<p class=meta>4 × H200 (140 GB) · 컨테이너 CPU 쿼터 32코어 · 생성 모델(디노이저) <b>융합 축</b> 중심</p>
+
+<h2>1. 지금 돌아가고 있는 것</h20>
+<table>
+<tr><th>자원</th><th>실험</th><th>설정</th><th>진행</th><th>완료 예상</th></tr>
+<tr class=run><td><b>GPU ×4</b></td>
+<td><code>voxbind_frozen_efficient60m_scratch_crossattn_sig0.9</code><br>
+<small>크로스 어텐션 융합 — 밀도를 UNet <b>내부</b> 어텐션 레벨(16³·8³)에 주입.
+UNet 특징이 Q, 동결 ViT 토큰이 K/V</small></td>
+<td>σ0.9 · from scratch<br>
+<span class=tag>fusion=cross_attn</span> <span class=tag>efficient_60m 64.6M</span><br>
+<small>113.86M = 기존 111.6M + 크로스어텐션 2.29M · 키 1024개(항상-0 리간드 토큰 제거)</small></td>
+<td class=num>ep 149 / 350<br><small>609 s/epoch<br>(기준선 대비 1.09×)</small></td>
+<td>8/11 밤~8/12 새벽</td></tr>
+<tr class=run><td>CPU</td>
+<td>스냅샷 데몬 · Dropbox <code>model_zoo</code> 감시</td>
+<td><small>25 에폭마다 체크포인트 아카이브 / 15분 폴링, 새 ckpt 자동 pull (size+modtime)</small></td>
+<td>—</td><td>상시</td></tr>
+</table>
+
+<h2>2. 하고 싶은 것</h2>
+<h3>2-1. 크로스 어텐션이 끝나면 (순서 고정)</h3>
+<table>
+<tr><th>#</th><th>단계</th><th>자원</th><th>소요</th></tr>
+<tr class=wait><td>1</td><td>크로스 어텐션 <b>샘플링</b> — 79 밀도 포켓 × 100 리간드, 4-GPU 분할<br>
+<small><code>scripts/archive/workflows/frozenenc_full_eval.sh</code></small></td><td>GPU ×4</td><td>~1.5 h</td></tr>
+<tr class=wait><td>2</td><td><b>도킹 / 화학 지표</b> — 샘플링 종료와 동시에 CPU 백그라운드로 이관</td><td>CPU 32</td><td>~22 h</td></tr>
+<tr class=wait><td>3</td><td><b>σ1.0 학습 — 처음부터</b> (resume 아님). 도킹과 <b>동시 진행</b>해 GPU를 놀리지 않음<br>
+<small><code>67_train_fusion_champion_oracle_4gpu.sh</code> · <code>SIGMA=1.0 NUM_EPOCHS=350</code><br>
+기존 <code>..._sig1</code>(ep86 부분 런)은 그대로 두고 새 이름으로 시작</small></td>
+<td>GPU ×4</td><td>~55 h</td></tr>
+</table>
+
+<h3>2-2. 그 다음 (우선순위)</h3>
+<table>
+<tr><th>#</th><th>실험</th><th>답하려는 질문</th><th>비용</th><th>상태</th></tr>
+<tr><td>1</td><td><b>융합 축 기준선 정비</b> — <code>protein_first</code> 79 포켓 도킹 <b>＋</b> coord-only 대조군(78,512 x-ray 부분집합) 학습</td>
+<td>크로스 어텐션 숫자를 놓을 <b>비교 상대</b>를 만드는 일. 현재 79-포켓 실측은 <code>default</code> 하나뿐이고,
+"밀도가 생성에 도움이 되는가"를 깨끗하게 답할 대조군은 아예 없음</td>
+<td>도킹 1.5 h GPU + 22 h CPU<br>대조군 ~55 h GPU</td><td>다음</td></tr>
+<tr><td>2</td><td>다른 융합 축 — <b>어댑터</b>(동결 인코더 위 소형 학습 헤드) / <b>멀티스케일 주입</b> / 더 작은 인코더(10M)</td>
+<td>통로를 넓히는 나머지 후보. 어댑터는 "affinity용 특징을 생성용으로 재정렬"을 직접 겨냥</td><td>—</td><td>구상</td></tr>
+<tr><td>3</td><td><code>ligmask</code> 도킹 (학습 350ep 완료, 한 번도 샘플링 안 함)</td>
+<td>리간드 밀도를 지운 모델의 생성 품질<br>
+<small class=warn>선결 과제: <code>sample.py</code>가 <code>dens_mask</code>를 만들지 않음 → 지금 그대로 샘플링하면
+학습(마스킹)/추론(홀로) 불일치. 게다가 마스크가 리간드 좌표에서 나와 생성 시점에 만들 수 없음</small></td>
+<td>~24 h</td><td>보류</td></tr>
+</table>
+<div class=note><b>접은 방향:</b> 테스트타임 밀도 스왑, α(x) 감쇠 학습(ep176 중단).
+누출 분해는 측정 도구였고, 실제 성능은 융합 설계에서 갈린다고 판단.</div>
+
+<h2>3. 한 것</h2>
+<h3>3-1. 도킹까지 측정 (79 포켓 × 100 = 정식 규모)</h3>
+<table>
+<tr><th>실험</th><th>융합 / 인코더</th><th class=num>Vina Dock</th><th class=num>HA %</th>
+<th class=num>QED</th><th class=num>SA</th><th class=num>div</th></tr>
+<tr class=done><td><code>frozenenc_atomblob7_v2p1_ep350_snap</code></td>
+<td>default / <b>atomblob7 v2.1 45.7M</b></td>
+<td class="num best">−8.24</td><td class="num best">67.5</td>
+<td class=num>0.52</td><td class=num>0.68</td><td class=num>0.71</td></tr>
+<tr class=done><td><code>samples_warmstart_efficient60m_ep349</code><br><small>vanilla ep350에서 warm-start</small></td>
+<td>default / efficient_60m</td>
+<td class=num>−7.93</td><td class=num>64.5</td>
+<td class=num>0.526</td><td class=num>0.688</td><td class=num>0.744</td></tr>
+<tr class=done><td><i>기준</i> — 재도킹된 결정 구조 리간드</td><td>—</td>
+<td class=num>−7.13</td><td class=num>—</td><td class=num>—</td><td class=num>—</td><td class=num>—</td></tr>
+</table>
+
+<h3>3-2. 학습만 완료 (도킹 미측정)</h3>
+<table>
+<tr><th>실험</th><th>설정</th><th class=num>ep</th><th class=num>train loss / miou</th><th class=num>val loss / miou</th></tr>
+<tr class=done><td><code>..._scratch_protfirst_sig0.9</code> <b>← 융합 축 기준선</b></td>
+<td>protein_first / 60M / σ0.9 / 홀로 밀도</td><td class=num>349</td>
+<td class=num>679.01 / 0.6464</td><td class=num>540.26 / 0.6477</td></tr>
+<tr class=done><td><code>voxbind_fusion_champion_oracle_scratch</code></td>
+<td>default / champion 100M / <span class="tag warn">sees_ligand</span></td><td class=num>349</td>
+<td class=num>726.68 / 0.6382 <small>(ep317)</small></td><td class=num>588.51 / 0.6391</td></tr>
+<tr class=done><td><code>voxbind_frozenenc_atomblob7_v2p1_ligmask_sig0.9</code></td>
+<td>리간드 밀도 마스킹 / atomblob7 45.7M</td><td class=num>349</td><td class=num>—</td><td class=num>—</td></tr>
+<tr class=done><td><code>..._scratch_alphamask_sig0.9</code> <span class=tag>중단</span></td>
+<td>protein_first + α(x) 감쇠 / 60M</td><td class=num>176</td>
+<td class=num>1053.06 / 0.5918</td><td class=num>795.29 / 0.6123</td></tr>
+<tr class=done><td><code>..._oracle_scratch_sig1</code> <span class=tag>중단 · 새로 돌릴 예정</span></td>
+<td>default / champion 100M / σ1.0 / sees_ligand</td><td class=num>86</td><td class=num>—</td><td class=num>—</td></tr>
+<tr class=done><td><code>exp_sig0.9_v2</code> · <code>exp_sig1.0_350ep</code></td>
+<td>vanilla (밀도 없음)</td><td class=num>350 / 349</td><td class=num>731.36 / 0.6385</td><td class=num>—</td></tr>
+</table>
+
+<h2>4. 방향을 정한 근거</h2>
+<div class=note>
+<b>① 정보가 아니라 통로가 병목.</b> 오라클(<code>sees_ligand=true</code> — 인코더에 <b>진짜 리간드</b>를 줌)이
+ep317에서 <code>protein_first</code>보다 <b>나빴습니다</b> (726.68 / 0.6382 vs 702.42 / 0.6419).
+정답을 줘도 좋아지지 않으므로, 밀도 분기의 정보량이 아니라 그것이 UNet으로 들어가는 <b>경로</b>가 제약입니다.
+→ 크로스 어텐션(라우팅 확장)이 이 진단과 맞는 방향.
+</div>
+<div class=note>
+<b>② 인코더 크기는 지렛대가 아님.</b> 최고 도킹(−8.24)은 가장 <b>작은</b> 45.7M 인코더에서 나왔고,
+affinity probe 스윕에서도 10M이 100M과 동률(0.640 vs 0.644)이었습니다.
+</div>
+<div class=note>
+<b>③ 손실로 판정하지 않음.</b> warm-start 런이 <b>최저 학습 손실(586)</b>을 내고도
+<b>최악의 도킹(−7.93 / HA 64.5%)</b>을 냈습니다. 용량을 늘리는 변경은 손실을 거의 확실히 개선하므로,
+판정은 <b>79-포켓 도킹</b>으로만 합니다.
+</div>
+
+<h2>5. 비교 시 주의 (반복해서 밟은 함정)</h2>
+<table>
+<tr><th>비교</th><th>가능?</th><th>이유</th></tr>
+<tr><td>cross_attn ↔ protein_first</td><td class=best>가능</td>
+<td>같은 데이터(78,512) · 같은 val · 같은 인코더 — <b>융합만</b> 다름</td></tr>
+<tr><td>밀도 런 ↔ <code>exp_sig0.9_v2</code> (vanilla)</td><td class=warn>불가</td>
+<td>학습셋이 99,881 vs 78,512로 다르고 <b>val 셋도 다름</b>.
+게다가 밀도 런의 val 복합체가 vanilla의 <b>학습 데이터 안에</b> 들어 있음</td></tr>
+<tr><td>오라클 런 ↔ de-novo 런</td><td class=warn>불가</td>
+<td>오라클은 인코더에 실제 리간드를 줌 — 상한선 측정이지 de-novo 생성이 아님</td></tr>
+<tr><td>소수 포켓 결과 ↔ 79 포켓 결과</td><td class=warn>불가</td>
+<td><b>포켓 선택 편차가 모델 차이보다 큼</b> (아래)</td></tr>
+</table>
+<div class=note>
+<b>포켓 선택 편차 — 실측:</b> 같은 <code>protein_first</code> 체크포인트를 두 번 샘플링했더니
+7 포켓에서 <b>−8.51</b>, 11 포켓에서 <b>−7.80</b>이 나왔습니다.
+같은 7 포켓으로 정직하게 맞춰 비교하면 warmstart가 −8.30이고(79 포켓 전체로는 −7.93),
+<code>protein_first</code>는 −8.51 → <b>실제 차이는 −0.21</b>이며 7개 중 2개는 부호가 뒤집힙니다.
+개별 포켓 편차가 −13.27 ~ −6.17로 7 kcal/mol을 넘으므로, <b>소수 포켓 평균은 모델 성능이 아니라 포켓 추첨 결과</b>입니다.
+</div>

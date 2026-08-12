@@ -141,23 +141,26 @@
       <p class="table-sub">Every trial that completed the full CrossDocked test protocol. Density conditioning beats the density-free
         baseline in exactly one configuration; neither a larger encoder nor a deeper injection path reproduces that gain.</p>
       <div class="summary-grid">
-        <div class="summary-card"><div class="label">Baseline · Trial 1</div><div class="value">−7.98</div><div class="note">Vanilla VoxBind, no density. HA 65.3%.</div></div>
-        <div class="summary-card primary"><div class="label">Best · Trial 2</div><div class="value">−8.24</div><div class="note">Frozen atomblob7 v2.1 encoder, zero-init fusion. HA 67.5%, Δ −0.26 vs baseline.</div></div>
-        <div class="summary-card"><div class="label">Newest · Trial 6</div><div class="value">−7.56</div><div class="note">Cross-attention injection, from scratch. Worst arm; docking 99% complete.</div></div>
+        <div class="summary-card"><div class="label">Reproduced baseline</div><div class="value">−7.98</div><div class="note">Vanilla VoxBind, no density. Median −8.02, HA 65.3%.</div></div>
+        <div class="summary-card primary"><div class="label">Best · Trial 1</div><div class="value">−8.24</div><div class="note">Frozen atomblob7 v2.1 encoder, zero-init fusion. Median −8.75, HA 67.5%. Δ −0.26 vs baseline.</div></div>
+        <div class="summary-card"><div class="label">Newest · Trial 5</div><div class="value">−7.56</div><div class="note">Cross-attention injection, from scratch. Worst arm; docking 99% complete.</div></div>
       </div>
       <ul class="criteria">
         <li><b>Protocol:</b> 79 CrossDocked test pockets × 100 valid-unique molecules each (7,900 total).</li>
         <li><b>Docking:</b> AutoDock Vina — <code>score</code> at the generated pose, <code>min</code> after local
           minimization, <code>dock</code> after full redocking.</li>
         <li><b>High Affinity (HA):</b> fraction of generated molecules scoring below the crystal ligand redocked in the same box.</li>
-        <li><b>Aggregation:</b> per-pocket mean over its 100 molecules, then macro-average over the 79 pockets.
-          <code>max</code> columns take the per-pocket maximum first, so a single near-duplicate cannot hide in a mean.</li>
+        <li><b>Aggregation:</b> two reductions, in this order. Within a pocket, average its 100 molecules into one value —
+          this is what the pocket scores. Then summarize the 79 pocket values: <b>mean</b> and <b>median</b> are two readings
+          of that same distribution, matching the Avg./Med. convention in <code>results.html</code>. Median sits well below
+          mean because a handful of pockets carry clashing poses with large positive Vina scores.
+          <code>max</code> columns instead take the per-pocket maximum, so a single near-duplicate cannot hide in a mean.</li>
         <li><b>Decision rule:</b> arms are ranked by docking, never by training loss — the best-loss arm to date is also the worst-docking one.</li>
       </ul>
 
-      <p class="table-sub"><b>A. Docking and drug-likeness.</b> Vina cells read <b>mean / median</b>, both taken per pocket and
-        then macro-averaged. Trial 6 shows Vina columns only; its docking pool is at 7,830 / 7,900 molecules, so those values
-        are provisional and the remaining metrics wait on the final JSON.</p>
+      <p class="table-sub"><b>A. Docking and drug-likeness.</b> Vina cells read <b>mean / median</b> over the 79 pockets, in
+        kcal mol⁻¹; HA reads the same way. Trial 5 shows Vina columns only; its docking pool is at 7,830 / 7,900 molecules,
+        so those values are provisional and the remaining metrics wait on the final JSON.</p>
       <div class="table-wrap">
         <table class="results">
           <thead>
@@ -165,22 +168,21 @@
               <th class="col-trial stub" rowspan="2">Trial</th>
               <th class="grp" colspan="3">Sample quality</th>
               <th class="grp" colspan="4">Drug-likeness</th>
-              <th class="grp" colspan="3">Vina evaluation · kcal mol⁻¹ · mean / median</th>
-              <th class="stub" rowspan="2">HA</th>
+              <th class="grp" colspan="4">Vina evaluation · mean / median</th>
             </tr>
             <tr>
               <th>Validity</th><th>Unique</th><th>Diversity</th>
               <th>QED</th><th>SA</th><th>logP</th><th>Lipinski</th>
-              <th>score</th><th>min</th><th>dock</th>
+              <th>score</th><th>min</th><th>dock</th><th>HA</th>
             </tr>
           </thead>
           <tbody>
-            <tr><td class="col-trial">1</td><td>0.9986</td><td>1.000</td><td>0.741</td><td><b>0.557</b></td><td>0.688</td><td>2.57</td><td>4.65</td><td>−5.256 / −5.497</td><td>−6.837 / −7.086</td><td>−7.981 / −8.032</td><td>65.3%</td></tr>
-            <tr><td class="col-trial">2</td><td>0.9990</td><td>1.000</td><td>0.710</td><td>0.523</td><td>0.677</td><td>2.62</td><td>4.52</td><td><b>−5.513 / −5.720</b></td><td><b>−7.090 / −7.394</b></td><td><b>−8.238 / −8.253</b></td><td><b>67.5%</b></td></tr>
-            <tr><td class="col-trial">3</td><td>0.9982</td><td>1.000</td><td>0.731</td><td>0.524</td><td>0.670</td><td>2.03</td><td>4.57</td><td>−5.137 / −5.156</td><td>−6.633 / −6.774</td><td>−7.790 / −7.814</td><td>60.6%</td></tr>
-            <tr><td class="col-trial">4</td><td>0.9992</td><td>1.000</td><td>0.733</td><td>0.551</td><td>0.692</td><td>2.22</td><td>4.65</td><td>−5.308 / −5.392</td><td>−6.794 / −6.936</td><td>−7.917 / −7.929</td><td>66.4%</td></tr>
-            <tr><td class="col-trial">5</td><td><b>0.9996</b></td><td>1.000</td><td>0.744</td><td>0.526</td><td>0.688</td><td>2.33</td><td>4.50</td><td>−5.480 / −5.647</td><td>−6.887 / −7.104</td><td>−7.933 / −7.973</td><td>64.5%</td></tr>
-            <tr><td class="col-trial">6</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td>−4.832 / −4.919</td><td>−6.437 / −6.671</td><td>−7.560 / −7.721</td><td class="placeholder">—</td></tr>
+            <tr><td class="col-trial">base</td><td>0.9986</td><td>1.000</td><td>0.741</td><td><b>0.557</b></td><td>0.688</td><td>2.57</td><td>4.65</td><td>−5.256 / −6.604</td><td>−6.837 / −7.005</td><td>−7.981 / −8.022</td><td>65.3% / 70.0%</td></tr>
+            <tr><td class="col-trial">1</td><td>0.9990</td><td>1.000</td><td>0.710</td><td>0.523</td><td>0.677</td><td>2.62</td><td>4.52</td><td><b>−5.513 / −7.526</b></td><td><b>−7.090 / −8.036</b></td><td><b>−8.238 / −8.750</b></td><td><b>67.5% / 74.0%</b></td></tr>
+            <tr><td class="col-trial">2</td><td>0.9982</td><td>1.000</td><td>0.731</td><td>0.524</td><td>0.670</td><td>2.03</td><td>4.57</td><td>−5.137 / −6.297</td><td>−6.633 / −6.816</td><td>−7.790 / −7.754</td><td>60.6% / 63.3%</td></tr>
+            <tr><td class="col-trial">3</td><td>0.9992</td><td>1.000</td><td>0.733</td><td>0.551</td><td>0.692</td><td>2.22</td><td>4.65</td><td>−5.308 / −6.680</td><td>−6.794 / −7.134</td><td>−7.917 / −7.913</td><td>66.4% / 71.5%</td></tr>
+            <tr><td class="col-trial">4</td><td><b>0.9996</b></td><td>1.000</td><td>0.744</td><td>0.526</td><td>0.688</td><td>2.33</td><td>4.50</td><td>−5.480 / −6.852</td><td>−6.887 / −7.265</td><td>−7.933 / −8.168</td><td>64.5% / 66.5%</td></tr>
+            <tr><td class="col-trial">5</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td>−4.856 / −5.735</td><td>−6.358 / −6.547</td><td>−7.560 / −7.672</td><td class="placeholder">—</td></tr>
           </tbody>
         </table>
       </div>
@@ -188,7 +190,7 @@
       <p class="table-sub" style="margin-top:22px"><b>B. Similarity to the reference ligand.</b> Cells read <b>mean / max</b>,
         both taken per pocket and then macro-averaged — the max column takes the per-pocket maximum first, so a single
         near-duplicate cannot hide inside a mean. Generated poses and the crystal ligand share the pocket frame, so 3D shape
-        Tanimoto is measured directly, without alignment. All six trials are final here — similarity needs only the sampled
+        Tanimoto is measured directly, without alignment. All six rows are final here — similarity needs only the sampled
         SDFs, not docking.</p>
       <div class="table-wrap">
         <table class="results">
@@ -204,19 +206,19 @@
             </tr>
           </thead>
           <tbody>
-            <tr><td class="col-trial">1</td><td>0.098 / 0.261</td><td>0.349 / 0.645</td><td>0.204 / 0.407</td><td>0.235 / 0.441</td><td>0.204 / 0.439</td><td>0.85%</td><td><b>0.375</b> / 0.540</td></tr>
-            <tr><td class="col-trial">2</td><td>0.099 / 0.248</td><td>0.362 / 0.631</td><td>0.212 / 0.394</td><td>0.243 / 0.442</td><td>0.208 / 0.426</td><td>0.82%</td><td>0.401 / 0.564</td></tr>
-            <tr><td class="col-trial">3</td><td>0.107 / 0.271</td><td>0.382 / 0.652</td><td>0.223 / 0.433</td><td>0.248 / 0.453</td><td>0.224 / 0.454</td><td>1.27%</td><td>0.437 / 0.606</td></tr>
-            <tr><td class="col-trial">4</td><td>0.107 / 0.268</td><td>0.370 / 0.647</td><td>0.222 / 0.422</td><td>0.248 / 0.449</td><td>0.222 / 0.448</td><td>1.44%</td><td>0.452 / 0.609</td></tr>
-            <tr><td class="col-trial">5</td><td>0.103 / 0.283</td><td>0.361 / 0.663</td><td>0.210 / 0.426</td><td>0.235 / 0.446</td><td>0.215 / 0.456</td><td>1.27%</td><td>0.392 / 0.567</td></tr>
-            <tr><td class="col-trial">6</td><td><b>0.091</b> / <b>0.229</b></td><td>0.359 / 0.628</td><td>0.201 / 0.397</td><td>0.229 / 0.425</td><td>0.186 / 0.410</td><td><b>0.25%</b></td><td>0.408 / 0.572</td></tr>
+            <tr><td class="col-trial">base</td><td>0.098 / 0.261</td><td>0.349 / 0.645</td><td>0.204 / 0.407</td><td>0.235 / 0.441</td><td>0.204 / 0.439</td><td>0.85%</td><td><b>0.375</b> / 0.540</td></tr>
+            <tr><td class="col-trial">1</td><td>0.099 / 0.248</td><td>0.362 / 0.631</td><td>0.212 / 0.394</td><td>0.243 / 0.442</td><td>0.208 / 0.426</td><td>0.82%</td><td>0.401 / 0.564</td></tr>
+            <tr><td class="col-trial">2</td><td>0.107 / 0.271</td><td>0.382 / 0.652</td><td>0.223 / 0.433</td><td>0.248 / 0.453</td><td>0.224 / 0.454</td><td>1.27%</td><td>0.437 / 0.606</td></tr>
+            <tr><td class="col-trial">3</td><td>0.107 / 0.268</td><td>0.370 / 0.647</td><td>0.222 / 0.422</td><td>0.248 / 0.449</td><td>0.222 / 0.448</td><td>1.44%</td><td>0.452 / 0.609</td></tr>
+            <tr><td class="col-trial">4</td><td>0.103 / 0.283</td><td>0.361 / 0.663</td><td>0.210 / 0.426</td><td>0.235 / 0.446</td><td>0.215 / 0.456</td><td>1.27%</td><td>0.392 / 0.567</td></tr>
+            <tr><td class="col-trial">5</td><td><b>0.091</b> / <b>0.229</b></td><td>0.359 / 0.628</td><td>0.201 / 0.397</td><td>0.229 / 0.425</td><td>0.186 / 0.410</td><td><b>0.25%</b></td><td>0.408 / 0.572</td></tr>
           </tbody>
         </table>
       </div>
 
       <p class="table-sub" style="margin-top:22px"><b>C. What each trial is.</b> All arms use zero-init fusion, so step 0 is
-        identical to the density-free baseline. Trials 1–4 predate the <code>subset_n</code> fix and trained on the full
-        99,881-crop corpus, roughly 21% of which carries an all-zero density channel — an unintended density dropout.</p>
+        identical to the density-free baseline. The baseline and Trials 1–3 predate the <code>subset_n</code> fix and trained
+        on the full 99,881-crop corpus, roughly 21% of which carries an all-zero density channel — an unintended density dropout.</p>
       <div class="table-wrap">
         <table class="results">
           <thead>
@@ -232,32 +234,33 @@
             </tr>
           </thead>
           <tbody>
-            <tr><td class="col-trial">1</td><td class="col-method">Vanilla VoxBind — baseline</td><td>—</td><td>—</td><td>—</td><td>0.9</td><td>350</td><td>99,881</td><td>07-07</td></tr>
-            <tr><td class="col-trial">2</td><td class="col-method">Frozen atomblob7 v2.1, σ0.9 — best</td><td>holo</td><td>atomblob7 v2.1 · 45.7M</td><td>default</td><td>0.9</td><td>350</td><td>99,881</td><td>07-04</td></tr>
-            <tr><td class="col-trial">3</td><td class="col-method">Trial 2 rerun at σ1.0</td><td>holo</td><td>atomblob7 v2.1 · 45.7M</td><td>default</td><td>1.0</td><td>349</td><td>99,881</td><td>07-14</td></tr>
-            <tr><td class="col-trial">4</td><td class="col-method">Trial 2 with the ligand erased from the density map</td><td>ligand removed</td><td>atomblob7 v2.1 · 45.7M</td><td>default</td><td>0.9</td><td>349</td><td>99,881</td><td>07-17</td></tr>
-            <tr><td class="col-trial">5</td><td class="col-method">Larger 60M encoder, warm-started from Trial 1</td><td>holo</td><td>efficient_60m_v3 · 64.6M</td><td>default</td><td>0.9</td><td>349</td><td>78,512</td><td>07-29</td></tr>
-            <tr><td class="col-trial">6</td><td class="col-method">Cross-attention injection inside the UNet, from scratch</td><td>holo</td><td>efficient_60m_v3 · 64.6M</td><td>cross-attn</td><td>0.9</td><td>350</td><td>78,512</td><td>08-12</td></tr>
+            <tr><td class="col-trial">base</td><td class="col-method">Vanilla VoxBind — reproduced baseline</td><td>—</td><td>—</td><td>—</td><td>0.9</td><td>350</td><td>99,881</td><td>07-07</td></tr>
+            <tr><td class="col-trial">1</td><td class="col-method">Frozen atomblob7 v2.1, σ0.9 — best</td><td>holo</td><td>atomblob7 v2.1 · 45.7M</td><td>default</td><td>0.9</td><td>350</td><td>99,881</td><td>07-04</td></tr>
+            <tr><td class="col-trial">2</td><td class="col-method">Trial 1 rerun at σ1.0</td><td>holo</td><td>atomblob7 v2.1 · 45.7M</td><td>default</td><td>1.0</td><td>349</td><td>99,881</td><td>07-14</td></tr>
+            <tr><td class="col-trial">3</td><td class="col-method">Trial 1 with the ligand erased from the density map</td><td>ligand removed</td><td>atomblob7 v2.1 · 45.7M</td><td>default</td><td>0.9</td><td>349</td><td>99,881</td><td>07-17</td></tr>
+            <tr><td class="col-trial">4</td><td class="col-method">Larger 60M encoder, warm-started from the baseline</td><td>holo</td><td>efficient_60m_v3 · 64.6M</td><td>default</td><td>0.9</td><td>349</td><td>78,512</td><td>07-29</td></tr>
+            <tr><td class="col-trial">5</td><td class="col-method">Cross-attention injection inside the UNet, from scratch</td><td>holo</td><td>efficient_60m_v3 · 64.6M</td><td>cross-attn</td><td>0.9</td><td>350</td><td>78,512</td><td>08-12</td></tr>
           </tbody>
         </table>
       </div>
 
       <p class="table-sub" style="margin-top:22px"><b>Findings.</b></p>
       <ul class="criteria">
-        <li><b>Only Trial 2 beats the baseline.</b> Δ −0.26 on Vina dock, +2.2 pt HA. Trials 4 and 5 land within ±0.06
-          (a tie), Trials 3 and 6 lose. Neither encoder capacity (45.7M → 64.6M) nor injection depth is the lever.</li>
-        <li><b>σ = 1.0 erases the density gain.</b> Trial 3 falls to −7.79, level with the σ1.0 density-free run (−7.798).</li>
-        <li><b>The gain is not reproduction.</b> Trial 2 leads no similarity metric: its Morgan max (0.248), Dice max (0.426)
+        <li><b>Only Trial 1 beats the baseline.</b> Δ −0.26 on Vina dock mean, −0.73 on median, +2.2 pt HA. Trials 3 and 4
+          land within ±0.06 of the baseline (a tie), Trials 2 and 5 lose. Neither encoder capacity (45.7M → 64.6M) nor
+          injection depth is the lever.</li>
+        <li><b>σ = 1.0 erases the density gain.</b> Trial 2 falls to −7.79, level with the σ1.0 density-free run (−7.798).</li>
+        <li><b>The gain is not reproduction.</b> Trial 1 leads no similarity metric: its Morgan max (0.248), Dice max (0.426)
           and scaffold-match rate (0.82%) all sit at or below the baseline. Scaffold identity stays under 1.5% everywhere,
           and five independent fingerprint families agree on the ranking.</li>
         <li><b>3D shape is the one axis where every density arm exceeds the baseline</b> (0.375 → 0.392–0.452). This is
-          <em>not</em> ligand-density leakage: Trial 4, which deletes the ligand from the density map, has the highest overlap
+          <em>not</em> ligand-density leakage: Trial 3, which deletes the ligand from the density map, has the highest overlap
           of all (0.452). Shape overlap does grow with molecule size, so a heavy-atom-controlled comparison is still needed
           before this is called an effect.</li>
-        <li><b>Trial 6 is the least reference-similar and the weakest.</b> Lowest on Morgan, Dice, and scaffold match while
+        <li><b>Trial 5 is the least reference-similar and the weakest.</b> Lowest on Morgan, Dice, and scaffold match while
           also docking worst — under-conditioned rather than novel.</li>
-        <li><b>Caveat:</b> Trials 5–6 trained on 78,512 crops against 99,881 for Trials 1–4, so those comparisons move two
-          axes at once. Only 1 ↔ 2 ↔ 3 ↔ 4 is a clean single-axis contrast.</li>
+        <li><b>Caveat:</b> Trials 4–5 trained on 78,512 crops against 99,881 for the baseline and Trials 1–3, so those
+          comparisons move two axes at once. Only baseline ↔ 1 ↔ 2 ↔ 3 is a clean single-axis contrast.</li>
       </ul>
     </section>
 
@@ -268,7 +271,7 @@
         <table class="results">
           <thead><tr><th class="col-method">Job</th><th>What</th><th>Progress</th><th>ETA</th></tr></thead>
           <tbody>
-            <tr><td class="col-method">Trial 6 docking</td><td>Vina over 7,900 cross-attention samples</td><td>7,816 / 7,900</td><td>~1 h</td></tr>
+            <tr><td class="col-method">Trial 5 docking</td><td>Vina over 7,900 cross-attention samples</td><td>7,830 / 7,900</td><td>~1 h</td></tr>
             <tr><td class="col-method">receptor-ED training</td><td>Champion 100M encoder, default fusion, σ0.9, from scratch, on the
               90,503-crop receptor-ED corpus (availability gated per receptor rather than per pose, recovering 11,891 crops)</td><td>epoch 31 / 350</td><td>~2.7 d</td></tr>
           </tbody>
