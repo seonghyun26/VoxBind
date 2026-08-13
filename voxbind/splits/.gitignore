@@ -3,6 +3,7 @@
 # them. (No parent dir is excluded — only file patterns — so negation is valid.)
 !*.csv
 !MANIFEST.json
+!atom3d_lba_v22clean_audit.json
 !.gitignore
 # CleanSplit (GEMS) reference inputs + filtering scripts (define clean_ed_* schemes)
 !cleansplit_ref/

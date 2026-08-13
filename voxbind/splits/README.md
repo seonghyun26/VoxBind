@@ -41,6 +41,25 @@ manifests so they commit with a plain `git add`.
 | `misato_md_v1` | 13765 / 1595 / 1612 | mirror of MISATO official 8:1:1 MD split | MISATO QM/MD targets |
 | `clean_ed_v1` | 4099 / 1000 / 214 | GEMS **CleanSplit** (leakage + intra-train redundancy filtered) ∩ ED ∩ lig&poc RSCC≥0.8 ∩ Kd/Ki, non-cov; test = **CASF-2016** | **de-leaked + de-redundant**, density-available |
 | `clean_ed_v1_indep` | 4099 / 1000 / 109 | same as `clean_ed_v1` but test = **CASF-2016 leakage-independent subset** | strictest de-leaked test |
+| `atom3d_lba30_edrscc_v2` | 2078 / 266 / 340 | official ATOM3D LBA ID30 assignment ∩ `lp_edrscc_v2` eligibility | official ID30 protocol on our filtered pool |
+| `atom3d_lba60_edrscc_v2` | 2150 / 273 / 261 | official ATOM3D LBA ID60 assignment ∩ `lp_edrscc_v2` eligibility | official ID60 protocol on our filtered pool |
+| `atom3d_lba30_edrscc_v2_v22clean` | 2078 / 3 / 9 | preceding ID30 split, then PLINDER-v2.2-similar valid/test removed | downstream-only PLINDER isolation at 30% identity |
+| `atom3d_lba60_edrscc_v2_v22clean` | 2150 / 20 / 24 | preceding ID60 split, then PLINDER-v2.2-similar valid/test removed | downstream-only PLINDER isolation at 60% identity |
+
+The `atom3d_lba*` manifests preserve the released ATOM3D assignments exactly and
+only remove complexes that fail `lp_edrscc_v2`. Regenerate them with
+`python voxbind/dataset/make_atom3d_filtered_lba_split.py`. The legacy `lba30` and
+`lba60` manifests were locally re-clustered with MMseqs2 and are retained only for
+backward compatibility; they are not aliases for the official ATOM3D splits.
+
+The `*_v22clean` variants leave both PLINDER-v2.2 and the downstream training
+partition unchanged. They only remove ATOM3D validation/test proteins with an
+MMseqs2 hit to the actual PLINDER-v2.2 load-time corpus at the named identity
+threshold and at least 80% coverage of both sequences (`--cov-mode 0`). Regenerate
+with `python voxbind/dataset/plinder/02_make_atom3d_v2p2_clean.py`; the audit and
+one qualifying witness hit per removed downstream PDB are stored alongside the
+split manifests. Their tiny holdouts (ID30 test N=9; ID60 test N=24) make metrics
+high-variance and unsuitable for strong ranking claims.
 
 > **`clean_ed_*` (code ready, split not yet materialized):** builder `build_clean_ed()` in
 > `make_splits.py` combines GEMS' PDBbind CleanSplit released lists (`cleansplit_ref/`) with
@@ -70,7 +89,9 @@ avail = check_local_availability(split["test"], present=have_features,
 # two servers can confirm they evaluated the IDENTICAL complexes.
 ```
 
-In the probe: `python dataset/01c_pdbbind_probe.py --split lp_edrscc_v1` (also `time`, `misato`).
+In the probe: `python dataset/01c_pdbbind_probe.py probe --split lp_edrscc_v1`
+(also `time`, `misato`, `atom3d_lba30`, `atom3d_lba60`,
+`atom3d_lba30_v22clean`, and `atom3d_lba60_v22clean`).
 
 ## Regenerate / verify / commit
 

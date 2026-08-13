@@ -57,7 +57,7 @@ def evaluate(model, loader, dev):
     return pear, spear, rmse, p, t
 
 
-def train_one(seed, buckets, dev, epochs, patience, bs, lr, wd, num_workers, log_every):
+def train_one(seed, buckets, dev, epochs, patience, bs, lr, wd, num_workers, log_every, dump_dir=None):
     set_seed(seed)
     ds_tr = AffinityDataset(buckets["train"])
     ds_va = AffinityDataset(buckets["val"])
@@ -116,6 +116,14 @@ def train_one(seed, buckets, dev, epochs, patience, bs, lr, wd, num_workers, log
         model.load_state_dict(best_state)
     tpear, tspear, trmse, p, t = evaluate(model, dl_te, dev)
     print(f"  seed{seed} TEST  r={tpear:.4f} rho={tspear:.4f} rmse={trmse:.4f}", flush=True)
+    if dump_dir:   # per-pid test predictions for the LP protein-novelty subset re-scoring
+        import csv as _csv
+        os.makedirs(dump_dir, exist_ok=True)
+        pids = [r["pid"] for r in buckets["test"]]        # dl_te is shuffle=False → p aligns
+        with open(os.path.join(dump_dir, f"HonestAffinity_v2_seed{seed}.csv"), "w", newline="") as _f:
+            _w = _csv.writer(_f); _w.writerow(["pid", "pred", "y"])
+            for _pid, _pr, _y in zip(pids, p, t):
+                _w.writerow([_pid, float(_pr), float(_y)])
     return {"seed": seed, "pearson": tpear, "spearman": tspear, "rmse": trmse,
             "n_test": len(t)}
 
@@ -133,6 +141,7 @@ def main():
     ap.add_argument("--num_workers", type=int, default=4)
     ap.add_argument("--log_every", type=int, default=5)
     ap.add_argument("--tag", default="", help="suffix for results filename (e.g. _smoke)")
+    ap.add_argument("--dump_dir", default=None, help="if set, write per-pid test preds CSV per seed here")
     args = ap.parse_args()
 
     dev = torch.device(f"cuda:{args.gpu}" if torch.cuda.is_available() else "cpu")
@@ -145,7 +154,7 @@ def main():
         print(f"=== seed {s} ===", flush=True)
         per_seed.append(train_one(
             s, buckets, dev, args.epochs, args.patience, args.bs,
-            args.lr, args.wd, args.num_workers, args.log_every))
+            args.lr, args.wd, args.num_workers, args.log_every, dump_dir=args.dump_dir))
 
     def agg(key):
         vals = [r[key] for r in per_seed]

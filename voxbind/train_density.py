@@ -1429,7 +1429,9 @@ def run(cfg: DictConfig, method: str) -> None:
     if is_main and cfg.wandb:
         try:
             _tags = cfg.get("wandb_tags", None)
-            _tags = list(_tags) if _tags else None
+            # OmegaConf parses bare numeric values in CLI list overrides as ints,
+            # while W&B requires every run tag to be a string.
+            _tags = [str(tag) for tag in _tags] if _tags else None
             # Strip leading YYMMDD_ from the exp_name for the wandb display name.
             # exp_name on disk keeps the date (per the exp-dir naming convention);
             # only the wandb run name shows the bare topic.

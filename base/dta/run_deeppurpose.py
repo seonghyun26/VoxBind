@@ -40,6 +40,7 @@ def main():
     ap.add_argument("--model", required=True, choices=list(CONFIGS))
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--drug_enc", default=None, help="override drug encoder (e.g. DGL_GCN in the dgl env)")
+    ap.add_argument("--split", default="v2", help="v2 (default) or a cohort -> data/{split}_{train,val,test}.csv")
     a = ap.parse_args()
     import torch
     torch.manual_seed(a.seed); np.random.seed(a.seed)
@@ -49,7 +50,7 @@ def main():
     de, te, disp, knobs = CONFIGS[a.model]
     if a.drug_enc:
         de = a.drug_enc                       # faithful GraphDTA-GCN via the dgl env
-    print(f"[{disp}] drug={de} target={te} seed={a.seed}")
+    print(f"[{disp}] drug={de} target={te} seed={a.seed} split={a.split}")
 
     def proc(name):
         pid, smi, seq, y = load_csv(name)
@@ -57,29 +58,32 @@ def main():
                           split_method="no_split", random_seed=a.seed)
         return pid, df, y
 
-    tr_pid, tr, _ = proc("v2_train")
-    va_pid, va, _ = proc("v2_val")
-    te_pid, ted, tey = proc("v2_test")
-    ho_pid, hod, hoy = proc("holdout")
-    cf_pid, cfd, cfy = proc("casf")
+    pfx = "v2_" if a.split == "v2" else f"{a.split}_"
+    tr_pid, tr, _ = proc(f"{pfx}train")
+    va_pid, va, _ = proc(f"{pfx}val")
+    te_pid, ted, tey = proc(f"{pfx}test")
 
     config = generate_config(drug_encoding=de, target_encoding=te, **knobs)
     model = models.model_initialize(**config)
     model.train(tr, va, ted)          # early-stops on val internally
 
+    RESULT = HERE / "result"; RESULT.mkdir(exist_ok=True)
     def predict_dump(pid, df, y, out, tag):
         p = np.array(model.predict(df)).flatten()
         with open(out, "w", newline="") as f:
             w = csv.writer(f); w.writerow(["pid", "pred", "y"])
             for a_, b_, c_ in zip(pid, p, y):
                 w.writerow([a_, float(b_), float(c_)])
-        print(f"  {tag:8} r={pearsonr(p, y)[0]:.3f} rho={spearmanr(p, y).statistic:.3f} "
+        print(f"  {tag:14} r={pearsonr(p, y)[0]:.3f} rho={spearmanr(p, y).statistic:.3f} "
               f"rmse={np.sqrt(((p-y)**2).mean()):.3f} n={len(pid)}")
         return p
 
-    predict_dump(te_pid, ted, tey, PREDS / f"{disp}_v2test_seed{a.seed}.csv", "v2-test")
-    predict_dump(ho_pid, hod, hoy, CASF / f"{disp}_holdout2019_preds_seed{a.seed}.csv", "holdout")
-    predict_dump(cf_pid, cfd, cfy, CASF / f"{disp}_casf2016_preds_seed{a.seed}.csv", "casf2016")
+    predict_dump(te_pid, ted, tey, RESULT / f"preds_{disp}_{a.split}_seed{a.seed}.csv", f"{a.split}-test")
+    if a.split == "v2":
+        ho_pid, hod, hoy = proc("holdout"); cf_pid, cfd, cfy = proc("casf")
+        predict_dump(te_pid, ted, tey, PREDS / f"{disp}_v2test_seed{a.seed}.csv", "v2-test")
+        predict_dump(ho_pid, hod, hoy, CASF / f"{disp}_holdout2019_preds_seed{a.seed}.csv", "holdout")
+        predict_dump(cf_pid, cfd, cfy, CASF / f"{disp}_casf2016_preds_seed{a.seed}.csv", "casf2016")
 
 
 if __name__ == "__main__":

@@ -205,6 +205,92 @@
         ]
       }
     },
+    "atom3d_lba30_edrscc_v2": {
+      "file": "atom3d_lba30_edrscc_v2.csv",
+      "sha256": "f0af605354b80f5c987294649278072b8827314d5b3ea4eb7d5209605347fb5c",
+      "counts": {
+        "train": 2078,
+        "val": 266,
+        "test": 340,
+        "total": 2684
+      },
+      "description": "Official ATOM3D LBA ID30 assignment intersected with lp_edrscc_v2 eligibility (ED available, ligand and pocket RSCC >= 0.8, non-covalent, Kd/Ki only)",
+      "partition": "Official released ATOM3D LBA identity-30 train/validation/test assignment; no re-clustering",
+      "generalization": "ATOM3D LBA ID30 protocol retained on the subset that passes our density/quality/label filters",
+      "inputs": {
+        "atom3d_release": "https://zenodo.org/records/4914718",
+        "atom3d_archive_md5": "95e3d09ce35ca17bcf0dfee9ddc68eaa",
+        "atom3d_local_mirror": "base/profsa/data/dataset/lba_identity_30/{train,valid,test}.lmdb",
+        "eligible_scheme": "lp_edrscc_v2"
+      }
+    },
+    "atom3d_lba60_edrscc_v2": {
+      "file": "atom3d_lba60_edrscc_v2.csv",
+      "sha256": "ebf2b1c48a545a467efad1ded2cd57acab8fb246883288dd79a0ce47007cdf76",
+      "counts": {
+        "train": 2150,
+        "val": 273,
+        "test": 261,
+        "total": 2684
+      },
+      "description": "Official ATOM3D LBA ID60 assignment intersected with lp_edrscc_v2 eligibility (ED available, ligand and pocket RSCC >= 0.8, non-covalent, Kd/Ki only)",
+      "partition": "Official released ATOM3D LBA identity-60 train/validation/test assignment; no re-clustering",
+      "generalization": "ATOM3D LBA ID60 protocol retained on the subset that passes our density/quality/label filters",
+      "inputs": {
+        "atom3d_release": "https://zenodo.org/records/4914718",
+        "atom3d_archive_md5": "4c15b15a75783be8398234f4b2cad717",
+        "atom3d_local_mirror": "base/profsa/data/dataset/lba_identity_60/{train,valid,test}.lmdb",
+        "eligible_scheme": "lp_edrscc_v2"
+      }
+    },
+    "atom3d_lba30_edrscc_v2_v22clean": {
+      "file": "atom3d_lba30_edrscc_v2_v22clean.csv",
+      "sha256": "e134b5ebfd51ce6c671fcd5d45f723d30bf57e08c8fff24b3258624fbeeda8df",
+      "counts": {
+        "train": 2078,
+        "val": 3,
+        "test": 9,
+        "total": 2090
+      },
+      "description": "Official ATOM3D LBA ID30 assignment intersected with lp_edrscc_v2; downstream validation/test proteins with >=30% identity to the actual PLINDER-v2.2 pretraining corpus are removed",
+      "partition": "Official released ATOM3D LBA identity-30 assignment; train unchanged, validation/test filtered against PLINDER-v2.2",
+      "generalization": "ATOM3D ID30 plus downstream holdout isolation from PLINDER-v2.2 at >=30% identity and >=80% query/target coverage",
+      "inputs": {
+        "source_scheme": "atom3d_lba30_edrscc_v2",
+        "plinder_corpus": "actual v2.2 load-time subset: first 112000 xray-available positions, then in-vocabulary ligand filter",
+        "plinder_positions": 106396,
+        "plinder_unique_pdb": 39695,
+        "min_sequence_identity": 0.3,
+        "min_query_and_target_coverage": 0.8,
+        "mmseqs_cov_mode": 0,
+        "downstream_train": "unchanged",
+        "audit": "atom3d_lba_v22clean_audit.json"
+      }
+    },
+    "atom3d_lba60_edrscc_v2_v22clean": {
+      "file": "atom3d_lba60_edrscc_v2_v22clean.csv",
+      "sha256": "1921008213fa5d5ae7e8bbed78aba7fd5a39f674ac0987cc7663b5e31700a1b4",
+      "counts": {
+        "train": 2150,
+        "val": 20,
+        "test": 24,
+        "total": 2194
+      },
+      "description": "Official ATOM3D LBA ID60 assignment intersected with lp_edrscc_v2; downstream validation/test proteins with >=60% identity to the actual PLINDER-v2.2 pretraining corpus are removed",
+      "partition": "Official released ATOM3D LBA identity-60 assignment; train unchanged, validation/test filtered against PLINDER-v2.2",
+      "generalization": "ATOM3D ID60 plus downstream holdout isolation from PLINDER-v2.2 at >=60% identity and >=80% query/target coverage",
+      "inputs": {
+        "source_scheme": "atom3d_lba60_edrscc_v2",
+        "plinder_corpus": "actual v2.2 load-time subset: first 112000 xray-available positions, then in-vocabulary ligand filter",
+        "plinder_positions": 106396,
+        "plinder_unique_pdb": 39695,
+        "min_sequence_identity": 0.6,
+        "min_query_and_target_coverage": 0.8,
+        "mmseqs_cov_mode": 0,
+        "downstream_train": "unchanged",
+        "audit": "atom3d_lba_v22clean_audit.json"
+      }
+    },
     "lba30": {
       "file": "lba30_edrscc.csv",
       "sha256": "9c054fb0f6c1ce73a0783e201800b211368843466daa725447debed939131edc",
@@ -213,7 +299,7 @@
         "val": 823,
         "test": 1318
       },
-      "provenance": "LBA-style protein-seq-identity split (mmseqs2 --min-seq-id 0.3 -c 0.8) on lp_edrscc_v2 pool; whole clusters -> splits (seed 42); protein leak-proof, ligand-agnostic. dataset/make_lba_split.py"
+      "provenance": "LEGACY local MMseqs2 easy-cluster split (--min-seq-id 0.3 -c 0.8) on lp_edrscc_v2; whole representative clusters assigned with seed 42. Not the official ATOM3D assignment and not strict identity-disjoint under an all-vs-all audit. dataset/make_lba_split.py"
     },
     "lba60": {
       "file": "lba60_edrscc.csv",
@@ -223,7 +309,7 @@
         "val": 821,
         "test": 1338
       },
-      "provenance": "LBA-style protein-seq-identity split (mmseqs2 --min-seq-id 0.6 -c 0.8) on lp_edrscc_v2 pool; whole clusters -> splits (seed 42); protein leak-proof, ligand-agnostic. dataset/make_lba_split.py"
+      "provenance": "LEGACY local MMseqs2 easy-cluster split (--min-seq-id 0.6 -c 0.8) on lp_edrscc_v2; whole representative clusters assigned with seed 42. Not the official ATOM3D assignment and not strict identity-disjoint under an all-vs-all audit. dataset/make_lba_split.py"
     }
   }
 }

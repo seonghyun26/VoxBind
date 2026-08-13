@@ -74,8 +74,8 @@ def add_atom_column(table):
     return head + body
 
 
-# Our DecompDiff reproductions (N=100 pockets × 10 mols, Vina full). Two rows added right after the
-# paper DecompDiff row (paper values kept), ordered paper → ref-informed → ref-free:
+# Our DecompDiff reproductions (N=100 pockets × 10 mols, Vina full). The two rows live in the
+# "Our reproduction" block with reproduced VoxBind/Ours; the paper DecompDiff row stays above:
 #   • ref-informed = ref_prior / golden-prior (closest analog to the paper's reference priors).
 #     BENCHMARK-FAITHFUL 260729: 25 samples/pocket, exh 32, 98/100 pockets (2 dropped — pockets
 #     81/92 had pathologically large molecules that don't dock in reasonable time even at exh 8).
@@ -134,19 +134,37 @@ _DECOMP_REPRO_ROW = """
 
 
 def inject_decompdiff_repro(table):
-    """Insert our reproduced-DecompDiff rows right after the paper DecompDiff row (idempotent)."""
+    """Insert reproduced DecompDiff at the start of the Our reproduction block (idempotent)."""
     if "tag repro" in table:
         return table
-    i = table.find("DecompDiff")
+    old_band = "Our reproduction · 79 x-ray-density pockets"
+    new_band = ("Our reproduction · DecompDiff 98/100 pockets · "
+                "VoxBind/Ours 79 x-ray-density pockets")
+    table = table.replace(old_band, new_band)
+    i = table.find(new_band)
     if i < 0:
         return table
     j = table.index("</tr>", i) + len("</tr>")
     return table[:j] + _DECOMP_REPRO_ROW + table[j:]
 
 
+def mark_voxbind_reproduced(table):
+    """Use the reproduced tag for our two rerun VoxBind rows; paper rows remain prior."""
+    return table.replace(
+        'VoxBind <span class="tag supervised">baseline</span>',
+        'VoxBind <span class="tag repro">reproduced</span>',
+    )
+
+
+def strip_repeated_table_units(table):
+    """Keep units in Table 4 headers only (e.g. High aff. (%)), not every value cell."""
+    return re.sub(r'(<span class="val">[^<]*?)%(</span>)', r'\1\2', table)
+
+
 sys.path.insert(0, os.path.join(HERE, "260715"))
 import build_appendixB_bar as bar                                 # noqa: E402  (METHODS, svg(), legend())
 import build_regression_baseline as reg                           # noqa: E402  (read_cheapnet())
+import build_denovo_vina_chart as denovo_chart                    # noqa: E402  (Matplotlib Figure 4)
 
 DOC715 = os.path.join(HERE, "260715", "260715_meeting.html")
 OUT = os.path.join(HERE, "results.html")
@@ -177,9 +195,10 @@ FLAG["HonestAffinity"] = "new"
 COLOR["IPNet (frozen)"] = bar.PALETTE[13]      # lavender — IPDiff BAPNet, frozen (leaked)
 COLOR["IPNet (scratch)"] = bar.PALETTE[14]     # pink — IPDiff BAPNet, from scratch (clean)
 COLOR["Nesso-1"] = "#00838f"                   # teal — Nesso-1 cofolding (leaked: PDBbind-trained)
-# seq/SMILES DTA baselines (amber family, matching the seq tier)
-COLOR["DeepDTA"] = "#c98a3a"; COLOR["MolTrans"] = "#a86a26"; COLOR["PLAPT"] = "#8a6d3b"
-for _n in ("DeepDTA", "MolTrans", "PLAPT"):
+# seq/SMILES DTA baselines (amber family, matching the seq tier) + CPES (3D curvature/PES)
+COLOR["DeepDTA"] = "#c98a3a"; COLOR["MolTrans"] = "#a86a26"
+COLOR["CPES"] = "#6f5aa8"
+for _n in ("DeepDTA", "MolTrans", "CPES"):
     FLAG[_n] = "new"
 
 TYPE = {  # display tag per method — three categories, distinctly colored
@@ -188,24 +207,24 @@ TYPE = {  # display tag per method — three categories, distinctly colored
     "HonestAffinity": "supervised", "AEV-PLIG": "supervised", "DSMBind": "zero-shot",
     "IPNet (frozen)": "pretrained", "IPNet (scratch)": "supervised", "Nesso-1": "zero-shot",
     "C": "pretrained", "C+D+G": "pretrained", "C+D+G +corr": "pretrained",
-    "DeepDTA": "supervised", "MolTrans": "supervised", "PLAPT": "zero-shot",
+    "DeepDTA": "supervised", "MolTrans": "supervised",
+    "CPES": "supervised",
 }
 TAGCLASS = {"supervised": "supervised", "pretrained": "pretrained", "zero-shot": "zeroshot"}
 
 # Input modality — what the method actually consumes. "seq" = protein sequence + ligand SMILES
-# only (no 3D coordinates); "3d" = needs the 3D structure (voxel/graph/pocket/energy). Nesso-1 and
-# HonestAffinity are the only sequence models; every other method (incl. our voxel C/C+D+G, the
-# graph baselines, ProFSA pocket-encoder, DSMBind energy) is 3D-structure based.
+# only (no 3D coordinates); "3d" = needs the 3D structure (voxel/graph/pocket/energy). Methods not
+# listed here default to 3D, including our voxel C/C+D+G, CPES, the graph baselines, ProFSA, DSMBind.
 MODALITY = {
     "Nesso-1": "seq", "HonestAffinity": "seq",
-    "PLAPT": "seq", "DeepDTA": "seq", "MolTrans": "seq",
+    "DeepDTA": "seq", "MolTrans": "seq",
 }  # default → "3d"
 DENSITY_OURS = {"C+D+G", "C+D+G +corr"}   # our voxel+density models → their own top information tier
 
 # Methods with NO official author checkpoint — the whole model was re-trained from scratch on our
 # data (faithful reimplementation or vendored code). Flagged "re-trained" for transparency. NOT
 # flagged: methods that use official pretrained weights (ProFSA / IPNet-frozen = frozen official
-# encoder + probe; DSMBind / Nesso-1 / PLAPT / Boltz-2 = official checkpoint, zero-shot or as-is).
+# encoder + probe; DSMBind / Nesso-1 / Boltz-2 = official checkpoint, zero-shot or as-is).
 RETRAINED = {"GET", "EGNN", "EGNN + TargetDiff", "CheapNet", "HBGSA", "BindNet",
              "AEV-PLIG", "HonestAffinity", "IPNet (scratch)", "DeepDTA", "MolTrans"}
 
@@ -285,7 +304,7 @@ def cat_merged_rows(items, category_fn=category3):
 # leaked ceiling, not clean generalization. Flagged with a "leaked" badge AND excluded from the
 # best/second ranking (they'd otherwise win on memorization). Nesso-1: trained on PDBbind+BindingDB+
 # ChEMBL (all of lp_edrscc_v2 is in it). IPNet (frozen): BAPNet supervised on PDBbind-v2016 affinity.
-LEAKED = {"Nesso-1", "IPNet (frozen)", "PLAPT"}   # PLAPT pretrained on BindingDB → holdout may overlap
+LEAKED = {"Nesso-1", "IPNet (frozen)"}
 for _name in LEAKED:
     FLAG[_name] = "leaked"
 
@@ -312,8 +331,12 @@ EXTERNAL = set()
 # suppress it (show "running") until we train them on our splits (base/get, model_type EGNN).
 PAPER_ONLY = {"EGNN", "EGNN + TargetDiff"}
 
-# method render order = bar.METHODS order (now the full 15: HonestAffinity, IPNet frozen/scratch and
-# Nesso-1 are first-class entries in bar.METHODS so Table 1 and the bar charts share ONE source).
+# Planned baseline with no official checkpoint/result on our cohorts. Keep every missing cell
+# explicitly TBA (rather than the generic live-campaign "running" state used by Table 1a).
+PLANNED_TBA = {"CPES"}
+
+# method render order = bar.METHODS order (HonestAffinity, IPNet frozen/scratch, and Nesso-1 are
+# first-class entries in bar.METHODS so Table 1 and the bar charts share one source).
 ORDER = [name for (name, *_ ) in bar.METHODS]
 
 # ── CASF-2016 evaluation columns (all methods trained on lp_edrscc_v2 TRAIN, tested on CASF) ──
@@ -325,13 +348,13 @@ ORDER = [name for (name, *_ ) in bar.METHODS]
 # BOTH the downstream affinity split (lp_edrscc_v2 train/val) AND the champion's SSL pretraining
 # (PLINDER-v2; only 5 CASF overlap it, all already excluded by the lp_edrscc_v2 filter). So clean-92
 # is truly unseen by our method end-to-end. (leaky-214 / nontrain-124 dropped.)
-CASF_COLS = [("clean", "PDBbind 2016 (held-out ED, clean-92)", 92)]
+CASF_COLS = [("clean", "CASF-2016 (held-out ED, clean-92)", 92)]
 CASF_KEY = {"C": "C_100m_mask075_coords", "C+D+G": "CDG_100m_mask075",
             "C+D+G +corr": "CDG_100m_mask075_corr5", "DSMBind": "DSMBind", "GET": "GET", "EGNN": "EGNN",
             "EGNN + TargetDiff": "EGNN_TD", "CheapNet": "CheapNet", "BindNet": "BindNet",
             "AEV-PLIG": "AEV", "HBGSA": "HBGSA", "ProFSA": "ProFSA", "HonestAffinity": "HonestAffinity",
             "IPNet (frozen)": "IPNet_frozen", "IPNet (scratch)": "IPNet_retrain", "Nesso-1": "Nesso",
-            "DeepDTA": "DeepDTA", "MolTrans": "MolTrans", "PLAPT": "PLAPT"}
+            "DeepDTA": "DeepDTA", "MolTrans": "MolTrans"}
 
 
 def load_casf(method, which):
@@ -368,6 +391,10 @@ PROBE_CSV = {
         "lp_edrscc_v2_cl123": "probe_results_e49_v5_lp_edrscc_v2_cl123split_260723_ar_cvit_100m_v2_mask075_coords.csv",
         "lba60":              "probe_results_e49_v5_lba60split_260723_ar_cvit_100m_v2_mask075_coords.csv",
         "lba30":              "probe_results_e49_v5_lba30split_260723_ar_cvit_100m_v2_mask075_coords.csv",
+        "atom3d_lba60_edrscc_v2": "probe_results_e49_v5_atom3d_lba60split_260723_ar_cvit_100m_v2_mask075_coords.csv",
+        "atom3d_lba30_edrscc_v2": "probe_results_e49_v5_atom3d_lba30split_260723_ar_cvit_100m_v2_mask075_coords.csv",
+        "atom3d_lba60_edrscc_v2_v22clean": "probe_results_e49_v5_atom3d_lba60_v22cleansplit_260723_ar_cvit_100m_v2_mask075_coords.csv",
+        "atom3d_lba30_edrscc_v2_v22clean": "probe_results_e49_v5_atom3d_lba30_v22cleansplit_260723_ar_cvit_100m_v2_mask075_coords.csv",
         "clean_ed_v1_indep":  "probe_results_e49_v5_clean_ed_v1_indepsplit_260723_ar_cvit_100m_v2_mask075_coords.csv",
     },
     "C+D+G": {
@@ -377,6 +404,10 @@ PROBE_CSV = {
         "lp_edrscc_v2_cl123": "probe_results_e49_v5_lp_edrscc_v2_cl123split_260705_ar_cvit_100m_v2_mask075.csv",
         "lba60":              "probe_results_e49_v5_lba60split.csv",
         "lba30":              "probe_results_e49_v5_lba30split.csv",
+        "atom3d_lba60_edrscc_v2": "probe_results_e49_v5_atom3d_lba60split.csv",
+        "atom3d_lba30_edrscc_v2": "probe_results_e49_v5_atom3d_lba30split.csv",
+        "atom3d_lba60_edrscc_v2_v22clean": "probe_results_e49_v5_atom3d_lba60_v22cleansplit.csv",
+        "atom3d_lba30_edrscc_v2_v22clean": "probe_results_e49_v5_atom3d_lba30_v22cleansplit.csv",
         "clean_ed_v1_indep":  "probe_results_e49_v5_clean_ed_v1_indepsplit_260705_ar_cvit_100m_v2_mask075.csv",
     },
     # C+D+G with the probe HEAD trained as MSE + Pearson-correlation aux (λ=5) — same 100M encoder,
@@ -388,6 +419,10 @@ PROBE_CSV = {
         "lp_edrscc_v2_cl123": "probe_results_e49_v5_lp_edrscc_v2_cl123split_loss-mse-corr-w5.csv",
         "lba60":              "probe_results_e49_v5_lba60split_loss-mse-corr-w5.csv",
         "lba30":              "probe_results_e49_v5_lba30split_loss-mse-corr-w5.csv",
+        "atom3d_lba60_edrscc_v2": "probe_results_e49_v5_atom3d_lba60split_loss-mse-corr-w5.csv",
+        "atom3d_lba30_edrscc_v2": "probe_results_e49_v5_atom3d_lba30split_loss-mse-corr-w5.csv",
+        "atom3d_lba60_edrscc_v2_v22clean": "probe_results_e49_v5_atom3d_lba60_v22cleansplit_loss-mse-corr-w5.csv",
+        "atom3d_lba30_edrscc_v2_v22clean": "probe_results_e49_v5_atom3d_lba30_v22cleansplit_loss-mse-corr-w5.csv",
         "clean_ed_v1_indep":  "probe_results_e49_v5_clean_ed_v1_indepsplit_loss-mse-corr-w5.csv",
     },
 }
@@ -398,7 +433,12 @@ PROBE_CSV = {
 # v2/paper fallback so cells auto-fill as each baseline's run lands; a missing file → None.
 SHORT = {"lp_edrscc_v2": "v2", "lp_edrscc_v2_cl1": "cl1",
          "lp_edrscc_v2_cl12": "cl12", "lp_edrscc_v2_cl123": "cl123",
-         "lba60": "lba60", "lba30": "lba30", "clean_ed_v1_indep": "clean_ed_v1_indep"}
+         "lba60": "lba60", "lba30": "lba30",
+         "atom3d_lba60_edrscc_v2": "atom3d_lba60_edrscc_v2",
+         "atom3d_lba30_edrscc_v2": "atom3d_lba30_edrscc_v2",
+         "atom3d_lba60_edrscc_v2_v22clean": "atom3d_lba60_edrscc_v2_v22clean",
+         "atom3d_lba30_edrscc_v2_v22clean": "atom3d_lba30_edrscc_v2_v22clean",
+         "clean_ed_v1_indep": "clean_ed_v1_indep"}
 METHOD_PATH = {
     "GET":               lambda s: f"base/get/_edrscc/results_GET_{SHORT[s]}.json",
     "EGNN":              lambda s: f"base/get/_edrscc/results_EGNN_{SHORT[s]}.json",
@@ -412,6 +452,8 @@ METHOD_PATH = {
     "IPNet (frozen)":    lambda s: f"base/ipdiff/_edrscc/results_IPNet_frozen_{s}.json",
     "IPNet (scratch)":   lambda s: f"base/ipdiff/_edrscc/results_IPNet_retrain_{s}.json",
     "Nesso-1":           lambda s: f"base/nesso/_edrscc/results_Nesso_{s}.json",
+    "DeepDTA":           lambda s: f"base/dta/result/DeepDTA_{s}.json",
+    "MolTrans":          lambda s: f"base/dta/result/MolTrans_{s}.json",
 }
 
 
@@ -429,7 +471,8 @@ def _read_result(relpath):
         return None
     import json as _j
     d = _j.load(open(path))
-    if isinstance(d.get("pearson"), dict) and "mean" in d["pearson"]:            # A
+    if (isinstance(d.get("pearson"), dict) and "mean" in d["pearson"]) or \
+       (isinstance(d.get("spearman"), dict) and "mean" in d["spearman"]):        # A (rho-only ok)
         g = lambda k: (d[k]["mean"], d[k].get("std")) if isinstance(d.get(k), dict) and "mean" in d[k] else None
         r, rho, rmse = g("pearson"), g("spearman"), g("rmse")
     elif isinstance(d.get("per_seed_mean_std"), dict) or isinstance(d.get("mean_std"), dict):   # B / D
@@ -473,6 +516,12 @@ def load(method, split):
     Live campaign JSONs/CSVs fill as each run lands; else fall back to the v2 column from
     bar.METHODS (our runs), or None (→ "running" placeholder). Paper v2 (EGNN rows) suppressed.
     """
+    if split in ("lp_test_novel60", "lp_test_novel30"):       # LP protein-novelty test subsets:
+        # SAME lp_edrscc_v2 model/features, TEST masked by max train seq-id (<60% / <30%). Every
+        # method with cached per-complex v2 preds is re-scored by base/_casf/score_novel_subsets.py
+        # (no retraining) → schema-A JSON. Missing file → None (TBA).
+        safe_m = "".join(c if c.isalnum() else "_" for c in method)
+        return _read_result(f"base/_casf/novel_subsets/{safe_m}__{split}.json")
     if method == "CheapNet":
         return reg.read_cheapnet(split)                       # results_{split}.json (all 4 done)
     if method in PROBE_CSV:                                    # VoxBind C / C+D+G frozen-encoder probe
@@ -568,7 +617,7 @@ def rank_per_col():
     out = {}
     for split, _, _ in SPLITS:
         for metric, hi in (("r", True), ("rho", True), ("rmse", False)):
-            vals = [(m, load(m, split)[metric][0]) for m in ORDER
+            vals = [(m, load(m, split)[metric][0]) for m in all_methods()
                     if m not in LEAKED and load(m, split) and load(m, split).get(metric) and load(m, split)[metric][0] is not None]
             vals.sort(key=lambda x: x[1], reverse=hi)
             if vals:
@@ -637,13 +686,13 @@ def tba_cell(divcls):
 
 
 def all_methods():
-    """Every Section-1.1 baseline (bar.METHODS order) plus the seq/SMILES DTA additions, so the
+    """Every Section-1.1 baseline (bar.METHODS order) plus newer baseline additions, so the
     held-out tables list ALL methods — with TBA for any not yet run on the new consolidated subset."""
-    extra = [m for m in ("DeepDTA", "MolTrans", "PLAPT") if m not in ORDER]
+    extra = [m for m in ("DeepDTA", "MolTrans", "CPES") if m not in ORDER]
     return list(ORDER) + extra
 
 
-def method_cell(name, dagger=False, show_leaked=True):
+def method_cell(name, dagger=False, show_leaked=True, pretrain_overlap=False):
     typ = TYPE.get(name, "supervised")
     tagc = TAGCLASS[typ]
     color = COLOR.get(name, "#888")
@@ -659,10 +708,14 @@ def method_cell(name, dagger=False, show_leaked=True):
     leak_html = ('<span class="tag leaked" title="trained on affinity data overlapping our PDBbind '
                  'test set &mdash; leaked ceiling, excluded from best/second ranking">leaked</span>'
                  if show_leaked and name in LEAKED else "")
+    overlap_html = ('<span class="tag leaked" title="exact CASF structures occur in the released '
+                    'self-supervised pretraining corpus">pretrain overlap</span>'
+                    if pretrain_overlap else "")
     retr_html = ('<span class="tag retrained" title="no official author checkpoint &mdash; the whole '
                  'model was re-trained from scratch on our data">re-trained</span>'
                  if name in RETRAINED else "")
-    return f'<td class="col-method">{sw}{name}{dg}<span class="tag {tagc}">{typ}</span>{bb_html}{retr_html}{leak_html}</td>'
+    return (f'<td class="col-method">{sw}{name}{dg}<span class="tag {tagc}">{typ}</span>'
+            f'{bb_html}{retr_html}{leak_html}{overlap_html}</td>')
 
 
 # CASP16 Stage-2 shortlist: representative sequence/3D baselines plus our coordinate-only and
@@ -718,11 +771,11 @@ def casp16_rows():
 
 
 # ── LBA-style protein-sequence-novelty splits (Table 1b) ─────────────────────
-LBA_METHODS = list(ORDER) + ["DeepDTA", "MolTrans"]   # all Table-1 baselines + seq DTA additions as rows; cells fill from load(), else TBA
-LBA_COLS = [   # base, protein-novelty (LBA60 easier -> LBA30 harder), then GEMS CleanSplit (diff test = CASF-2016)
+LBA_METHODS = all_methods()   # identical baseline universe in Tables 1a/1b; missing runs render TBA
+LBA_COLS = [   # base LP, then LP TEST masked by protein novelty (same model/features, no retrain), then CleanSplit
     ("lp_edrscc_v2", "LP-PDBBind", "1320"),
-    ("lba60",        "LBA60 &middot; &le;60% id", "1338"),
-    ("lba30",        "LBA30 &middot; &le;30% id", "1318"),
+    ("lp_test_novel60", "LP &middot; novel protein<br>test id &lt; 60% to train", "813"),
+    ("lp_test_novel30", "LP &middot; novel protein<br>test id &lt; 30% to train", "453"),
     ("clean_ed_v1_indep",  "CleanSplit leak-free &middot; CASF-2016", "109"),
 ]
 
@@ -752,7 +805,8 @@ def lba_rows():
     best = {}
     for key, _, _ in LBA_COLS:
         present = [(m, load(m, key)) for m in LBA_METHODS]
-        present = [(m, d) for m, d in present if d and d.get("rho") and d["rho"][0] is not None]
+        present = [(m, d) for m, d in present
+                   if m not in LEAKED and d and d.get("rho") and d["rho"][0] is not None]
         if present:
             best[key] = max(present, key=lambda x: x[1]["rho"][0])[0]
     order = sorted(LBA_METHODS, key=lambda n: cat_sort_key(n, LBA_METHODS.index(n)))  # match Table 1 modality order
@@ -772,6 +826,116 @@ def lba_rows():
     return cat_merged_rows(items)
 
 
+def lba_bar_svg():
+    """Table-1b values as dataset rows x metric columns, using the Table-1 method order."""
+    order = sorted(LBA_METHODS, key=lambda n: cat_sort_key(n, LBA_METHODS.index(n)))
+    panels = [
+        ("r", "Test Pearson r", 0.35, 0.85, [0.40, 0.50, 0.60, 0.70, 0.80], True),
+        ("rho", "Test Spearman &rho;", 0.35, 0.85, [0.40, 0.50, 0.60, 0.70, 0.80], True),
+        ("rmse", "Test RMSE", 1.30, 1.90, [1.30, 1.50, 1.70, 1.90], False),
+    ]
+    row_labels = {
+        "lp_edrscc_v2": ("LP-PDBBind", "base"),
+        "lp_test_novel60": ("Novel &lt;60%", "to train"),
+        "lp_test_novel30": ("Novel &lt;30%", "to train"),
+        "clean_ed_v1_indep": ("CleanSplit", "CASF-2016"),
+    }
+    W, header_h, row_h, row_gap, bottom = 1130, 40, 160, 14, 16
+    H, ml, mr, col_gap = header_h + len(LBA_COLS) * row_h + (len(LBA_COLS) - 1) * row_gap + bottom, 160, 16, 24
+    plot_w = (W - ml - mr - col_gap * (len(panels) - 1)) / len(panels)
+    out = [
+        f'<svg viewBox="0 0 {W} {H}" width="100%" style="max-width:{W}px;display:block;margin:0 auto" '
+        'font-family="-apple-system,Segoe UI,Roboto,sans-serif" role="img" '
+        'aria-label="Table 1b generalization metrics across LP-PDBBind, protein-novel subsets, and CleanSplit">',
+        '<title>Generalization under leakage control</title>',
+        '<desc>Columns are Pearson correlation, Spearman correlation, and RMSE; rows are the four '
+        'Table 1b cohorts. Bars show available method means and whiskers show standard deviation.</desc>',
+    ]
+
+    for pi, (_, title, _, _, _, _) in enumerate(panels):
+        panel_x = ml + pi * (plot_w + col_gap)
+        out.append(f'<text x="{panel_x + plot_w / 2:.1f}" y="20" text-anchor="middle" '
+                   f'font-size="11.5" font-weight="700" fill="#1c2433">{title}</text>')
+
+    for ri, (cohort, _, n_test) in enumerate(LBA_COLS):
+        row_y = header_h + ri * (row_h + row_gap)
+        plot_top, plot_base = row_y + 10, row_y + 132
+        main_label, sub_label = row_labels[cohort]
+        out.append(f'<text x="{ml-30}" y="{row_y+55:.1f}" text-anchor="end" font-size="10.5" '
+                   f'font-weight="700" fill="#566072">{main_label}</text>')
+        out.append(f'<text x="{ml-30}" y="{row_y+69:.1f}" text-anchor="end" font-size="8.5" '
+                   f'fill="#7a8699">{sub_label}</text>')
+        out.append(f'<text x="{ml-30}" y="{row_y+83:.1f}" text-anchor="end" font-size="8.5" '
+                   f'fill="#9aa3b2">N = {n_test}</text>')
+
+        for pi, (metric, _, vmin, vmax, ticks, higher_better) in enumerate(panels):
+            panel_x = ml + pi * (plot_w + col_gap)
+
+            def y(value):
+                return plot_base - (value - vmin) / (vmax - vmin) * (plot_base - plot_top)
+
+            for tick in ticks:
+                yy = y(tick)
+                out.append(f'<line x1="{panel_x:.1f}" y1="{yy:.1f}" x2="{panel_x+plot_w:.1f}" y2="{yy:.1f}" '
+                           'stroke="#e6e9ef" stroke-width="1"/>')
+                out.append(f'<text x="{panel_x-5:.1f}" y="{yy+3:.1f}" text-anchor="end" font-size="8" '
+                           f'fill="#9aa3b2">{tick:.2f}</text>')
+
+            inner = 8
+            pitch = (plot_w - inner * 2) / len(order)
+            bar_width = min(9.0, pitch * 0.58)
+            values = []
+            for mi, name in enumerate(order):
+                data = load(name, cohort)
+                value = data.get(metric) if data else None
+                if not value or value[0] is None:
+                    continue
+                mean = value[0]
+                sd = value[1] if value[1] is not None else 0.0
+                values.append((mi, name, mean, sd, name in LEAKED))
+
+            ranked = [item for item in values if not item[4]]
+            best_i = None
+            if ranked:
+                best_i = (max if higher_better else min)(ranked, key=lambda item: item[2])[0]
+
+            for mi, name, mean, sd, leaked in values:
+                cx = panel_x + inner + pitch * (mi + 0.5)
+                bar_y = max(plot_top, min(plot_base, y(mean)))
+                height = max(0.0, plot_base - bar_y)
+                opacity = ' opacity="0.38"' if leaked else ""
+                stroke = ' stroke="#000" stroke-width="1.5"' if mi == best_i else ""
+                out.append(f'<rect x="{cx-bar_width/2:.1f}" y="{bar_y:.1f}" width="{bar_width:.1f}" '
+                           f'height="{height:.1f}" rx="1.5" fill="{COLOR[name]}"{stroke}{opacity} '
+                           f'data-method="{name}" data-cohort="{cohort}" data-metric="{metric}">'
+                           f'<title>{name} · {main_label}: {mean:.3f} ± {sd:.3f}</title></rect>')
+                yhi = max(plot_top, min(plot_base, y(mean + sd)))
+                ylo = max(plot_top, min(plot_base, y(mean - sd)))
+                out.append(f'<line x1="{cx:.1f}" y1="{yhi:.1f}" x2="{cx:.1f}" y2="{ylo:.1f}" '
+                           f'stroke="#566072" stroke-width="0.8"{opacity} data-whisker="true" '
+                           f'data-ymin="{plot_top:.1f}" data-ymax="{plot_base:.1f}"/>')
+                if mi == best_i:
+                    label_y = max(plot_top + 9, yhi - 3)
+                    out.append(f'<text x="{cx:.1f}" y="{label_y:.1f}" text-anchor="middle" '
+                               f'font-size="8.5" font-weight="700" fill="#1c2433">{mean:.2f}</text>')
+
+            out.append(f'<line x1="{panel_x:.1f}" y1="{plot_base:.1f}" '
+                       f'x2="{panel_x+plot_w:.1f}" y2="{plot_base:.1f}" '
+                       'stroke="#aeb6c4" stroke-width="1.2"/>')
+
+    out.append('</svg>')
+    return "\n      ".join(out)
+
+
+def lba_bar_legend():
+    """Legend for methods with at least one value in Table 1b; TBA-only methods stay in the table."""
+    order = sorted(LBA_METHODS, key=lambda n: cat_sort_key(n, LBA_METHODS.index(n)))
+    plotted = [name for name in order if any(load(name, cohort) for cohort, _, _ in LBA_COLS)]
+    methods = [(name, COLOR[name], "leaked" if name in LEAKED else False,
+                (None, None), (None, None), (None, None)) for name in plotted]
+    return bar.legend(methods=methods, leaked_names=LEAKED)
+
+
 def affinity_table_head():
     grp = ['<tr class="grp"><th class="col-modality" rowspan="2">Input</th>'
            '<th class="col-method" rowspan="2">Method</th>']
@@ -787,7 +951,8 @@ def affinity_table_head():
 
 def affinity_rows():
     rank = rank_per_col()
-    order = sorted(ORDER, key=lambda n: cat_sort_key(n, ORDER.index(n)))
+    methods = all_methods()
+    order = sorted(methods, key=lambda n: cat_sort_key(n, methods.index(n)))
     items = []
     for name in order:
         external = name in EXTERNAL
@@ -797,7 +962,10 @@ def affinity_rows():
             for k, metric in enumerate(("r", "rho", "rmse")):
                 divcls = "div-major" if k == 0 else ""
                 if d is None or d.get(metric) is None or d[metric][0] is None:
-                    tds.append(pending2(divcls) if not external else metric_cell(None, None, divcls))
+                    if name in PLANNED_TBA:
+                        tds.append(tba_cell(divcls))
+                    else:
+                        tds.append(pending2(divcls) if not external else metric_cell(None, None, divcls))
                 else:
                     bm, sm = rank.get((split, metric), (None, None))
                     rk = "best" if name == bm else ("second" if name == sm else None)
@@ -886,8 +1054,8 @@ def casf_bar_svg(which):
 def casf_bar_charts_block():
     """Two aligned rows for the leaky and non-train cohorts in Table A1."""
     cohorts = [
-        ("leaky", "PDBbind 2016 core", "N = 214 · includes 90 train-overlap complexes"),
-        ("nontrain", "PDBbind 2016 core − train", "N = 124 · exact train members removed"),
+        ("leaky", "CASF-2016 core", "N = 214 · includes 90 train-overlap complexes"),
+        ("nontrain", "CASF-2016 core − train", "N = 124 · exact train members removed"),
     ]
     parts = []
     for which, label, note in cohorts:
@@ -950,14 +1118,13 @@ def holdout2019_common_rows():
     return cat_merged_rows(items)
 
 
-# ── Merged held-out table: PDBbind 2016 clean-92 (3 cols) | PDBbind 2019 holdout common (4 cols
+# ── Merged held-out table: CASF-2016 clean-92 (3 cols) | PDBbind 2019 holdout common (4 cols
 # incl. per-method N). Both are held-out, PDBbind-derived evals, so they share one table with two
-# column groups (like Table 1's split groups). CASF-2016 == the PDBbind v2016 core set — the word
-# "CASF" is dropped everywhere in favour of "PDBbind 2016" to avoid confusion.
+# column groups (like Table 1's split groups).
 def heldout_table_head():
     grp = ['<tr class="grp"><th class="col-modality" rowspan="2">Input</th>'
            '<th class="col-method" rowspan="2">Method</th>'
-           '<th class="div-major" colspan="3">PDBbind 2016<span class="nsub">clean-92 &middot; N&nbsp;=&nbsp;92</span></th>'
+           '<th class="div-major" colspan="3">CASF-2016<span class="nsub">clean-92 &middot; N&nbsp;=&nbsp;92</span></th>'
            f'<th class="div-major" colspan="4">PDBbind 2019 holdout<span class="nsub">common ED &middot; '
            f'N&nbsp;=&nbsp;{holdout2019_common_n()}</span></th></tr>']
     sub = ['<tr class="sub">'
@@ -968,7 +1135,7 @@ def heldout_table_head():
 
 
 def heldout_rows():
-    """One row per method: PDBbind 2016 clean-92 (no best-highlight — n=92 too small, top methods
+    """One row per method: CASF-2016 clean-92 (no best-highlight — n=92 too small, top methods
     tied) then PDBbind 2019 holdout common (ρ ranked). DSMBind reports |r|/|ρ| (†); CORR_ONLY RMSE
     renders 'n/a'; partial-coverage N marked *; TBA where a method hasn't been run on that subset."""
     R = load_holdout2019_common()
@@ -983,7 +1150,7 @@ def heldout_rows():
     hbest = max((R[m]["rho"]["mean"] for m in elig), default=None)
     items = []
     for m in order:
-        # PDBbind 2016 clean-92 group (no best-highlight)
+        # CASF-2016 clean-92 group (no best-highlight)
         cd = load_casf(m, "clean") if m in CASF_KEY else None
         casf_cells = ""
         for k, metric in enumerate(("r", "rho", "rmse")):
@@ -1010,7 +1177,8 @@ def heldout_rows():
         else:
             hold_cells = "".join(tba_cell("div-major" if k == "r" else "") for k in ("r", "rho", "rmse"))
             hold_cells += '<td class="metric"><span class="tbd">TBA</span></td>'
-        items.append((m, method_cell(m, dagger=(m in ABS_CORR)) + casf_cells + hold_cells))
+        items.append((m, method_cell(m, dagger=(m in ABS_CORR), pretrain_overlap=(m == "ProFSA"))
+                      + casf_cells + hold_cells))
     return cat_merged_rows(items)
 
 
@@ -1073,7 +1241,9 @@ def holdout2019_common_bar_methods():
     partial Nesso-1 subset — so the figure mirrors the table. RMSE is omitted (None → no bar) for
     CORR_ONLY methods whose prediction is not on the pK scale (matches the table's 'n/a')."""
     results = load_holdout2019_common()
-    order = sorted(results, key=lambda method: cat_sort_key(method, -results[method]["rho"]["mean"]))
+    displayed = set(all_methods())
+    order = sorted((method for method in results if method in displayed),
+                   key=lambda method: cat_sort_key(method, -results[method]["rho"]["mean"]))
     out = []
     for method in order:
         b = results[method]
@@ -1144,7 +1314,7 @@ def casf_leakage_svg():
     o = [f'<svg viewBox="0 0 910 {H:.0f}" width="100%" style="max-width:910px;display:block;margin:0 auto" '
          'font-family="-apple-system,Segoe UI,Roboto,sans-serif">']
     o.append('<text x="455" y="20" font-size="12.5" font-weight="700" fill="#1c2433" text-anchor="middle">'
-             'PDBbind 2016 leakage gap &mdash; non-train (honest) &rarr; leaky (train-overlap), Spearman &rho;</text>')
+             'CASF-2016 leakage gap &mdash; non-train (honest) &rarr; leaky (train-overlap), Spearman &rho;</text>')
     ybot = TOP + len(data) * RH
     for t in (0.4, 0.5, 0.6, 0.7, 0.8):
         xt = x(t)
@@ -1442,11 +1612,16 @@ def build():
     css, table2, sub2, vina_img = extract_from_715()
     table2 = add_atom_column(table2)
     table2 = inject_decompdiff_repro(table2)
+    table2 = mark_voxbind_reproduced(table2)
+    table2 = strip_repeated_table_units(table2)
+    vina_img = denovo_chart.render(table2)
     pdbbind2016_chart = casf_bar_svg("clean")
     pdbbind2016_legend = casf_bar_legend()
     holdout2019_common_chart = holdout2019_common_bar_svg()
     holdout2019_common_legend = holdout2019_common_bar_legend()
     lp_tiers_chart = lp_all_tiers_svg()
+    lba_chart = lba_bar_svg()
+    lba_legend = lba_bar_legend()
     legend = bar.legend(leaked_names=LEAKED)
     abl_html = ablation_section()          # §1.3 CDG-encoder ablation (reads ablation_cdg.json)
 
@@ -1513,14 +1688,24 @@ def build():
       <li><b>Splits:</b> <code>lp_edrscc_v2</code> &rarr; <code>+CL1</code> &rarr; <code>+CL1+CL2</code> &rarr; <code>+CL1+CL2+CL3</code>.</li>
       <li><b>Protocol:</b> sequence-clustered; each tier keeps the original train/val/test assignment; 3 seeds.</li>
     </ul>
-    <p class="subsec-intro"><b>Baselines:</b> supervised equivariant/interaction models
-      (<a href="https://arxiv.org/abs/2102.09844">EGNN</a>, <a href="https://arxiv.org/abs/2306.01474">GET</a>,
-      <a href="https://openreview.net/forum?id=A1HhtITVEi">CheapNet</a>, <a href="https://arxiv.org/abs/2311.16160">BindNet</a>,
-      <a href="https://arxiv.org/abs/2604.23115">HBGSA</a>, <a href="https://www.nature.com/articles/s42004-025-01428-y">AEV-PLIG</a>),
-      pretrained or zero-shot 3D encoders/energies (<a href="https://arxiv.org/abs/2303.03543">TargetDiff</a>,
-      <a href="https://arxiv.org/abs/2310.07229">ProFSA</a>, <a href="https://arxiv.org/abs/2301.10814">DSMBind</a>,
-      <a href="https://openreview.net/forum?id=qH9nrMNTIW">IPNet</a>), and seq/SMILES predictors
-      (<a href="https://arxiv.org/abs/2606.03422">HonestAffinity</a>, <a href="https://www.valencelabs.com/wp-content/uploads/2026/07/nesso1.pdf">Nesso-1</a>).</p>
+    <p class="subsec-intro"><b>Baseline methods</b></p>
+    <ul class="split-notes">
+      <li><a href="https://proceedings.mlr.press/v139/satorras21a">EGNN</a> is the ICML 2021 E(<i>n</i>)-equivariant message-passing architecture used as our coordinate-only graph baseline.</li>
+      <li><a href="https://arxiv.org/abs/2303.03543">EGNN + TargetDiff</a> augments EGNN with representations from the target-aware equivariant diffusion model published at ICLR 2023.</li>
+      <li><a href="https://arxiv.org/abs/2306.01474">GET</a> is the ICML 2024 Generalist Equivariant Transformer, which models multiscale 3D molecular interactions with bilevel E(3)-equivariant attention.</li>
+      <li><a href="https://openreview.net/forum?id=A1HhtITVEi">CheapNet</a> is an ICLR 2025 affinity predictor that combines atom-level features, differentiable clustering, and hierarchical cross-attention.</li>
+      <li><a href="https://arxiv.org/abs/2311.16160">BindNet</a> is an ICLR 2024 self-supervised protein&ndash;ligand encoder trained through pair-distance prediction and masked-ligand reconstruction.</li>
+      <li><a href="https://arxiv.org/abs/2310.07229">ProFSA</a> is an ICLR 2024 frozen pocket encoder pretrained by aligning protein-fragment pseudo-ligands with their surrounding pockets.</li>
+      <li><a href="https://proceedings.neurips.cc/paper_files/paper/2023/hash/6a45a1b0697ee086bd8bf494cacc6567-Abstract-Conference.html">DSMBind</a> is the NeurIPS 2023 NERE energy model, trained without affinity labels through SE(3) denoising score matching.</li>
+      <li><a href="https://openreview.net/forum?id=qH9nrMNTIW">IPNet</a> is the E(3)-equivariant interaction-prior network from the ICLR 2024 IPDiff paper, evaluated here with both its released frozen weights and a from-scratch fit.</li>
+      <li><a href="https://www.nature.com/articles/s42004-025-01428-y">AEV-PLIG</a> is a 3D atom-environment-vector affinity model published in <i>Communications Chemistry</i> in 2025.</li>
+      <li><a href="https://doi.org/10.1093/bioinformatics/bty593">DeepDTA</a> is a sequence/SMILES convolutional affinity predictor published in <i>Bioinformatics</i> in 2018.</li>
+      <li><a href="https://doi.org/10.1093/bioinformatics/btaa880">MolTrans</a> is a substructure-aware sequence/SMILES interaction transformer published in <i>Bioinformatics</i> in 2021.</li>
+      <li><a href="https://arxiv.org/abs/2604.23115">HBGSA</a> models hydrogen-bond topology with graph self-attention and is currently an arXiv preprint from 2026 with no conference venue reported.</li>
+      <li><a href="https://arxiv.org/abs/2606.03422">HonestAffinity</a> combines frozen ESM-2 features with an explicit pocket-position marker and is currently an arXiv preprint from 2026 with no conference venue reported.</li>
+      <li><a href="https://arxiv.org/abs/2606.14217">CPES</a> fuses curvature-derived potential-energy descriptors with geometry-aware message passing and is currently an arXiv preprint from 2026 with no conference venue reported.</li>
+      <li><a href="https://www.valencelabs.com/wp-content/uploads/2026/07/nesso1.pdf">Nesso-1</a> is a sequence/SMILES affinity model released as a Valence Labs technical report in 2026 with no peer-reviewed venue reported.</li>
+    </ul>
 
     <h3 class="subsec-head"><span class="sn">1.1</span> LP-PDBBind</h3>
     <p class="subsec-intro">In-distribution PDBbind regression on the <code>lp_edrscc_v2</code> test set and its three nested
@@ -1540,10 +1725,12 @@ def build():
     </section>
 
     <section class="block">
-      <p class="table-title">Table 1a &nbsp;&middot;&nbsp; Test metrics across cleaning tiers &mdash; mean &plusmn; std (3 seeds)</p>
+      <p class="table-title">Table 1a &nbsp;&middot;&nbsp; Test metrics across cleaning tiers &mdash; mean &plusmn; std (3 seeds; deterministic zero-shot = 1 pass)</p>
       <ul class="caption-list">
         <li><b>CL1 / CL2 / CL3:</b> nested leakage filters; every tier is retrained independently.</li>
         <li><b>Train / val / test:</b> v2 3850/817/1320; +CL1 2721/680/1166; +CL12 2643/659/1149; +CL123 1559/410/733.</li>
+        <li>Tables 1a/1b use the same 19-method baseline universe; unavailable runs remain explicit TBA/running placeholders rather than disappearing.</li>
+        <li><b>CPES:</b> source code is public but no author checkpoint is released; all cells stay TBA until cohort-specific training.</li>
         <li><span class="tag leaked">leaked</span> rows overlap affinity training and are excluded from ranking.</li>
         <li><b>+corr:</b> same frozen encoder; MSE + Pearson auxiliary loss.</li>
       </ul>
@@ -1558,13 +1745,36 @@ def build():
     </section>
 
     <section class="block">
-      <p class="table-title">Table 1b &nbsp;&middot;&nbsp; Generalization under leakage control &mdash; protein-novelty (LBA) &amp; GEMS CleanSplit (mean &plusmn; std, 3 seeds)</p>
+      <p class="table-title">Figure 1b &nbsp;&middot;&nbsp; Generalization across Table 1b cohorts</p>
+      <div class="table-wrap" style="padding:16px 18px 10px;">
+        {lba_chart}
+        {lba_legend}
+        <ul class="caption-list">
+          <li>Bars = mean; whiskers = &plusmn;1 std; TBA-only methods are omitted.</li>
+          <li>Black outline = best non-leaked result within each cohort and metric; leaked references are faded.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="block">
+      <p class="table-title">Table 1b &nbsp;&middot;&nbsp; Generalization under leakage control &mdash; PLINDER-isolated protein-novelty (LBA) &amp; GEMS CleanSplit (mean &plusmn; std; deterministic zero-shot = 1 pass)</p>
       <ul class="caption-list">
-        <li><b>LBA60 / LBA30:</b> sequence-identity-disjoint resplits at &le;60% / &le;30%.</li>
+        <li><b>ATOM3D LBA60 / LBA30:</b> released official assignments intersected with
+            <code>lp_edrscc_v2</code>, then only downstream valid/test entries similar to the actual
+            PLINDER-v2.2 pretraining corpus were removed. PLINDER and downstream train are unchanged.</li>
+        <li><b>Isolation rule:</b> MMseqs2 exhaustive search, identity &ge;60% (ID60) or &ge;30% (ID30),
+            with &ge;80% query and target coverage (<code>--cov-mode 0</code>). Train/val/test becomes
+            2150/20/24 (ID60) and 2078/3/9 (ID30).</li>
+        <li><b>Small-cohort warning:</b> especially ID30 (val N=3, test N=9) has very high metric and
+            model-selection variance; use these columns as a contamination stress test, not a stable ranking.</li>
         <li><b>CleanSplit:</b> leak-free CASF-2016 subset after ED/RSCC filtering.</li>
+        <li><b>Cached re-score coverage:</b> C, C+D+G, +corr, and IPNet-frozen cover every surviving LBA
+            complex. Nesso-1 covers 0/9 ID30 and 1/24 ID60 tests, so those cells remain TBA;
+            it covers CleanSplit 109/109.</li>
         <li>Test cohorts differ; compare within columns or follow one method across columns.</li>
-        <li><b>Density gain stays small under every leakage control:</b> C+D+G&minus;C &Delta;&rho; = +0.048 (base)
-            &rarr; +0.010 (LBA60) &rarr; +0.006 (LBA30) &rarr; +0.012 (CleanSplit leak-free). Removing the seen-protein-family advantage collapses it.</li>
+        <li><b>Density gain is split-dependent:</b> C+D+G&minus;C &Delta;&rho; = +0.048 (base)
+            &rarr; &minus;0.011 (PLINDER-clean ID60) &rarr; +0.033 (PLINDER-clean ID30)
+            &rarr; +0.012 (CleanSplit leak-free).</li>
       </ul>
       <div class="table-wrap"><table class="results">
         <thead>
@@ -1577,12 +1787,12 @@ def build():
     </section>
 
     <h3 class="subsec-head"><span class="sn">1.2</span> Compared to recent works with holdout data</h3>
-    <p class="subsec-intro">Held-out PDBbind 2016 clean-92 and 2019 temporal benchmarks. CASP16 is in Appendix&nbsp;A.</p>
+    <p class="subsec-intro">Held-out CASF-2016 clean-92 and PDBbind 2019 temporal benchmarks. CASP16 is in Appendix&nbsp;A.</p>
 
     <section class="block">
-      <p class="table-title">Figure 2 &nbsp;&middot;&nbsp; Held-out PDBbind 2016 and 2019 performance</p>
+      <p class="table-title">Figure 2 &nbsp;&middot;&nbsp; Held-out CASF-2016 and PDBbind 2019 performance</p>
       <div class="table-wrap" style="padding:12px 16px 16px;">
-        <p class="figure-cap" style="text-align:left;font-weight:700;color:#1c2433;margin:4px 0 2px;font-size:13px;">PDBbind 2016 clean-92</p>
+        <p class="figure-cap" style="text-align:left;font-weight:700;color:#1c2433;margin:4px 0 2px;font-size:13px;">CASF-2016 clean-92</p>
         {pdbbind2016_chart}
         {pdbbind2016_legend}
         <p class="figure-cap" style="text-align:left;font-weight:700;color:#1c2433;margin:22px 0 2px;font-size:13px;">PDBbind 2019 holdout &mdash; common ED set (N = {holdout2019_common_n()})</p>
@@ -1595,10 +1805,20 @@ def build():
     </section>
 
     <section class="block">
-      <p class="table-title">Table 2 &nbsp;&middot;&nbsp; Held-out generalization &mdash; <b>PDBbind 2016</b> (clean-92) &amp; <b>PDBbind 2019 holdout</b></p>
+      <p class="table-title">Table 2 &nbsp;&middot;&nbsp; Held-out generalization &mdash; <b>CASF-2016</b> (clean-92) &amp; <b>PDBbind 2019 holdout</b></p>
       <ul class="caption-list">
-        <li><b>Selection:</b> absent from v2 train/val and PLINDER-v2 pretraining.</li>
-        <li><b>2016 clean-92:</b> no winner highlighted; bootstrap 95% CI on &rho; is about &plusmn;0.14.</li>
+        <li><b>CASF cohort:</b> the <a href="https://pubs.acs.org/doi/10.1021/acs.jcim.8b00545">official
+            CASF-2016 set</a> has 285 complexes (57 targets &times; 5); 214 meet our electron-density/RSCC
+            evaluation requirements, and removing 90 v2-train plus 32 v2-val overlaps leaves clean-92.</li>
+        <li><b>PLINDER audit:</b> 5/214 evaluable CASF complexes occur in PLINDER-v2
+            (<code>1e66</code>, <code>1gpn</code>, <code>2r9w</code>, <code>3ge7</code>, <code>3n7a</code>),
+            but none occurs in clean-92.</li>
+        <li><b>ProFSA audit:</b> its supervised affinity head excludes clean-92, but its released
+            self-supervised train LMDB contains 3/214 evaluable CASF structures
+            (<code>2c3i</code>, <code>3u9q</code>, <code>4rfm</code>), including 2/92 clean structures
+            (<code>2c3i</code>, <code>4rfm</code>); the result is therefore marked as pretraining overlap,
+            not strictly leakage-free.</li>
+        <li><b>CASF-2016 clean-92:</b> no winner highlighted; bootstrap 95% CI on &rho; is about &plusmn;0.14.</li>
         <li><b>2019:</b> partial coverage is excluded from ranking; &dagger; reports |r| / |&rho;| for sign-arbitrary energy scores.</li>
       </ul>
       <div class="table-wrap"><table class="results">
@@ -1705,9 +1925,10 @@ def build():
 </div></body></html>"""
     open(OUT, "w", encoding="utf-8").write(html)
     print(f"wrote {OUT}  ({len(html)} bytes)")
-    done = sum(1 for m in ORDER for s, _, _ in SPLITS if load(m, s))
-    casf = sum(1 for m in ORDER for which, _, _ in CASF_COLS if load_casf(m, which))
-    print(f"  filled LP {done}/{len(ORDER) * len(SPLITS)} | CASF {casf}/{len(ORDER) * len(CASF_COLS)}")
+    methods = all_methods()
+    done = sum(1 for m in methods for s, _, _ in SPLITS if load(m, s))
+    casf = sum(1 for m in methods for which, _, _ in CASF_COLS if load_casf(m, which))
+    print(f"  filled LP {done}/{len(methods) * len(SPLITS)} | CASF {casf}/{len(methods) * len(CASF_COLS)}")
 
 
 if __name__ == "__main__":
