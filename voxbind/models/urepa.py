@@ -16,13 +16,25 @@ U-REPA (arXiv 2503.18414, "Aligning Diffusion U-Nets to ViTs"):
 Training-time only. Inference is stock VoxBind (no CDG encoder, no density).
 
 Shapes (finetune target: VoxBind `exp_sig0.9` ↔ teacher champion `champion_100m_v2_mask075`):
-    U-Net bottleneck : (B, 512, 8, 8, 8)   [n_channels 128 · ch_mults[-1] 4; 64/2³ = 8]
+    U-Net bottleneck : (B, 512, 8, 8, 8)   [3 downsamples: 64/2³ = 8]
     CDG tokens       : (B, 512, 640)        [64/patch 8 = 8³ tokens, dim 640]
   → grids match (8³) so the projector is a pure 512→640 channel map. Fully parameterised
-    (an efficient_60m teacher would be 512→512; reproduced 32-ch VoxBind is 128→…).
+    (an efficient_60m teacher would be 512→512).
 
-The CDG side is a *frozen* target: precompute + cache its tokens once (see 00j) so no
-ViT forward runs in the training loop.
+  BOTTLENECK WIDTH — `ch_mults` is applied CUMULATIVELY in unet3d.py
+  (`out_channels = in_channels * ch_mults[i]`, in_channels carried across levels), so
+  `n_channels=32, ch_mults=[1,2,2,4]` gives 32→32→64→128→**512**. It is NOT
+  `n_channels · ch_mults[-1]`. Both exp_sig0.9 (ep923) and exp_sig0.9_v2 (ep350) have
+  n_channels=32 and a 512-wide bottleneck — verified from their checkpoints
+  (`unet3d.middle.res1.conv1.weight` = (512, 512, 3, 3, 3)); no VoxBind config in this
+  repo uses n_channels=128.
+
+The CDG side is a *frozen* target, run LIVE in the training loop under no_grad (+bf16):
+it sees the student's own AUGMENTED frame, so rotation augmentation needs no special
+handling. Precomputed canonical-orientation tokens (00j) cannot do that — they force
+either `cfg.aug` off for the aligned subset or `sampling='pool'` (which throws away the
+spatial axis). The live forward costs roughly what the production frozen-enc generator
+already pays for its frozen ChannelViT.
 
 ## Manifold sampling — why the composition is now explicit
 With a FLAT random subset of the B·N tokens, the fraction of intra-sample (spatial) pairs
@@ -32,6 +44,7 @@ so a tuned λ does not transfer across batch sizes / DDP world size. The default
 here is `split`: two SEPARATE, batch-decoupled terms whose mix is an explicit
 (w_intra, w_inter), so λ transfers and one can sweep which axis carries the effect.
 """
+import contextlib
 from typing import Optional
 
 import torch
@@ -83,8 +96,27 @@ class UREPAProjector(nn.Module):
 
 
 # ── Manifold (relational) alignment loss ────────────────────────────────────────
-def _cos_sim(x: torch.Tensor, tau: float) -> torch.Tensor:
-    """(..., m, D) → (..., m, m) cosine similarity / tau (rows L2-normalised)."""
+def _cos_sim(x: torch.Tensor, tau: float, center: bool = True) -> torch.Tensor:
+    """(..., m, D) → (..., m, m) cosine similarity / tau (rows L2-normalised).
+
+    center=True subtracts the mean over the m rows being compared FIRST. This is not
+    cosmetic — it is what makes the relations informative at all. A post-LayerNorm ViT
+    token is `mu + delta` with ||mu|| >> ||delta|| (LayerNorm normalises across the
+    channel axis of ONE token, so the shared component survives), which pins raw cosines
+    near 1 and leaves the softmax target essentially uniform. Measured on the champion
+    teacher's real tokens (32 pockets, apo input):
+
+        axis            cos mean   cos sd   teacher row entropy / uniform @tau=0.1
+        INTRA raw          0.976    0.010                0.999   <- no signal
+        INTRA centered     0.001    0.222                0.617
+        INTER raw          0.999    0.001                1.000   <- no signal
+        INTER centered    -0.030    0.610                0.532
+
+    Centering is also what linear CKA does to its Gram matrices, so the centered form is
+    the quantity the reported CKA numbers actually describe.
+    """
+    if center:
+        x = x - x.mean(dim=-2, keepdim=True)
     x = F.normalize(x, dim=-1)
     return torch.matmul(x, x.transpose(-1, -2)) / tau
 
@@ -128,7 +160,8 @@ def manifold_alignment_loss(
     student: torch.Tensor,
     teacher: torch.Tensor,
     *,
-    tau: float = 0.3,
+    tau: float = 0.1,
+    center: bool = True,
     mode: str = "relkl",
     sampling: str = "split",
     tokens_per_sample: int = 128,
@@ -168,25 +201,36 @@ def manifold_alignment_loss(
     teacher = teacher.to(student.dtype)
     nan = torch.tensor(float("nan"))
 
+    def _ratio(e, m):
+        # entropy / log(m-1): 1.0 means the teacher's relation target is UNIFORM, i.e. the
+        # loss carries no information and the student trivially drives KL->0 by going
+        # uniform too. Raw nats hide this (4.8438 vs log(127)=4.8442 looks like a number).
+        import math
+        return e / math.log(max(m - 1, 2))
+
     if sampling == "split":
         S, T = _sample_per_sample(student, teacher, tokens_per_sample, generator)
-        l_intra, ent = _relational(_cos_sim(S, tau), _cos_sim(T, tau), mode, gram_center)
-        l_inter, _ = _relational(_cos_sim(student.mean(1), tau),
-                                 _cos_sim(teacher.mean(1), tau), mode, gram_center)
+        l_intra, ent = _relational(_cos_sim(S, tau, center), _cos_sim(T, tau, center), mode, gram_center)
+        l_inter, _ = _relational(_cos_sim(student.mean(1), tau, center),
+                                 _cos_sim(teacher.mean(1), tau, center), mode, gram_center)
         loss = w_intra * l_intra + w_inter * l_inter
         stats = dict(intra=l_intra.detach(), inter=l_inter.detach(),
-                     teacher_entropy=ent.detach(), intra_frac=nan)
+                     teacher_entropy=ent.detach(),
+                     entropy_ratio=torch.tensor(_ratio(float(ent), S.shape[1])),
+                     intra_frac=nan)
     elif sampling == "pool":
-        loss, ent = _relational(_cos_sim(student.mean(1), tau),
-                                _cos_sim(teacher.mean(1), tau), mode, gram_center)
+        loss, ent = _relational(_cos_sim(student.mean(1), tau, center),
+                                _cos_sim(teacher.mean(1), tau, center), mode, gram_center)
         stats = dict(intra=nan, inter=loss.detach(),
-                     teacher_entropy=ent.detach(), intra_frac=torch.tensor(0.0))
+                     teacher_entropy=ent.detach(),
+                     entropy_ratio=torch.tensor(_ratio(float(ent), b)), intra_frac=torch.tensor(0.0))
     elif sampling == "block":
         S, T = _sample_per_sample(student, teacher, tokens_per_sample, generator)
         k = S.shape[1]
-        loss, ent = _relational(_cos_sim(S.reshape(b * k, d), tau),
-                                _cos_sim(T.reshape(b * k, d), tau), mode, gram_center)
+        loss, ent = _relational(_cos_sim(S.reshape(b * k, d), tau, center),
+                                _cos_sim(T.reshape(b * k, d), tau, center), mode, gram_center)
         stats = dict(intra=nan, inter=nan, teacher_entropy=ent.detach(),
+                     entropy_ratio=torch.tensor(_ratio(float(ent), b * k)),
                      intra_frac=torch.tensor((k - 1) / max(b * k - 1, 1)))
     elif sampling == "flat":
         S = student.reshape(b * n, d); T = teacher.reshape(b * n, d)
@@ -194,13 +238,27 @@ def manifold_alignment_loss(
         if n_sample and 0 < n_sample < m:
             idx = torch.randperm(m, device=S.device, generator=generator)[:n_sample]
             S, T = S[idx], T[idx]
-        loss, ent = _relational(_cos_sim(S, tau), _cos_sim(T, tau), mode, gram_center)
+        loss, ent = _relational(_cos_sim(S, tau, center), _cos_sim(T, tau, center), mode, gram_center)
         stats = dict(intra=nan, inter=nan, teacher_entropy=ent.detach(),
+                     entropy_ratio=torch.tensor(_ratio(float(ent), S.shape[0])),
                      intra_frac=torch.tensor(1.0 / b))
     else:
         raise ValueError(f"unknown sampling={sampling!r} (split|block|flat|pool)")
 
     return (loss, stats) if return_stats else loss
+
+
+def tokenwise_repa_loss(student: torch.Tensor, teacher: torch.Tensor) -> torch.Tensor:
+    """REPA's original term: −mean cosine between CORRESPONDING tokens. (B, N, D) each.
+
+    The paper (arXiv:2503.18414) keeps this and ADDS the manifold loss on top —
+    `L = L_velocity + λ(L_REPA + w·L_ML)` with w=3 — it does not replace it. Our own
+    measurement argues the other way for THIS student/teacher pair (bottleneck
+    R²(teacher←student) ≈ 0.07, only 8 of 512 CCA directions above 0.9, so the pointwise
+    target is largely unreachable), which is why `repa_weight` defaults to 0. Set it to 1
+    with `ml_weight=3` to reproduce the paper's composition.
+    """
+    return -F.cosine_similarity(student, teacher, dim=-1).mean()
 
 
 # ── Alignment head (projector + loss) ───────────────────────────────────────────
@@ -217,7 +275,8 @@ class UREPAAlignment(nn.Module):
         cdg_grid: int = 8,
         hidden: Optional[int] = None,
         n_layers: int = 3,
-        tau: float = 0.3,
+        tau: float = 0.1,
+        center: bool = True,
         mode: str = "relkl",
         sampling: str = "split",
         tokens_per_sample: int = 128,
@@ -225,19 +284,124 @@ class UREPAAlignment(nn.Module):
         w_intra: float = 1.0,
         w_inter: float = 1.0,
         gram_center: bool = True,
+        repa_weight: float = 0.0,
+        ml_weight: float = 1.0,
     ):
         super().__init__()
         self.projector = UREPAProjector(
             unet_ch, cdg_dim, unet_grid, cdg_grid, hidden=hidden, n_layers=n_layers
         )
-        self.cfg = dict(tau=tau, mode=mode, sampling=sampling,
+        # L_align = repa_weight · L_REPA(tokenwise cosine) + ml_weight · L_manifold.
+        # repa_weight=0, ml_weight=1  -> manifold only (our B1-measurement-driven default)
+        # repa_weight=1, ml_weight=3  -> the paper's composition (λ(L_REPA + 3·L_ML))
+        self.repa_weight, self.ml_weight = float(repa_weight), float(ml_weight)
+        self.cfg = dict(tau=tau, center=center, mode=mode, sampling=sampling,
                         tokens_per_sample=tokens_per_sample, n_sample=n_sample,
                         w_intra=w_intra, w_inter=w_inter, gram_center=gram_center)
 
     def forward(self, unet_feat, cdg_tokens, generator=None, return_stats=False):
         proj = self.projector(unet_feat)                            # (B, N_cdg, cdg_dim)
-        return manifold_alignment_loss(proj, cdg_tokens, generator=generator,
-                                       return_stats=return_stats, **self.cfg)
+        out = manifold_alignment_loss(proj, cdg_tokens, generator=generator,
+                                      return_stats=return_stats, **self.cfg)
+        l_ml, stats = out if return_stats else (out, None)
+        loss = self.ml_weight * l_ml
+        if self.repa_weight:
+            l_repa = tokenwise_repa_loss(proj, cdg_tokens)
+            loss = loss + self.repa_weight * l_repa
+            if stats is not None:
+                stats["repa"] = l_repa.detach()
+        if stats is not None:
+            stats["manifold"] = l_ml.detach()
+        return (loss, stats) if return_stats else loss
+
+
+# ── Frozen CDG teacher: loader + input assembly ─────────────────────────────────
+def load_frozen_cdg(exp_dir, epoch: int = 49, device: str = "cuda"):
+    """Instantiate the teacher DensityViT from its exp cfg.yaml and load EMA weights.
+
+    Mirrors dataset/01c_pdbbind_probe.py:load_encoder so the finetune's teacher is
+    byte-identical to the one every reported probe / CKA / R² number was measured with.
+    Returned in eval() with requires_grad_(False).
+    """
+    from pathlib import Path
+
+    from omegaconf import OmegaConf
+
+    from voxbind.models.density_vit import DensityViT
+
+    exp_dir = Path(exp_dir)
+    cfg = OmegaConf.load(exp_dir / "cfg.yaml")
+    m = cfg.model
+    enc = DensityViT(
+        grid_dim=cfg.vox.grid_dim,
+        patch_size=m.patch_size,
+        n_in_channels=m.n_in_channels,
+        c_out=m.n_channels // 2,
+        dim=m.dim,
+        depth=m.depth,
+        n_heads=m.heads,
+        mlp_ratio=m.mlp_ratio,
+        dropout=m.dropout,
+        pos_encoding=m.get("pos_encoding", "learnable"),
+        patch_embed_mode=m.get("patch_embed_mode",
+                               "channel_group" if m.get("channel_groups", None) else "fused"),
+        channel_groups=(tuple(m.channel_groups) if m.get("channel_groups", None) else None),
+        n_memory_tokens=int(m.get("n_memory_tokens", 0)),
+    )
+    ck = torch.load(exp_dir / f"checkpoint_e{epoch:04d}.pth.tar",
+                    map_location="cpu", weights_only=False)
+    raw = ck["encoder_state_dict_ema"]
+    enc.load_state_dict({k[len("encoder."):]: v for k, v in raw.items()
+                         if k.startswith("encoder.")}, strict=True)
+    enc = enc.to(device).eval()
+    enc.requires_grad_(False)
+    return enc
+
+
+def build_teacher_input(ligand, pocket, density, *, apo: bool = True,
+                        thresh: float = 0.2, dilate: int = 2):
+    """(B, n_lig+n_poc+2, G,G,G) = [ligand | pocket | rho | ‖∇rho‖] for the CDG teacher.
+
+    Built from the SAME augmented voxels the student sees, so the teacher's 8³ token grid
+    corresponds voxel-for-voxel to the U-Net 8³ bottleneck.
+
+    apo=True (default) reproduces the `atoms0_dm` condition every reported teacher number
+    was measured under: ligand atom channels zeroed AND rho/‖∇rho‖ blanked inside the
+    dilated ligand footprint. This is the generation-honest target — VoxBind has no ligand
+    at sampling time, and a holo 2Fo-Fc map still carries the ligand's own density even
+    after the atom channels are zeroed. It also makes the ligand-radius mismatch moot
+    (teacher pretrained with vdW radii, VoxBind voxelizes at 0.5) since those channels are
+    discarded; pocket_radius=-1 matches on both sides.
+    """
+    from voxbind.models.mae_ops import gradient_magnitude3d, per_sample_zscore
+
+    n_lig = ligand.shape[1]
+    gradmag = per_sample_zscore(gradient_magnitude3d(density))
+    x = torch.cat([ligand, pocket, density, gradmag], dim=1)
+    if apo:
+        occ = ligand.sum(dim=1, keepdim=True)
+        k = 2 * int(dilate) + 1
+        m = F.max_pool3d((occ > thresh).float(), kernel_size=k, stride=1,
+                         padding=int(dilate)) > 0.5
+        x[:, :n_lig] = 0.0
+        x[:, -2:] = x[:, -2:] * (~m).to(x.dtype)
+    return x
+
+
+@torch.no_grad()
+def teacher_tokens(encoder, x, amp: bool = True):
+    """(B, 13, G³) → (B, g_p³, D) group-pooled patch tokens matching the U-Net grid.
+
+    `_pool_groups` collapses a ChannelViT's nG·g_p³ tokens (groups [7,4,2] → 1536) down to
+    the g_p³ spatial tokens; identical to what the CKA / R² measurements used.
+    """
+    ctx = (torch.autocast("cuda", torch.bfloat16)
+           if (amp and x.is_cuda) else contextlib.nullcontext())
+    with ctx:
+        tok = encoder.forward_features(x)
+    if getattr(encoder, "channel_groups", None):
+        tok = encoder._pool_groups(tok)
+    return tok.float()
 
 
 # ── Bottleneck tap: grab the MiddleBlock output without editing UNet3D ───────────

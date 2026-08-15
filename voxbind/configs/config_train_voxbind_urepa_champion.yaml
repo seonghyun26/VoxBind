@@ -1,0 +1,110 @@
+# U-REPA alignment finetune: VoxBind ep350 (vanilla sig0.9) <- champion CDG teacher.
+#
+# The denoiser stays DENSITY-FREE (model.with_density=false): density reaches the loop only
+# to build the frozen teacher's input, and inference is stock VoxBind walk-jump. All the
+# alignment does is reshape the U-Net's learned bottleneck representation during training.
+#
+# Pre-check evidence for these settings (voxbind/test/results/*):
+#   A1  teacher(apo) rho 0.601 vs student(ligand-free bottleneck) 0.474, pocket null 0.145
+#   B1  R2(teacher<-student) 0.069-0.076 at the bottleneck -> a tokenwise cosine/MSE term
+#       would chase an unreachable target; only a RELATIONAL loss is learnable
+#   B2  bottleneck is the alignment point (most task info + native 8^3 grid + most room)
+#   B3  clean vs sigma=0.9 differ by <=0.017 -> no noise-averaging needed
+#   C1  bottleneck (B,512,8^3) <-> champion tokens (B,512,640): grids match, no upsample
+defaults:
+  - dset: crossdocked_xray
+  - model: voxbind
+  - vox: default
+  - wjs: training
+  - override hydra/job_logging: custom
+  - _self_
+
+debug: False
+wandb: True
+wandb_tags: [voxbind, urepa, champion, alignment, ep350]
+num_workers: 12
+prefetch_factor: 8
+resume: null
+resume_epoch: null
+exp_dir: exps
+exp_name: voxbind_urepa_champion_ep350
+output_dir: null
+
+# warm start from the epoch-matched vanilla sig0.9 denoiser (NOT resume: resume would
+# reload that run's cfg.yaml and drop this one). Weights only.
+pretrained_path: exps/exp_sig0.9_v2/checkpoint.pth.tar
+
+seed: 42
+num_epochs: 350
+aug: True
+bsz: 32
+accum_steps: 1
+lr: 1e-5
+wd: 1e-2
+smooth_sigma: .9
+
+dset:
+  # v5 arcsinh+z crops — the CrossDocked stats are byte-identical to the PLINDER stats the
+  # teacher was pretrained under (arcsinh_scale 0.5, mu_a -0.015582186, sigma_a 0.504825354),
+  # so normalize must stay FALSE (the crops are already normalized).
+  crops_dir: dataset/data/xray_crops_aligned_v5
+  normalize: false
+  use_xray: true
+  subset_xray_only: true      # 78,612 of 99,881 CrossDocked train rows carry a map
+  subset_n: 78512
+  subset_val_n: 100
+  pocket_radius: -1
+  ligand_radius: 0.5          # irrelevant to the teacher under apo (ligand channels zeroed)
+
+model:
+  with_density: false         # DENOISER is density-free; density is for the teacher only
+
+wjs:
+  n_targets: 0                # no in-training sampling (the rank-0 sample() loop NCCL-times-out)
+
+urepa:
+  enabled: true
+  exp_dir: model_zoo/champion_100m_v2_mask075
+  epoch: 49
+  apo: true                   # atoms0_dm: ligand atoms zeroed + rho/|grad rho| blanked in the
+                              # dilated ligand footprint. The generation-honest target, and with
+                              # champion it is also the CLOSER one (bottleneck token CKA 0.211 vs
+                              # 0.189 holo; R2 0.076 vs 0.069).
+  lam: 5.0                    # set from the MEASURED scale: L_denoise ~710/batch vs
+                              # L_align ~5.2 (centered, tau 0.1) -> lam 5 is ~3.5% of the
+                              # denoise loss. Sweep {0, 1, 5, 20}; 0 = alignment off control.
+  proj_lr: 1e-4               # projector trains faster than the warm-started U-Net
+  stage1_epochs: 5            # U-Net held at lr=0 while the projector finds its footing;
+                              # the plateau here is the "how compatible already?" floor
+  tau: 0.1                    # 0.3 left the teacher target UNIFORM on real tokens
+                              # (entropy_ratio 1.000); 0.1 centered gives 0.619. Watch
+                              # urepa_entropy_ratio — ->1.0 means the loss teaches nothing.
+  center: true                # MANDATORY. Post-LayerNorm ViT tokens are mu+delta with
+                              # ||mu||>>||delta||, so RAW cosines sit at 0.976 (intra) /
+                              # 0.999 (inter) and no tau rescues them. Centered: 0.001 sd
+                              # 0.222 / -0.030 sd 0.610.
+  # L_align = repa_weight * tokenwise-cosine REPA + ml_weight * manifold.
+  # 0.0 / 1.0 = manifold only (this run's measurement-driven default; B1 says the pointwise
+  # target is largely unreachable here). 1.0 / 3.0 reproduces the paper's L_REPA + 3*L_ML.
+  repa_weight: 0.0
+  ml_weight: 1.0
+  mode: relkl                 # relkl | gram  (gram = the paper's Frobenius form)
+  sampling: split             # explicit (w_intra, w_inter) instead of the implicit 1/B of flat
+  tokens_per_sample: 128
+  w_intra: 1.0
+  w_inter: 1.0
+  teacher_amp: true           # bf16 for the frozen teacher forward only
+
+hydra:
+  run:
+    dir: ./${exp_dir}/${exp_name}
+  job:
+    config:
+      override_dirname:
+        kv_sep: ""
+        item_sep: "_"
+        exclude_keys: [
+            "exp_dir", "smooth_sigma", "lr", vox.grid_dim, "wd", "resume", "resume_epoch", "wandb",
+            "num_workers", "exp_name", "output_dir", "pretrained_path", "out_dir",
+            "bsz", "accum_steps", "seed", "num_epochs", "aug", "pocket_radius", "grid_dim", "aug"
+]

@@ -1,4 +1,5 @@
 import torch
+import torch.nn.functional as F
 from torch import nn
 from typing import Tuple, Union, List
 
@@ -135,8 +136,54 @@ class AttentionBlock(nn.Module):
         return res
 
 
+class DensityCrossAttn(nn.Module):
+    """UNet features (queries) attend to the FROZEN density ViT's patch tokens (keys/values).
+
+    Why this exists: the `default`/`protein_first` fusions mix the density branch ONCE, at the
+    UNet input, through a 1x1x1 conv -- so voxel (i,j,k) only ever sees the density feature at
+    (i,j,k), linearly, and no block inside the UNet can consult the density again. Cross-attention
+    makes the interaction non-local and content-addressed: a voxel can query the whole pocket.
+
+    Cost is why it lives only at the attention levels. With patch=8, G=64 the encoder emits
+    nG*8^3 tokens (1536 for groups [7,4,2], 1024 if the always-zero ligand group is dropped).
+    Queries scale as S^3, so Q*K is 4.0e8 at 64^3 but 6.3e6 at 16^3 -- the latter is 2.7x CHEAPER
+    than the self-attention already running at that level. Hence: levels with `has_attn` only.
+
+    `out` is ZERO-INIT, so at step 0 the block is exactly the identity and the model reproduces
+    the density-free baseline bit-for-bit -- the same discipline as `density_proj`. This is not
+    cosmetic: the `v3` fusion used a normal-init projection, overfit, and was dropped.
+    """
+
+    def __init__(self, n_channels: int, ctx_dim: int, n_heads: int = 4,
+                 d_head: int = 32, n_groups: int = 16):
+        super().__init__()
+        inner = n_heads * d_head
+        self.n_heads, self.d_head = n_heads, d_head
+        self.norm = nn.GroupNorm(min(n_groups, n_channels), n_channels)
+        self.to_q = nn.Linear(n_channels, inner, bias=False)
+        self.to_kv = nn.Linear(ctx_dim, 2 * inner, bias=False)
+        self.out = nn.Linear(inner, n_channels)
+        nn.init.zeros_(self.out.weight)
+        nn.init.zeros_(self.out.bias)
+
+    def forward(self, x: torch.Tensor, ctx: torch.Tensor = None) -> torch.Tensor:
+        if ctx is None:                       # density-free forward -> exact no-op
+            return x
+        B, C, H, W, D = x.shape
+        h = self.norm(x).reshape(B, C, -1).permute(0, 2, 1)          # (B, S3, C)
+        q = self.to_q(h).view(B, -1, self.n_heads, self.d_head).transpose(1, 2)
+        k, v = self.to_kv(ctx).chunk(2, dim=-1)                       # (B, T, inner) each
+        k = k.view(B, -1, self.n_heads, self.d_head).transpose(1, 2)
+        v = v.view(B, -1, self.n_heads, self.d_head).transpose(1, 2)
+        o = F.scaled_dot_product_attention(q, k, v)                   # flash; no (S3 x T) in HBM
+        o = o.transpose(1, 2).reshape(B, -1, self.n_heads * self.d_head)
+        o = self.out(o).permute(0, 2, 1).reshape(B, C, H, W, D)
+        return x + o
+
+
 class DownBlock(nn.Module):
-    def __init__(self, in_channels: int, out_channels: int, n_groups: int, has_attn: bool, dropout: float):
+    def __init__(self, in_channels: int, out_channels: int, n_groups: int, has_attn: bool,
+                 dropout: float, ctx_dim: int = None):
         """
         DownBlock class represents a block in the down-sampling path of a U-Net architecture.
 
@@ -154,8 +201,13 @@ class DownBlock(nn.Module):
             self.attn = AttentionBlock(out_channels, n_groups=n_groups)
         else:
             self.attn = nn.Identity()
+        # Cross-attention to the frozen density tokens. Only at levels that already pay for
+        # attention -- see DensityCrossAttn for the cost argument. None elsewhere so the
+        # module isn't built at all (unused params are a DDP hazard).
+        self.xattn = (DensityCrossAttn(out_channels, ctx_dim, n_groups=n_groups)
+                      if (has_attn and ctx_dim) else None)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, ctx: torch.Tensor = None) -> torch.Tensor:
         """
         Forward pass of the DownBlock.
 
@@ -168,11 +220,14 @@ class DownBlock(nn.Module):
         """
         x = self.res(x)
         x = self.attn(x)
+        if self.xattn is not None:
+            x = self.xattn(x, ctx)
         return x
 
 
 class UpBlock(nn.Module):
-    def __init__(self, in_channels: int, out_channels: int, n_groups: int, has_attn: bool, dropout: float):
+    def __init__(self, in_channels: int, out_channels: int, n_groups: int, has_attn: bool,
+                 dropout: float, ctx_dim: int = None):
         """
         UpBlock is a module that represents an upsampling block in a 3D U-Net architecture.
 
@@ -190,8 +245,13 @@ class UpBlock(nn.Module):
             self.attn = AttentionBlock(out_channels, n_groups=n_groups)
         else:
             self.attn = nn.Identity()
+        # Cross-attention to the frozen density tokens. Only at levels that already pay for
+        # attention -- see DensityCrossAttn for the cost argument. None elsewhere so the
+        # module isn't built at all (unused params are a DDP hazard).
+        self.xattn = (DensityCrossAttn(out_channels, ctx_dim, n_groups=n_groups)
+                      if (has_attn and ctx_dim) else None)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, ctx: torch.Tensor = None) -> torch.Tensor:
         """
         Forward pass of the UpBlock module.
 
@@ -204,11 +264,14 @@ class UpBlock(nn.Module):
         """
         x = self.res(x)
         x = self.attn(x)
+        if self.xattn is not None:
+            x = self.xattn(x, ctx)
         return x
 
 
 class MiddleBlock(nn.Module):
-    def __init__(self, n_channels: int, n_groups: int, dropout: float):
+    def __init__(self, n_channels: int, n_groups: int, dropout: float,
+                 ctx_dim: int = None):
         """
         Initializes a MiddleBlock instance.
 
@@ -221,9 +284,11 @@ class MiddleBlock(nn.Module):
         super().__init__()
         self.res1 = ResidualBlock(n_channels, n_channels, n_groups=n_groups, dropout=dropout)
         self.attn = AttentionBlock(n_channels, n_groups=n_groups)
+        # deepest level (8^3 = 512 queries) -- the cheapest place to cross-attend by far
+        self.xattn = DensityCrossAttn(n_channels, ctx_dim, n_groups=n_groups) if ctx_dim else None
         self.res2 = ResidualBlock(n_channels, n_channels, n_groups=n_groups, dropout=dropout)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, ctx: torch.Tensor = None) -> torch.Tensor:
         """
         Performs forward pass through the MiddleBlock.
 
@@ -236,6 +301,8 @@ class MiddleBlock(nn.Module):
         """
         x = self.res1(x)
         x = self.attn(x)
+        if getattr(self, "xattn", None) is not None:
+            x = self.xattn(x, ctx)
         x = self.res2(x)
         return x
 
@@ -300,6 +367,7 @@ class UNet3D(nn.Module):
         n_groups: int = 32,
         dropout: float = 0.1,
         smooth_sigma: float = 0.0,
+        ctx_dim: int = None,
         verbose: bool = False
     ):
         """
@@ -329,24 +397,24 @@ class UNet3D(nn.Module):
         for i in range(n_resolutions):
             out_channels = in_channels * ch_mults[i]
             for _ in range(n_blocks):
-                down.append(DownBlock(in_channels, out_channels, n_groups, is_attn[i], dropout))
+                down.append(DownBlock(in_channels, out_channels, n_groups, is_attn[i], dropout, ctx_dim))
                 in_channels = out_channels
 
             if i < n_resolutions - 1:
                 down.append(Downsample(in_channels))
         self.down = nn.ModuleList(down)
 
-        self.middle = MiddleBlock(out_channels, n_groups, dropout)
+        self.middle = MiddleBlock(out_channels, n_groups, dropout, ctx_dim)
 
         up = []
         in_channels = out_channels
         for i in reversed(range(n_resolutions)):
             out_channels = in_channels
             for _ in range(n_blocks):
-                up.append(UpBlock(in_channels, out_channels, n_groups, is_attn[i], dropout))
+                up.append(UpBlock(in_channels, out_channels, n_groups, is_attn[i], dropout, ctx_dim))
 
             out_channels = in_channels // ch_mults[i]
-            up.append(UpBlock(in_channels, out_channels, n_groups, is_attn[i], dropout))
+            up.append(UpBlock(in_channels, out_channels, n_groups, is_attn[i], dropout, ctx_dim))
             in_channels = out_channels
 
             if i > 0:
@@ -362,7 +430,8 @@ class UNet3D(nn.Module):
             n_params = sum(p.numel() for p in self.parameters() if p.requires_grad)
             print(f">> model has {(n_params/1e6):.02f}M parameters")
 
-    def forward(self, ligand: torch.Tensor, pocket: torch.Tensor) -> torch.Tensor:
+    def forward(self, ligand: torch.Tensor, pocket: torch.Tensor,
+                ctx: torch.Tensor = None) -> torch.Tensor:
         """
         Forward pass of the UNet3D model.
 
@@ -381,10 +450,11 @@ class UNet3D(nn.Module):
 
         h = [x]
         for m in self.down:
-            x = m(x)
+            # Downsample takes no context; Down/UpBlock forward it to their xattn (if built)
+            x = m(x, ctx) if isinstance(m, DownBlock) else m(x)
             h.append(x)
 
-        x = self.middle(x)
+        x = self.middle(x, ctx)
 
         for m in self.up:
             if isinstance(m, Upsample):
@@ -392,7 +462,7 @@ class UNet3D(nn.Module):
             else:
                 s = h.pop()
                 x = torch.cat((x, s), dim=1)
-                x = m(x)
+                x = m(x, ctx)
 
         if hasattr(self, "norm"):
             x = self.norm(x)

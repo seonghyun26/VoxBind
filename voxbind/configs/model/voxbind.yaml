@@ -24,6 +24,9 @@ density_freeze: false            # freeze the density_encoder branch (requires_g
 density_mask_ligand: false       # Path B leak-removal: blank density+gradmag inside the CLEAN ligand
                                  # footprint (mask region from the ligand coords) so the frozen encoder
                                  # can't read the co-crystal ligand's own density. Requires n_in_channels=13.
+density_encoder_sees_ligand: false  # REFERENCE: give the frozen encoder the available reference ligand
+                                 # (train = clean voxels, sampling = reference ligand).
+                                 # Upper-bound measurement, NOT de-novo generation.
 density_mask_threshold: 0.2      # occupancy threshold on the summed clean-ligand voxel grid
 density_mask_dilate: 2           # voxels to dilate the mask (0.25Å grid → 2 = 0.5Å) to cover the x-ray envelope
 density_attenuate: false         # PROTEIN-ONLY attenuation field alpha(x): high near protein atoms (preserve),

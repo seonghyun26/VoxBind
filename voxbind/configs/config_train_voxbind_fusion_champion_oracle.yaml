@@ -1,0 +1,107 @@
+# Champion CDG fused into VoxBind's existing pocket+ligand representation.
+#
+#   x = ligand_encoder(y) + pocket_encoder(pocket)          <- unchanged VoxBind
+#   x = x + density_proj(cat([x, frozen_champion(enc_in)])) <- fusion=default, zero-init proj
+#   enc_in = [ ligand(7) | pocket(4) | rho | ||grad rho|| ] <- 13ch, champion's layout
+#
+# WHAT THIS ADDS, PRECISELY:
+#   * experimental 2Fo-Fc density (+ its gradient magnitude) of the holo crystal. This is
+#     NOT a separate leak: the CrossDocked SBDD setting already hands every model a HOLO
+#     pocket (side chains in the ligand-bound conformation) — every baseline, TargetDiff /
+#     DecompDiff / vanilla VoxBind included, is conditioned on that same structure. The map
+#     is a higher-resolution view of an information channel the benchmark already uses.
+#   * pocket atoms — the denoiser already sees these via pocket_encoder, so no new info.
+#   * the target ligand's own atoms (7 channels), because density_encoder_sees_ligand=true.
+#     This one IS the target molecule fed in directly, independent of the density.
+#
+# Whether that last point matters is an empirical question, not a label: if the model
+# collapses to reproducing the reference, DIVERSITY (across the 100 samples per pocket) and
+# NOVELTY (Tanimoto / RMSD vs the reference ligand) will show it. Report those alongside
+# Vina; if they are healthy the run belongs in the normal de-novo table, annotated with the
+# density_encoder_sees_ligand setting.
+#
+# Provenance: the density's ligand blob is usually NOT the target. 86.3% of the 78,612
+# density-bearing train rows and 52 of the 79 density-bearing TEST pockets are CROSS-docked
+# (receptor PDB != ligand-source PDB), so the map shows the receptor's own ligand instead.
+defaults:
+  - dset: crossdocked_xray
+  - model: voxbind
+  - vox: default
+  - wjs: training
+  - override hydra/job_logging: custom
+  - _self_
+
+debug: False
+wandb: True
+wandb_tags: [voxbind, fusion, champion, oracle, ligand_conditioned]
+num_workers: 12
+prefetch_factor: 8
+resume: null
+resume_epoch: null
+exp_dir: exps
+exp_name: voxbind_fusion_champion_oracle
+output_dir: null
+
+# warm start from the epoch-matched vanilla sig0.9 denoiser (weights only; NOT resume).
+# density_proj is zero-init, so step 0 is functionally identical to that checkpoint.
+pretrained_path: exps/exp_sig0.9_v2/checkpoint.pth.tar
+
+seed: 42
+num_epochs: 100
+aug: True
+bsz: 32
+accum_steps: 1
+lr: 1e-5
+wd: 1e-2
+smooth_sigma: .9
+
+dset:
+  # v5 arcsinh+z: the CrossDocked stats are byte-identical to the PLINDER stats champion was
+  # pretrained under (scale 0.5, mu_a -0.015582186, sigma_a 0.504825354) -> normalize=false.
+  crops_dir: dataset/data/xray_crops_aligned_v5
+  normalize: false
+  use_xray: true
+  subset_xray_only: true      # 78,612 of 99,881 rows carry a map
+  subset_n: 78512
+  subset_val_n: 100
+  pocket_radius: -1
+  ligand_radius: 0.5
+
+model:
+  with_density: true
+  density_encoder_type: vit
+  density_freeze: true
+  density_pretrained_path: model_zoo/champion_100m_v2_mask075/checkpoint_e0049.pth.tar
+  fusion: default             # fuse into the ligand+pocket sum (the "existing representation")
+  density_vit:
+    patch: 8
+    dim: 640                  # champion geometry
+    depth: 18
+    heads: 10
+    mlp_ratio: 4
+    dropout: 0.1
+    n_in_channels: 13
+    patch_embed_mode: channel_group
+    channel_groups: [7, 4, 2]
+  density_encoder_sees_ligand: true   # target ligand's atoms -> the encoder (train: clean
+                                      # voxels, sampling: reference ligand). Judge by
+                                      # diversity/novelty, not by a label. See header.
+  density_mask_ligand: false          # keep the whole receptor map, ligand density included
+  density_encoder_amp: true           # bf16 for the frozen 98.5M encoder forward only
+
+wjs:
+  n_targets: 0                # no in-training sampling (rank-0 sample() loop NCCL-times-out)
+
+hydra:
+  run:
+    dir: ./${exp_dir}/${exp_name}
+  job:
+    config:
+      override_dirname:
+        kv_sep: ""
+        item_sep: "_"
+        exclude_keys: [
+            "exp_dir", "smooth_sigma", "lr", vox.grid_dim, "wd", "resume", "resume_epoch", "wandb",
+            "num_workers", "exp_name", "output_dir", "pretrained_path", "out_dir",
+            "bsz", "accum_steps", "seed", "num_epochs", "aug", "pocket_radius", "grid_dim", "aug"
+]

@@ -1,5 +1,10 @@
-import os
+import atexit
 import json
+import math
+import multiprocessing as mp
+import os
+import time
+from concurrent.futures import ProcessPoolExecutor
 from copy import deepcopy
 from rdkit import Chem
 import shutil
@@ -21,6 +26,40 @@ from voxbind.constants import ELEMENTS_HASH_CROSSDOCKED
 
 RDLogger.logger().setLevel(RDLogger.CRITICAL)
 RDLogger.DisableLog('rdApp.info')
+
+
+_RECON_POOL = None
+
+
+def _convert_mol_worker(mol: dict):
+    """CPU-only molecule reconstruction entry point for spawned workers."""
+    rdkmol = mol2rdkit_obabel(mol)
+    if rdkmol is None:
+        return None
+    return Chem.MolToSmiles(rdkmol), rdkmol.ToBinary()
+
+
+def _get_recon_pool() -> ProcessPoolExecutor:
+    global _RECON_POOL
+    if _RECON_POOL is None:
+        workers = max(1, int(os.environ.get("VOXBIND_RECON_WORKERS", "4")))
+        # CUDA has already been initialized in the sampling process. Spawn avoids
+        # inheriting that CUDA context into reconstruction workers.
+        _RECON_POOL = ProcessPoolExecutor(
+            max_workers=workers,
+            mp_context=mp.get_context("spawn"),
+        )
+    return _RECON_POOL
+
+
+def _shutdown_recon_pool() -> None:
+    global _RECON_POOL
+    if _RECON_POOL is not None:
+        _RECON_POOL.shutdown(wait=True, cancel_futures=True)
+        _RECON_POOL = None
+
+
+atexit.register(_shutdown_recon_pool)
 
 
 def sample_molecules(
@@ -58,11 +97,27 @@ def sample_molecules(
         if density_vox.dim() == 4:
             density_vox = density_vox.unsqueeze(1)
 
+    n_target = int(cfg.wjs.n_samples_per_pocket)
+    n_chains = n_target
+    max_batches = max(1, math.ceil(500 / n_chains))
+    lookahead_batches = max(
+        1, min(max_batches, int(os.environ.get("VOXBIND_LOOKAHEAD_BATCHES", "2")))
+    )
+
     n_valid_mol, n_mol = 0, 0
     n_invalid, n_duplicate = 0, 0
-    rdkmols, list_smiles = [], []
-    while n_valid_mol < cfg.wjs.n_samples_per_pocket and n_mol < 500:
-        # sample molecules
+    n_wjs_batches, n_voxel_candidates = 0, 0
+    wjs_seconds, vox2mol_seconds, reconstruction_wait_seconds = 0.0, 0.0, 0.0
+    rdkmols, seen_smiles = [], set()
+    pending = []
+    recon_pool = _get_recon_pool()
+
+    def generate_batch() -> None:
+        nonlocal n_wjs_batches, n_voxel_candidates, wjs_seconds, vox2mol_seconds
+
+        if pockets_vox.is_cuda:
+            torch.cuda.synchronize(pockets_vox.device)
+        started = time.perf_counter()
         gen_vox_mols = model.sample(
             pocket=pockets_vox,
             ligand=ligands_gt_vox,
@@ -71,27 +126,66 @@ def sample_molecules(
             max_steps=cfg.wjs.max_steps,
             chain_init=cfg.wjs.chain_init,
             mask_pocket=cfg.wjs.mask_pocket > 0,
-            n_chains=cfg.wjs.n_samples_per_pocket,
+            n_chains=n_chains,
             density=density_vox,
         )
-        mols = voxelizer.vox2mol(gen_vox_mols, center_coords=pocket["center_coords"])
+        if pockets_vox.is_cuda:
+            torch.cuda.synchronize(pockets_vox.device)
+        wjs_seconds += time.perf_counter() - started
+        n_wjs_batches += 1
 
+        started = time.perf_counter()
+        mols = voxelizer.vox2mol(
+            gen_vox_mols, center_coords=pocket["center_coords"]
+        )
+        if pockets_vox.is_cuda:
+            torch.cuda.synchronize(pockets_vox.device)
+        vox2mol_seconds += time.perf_counter() - started
         if mols is None:
-            break
-        for mol in mols:
-            sdf_fname = os.path.join(target_dirname, f"sample_{n_valid_mol:03d}.sdf")
-            mol = mol2rdkit_obabel(mol, sdf_fname)
-            if mol is not None:
-                smiles = Chem.MolToSmiles(mol)
-                if smiles not in list_smiles:
-                    list_smiles.append(smiles)
-                    n_valid_mol += 1
-                    rdkmols.append(mol)
-                else:
-                    n_duplicate += 1  # valid molecule, but SMILES already sampled
-            else:
-                n_invalid += 1  # obabel/rdkit could not build a valid molecule
-            n_mol += 1
+            return
+
+        n_voxel_candidates += len(mols)
+        pending.extend(recon_pool.submit(_convert_mol_worker, mol) for mol in mols)
+
+    # Generate a second WJS batch while CPU workers reconstruct the first one.
+    # Production runs need ~2 batches/pocket for 100 unique molecules.
+    for _ in range(lookahead_batches):
+        generate_batch()
+
+    while n_valid_mol < n_target and n_mol < 500:
+        if not pending:
+            if n_wjs_batches >= max_batches:
+                break
+            generate_batch()
+            continue
+
+        future = pending.pop(0)
+        wait_started = time.perf_counter()
+        try:
+            result = future.result()
+        except Exception as exc:
+            print(f"molecule reconstruction worker failed: {exc}")
+            result = None
+        reconstruction_wait_seconds += time.perf_counter() - wait_started
+        n_mol += 1
+
+        if result is None:
+            n_invalid += 1
+            continue
+
+        smiles, binary_mol = result
+        if smiles in seen_smiles:
+            n_duplicate += 1
+            continue
+
+        seen_smiles.add(smiles)
+        n_valid_mol += 1
+        rdkmols.append(Chem.Mol(binary_mol))
+
+    # Most of the speculative second batch is unnecessary once target uniqueness
+    # is reached. Cancel queued work so it cannot delay the next pocket.
+    for future in pending:
+        future.cancel()
 
     if n_valid_mol == 0:
         return 0
@@ -110,24 +204,35 @@ def sample_molecules(
     # collect n_valid_mol UNIQUE valid molecules, split into invalid (obabel/rdkit
     # parse fail) vs duplicate (valid but SMILES already seen). Lets you measure the
     # true validity / raw-uniqueness and flag pockets that hit the 500-attempt cap.
-    n_target = int(cfg.wjs.n_samples_per_pocket)
     n_processed = n_mol - n_invalid  # valid molecules seen (unique + duplicate)
     gen_stats = {
         "n_generated_total": n_mol,
+        "n_voxel_candidates": n_voxel_candidates,
+        "n_wjs_batches": n_wjs_batches,
         "n_valid_unique": n_valid_mol,
         "n_invalid": n_invalid,
         "n_duplicate": n_duplicate,
         "validity": n_processed / n_mol if n_mol else 0.0,
         "uniqueness_raw": n_valid_mol / n_processed if n_processed else 0.0,
-        "hit_cap": bool(n_mol >= 500 and n_valid_mol < n_target),
+        "hit_cap": bool(
+            n_valid_mol < n_target
+            and (n_mol >= 500 or n_wjs_batches >= max_batches)
+        ),
+        "timing_seconds": {
+            "wjs_gpu": round(wjs_seconds, 3),
+            "vox2mol_gpu": round(vox2mol_seconds, 3),
+            "reconstruction_wait": round(reconstruction_wait_seconds, 3),
+        },
     }
     with open(os.path.join(target_dirname, "gen_stats.json"), "w") as fh:
         json.dump(gen_stats, fh, indent=2)
     print(
         f"[gen_stats] {os.path.basename(target_dirname)}: "
-        f"generated={n_mol} kept_unique={n_valid_mol} "
+        f"reconstructed={n_mol}/{n_voxel_candidates} kept_unique={n_valid_mol} "
         f"duplicates={n_duplicate} invalid={n_invalid} "
-        f"validity={gen_stats['validity']:.3f} uniq_raw={gen_stats['uniqueness_raw']:.3f}"
+        f"validity={gen_stats['validity']:.3f} uniq_raw={gen_stats['uniqueness_raw']:.3f} "
+        f"wjs_s={wjs_seconds:.1f} vox2mol_s={vox2mol_seconds:.1f} "
+        f"cpu_wait_s={reconstruction_wait_seconds:.1f}"
         + ("  [HIT 500 CAP]" if gen_stats["hit_cap"] else "")
     )
 

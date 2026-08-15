@@ -67,13 +67,16 @@ POSE_MODES = ("none", "posecheck", "posebusters", "all")
 # The moleval interpreter (override with $MOLEVAL_PY). Its env `bin/` is
 # prepended to PATH for the worker so posecheck can shell out to `hydride` /
 # `reduce` (protein protonation).
-_MOLEVAL_PY = os.environ.get("MOLEVAL_PY", "/home/shpark/.conda/envs/moleval/bin/python")
+_MOLEVAL_PY = os.environ.get("MOLEVAL_PY", "/opt/conda/envs/moleval/bin/python")
 _POSE_WORKER = str(Path(__file__).with_name("pose_eval.py"))
 _POSE_IMPORT_ERROR: str | None = None
-# Backstop: kill the worker if a whole target's pose eval exceeds this (protein
-# protonation / posebusters can also hang, not just strain). The worker already
-# bounds strain per-molecule; this catches everything else. Override with env.
+# Backstop for each pose-eval chunk (protein protonation / PoseBusters can also
+# hang, not just strain). Keeping the timeout per chunk prevents one slow group
+# from discarding every result in a roughly 100-ligand target.
 _POSE_TIMEOUT_S = float(os.environ.get("POSE_TIMEOUT_S", "600"))
+# Number of ligands sent to one moleval subprocess. Twenty avoids the old
+# all-target timeout without paying protein-protonation overhead per ligand.
+_POSE_CHUNK_SIZE = max(1, int(os.environ.get("POSE_CHUNK_SIZE", "20")))
 
 # An optional progress callback: progress_cb(done, total, stage_label). Called
 # during the chemical-scoring and docking phases so a UI can show a live bar.
@@ -564,34 +567,67 @@ def run_pose_eval(
     receptor_pdb: Path | str,
     mode: str = "all",
     tmp_dir: Path | str | None = None,
+    chunk_size: int | None = None,
 ) -> list[dict]:
-    """Score `mols` against `receptor_pdb` with PoseCheck + PoseBusters.
+    """Score mols in bounded moleval subprocess chunks.
 
-    Bridges to the `moleval` env: writes the mols to a temp SDF (order
-    preserved), runs pose_eval.py there, and returns a list aligned to `mols` —
-    each entry {"posecheck": {..}, "posebusters": {..}} for the requested
-    `mode`. Never raises: a worker/env failure yields an error block per mol so
-    the per-sample record still captures why.
+    Results are merged in input order. A worker failure is local to its chunk,
+    so completed chunks are retained and only failed rows retry on the next
+    smart-compute pass.
     """
     if not mols:
         return []
     blocks = _pose_blocks(mode)
-
-    def _err(reason: str) -> list[dict]:
+    if not pose_eval_available():
+        reason = f"pose toolchain unavailable: {_POSE_IMPORT_ERROR}"
         return [{b: {"error": reason} for b in blocks} for _ in mols]
 
-    if not pose_eval_available():
-        return _err(f"pose toolchain unavailable: {_POSE_IMPORT_ERROR}")
+    size = _POSE_CHUNK_SIZE if chunk_size is None else int(chunk_size)
+    if size < 1:
+        raise ValueError(f"pose chunk_size must be >= 1, got {size}")
+    n_chunks = (len(mols) + size - 1) // size
+    results: list[dict] = []
+    for chunk_index, start in enumerate(range(0, len(mols), size), 1):
+        stop = min(start + size, len(mols))
+        label = f"chunk {chunk_index}/{n_chunks} (mols {start + 1}-{stop})"
+        results.extend(_run_pose_eval_chunk(
+            mols[start:stop],
+            receptor_pdb,
+            mode=mode,
+            blocks=blocks,
+            tmp_dir=tmp_dir,
+            label=label,
+            chunk_index=chunk_index,
+        ))
+    return results
+
+
+def _run_pose_eval_chunk(
+    mols: list[Chem.Mol],
+    receptor_pdb: Path | str,
+    *,
+    mode: str,
+    blocks: tuple[str, ...],
+    tmp_dir: Path | str | None,
+    label: str,
+    chunk_index: int,
+) -> list[dict]:
+    """Run one bounded moleval worker and return input-aligned records."""
+
+    def _err(reason: str) -> list[dict]:
+        tagged = f"{label}: {reason}"
+        return [{b: {"error": tagged} for b in blocks} for _ in mols]
 
     tmp = Path(tempfile.mkdtemp(
-        prefix="poseeval_", dir=str(tmp_dir) if tmp_dir else None))
+        prefix=f"poseeval_{chunk_index:03d}_",
+        dir=str(tmp_dir) if tmp_dir else None,
+    ))
     sdf_path, out_path = tmp / "ligands.sdf", tmp / "pose.json"
     try:
-        with Chem.SDWriter(str(sdf_path)) as w:
-            for m in mols:
-                w.write(m)
-        # Prepend the moleval bin so posecheck's `hydride`/`reduce` shell-outs
-        # resolve; without this they hit `/bin/sh: hydride: not found`.
+        with Chem.SDWriter(str(sdf_path)) as writer:
+            for mol in mols:
+                writer.write(mol)
+        # Prepend the moleval bin so posecheck hydride/reduce shell-outs resolve.
         env = dict(os.environ)
         env["PATH"] = os.pathsep.join(
             [str(Path(_MOLEVAL_PY).parent), env.get("PATH", "")])
@@ -603,12 +639,17 @@ def run_pose_eval(
         if proc.returncode != 0 or not out_path.exists():
             tail = " | ".join((proc.stderr or "").strip().splitlines()[-3:])
             return _err(f"worker rc={proc.returncode}: {tail}")
-        results = json.loads(out_path.read_text())
-        if len(results) != len(mols):
-            return _err(f"worker returned {len(results)} records for {len(mols)} mols")
-        return [{b: r[b] for b in blocks if b in r} for r in results]
-    except Exception as e:  # noqa: BLE001
-        return _err(f"{type(e).__name__}: {e}")
+        chunk_results = json.loads(out_path.read_text())
+        if len(chunk_results) != len(mols):
+            return _err(
+                f"worker returned {len(chunk_results)} records for {len(mols)} mols"
+            )
+        return [{b: row[b] for b in blocks if b in row}
+                for row in chunk_results]
+    except subprocess.TimeoutExpired:
+        return _err(f"worker timed out after {_POSE_TIMEOUT_S:g}s")
+    except Exception as exc:  # noqa: BLE001
+        return _err(f"{type(exc).__name__}: {exc}")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
@@ -1136,9 +1177,11 @@ def _cli() -> None:
         print(f"WARNING: pose toolchain unavailable ({_POSE_IMPORT_ERROR}).")
         print("         build the env, e.g.:")
         print("           conda create -n moleval python=3.10 -y")
-        print("           conda run -n moleval pip install posecheck posebusters "
-              "'pandas>=2.2.3'")
-        print("           conda install -n moleval -c bioconda reduce -y")
+        print("           conda run -n moleval pip install posebusters "
+              "'pandas>=2.2.3' prolif datamol hydride biopython rdkit")
+        print("           conda run -n moleval pip install --no-deps posecheck")
+        print("           conda install -n moleval -c bioconda -c conda-forge "
+              "reduce seaborn xorg-libxrender xorg-libxext -y")
         print("         proceeding anyway — each sample will record a pose error.\n")
 
     targets = list(_iter_target_dirs(root))
@@ -1147,21 +1190,14 @@ def _cli() -> None:
 
     print(f"{len(targets)} target(s)  |  docking={args.docking}  pose={args.pose}  "
           f"exhaustiveness={args.exhaustiveness}  cpu={args.cpu}  "
-          f"workers={args.workers if args.workers else 'auto'}")
+          f"workers={args.workers if args.workers else 'auto'}  "
+          f"pose_chunk={_POSE_CHUNK_SIZE}  pose_timeout={_POSE_TIMEOUT_S:g}s")
     for i, tdir in enumerate(targets, 1):
         tag = f"[{i}/{len(targets)}] {tdir.name}"
-        if args.skip_existing:
-            existing = load_metrics(tdir)
-            dock_ok = (args.docking == "none") or (
-                existing is not None
-                and existing.get("docking", "none") != "none")
-            pose_ok = (args.pose == "none") or (
-                existing is not None and bool(existing.get("samples"))
-                and all(_has_pose_for_mode(s, args.pose)
-                        for s in existing["samples"]))
-            if existing and dock_ok and pose_ok:
-                print(f"{tag}: already computed — skipped")
-                continue
+        if args.skip_existing and cache_satisfies(
+                tdir, args.docking, args.pose):
+            print(f"{tag}: already computed — skipped")
+            continue
         pdb = find_pocket_pdb(tdir)
         if pdb is None:
             print(f"{tag}: no *_pocket10.pdb — skipped")

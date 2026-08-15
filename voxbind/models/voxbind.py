@@ -76,9 +76,11 @@ class VoxBind(torch.nn.Module):
         density_mask_ligand: bool = False,
         density_mask_threshold: float = 0.2,
         density_mask_dilate: int = 2,
+        density_encoder_sees_ligand: bool = False,
         density_encoder_amp: bool = False,
         density_noise_alpha: float = 1.0,
         density_noise_sigma: float = 0.0,
+        density_drop_ligand_tokens: bool = True,
         density_attenuate: bool = False,
         density_attenuate_sigma: float = 7.0,
         density_attenuate_quantile: float = 0.90,
@@ -132,6 +134,10 @@ class VoxBind(torch.nn.Module):
         """
         super().__init__()
 
+        # cross_attn: the UNet's attention levels cross-attend to the frozen density ViT's
+        # tokens, so it needs the token width. Any other fusion -> ctx_dim None -> no
+        # DensityCrossAttn modules are built at all (unused params are a DDP hazard).
+        _ctx_dim = int(density_vit_dim) if str(fusion) == "cross_attn" else None
         self.unet3d = UNet3D(
             n_channels // 2,
             n_channels,
@@ -142,6 +148,7 @@ class VoxBind(torch.nn.Module):
             n_groups,
             dropout,
             smooth_sigma,
+            ctx_dim=_ctx_dim,
             verbose=False
         )
 
@@ -162,6 +169,13 @@ class VoxBind(torch.nn.Module):
         self.density_mask_ligand = bool(density_mask_ligand)
         self.density_mask_threshold = float(density_mask_threshold)
         self.density_mask_dilate = int(density_mask_dilate)
+        # Feed the REAL ligand's atoms to the frozen density encoder (train: the clean
+        # voxels; sampling: the reference ligand) instead of zeros. Note this is separate
+        # from the density itself — the holo pocket/map is intrinsic to the CrossDocked SBDD
+        # setting that every baseline shares, whereas these 7 channels are the target
+        # molecule fed in directly. Judge the consequence by diversity / novelty-vs-reference
+        # of the samples, not by assumption. Default off.
+        self.density_encoder_sees_ligand = bool(density_encoder_sees_ligand)
         # Global density->noise blend (see _blend_density_noise). 1.0 = exact no-op, so
         # every existing config/checkpoint is unaffected. Test-time dose-response knob.
         self.density_noise_alpha = float(density_noise_alpha)
@@ -169,6 +183,9 @@ class VoxBind(torch.nn.Module):
         # Protein-only attenuation field alpha(x) (see models/mae_ops.protein_attenuation_field).
         # Built from pocket atoms alone -> no ligand needed, so the training condition and the
         # generation-time condition are identical. Default off: existing configs unaffected.
+        # cross_attn: skip the always-zero ligand tokens as cross-attention keys (33% of them
+        # for groups [7,4,2]). Pure waste otherwise -- they are a constant.
+        self.density_drop_ligand_tokens = bool(density_drop_ligand_tokens)
         self.density_attenuate = bool(density_attenuate)
         self.density_attenuate_sigma = float(density_attenuate_sigma)
         self.density_attenuate_quantile = float(density_attenuate_quantile)
@@ -184,7 +201,7 @@ class VoxBind(torch.nn.Module):
         self.fusion = str(fusion)
         # Validate explicitly: forward() dispatches with an `else` fallback, so an unknown value
         # (a typo) would otherwise run "default" silently and quietly train the wrong experiment.
-        _valid_fusions = ("default", "v3", "protein_first")
+        _valid_fusions = ("default", "v3", "protein_first", "cross_attn")
         if self.fusion not in _valid_fusions:
             raise ValueError(
                 f"fusion must be one of {_valid_fusions}, got {fusion!r}"
@@ -274,7 +291,7 @@ class VoxBind(torch.nn.Module):
             # iterations stable and identical to the baseline. Identical for
             # cnn and vit branches since both output (B, C/2, G, G, G).
             # v3 uses context_proj instead — don't build density_proj (unused → DDP error).
-            if self.fusion != "v3":
+            if self.fusion not in ("v3", "cross_attn"):
                 self.density_proj = torch.nn.Conv3d(
                     n_channels, n_channels // 2, kernel_size=1
                 )
@@ -395,7 +412,8 @@ class VoxBind(torch.nn.Module):
 
     def _density_encoder_input(self, pocket: torch.Tensor,
                                density: torch.Tensor,
-                               dens_mask: torch.Tensor = None) -> torch.Tensor:
+                               dens_mask: torch.Tensor = None,
+                               enc_ligand: torch.Tensor = None) -> torch.Tensor:
         """Build the tensor fed to the (frozen) density_encoder.
 
         Default field mode: the encoder is a density-only / density+gradmag ViT-MAE,
@@ -444,7 +462,16 @@ class VoxBind(torch.nn.Module):
             return density
         # density: (B, 1, G, G, G) — the v5 (arcsinh+z) pocket density crop.
         B, _, G, _, _ = density.shape
-        lig0 = density.new_zeros(B, self.n_channels_ligand, G, G, G)   # masked ligand
+        # Ligand channels. Default: ZEROED — the ligand is the generation target and is not
+        # available to condition on, and the MAE encoder saw masked inputs in pretraining.
+        # `density_encoder_sees_ligand=true` instead feeds the available REFERENCE ligand (train: clean
+        # voxels; sampling: the reference ligand). Whether that collapses generation into
+        # reconstruction is measurable (sample diversity, novelty vs the reference), so report
+        # those with the Vina numbers rather than labelling the run up front.
+        if self.density_encoder_sees_ligand and enc_ligand is not None:
+            lig0 = enc_ligand.to(density.dtype)
+        else:
+            lig0 = density.new_zeros(B, self.n_channels_ligand, G, G, G)
         gradmag = per_sample_zscore(gradient_magnitude3d(density))     # (B, 1, G, G, G)
         if self.density_mask_ligand and dens_mask is not None:
             keep = 1.0 - dens_mask                                     # 0 inside ligand region
@@ -453,7 +480,7 @@ class VoxBind(torch.nn.Module):
         # channel order MUST match pretraining: [ lig, poc, density, gradmag ]
         return torch.cat([lig0, pocket, density, gradmag], dim=1)
 
-    def _encode_density(self, enc_in: torch.Tensor) -> torch.Tensor:
+    def _encode_density(self, enc_in: torch.Tensor, return_tokens: bool = False):
         """Run the density encoder, optionally in bf16 (see `density_encoder_amp`).
 
         Only the encoder forward is autocast — `_density_encoder_input` (gradmag +
@@ -461,10 +488,13 @@ class VoxBind(torch.nn.Module):
         fusion conv and the whole denoiser see exactly the dtype they always did.
         """
         if not (self.density_encoder_amp and enc_in.is_cuda):
-            return self.density_encoder(enc_in)
+            return self.density_encoder(enc_in, return_tokens=return_tokens)
         with torch.autocast("cuda", dtype=torch.bfloat16):
-            x_dens = self.density_encoder(enc_in)
-        return x_dens.float()
+            out = self.density_encoder(enc_in, return_tokens=return_tokens)
+        if return_tokens:
+            vox, tok = out
+            return vox.float(), tok.float()
+        return out.float()
 
     def forward(
         self,
@@ -472,6 +502,7 @@ class VoxBind(torch.nn.Module):
         pocket: torch.Tensor,
         density: torch.Tensor = None,
         dens_mask: torch.Tensor = None,
+        enc_ligand: torch.Tensor = None,
     ) -> torch.Tensor:
         """
         Forward pass of the VoxBind model.
@@ -500,9 +531,33 @@ class VoxBind(torch.nn.Module):
         elif self.fusion == "v3":
             # frozen encoder carries pocket + (apo) density; pocket_encoder is gone. Ligand
             # stream identical. Early fusion: add the projected frozen context to ligand features.
-            enc_in = self._density_encoder_input(pocket, density, dens_mask=dens_mask)
+            enc_in = self._density_encoder_input(pocket, density, dens_mask=dens_mask,
+                                                 enc_ligand=enc_ligand)
             x_dens = self._encode_density(enc_in)
             x = self.ligand_encoder(ligand) + self.context_proj(x_dens)
+        elif self.fusion == "cross_attn":
+            # Density enters INSIDE the denoiser, not at its input: the UNet's attention
+            # levels query the frozen ViT's patch tokens. No density_proj -- the only path
+            # is the (zero-init) cross-attention, so this isolates the fusion mechanism
+            # against protein_first/default rather than stacking two pathways.
+            x = self.ligand_encoder(ligand) + self.pocket_encoder(pocket)
+            if self.with_density and density is not None:
+                enc_in = self._density_encoder_input(pocket, density, dens_mask=dens_mask)
+                _, dens_ctx = self._encode_density(enc_in, return_tokens=True)
+                # Drop the LIGAND channel-group's tokens. In full-voxel mode the 7 ligand
+                # channels are always zero (the ligand is the generation target), so with
+                # channel_group tokenisation a full 1/nG of the keys carry no information --
+                # attending to them is pure cost. Tokens are (B, nG*N, D) with the groups in
+                # channel order [lig, poc, dens+gradmag], so the first N are the ligand's.
+                if self.density_drop_ligand_tokens and self.density_full_voxel:
+                    n_per_group = self.density_encoder.g_p ** 3
+                    if dens_ctx.shape[1] > n_per_group:
+                        dens_ctx = dens_ctx[:, n_per_group:]
+            else:
+                dens_ctx = None
+            x = self.unet3d(x, None, ctx=dens_ctx)
+            x = self.unet3d.act(x)
+            return self.final_ligand(x)
         elif self.fusion == "protein_first":
             # Density is fused into the PROTEIN representation on its own, and only the
             # result is added to the ligand features. density_proj therefore conditions on
@@ -512,14 +567,16 @@ class VoxBind(torch.nn.Module):
             # density-free baseline.
             x_poc = self.pocket_encoder(pocket)
             if self.with_density and density is not None:
-                enc_in = self._density_encoder_input(pocket, density, dens_mask=dens_mask)
+                enc_in = self._density_encoder_input(pocket, density, dens_mask=dens_mask,
+                                                 enc_ligand=enc_ligand)
                 x_dens = self._encode_density(enc_in)
                 x_poc = x_poc + self.density_proj(torch.cat([x_poc, x_dens], dim=1))
             x = self.ligand_encoder(ligand) + x_poc
         else:
             x = self.ligand_encoder(ligand) + self.pocket_encoder(pocket)
             if self.with_density and density is not None:
-                enc_in = self._density_encoder_input(pocket, density, dens_mask=dens_mask)
+                enc_in = self._density_encoder_input(pocket, density, dens_mask=dens_mask,
+                                                 enc_ligand=enc_ligand)
                 x_dens = self._encode_density(enc_in)
                 x = x + self.density_proj(torch.cat([x, x_dens], dim=1))
 
@@ -531,7 +588,8 @@ class VoxBind(torch.nn.Module):
 
     def score(self, y: torch.Tensor, pocket: torch.Tensor,
               density: torch.Tensor = None,
-              dens_mask: torch.Tensor = None) -> torch.Tensor:
+              dens_mask: torch.Tensor = None,
+              enc_ligand: torch.Tensor = None) -> torch.Tensor:
         """
         Calculates the score function.
 
@@ -545,7 +603,8 @@ class VoxBind(torch.nn.Module):
         Returns:
             torch.Tensor: The calculated base score tensor.
         """
-        xhat = self.forward(y, pocket, density=density, dens_mask=dens_mask)
+        xhat = self.forward(y, pocket, density=density, dens_mask=dens_mask,
+                            enc_ligand=enc_ligand)
         return (xhat - y) / (self.smooth_sigma ** 2)
 
     ####################################################################################
@@ -591,7 +650,8 @@ class VoxBind(torch.nn.Module):
     @torch.no_grad()
     def wjs_jump_step(self, y: torch.Tensor, pocket: torch.Tensor,
                       density: torch.Tensor = None,
-                      dens_mask: torch.Tensor = None) -> torch.Tensor:
+                      dens_mask: torch.Tensor = None,
+                      enc_ligand: torch.Tensor = None) -> torch.Tensor:
         """
         Performs the jump step of the walk-jump sampling.
 
@@ -600,11 +660,16 @@ class VoxBind(torch.nn.Module):
             pocket (torch.Tensor): The pocket tensor.
             density (torch.Tensor, optional): X-ray density map (B,1,G,G,G). Defaults to None.
             dens_mask (torch.Tensor, optional): clean-ligand footprint (B,1,G,G,G). Defaults to None.
+            enc_ligand (torch.Tensor, optional): reference-ligand grid handed to the frozen
+                density encoder when density_encoder_sees_ligand=true. Ignored otherwise, so
+                the density-free and non-reference paths are unaffected. Defaults to None.
 
         Returns:
             torch.Tensor: The estimated "clean" samples xhats.
         """
-        return self.forward(y, pocket, density=density, dens_mask=dens_mask)
+        return self.forward(y, pocket, density=density, dens_mask=dens_mask,
+                            enc_ligand=(enc_ligand if self.density_encoder_sees_ligand
+                                        else None))
 
     @torch.no_grad()
     def wjs_walk_steps(
@@ -618,6 +683,7 @@ class VoxBind(torch.nn.Module):
         lipschitz: float = 1.,
         density: torch.Tensor = None,
         dens_mask: torch.Tensor = None,
+        enc_ligand: torch.Tensor = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Performs `n_steps` walk steps of the walk-jump sampling.
@@ -645,7 +711,9 @@ class VoxBind(torch.nn.Module):
         for _ in range(n_steps):
             with torch.no_grad():
                 y += delta * v / 2
-            psi = self.score(y, pocket, density=density, dens_mask=dens_mask)
+            psi = self.score(y, pocket, density=density, dens_mask=dens_mask,
+                             enc_ligand=(enc_ligand if self.density_encoder_sees_ligand
+                                         else None))
             with torch.no_grad():
                 noise = torch.randn_like(y)
                 if mask is not None:
@@ -724,7 +792,8 @@ class VoxBind(torch.nn.Module):
         if warmup_wjs > 0:
             mask_warmup = get_pocket_mask(pocket, n_channels=N_LIGAND_ELEMENTS)
             y, v = self.wjs_walk_steps(y, v, pocket, mask_warmup, warmup_wjs,
-                                       density=density, dens_mask=_dmask(ligand))
+                                       density=density, dens_mask=_dmask(ligand),
+                                       enc_ligand=ligand)
         y, v = y.repeat(n_chains // N, 1, 1, 1, 1), v.repeat(n_chains // N, 1, 1, 1, 1)
         pocket, ligand = pocket.repeat(n_chains // N, 1, 1, 1, 1), ligand.repeat(n_chains // N, 1, 1, 1, 1)
         if density is not None:
@@ -745,10 +814,11 @@ class VoxBind(torch.nn.Module):
         for _ in range(0, max_steps, steps):
             # walk `steps` steps
             y, v = self.wjs_walk_steps(y, v, pocket, mask, steps, density=density,
-                                       dens_mask=dens_mask_main)
+                                       dens_mask=dens_mask_main, enc_ligand=ligand)
 
             # jump step
-            xhats = self.wjs_jump_step(y, pocket, density=density, dens_mask=dens_mask_main)
+            xhats = self.wjs_jump_step(y, pocket, density=density, dens_mask=dens_mask_main,
+                                       enc_ligand=ligand)
 
             nz = (xhats > 0).float().mean().item()
             # quantile() rejects tensors > ~16M elements; subsample for stats.

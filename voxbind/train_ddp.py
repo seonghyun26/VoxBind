@@ -38,6 +38,8 @@ from voxbind.metrics import create_metrics_for_training
 from voxbind.models import create_model
 from voxbind.models.adamw import AdamW
 from voxbind.models.ema import ModelEma
+from voxbind.models.urepa import (BottleneckTap, UREPAAlignment, build_teacher_input,
+                                  load_frozen_cdg, teacher_tokens)
 from voxbind.utils.base_utils import (
     create_exp_dir, load_checkpoint, makedir, save_checkpoint, seed_everything,
 )
@@ -132,12 +134,18 @@ class VoxelPrefetcher:
     helpers from train.py).
     """
 
-    def __init__(self, loader, voxelizer, smooth_sigma, training=True, with_density=False):
+    def __init__(self, loader, voxelizer, smooth_sigma, training=True, with_density=False,
+                 raw_density=False):
         self.loader = loader
         self.voxelizer = voxelizer
         self.smooth_sigma = smooth_sigma
         self.training = training
         self.with_density = with_density
+        # U-REPA: the teacher needs the density even though the DENOISER is density-free
+        # (model.with_density=False). raw_density decouples "deliver the crop" from "the
+        # model consumes it", and keeps the crop UNZEROED — U-REPA must *exclude* samples
+        # without a map, not feed them a zero volume. `avail` is yielded so it can.
+        self.raw_density = raw_density
         self.stream = torch.cuda.Stream()
 
     def _voxelize(self, batch):
@@ -148,17 +156,18 @@ class VoxelPrefetcher:
                 voxels_poc = self.voxelizer.forward(batch["pocket"], num_channels=4)
                 if self.training:
                     voxels_poc[:math.ceil(.2 * voxels_poc.shape[0])].zero_()
-                density = None
-                if self.with_density and "xray_density" in batch:
+                density, avail = None, None
+                if (self.with_density or self.raw_density) and "xray_density" in batch:
                     density = batch["xray_density"].to(
                         self.voxelizer.device, non_blocking=True
                     ).unsqueeze(1)
                     if "xray_available" in batch:
                         avail = batch["xray_available"].to(
                             self.voxelizer.device, non_blocking=True
-                        )
-                        density = density * avail.view(-1, 1, 1, 1, 1).float()
-        return voxels_lig, smooth_voxels_lig, voxels_poc, density
+                        ).bool()
+                        if not self.raw_density:
+                            density = density * avail.view(-1, 1, 1, 1, 1).float()
+        return voxels_lig, smooth_voxels_lig, voxels_poc, density, avail
 
     def __iter__(self):
         loader_it = iter(self.loader)
@@ -314,7 +323,51 @@ def main(cfg: DictConfig) -> None:
             del _ck, _sd
 
     criterion = torch.nn.MSELoss(reduction="sum").to(device)
-    optimizer = AdamW(model.parameters(), lr=cfg.lr, weight_decay=cfg.wd)
+
+    # ── U-REPA: frozen CDG teacher + trainable projector on the U-Net bottleneck ──
+    # Additive: with cfg.urepa absent/disabled everything below is skipped and the run is
+    # bit-identical to a stock denoiser run. Inference never constructs any of it.
+    teacher = align = tap = None
+    urepa_stage1 = False
+    ucfg = cfg.get("urepa", None)
+    if ucfg is not None and bool(ucfg.get("enabled", False)):
+        teacher = load_frozen_cdg(ucfg.exp_dir, int(ucfg.get("epoch", 49)), device)
+        _bot = model.unet3d.middle.res1.conv1.in_channels      # read, never assume 32*4
+        align = UREPAAlignment(
+            unet_ch=_bot, cdg_dim=teacher.dim,
+            unet_grid=cfg.vox.grid_dim // (2 ** (len(cfg.model.ch_mults) - 1)),
+            cdg_grid=teacher.g_p,
+            tau=float(ucfg.get("tau", 0.1)), center=bool(ucfg.get("center", True)),
+            mode=str(ucfg.get("mode", "relkl")),
+            repa_weight=float(ucfg.get("repa_weight", 0.0)),
+            ml_weight=float(ucfg.get("ml_weight", 1.0)),
+            sampling=str(ucfg.get("sampling", "split")),
+            tokens_per_sample=int(ucfg.get("tokens_per_sample", 128)),
+            w_intra=float(ucfg.get("w_intra", 1.0)),
+            w_inter=float(ucfg.get("w_inter", 1.0)),
+        ).to(device)
+        tap = BottleneckTap(model.unet3d.middle)
+        urepa_stage1 = int(ucfg.get("stage1_epochs", 0)) > 0
+        if is_main:
+            logger.info(
+                f">> U-REPA on: teacher={ucfg.exp_dir} dim={teacher.dim} "
+                f"(frozen, {sum(p.numel() for p in teacher.parameters())/1e6:.1f}M) | "
+                f"bottleneck={_bot} projector={sum(p.numel() for p in align.parameters())/1e6:.2f}M "
+                f"| lam={ucfg.get('lam', 0.5)} sampling={ucfg.get('sampling', 'split')} "
+                f"apo={ucfg.get('apo', True)} stage1_epochs={ucfg.get('stage1_epochs', 0)} "
+                f"| L_align = {ucfg.get('repa_weight', 0.0)}*REPA + {ucfg.get('ml_weight', 1.0)}*manifold"
+            )
+
+    if align is None:
+        optimizer = AdamW(model.parameters(), lr=cfg.lr, weight_decay=cfg.wd)
+    else:
+        # Two groups so Stage 1 can hold the U-Net at lr=0 while the projector trains.
+        optimizer = AdamW([
+            {"params": list(model.parameters()), "name": "unet",
+             "lr": 0.0 if urepa_stage1 else float(cfg.lr)},
+            {"params": list(align.parameters()), "name": "urepa_proj",
+             "lr": float(ucfg.get("proj_lr", 1e-4))},
+        ], lr=cfg.lr, weight_decay=cfg.wd)
     optimizer.zero_grad()
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     if is_main:
@@ -365,6 +418,12 @@ def main(cfg: DictConfig) -> None:
     # fix is to gate the time-embed MLP creation on whether t is ever passed,
     # but for the smoke test we just enable the runtime check.
     model.to(device)
+    if world_size > 1 and align is not None:
+        # The projector lives outside `model`, so it needs its own reducer — otherwise
+        # each rank keeps a privately-updated copy and the ranks silently diverge.
+        align = torch.nn.parallel.DistributedDataParallel(
+            align, device_ids=[local_rank], output_device=local_rank,
+        )
     if world_size > 1:
         model = torch.nn.parallel.DistributedDataParallel(
             model,
@@ -403,10 +462,22 @@ def main(cfg: DictConfig) -> None:
             loader_train.sampler.set_epoch(epoch)
 
         # train (all ranks)
+        if urepa_stage1 and epoch == int(cfg.urepa.get("stage1_epochs", 0)):
+            # Stage 1 -> 2: release the U-Net. lr=0 (not requires_grad=False) is what
+            # freezes it, so DDP always has trainable params to reduce and never hits
+            # "module has no parameter that requires a gradient".
+            for g in optimizer.param_groups:
+                if g.get("name") == "unet":
+                    g["lr"] = float(cfg.lr)
+            urepa_stage1 = False
+            if is_main:
+                logger.info(f">> U-REPA stage 2 at epoch {epoch}: U-Net lr -> {cfg.lr}")
+
         train_metrics, global_step = train(
             cfg, loader_train, voxelizer, model, criterion, optimizer,
             metrics_denoise, model_ema,
             global_step=global_step,
+            align=align, teacher=teacher, tap=tap,
         )
 
         # val (ALL ranks — torchmetrics auto-syncs at .compute(), so rank-0-only
@@ -440,6 +511,9 @@ def main(cfg: DictConfig) -> None:
                 "cfg": cfg,
                 "state_dict_ema": model_ema.module.state_dict(),
                 "optimizer": optimizer.state_dict(),
+                # projector only — the teacher is frozen and reloaded from its own zoo dir,
+                # and inference never needs either. Absent for non-U-REPA runs.
+                **({"urepa_projector": _unwrap(align).state_dict()} if align is not None else {}),
             }, save_dir=cfg.output_dir)
 
         # Sync ranks per epoch. With async checkpoint save, rank 0 reaches
@@ -472,6 +546,9 @@ def train(
     metrics: torchmetrics.MetricCollection,
     model_ema: torch.nn,
     global_step: int = 0,
+    align=None,
+    teacher=None,
+    tap=None,
 ) -> tuple:
     """Train one epoch. Returns (metrics_dict, new_global_step).
 
@@ -486,20 +563,27 @@ def train(
     with_density = bool(cfg.model.get("with_density", False))
     # Leak-removal mask config (read off the model so it tracks the checkpoint).
     _mdl = _unwrap(model)
+    enc_sees_ligand = bool(getattr(_mdl, "density_encoder_sees_ligand", False))
     mask_lig = bool(getattr(_mdl, "density_mask_ligand", False))
     mask_thr = float(getattr(_mdl, "density_mask_threshold", 0.2))
     mask_dil = int(getattr(_mdl, "density_mask_dilate", 2))
+    urepa_on = align is not None
     prefetcher = VoxelPrefetcher(
         loader, voxelizer, cfg.smooth_sigma,
-        training=True, with_density=with_density,
+        training=True, with_density=with_density, raw_density=urepa_on,
     )
+    ucfg = cfg.get("urepa", {}) if urepa_on else {}
+    u_lam = float(ucfg.get("lam", 0.5))
+    u_apo = bool(ucfg.get("apo", True))
+    u_amp = bool(ucfg.get("teacher_amp", True))
+    align_sum, align_n, ent_sum, ratio_sum = 0.0, 0, 0.0, 0.0
     # Gradient accumulation: forward/backward on `accum_steps` micro-batches,
     # then a single optimizer step -> effective batch = bsz * world_size *
     # accum_steps at the memory cost of one micro-batch. accum_steps=1 (default)
     # steps every batch -> an exact no-op vs. the pre-accumulation loop.
     n_batches = len(prefetcher)
     optimizer.zero_grad(set_to_none=True)
-    for i, (voxels_lig, smooth_voxels_lig, voxels_poc, density) in enumerate(prefetcher):
+    for i, (voxels_lig, smooth_voxels_lig, voxels_poc, density, avail) in enumerate(prefetcher):
         # last micro-batch of an accumulation group, or of the epoch -> step now
         is_step = ((i + 1) % accum_steps == 0) or ((i + 1) == n_batches)
 
@@ -511,8 +595,41 @@ def train(
         with sync_ctx:
             dens_mask = (_mdl.ligand_occupancy_mask(voxels_lig, mask_thr, mask_dil)
                          if (mask_lig and density is not None) else None)
-            pred = model(smooth_voxels_lig, voxels_poc, density=density, dens_mask=dens_mask)
+            # U-REPA feeds the teacher raw density, but the DENOISER stays density-free.
+            _dens_in = None if urepa_on and not with_density else density
+            # REFERENCE mode: the frozen encoder sees the clean available ligand (sampling feeds it the
+            # reference ligand, so training must match that distribution — feeding the noisy
+            # y here would train under a condition inference never reproduces).
+            _enc_lig = voxels_lig if enc_sees_ligand else None
+            pred = model(smooth_voxels_lig, voxels_poc, density=_dens_in, dens_mask=dens_mask,
+                         enc_ligand=_enc_lig)
             loss = criterion(pred, voxels_lig)
+
+            if urepa_on and density is not None:
+                sel = (avail if avail is not None
+                       else torch.ones(voxels_lig.shape[0], dtype=torch.bool,
+                                       device=voxels_lig.device))
+                # Every rank MUST call `align` every step: a rank that skips it leaves its
+                # DDP reduction unfinished and the next iteration deadlocks. With
+                # dset.subset_xray_only=true `sel` is all-True anyway; the zero-weight
+                # fallback just makes a partially-covered dataset safe too.
+                n_sel = int(sel.sum())
+                if True:
+                    scale = 1.0 if n_sel else 0.0
+                    idx = (sel.nonzero(as_tuple=True)[0] if n_sel
+                           else torch.zeros(1, dtype=torch.long, device=sel.device))
+                    # teacher sees the student's OWN augmented frame -> the 8³ token grid
+                    # and the 8³ bottleneck correspond voxel-for-voxel, no canonical-cache
+                    # rotation problem.
+                    t_in = build_teacher_input(voxels_lig[idx], voxels_poc[idx],
+                                               density[idx], apo=u_apo)
+                    tgt = teacher_tokens(teacher, t_in, amp=u_amp)
+                    l_align, a_stats = align(tap.feature[idx], tgt, return_stats=True)
+                    loss = loss + (u_lam * scale) * l_align
+                    if n_sel:
+                        align_sum += float(l_align.detach()); align_n += 1
+                        ent_sum += float(a_stats["teacher_entropy"])
+                        ratio_sum += float(a_stats.get("entropy_ratio", float("nan")))
             loss.backward()
 
         if is_step:
@@ -529,7 +646,15 @@ def train(
         if cfg.debug and i == 10:
             break
 
-    return metrics.compute(), global_step
+    out = metrics.compute()
+    if align_n:
+        out["urepa_align"] = align_sum / align_n
+        out["urepa_teacher_entropy"] = ent_sum / align_n
+        # ->1.0 means the teacher target is UNIFORM: the loss teaches nothing and the
+        # student drives KL->0 by matching uniform. Lower tau and/or keep center=true.
+        out["urepa_entropy_ratio"] = ratio_sum / align_n
+        out["urepa_frac_batches"] = align_n / max(n_batches, 1)
+    return out, global_step
 
 
 def val(
@@ -549,12 +674,13 @@ def val(
     mask_lig = bool(getattr(model, "density_mask_ligand", False))
     mask_thr = float(getattr(model, "density_mask_threshold", 0.2))
     mask_dil = int(getattr(model, "density_mask_dilate", 2))
+    _enc_sees_lig = bool(getattr(model, "density_encoder_sees_ligand", False))
 
     with torch.no_grad():
         if val_cache is not None:
             voxels_lig_all = val_cache["voxels_lig"]
             voxels_poc_all = val_cache["voxels_poc"]
-            density_all = val_cache.get("density") if with_density else None
+            density_all = val_cache.get("density") if (with_density or _enc_sees_lig) else None
             n = voxels_lig_all.shape[0]
             for i, start in enumerate(range(0, n, cfg.bsz)):
                 voxels_lig = voxels_lig_all[start:start + cfg.bsz].to(device)
@@ -563,7 +689,8 @@ def val(
                 smooth_voxels_lig = add_noise_vox(voxels_lig, cfg.smooth_sigma)
                 dens_mask = (model.ligand_occupancy_mask(voxels_lig, mask_thr, mask_dil)
                              if (mask_lig and density is not None) else None)
-                pred = model(smooth_voxels_lig, voxels_poc, density=density, dens_mask=dens_mask)
+                pred = model(smooth_voxels_lig, voxels_poc, density=density, dens_mask=dens_mask,
+                             enc_ligand=(voxels_lig if _enc_sees_lig else None))
                 loss = criterion(pred, voxels_lig)
                 metrics.update(loss, pred, voxels_lig)
                 if cfg.debug and i == 10:
@@ -571,12 +698,14 @@ def val(
         else:
             prefetcher = VoxelPrefetcher(
                 loader, voxelizer, cfg.smooth_sigma,
-                training=False, with_density=with_density,
+                training=False, with_density=with_density, raw_density=_enc_sees_lig,
             )
-            for i, (voxels_lig, smooth_voxels_lig, voxels_poc, density) in enumerate(prefetcher):
+            for i, (voxels_lig, smooth_voxels_lig, voxels_poc, density, _av) in enumerate(prefetcher):
                 dens_mask = (model.ligand_occupancy_mask(voxels_lig, mask_thr, mask_dil)
                              if (mask_lig and density is not None) else None)
-                pred = model(smooth_voxels_lig, voxels_poc, density=density, dens_mask=dens_mask)
+                pred = model(smooth_voxels_lig, voxels_poc, density=density, dens_mask=dens_mask,
+                             enc_ligand=(voxels_lig if getattr(model, "density_encoder_sees_ligand", False)
+                                         else None))
                 loss = criterion(pred, voxels_lig)
                 metrics.update(loss, pred, voxels_lig)
                 if cfg.debug and i == 10:
@@ -618,6 +747,9 @@ def _val_cache_path(cfg) -> str:
         "pocket_radius": cfg.dset.pocket_radius,
         "dset_name": cfg.dset.dset_name,
         "with_density": bool(cfg.model.get("with_density", False)),
+        # part of the key: reference-ligand mode caches density that a with_density=false run
+        # would not, so the two must not share a cache file.
+        "enc_sees_ligand": bool(cfg.model.get("density_encoder_sees_ligand", False)),
         # val-set identity — without these a changed val subset would silently
         # reuse a stale cache (e.g. the old all-zero-density val voxels).
         # crops_dir is part of that identity: the noise-control run reuses the
@@ -652,7 +784,10 @@ def precompute_val_voxels(
         for batch in loader_val:
             all_lig.append(voxelizer.forward(batch["ligand"], num_channels=7).cpu())
             all_poc.append(voxelizer.forward(batch["pocket"], num_channels=4).cpu())
-            if with_density and "xray_density" in batch:
+            # reference-ligand mode has model.with_density=false but still needs the crop for the
+            # frozen encoder, so cache density whenever the config asks for either.
+            if (with_density or bool(cfg.model.get("density_encoder_sees_ligand", False))) \
+                    and "xray_density" in batch:
                 d = batch["xray_density"].unsqueeze(1)
                 if "xray_available" in batch:
                     d = d * batch["xray_available"].view(-1, 1, 1, 1, 1).float()

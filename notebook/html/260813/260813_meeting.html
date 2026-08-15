@@ -143,7 +143,7 @@
       <div class="summary-grid">
         <div class="summary-card"><div class="label">Reproduced baseline</div><div class="value">−7.98</div><div class="note">Vanilla VoxBind, no density. Median −8.02, HA 65.3%.</div></div>
         <div class="summary-card primary"><div class="label">Best · Trial 1</div><div class="value">−8.24</div><div class="note">Frozen atomblob7 v2.1 encoder, zero-init fusion. Median −8.75, HA 67.5%. Δ −0.26 vs baseline.</div></div>
-        <div class="summary-card"><div class="label">Newest · Trial 5</div><div class="value">−7.56</div><div class="note">Cross-attention injection, from scratch. Worst arm; docking 99% complete.</div></div>
+        <div class="summary-card"><div class="label">Newest · Trial 5</div><div class="value">−7.56</div><div class="note">Cross-attention injection, from scratch. Worst arm: Δ +0.42 vs baseline, HA 59.3% (−6.0 pt).</div></div>
       </div>
       <ul class="criteria">
         <li><b>Protocol:</b> 79 CrossDocked test pockets × 100 valid-unique molecules each (7,900 total).</li>
@@ -159,8 +159,18 @@
       </ul>
 
       <p class="table-sub"><b>A. Docking and drug-likeness.</b> Vina cells read <b>mean / median</b> over the 79 pockets, in
-        kcal mol⁻¹; HA reads the same way. Trial 5 shows Vina columns only; its docking pool is at 7,830 / 7,900 molecules,
-        so those values are provisional and the remaining metrics wait on the final JSON.</p>
+        kcal mol⁻¹; HA reads the same way.<br>
+        <sup>†</sup> Trial 5 is aggregated over <b>78</b> targets, not 79. Its docking pool stalled on <code>target_48</code>
+        (71/100 molecules, no Vina child alive, 12 h without a write), so that target was dropped and the run was rebuilt from
+        the per-molecule docking log plus the sampled SDFs — both the reference-ligand dock and every completed molecule were
+        recoverable, so no metric is estimated. Vina and HA use 77 targets: <code>target_71</code> returns a null reference
+        dock in every run, here as elsewhere.<br>
+        <sup>‡</sup> DecompDiff is quoted from Table 1 of the VoxBind paper (arXiv:2405.03961), <b>not</b> rerun here, and it is
+        <b>not directly comparable</b>: that table evaluates the standard 100-pocket CrossDocked test split, whereas every row
+        above uses the 79 density-ready pockets. The same table puts VoxBind σ0.9 at dock −8.30 / −8.41 and HA 71.3 / 71.5;
+        our reproduced baseline reaches −7.98 / −8.02 and 65.3 / 70.0 on the harder subset, which is the gap the pocket-set
+        change costs. Treat DecompDiff as a literature landmark for the metric scale, not as a head-to-head result. Its
+        validity, uniqueness, logP and Lipinski are not reported in that table.</p>
       <div class="table-wrap">
         <table class="results">
           <thead>
@@ -178,11 +188,12 @@
           </thead>
           <tbody>
             <tr><td class="col-trial">base</td><td>0.9986</td><td>1.000</td><td>0.741</td><td><b>0.557</b></td><td>0.688</td><td>2.57</td><td>4.65</td><td>−5.256 / −6.604</td><td>−6.837 / −7.005</td><td>−7.981 / −8.022</td><td>65.3% / 70.0%</td></tr>
+            <tr><td class="col-trial">DecompDiff<sup>‡</sup></td><td class="placeholder">—</td><td class="placeholder">—</td><td>0.68</td><td>0.45</td><td>0.61</td><td class="placeholder">—</td><td class="placeholder">—</td><td>−5.67 / −6.04</td><td>−7.04 / −7.09</td><td>−8.39 / −8.43</td><td>64.4% / 71.0%</td></tr>
             <tr><td class="col-trial">1</td><td>0.9990</td><td>1.000</td><td>0.710</td><td>0.523</td><td>0.677</td><td>2.62</td><td>4.52</td><td><b>−5.513 / −7.526</b></td><td><b>−7.090 / −8.036</b></td><td><b>−8.238 / −8.750</b></td><td><b>67.5% / 74.0%</b></td></tr>
             <tr><td class="col-trial">2</td><td>0.9982</td><td>1.000</td><td>0.731</td><td>0.524</td><td>0.670</td><td>2.03</td><td>4.57</td><td>−5.137 / −6.297</td><td>−6.633 / −6.816</td><td>−7.790 / −7.754</td><td>60.6% / 63.3%</td></tr>
             <tr><td class="col-trial">3</td><td>0.9992</td><td>1.000</td><td>0.733</td><td>0.551</td><td>0.692</td><td>2.22</td><td>4.65</td><td>−5.308 / −6.680</td><td>−6.794 / −7.134</td><td>−7.917 / −7.913</td><td>66.4% / 71.5%</td></tr>
             <tr><td class="col-trial">4</td><td><b>0.9996</b></td><td>1.000</td><td>0.744</td><td>0.526</td><td>0.688</td><td>2.33</td><td>4.50</td><td>−5.480 / −6.852</td><td>−6.887 / −7.265</td><td>−7.933 / −8.168</td><td>64.5% / 66.5%</td></tr>
-            <tr><td class="col-trial">5</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td>−4.856 / −5.735</td><td>−6.358 / −6.547</td><td>−7.560 / −7.672</td><td class="placeholder">—</td></tr>
+            <tr><td class="col-trial">5<sup>†</sup></td><td>0.9997</td><td>1.000</td><td>0.738</td><td>0.510</td><td>0.606</td><td>1.84</td><td>4.60</td><td>−4.844 / −5.673</td><td>−6.358 / −6.606</td><td>−7.561 / −7.829</td><td>59.3% / 63.0%</td></tr>
           </tbody>
         </table>
       </div>
@@ -235,6 +246,7 @@
           </thead>
           <tbody>
             <tr><td class="col-trial">base</td><td class="col-method">Vanilla VoxBind — reproduced baseline</td><td>—</td><td>—</td><td>—</td><td>0.9</td><td>350</td><td>99,881</td><td>07-07</td></tr>
+            <tr><td class="col-trial">DecompDiff</td><td class="col-method">Literature reference, quoted from the VoxBind paper — decomposed-prior diffusion, uses external rule-based algorithms to place samples</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>100-pocket split</td><td>ICML&nbsp;2023</td></tr>
             <tr><td class="col-trial">1</td><td class="col-method">Frozen atomblob7 v2.1, σ0.9 — best</td><td>holo</td><td>atomblob7 v2.1 · 45.7M</td><td>default</td><td>0.9</td><td>350</td><td>99,881</td><td>07-04</td></tr>
             <tr><td class="col-trial">2</td><td class="col-method">Trial 1 rerun at σ1.0</td><td>holo</td><td>atomblob7 v2.1 · 45.7M</td><td>default</td><td>1.0</td><td>349</td><td>99,881</td><td>07-14</td></tr>
             <tr><td class="col-trial">3</td><td class="col-method">Trial 1 with the ligand erased from the density map</td><td>ligand removed</td><td>atomblob7 v2.1 · 45.7M</td><td>default</td><td>0.9</td><td>349</td><td>99,881</td><td>07-17</td></tr>
@@ -257,8 +269,10 @@
           <em>not</em> ligand-density leakage: Trial 3, which deletes the ligand from the density map, has the highest overlap
           of all (0.452). Shape overlap does grow with molecule size, so a heavy-atom-controlled comparison is still needed
           before this is called an effect.</li>
-        <li><b>Trial 5 is the least reference-similar and the weakest.</b> Lowest on Morgan, Dice, and scaffold match while
-          also docking worst — under-conditioned rather than novel.</li>
+        <li><b>Trial 5 is the least reference-similar and the weakest.</b> Lowest on Morgan, Dice and scaffold match while
+          docking worst (Δ +0.42, HA 59.3% — the only arm below 60%) — under-conditioned rather than novel. It also has the
+          worst SA by a wide margin (0.606 vs 0.67–0.69 everywhere else), so the molecules are harder to make as well as
+          weaker binders. Injecting density inside the UNet is the wrong pathway, at least at this σ and encoder.</li>
         <li><b>Caveat:</b> Trials 4–5 trained on 78,512 crops against 99,881 for the baseline and Trials 1–3, so those
           comparisons move two axes at once. Only baseline ↔ 1 ↔ 2 ↔ 3 is a clean single-axis contrast.</li>
       </ul>
@@ -271,9 +285,17 @@
         <table class="results">
           <thead><tr><th class="col-method">Job</th><th>What</th><th>Progress</th><th>ETA</th></tr></thead>
           <tbody>
-            <tr><td class="col-method">Trial 5 docking</td><td>Vina over 7,900 cross-attention samples</td><td>7,830 / 7,900</td><td>~1 h</td></tr>
-            <tr><td class="col-method">receptor-ED training</td><td>Champion 100M encoder, default fusion, σ0.9, from scratch, on the
-              90,503-crop receptor-ED corpus (availability gated per receptor rather than per pose, recovering 11,891 crops)</td><td>epoch 31 / 350</td><td>~2.7 d</td></tr>
+            <tr><td class="col-method">FuncBind zero-init</td><td>Same frozen-CDG, zero-init conditioning ported to FuncBind, to start when
+              the GPUs free up. The v5 density crops are index-aligned with FuncBind's CrossDocked split (same
+              <code>data_train.pt</code>, same <code>Random(1234)</code> shuffle, and VoxBind's extra <code>max_len</code>
+              filter drops 0 rows), so no density needs rebuilding. Model branch is implemented and verified zero-init;
+              data wiring in progress. MCP is not an option yet — its 641 targets have no electron density at all.</td>
+              <td>model side done</td><td>starts after the run above</td></tr>
+            <tr><td class="col-method">Reference receptor-ED training</td><td>Champion 100M encoder (98.5M frozen, probe ρ 0.644 — the
+              best affinity encoder we have), default zero-init fusion, σ0.9, from scratch, on the 90,503-crop receptor-ED corpus
+              (availability gated per receptor rather than per pose, recovering 11,891 crops).
+              <b>Reference mode</b>: <code>density_encoder_sees_ligand=true</code>, so the frozen encoder is handed the
+              reference ligand. Sampling feeds it the same way, so training and inference match.</td><td>epoch 91 / 350</td><td>~1.9 d</td></tr>
           </tbody>
         </table>
       </div>

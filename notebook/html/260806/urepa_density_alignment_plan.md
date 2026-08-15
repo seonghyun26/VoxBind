@@ -199,10 +199,10 @@ what makes it deployable to targets with no crystal structure.
 
 Built + verified on the analysis server (ckpt-independent Phase A):
 
-- [x] Confirm bottleneck size / CDG patch size → **U-Net `(B,128,8³)` ↔ CDG `(B,512,640)`, grids match → projector is a pure 128→640 map, upsample = identity**
+- [x] Confirm bottleneck size / CDG patch size → **U-Net `(B,512,8³)` ↔ CDG `(B,512,D)`, grids match → projector is a pure 512→D map, upsample = identity** (`ch_mults` is CUMULATIVE: 32→32→64→128→512, *not* `n_channels·ch_mults[-1]`=128; verified on `exp_sig0.9` ep923). With the dim-512 `efficient_60m` teacher the projector is square 512→512.
 - [x] Implement MLP projector → upsample → manifold loss → **`models/urepa.py`** (`UREPAAlignment`, `manifold_alignment_loss` relkl/gram/pool, `BottleneckTap`; smoke-passed)
 - [x] Build density subset w/ explicit test-pocket exclusion → **`dataset/00i_urepa_subset.py` → `urepa_subset.pt` (6,181 native+density; 0 test-leak — CrossDocked split already pocket-clean)**
-- [x] Precompute + cache CDG target tokens → **`dataset/00j_urepa_cache_cdg.py`** (load→assemble→encode→cache self-test OK; full run needs the density crops in the finetuning env)
+- [x] ~~Precompute + cache CDG target tokens~~ → **superseded: run the teacher LIVE** (`no_grad`+bf16) so it sees the same augmented frame as the student. Caching forces canonical orientation, which under `cfg.aug` either breaks the token↔token correspondence or costs the intra-sample axis — the one with the most headroom (token CKA 0.254 vs pooled 0.527). `dataset/00j_urepa_cache_cdg.py` is kept for un-augmented runs.
 - [x] Wire dual-loss training → **`urepa_train_integration.md`** (reference patch: pid-carrying loader, `BottleneckTap`, Stage-1 frozen-U-Net, λ block, aug caveat)
 - [x] Controls: coords-only-CDG target → rebuild `00j` with `model_zoo/coords_100m_v2_mask075` (n_in=11). Computed-density-CDG control **dropped** (synthetic density not needed).
 

@@ -13,10 +13,18 @@ Two invariants that MUST hold for the alignment to be meaningful:
   2. NORMALIZATION MATCH — density must use the champion's pretraining recipe (PLINDER
      arcsinh+z); the density source (resample_dir / crops) should already carry it.
 
+OPTIONAL PATH — the default is now a LIVE teacher forward in the training loop
+(no_grad + bf16; see urepa_train_integration.md §2-3).  Caching is only worth it for an
+un-augmented run, because of the caveat below.
+
 Augmentation caveat: cache at CANONICAL orientation and keep the alignment-loss
 samples un-rotated at train time (or use the pool_samples manifold loss, which is
 rotation-tolerant).  Rotating the U-Net crop while the cached CDG stays canonical
-would break the token↔token spatial correspondence.
+would break the token↔token spatial correspondence.  Neither escape is free: dropping
+rotation for the aligned subset is a distribution mismatch, and pool_samples discards
+the intra-sample axis that has the most headroom (bottleneck token CKA 0.254 vs pooled
+0.527, test/repa_cka_profile.py).  A live teacher sees the student's own augmented
+frame and has neither problem.
 
     # verify the load→assemble→encode→cache core (no density needed):
     python dataset/00j_urepa_cache_cdg.py --self_test

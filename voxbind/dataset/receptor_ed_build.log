@@ -1,0 +1,43 @@
+=== CrossDocked receptor-ED v5 dataset ===
+source=/home1/irteam/VoxBind/voxbind/dataset/data/xray_crops_aligned_v5
+output=/home1/irteam/VoxBind/voxbind/dataset/data/xray_crops_receptor_ed_v5
+splits=['train', 'test'] workers=16 dry_run=False
+[transforms] recovering 4 receptor groups with 16 workers
+[transforms] fallback 4/4
+[train] receptor-ED available 90,503/99,881; old gated 78,612; recovered 11,891
+[train] receptor groups: {'shared_trustworthy': 12040, 'no_map': 1399, 'shared_ungated': 1764, 'no_transform': 3, 'fallback_kabsch': 1}
+[train] existing crops: hardlinked=78,612 copied=0 already=0
+[train] crop 250/2,269 PDBs | written 2,483 failed 0 | 5s
+[train] crop 500/2,269 PDBs | written 4,705 failed 0 | 10s
+[train] crop 750/2,269 PDBs | written 6,581 failed 0 | 14s
+[train] crop 1,000/2,269 PDBs | written 8,139 failed 0 | 17s
+[train] crop 1,250/2,269 PDBs | written 9,386 failed 0 | 19s
+[train] crop 1,500/2,269 PDBs | written 10,313 failed 0 | 21s
+[train] crop 1,750/2,269 PDBs | written 10,981 failed 0 | 22s
+[train] crop 2,000/2,269 PDBs | written 11,527 failed 0 | 23s
+[train] crop 2,250/2,269 PDBs | written 11,871 failed 0 | 24s
+[train] crop 2,269/2,269 PDBs | written 11,891 failed 0 | 24s
+[train] complete: available=90,503, crop_files=90,503, newly_written=11,891
+[test] receptor-ED available 92/100; old gated 79; recovered 13
+[test] receptor groups: {'shared_ungated': 13, 'shared_trustworthy': 79, 'no_map': 8}
+[test] existing crops: hardlinked=79 copied=0 already=0
+[test] crop 13/13 PDBs | written 13 failed 0 | 0s
+[test] complete: available=92, crop_files=92, newly_written=13
+{
+  "train": {
+    "n": 99881,
+    "available": 90503,
+    "old_available": 78612,
+    "recovered": 11891,
+    "crop_failed": 0,
+    "crop_files": 90503
+  },
+  "test": {
+    "n": 100,
+    "available": 92,
+    "old_available": 79,
+    "recovered": 13,
+    "crop_failed": 0,
+    "crop_files": 92
+  }
+}

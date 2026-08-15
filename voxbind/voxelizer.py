@@ -1,4 +1,5 @@
 import os
+import time
 
 import numpy as np
 import torch
@@ -221,15 +222,29 @@ class Voxelizer(torch.nn.Module):
         """
         assert len(voxels.shape) == 5
 
-        # intialize coods with simple peak detection
+        peak_started = time.perf_counter()
+
+        # Initialize coordinates with peak detection. Keeping this operation on
+        # the GPU avoids 100 individual D2H copies + scipy maximum_filter calls.
+        use_gpu_peaks = voxels.is_cuda and os.environ.get("VOXBIND_GPU_PEAKS", "1") != "0"
+        if use_gpu_peaks:
+            candidates = get_atom_coords_batch(
+                voxels, rad=self.radius, resolution=self.resolution
+            )
+        else:
+            candidates = [
+                get_atom_coords(voxel.cpu(), rad=self.radius, resolution=self.resolution)
+                for voxel in voxels
+            ]
+
         mol_inits = []
         voxel_inits = []
-        for voxel in voxels:
-            mol_init = get_atom_coords(voxel.cpu(), rad=self.radius, resolution=self.resolution)
+        for voxel, mol_init in zip(voxels, candidates):
             if mol_init is not None and mol_init["coords"].shape[1] < 200:
                 mol_inits.append(mol_init)
                 voxel_inits.append(voxel.unsqueeze(0))
 
+        peak_seconds = time.perf_counter() - peak_started
         if len(mol_inits) == 0:
             return None
 
@@ -243,11 +258,97 @@ class Voxelizer(torch.nn.Module):
             torch.optim.LBFGS, history_size=10, max_iter=4, line_search_fn="strong_wolfe",
         )
 
-        mols = self._refine_coords(mol_inits, voxel_inits, optim_factory, maxiter=10)
+        refine_started = time.perf_counter()
+        refine_batch = max(1, int(os.environ.get("VOXBIND_REFINE_BATCH", "25")))
+        if refine_batch == 1:
+            mols = self._refine_coords(mol_inits, voxel_inits, optim_factory, maxiter=10)
+        else:
+            mols = self._refine_coords_batched(
+                mol_inits,
+                voxel_inits,
+                optim_factory,
+                batch_size=refine_batch,
+                maxiter=10,
+            )
+        refine_seconds = time.perf_counter() - refine_started
         del voxels, mol_inits
         torch.cuda.empty_cache()
 
+        print(
+            f"[vox2mol] input={len(candidates)} peaks={len(voxel_inits)} "
+            f"peak_s={peak_seconds:.2f} refine_s={refine_seconds:.2f} "
+            f"refine_batch={refine_batch}"
+        )
+
         mols = recenter_mols(mols, center_coords)
+
+        return mols
+
+    def _refine_coords_batched(
+        self,
+        mol_inits: list,
+        voxels: torch.Tensor,
+        optim_factory,
+        batch_size: int = 25,
+        tol: float = 1e-6,
+        maxiter: int = 15,
+    ) -> list:
+        """Refine several generated molecules in one GPU optimization batch."""
+        assert len(voxels.shape) == 5, "voxels need a batch dimension"
+
+        mols = []
+        for start in range(0, len(mol_inits), batch_size):
+            stop = min(start + batch_size, len(mol_inits))
+            chunk = mol_inits[start:stop]
+            target_voxels = voxels[start:stop]
+            n_atoms = [mol["coords"].shape[1] for mol in chunk]
+            max_atoms = max(n_atoms)
+            device = target_voxels.device
+
+            coords = target_voxels.new_full((len(chunk), max_atoms, 3), 999.0)
+            channels = target_voxels.new_full((len(chunk), max_atoms), 999.0)
+            radii = target_voxels.new_full((len(chunk), max_atoms), 999.0)
+            for idx, mol in enumerate(chunk):
+                count = n_atoms[idx]
+                coords[idx, :count] = mol["coords"][0].to(device)
+                channels[idx, :count] = mol["atoms_channel"][0].to(device)
+                radii[idx, :count] = mol["radius"][0].to(device)
+
+            coords.requires_grad_(True)
+            optimizer = optim_factory([coords])
+
+            def closure():
+                optimizer.zero_grad()
+                fitted = self.forward(
+                    {"coords": coords, "atoms_channel": channels, "radius": radii}
+                )
+                loss = torch.nn.functional.mse_loss(target_voxels, fitted)
+                loss.backward()
+                return loss
+
+            loss = 1e10
+            failed = False
+            for _ in range(maxiter):
+                try:
+                    previous = loss
+                    loss = optimizer.step(closure)
+                except Exception as exc:
+                    print(f"batched coordinate refinement failed; using initial coordinates: {exc}")
+                    failed = True
+                    break
+                if abs(loss.item() - previous) < tol:
+                    break
+
+            for idx, mol_init in enumerate(chunk):
+                count = n_atoms[idx]
+                refined = mol_init["coords"] if failed else coords[idx : idx + 1, :count]
+                mols.append(
+                    {
+                        "coords": refined.detach().cpu(),
+                        "atoms_channel": mol_init["atoms_channel"].detach().cpu(),
+                        "radius": mol_init["radius"].detach().cpu(),
+                    }
+                )
 
         return mols
 
@@ -449,6 +550,51 @@ def get_atom_coords(
     }
 
     return mol
+
+
+def get_atom_coords_batch(
+    grids: torch.Tensor,
+    rad: float = 0.5,
+    resolution: float = 0.25,
+) -> list:
+    """Extract per-channel local maxima for a whole CUDA batch."""
+    if len(grids.shape) != 5:
+        raise ValueError("grids must have shape (batch, channels, x, y, z)")
+
+    threshold = float(os.environ.get("VOXBIND_FIND_PEAKS_THRESHOLD", 0.25))
+    pooled = torch.nn.functional.max_pool3d(grids, kernel_size=3, stride=1, padding=1)
+    peak_mask = (grids >= threshold) & (grids == pooled)
+    peak_indices = peak_mask.nonzero(as_tuple=False)
+    grid_dim = grids.shape[-1]
+    molecules = []
+
+    for batch_idx in range(grids.shape[0]):
+        selected = peak_indices[:, 0] == batch_idx
+        indices = peak_indices[selected]
+        if indices.shape[0] == 0:
+            molecules.append(None)
+            continue
+
+        channels = indices[:, 1].to(dtype=grids.dtype)
+        coords = indices[:, 2:5].to(dtype=grids.dtype)
+        coords = (coords - (grid_dim - 1) / 2) * resolution
+        molecules.append(
+            {
+                "coords": coords.unsqueeze(0),
+                "atoms_channel": channels.unsqueeze(0),
+                "radius": torch.full(
+                    (1, indices.shape[0]), rad, device=grids.device, dtype=grids.dtype
+                ),
+            }
+        )
+
+    counts = [0 if mol is None else mol["coords"].shape[1] for mol in molecules]
+    if counts:
+        print(
+            f"[gpu_peaks] batch={len(counts)} threshold={threshold} "
+            f"atoms(min/mean/max)={min(counts)}/{sum(counts) / len(counts):.1f}/{max(counts)}"
+        )
+    return molecules
 
 
 def recenter_mols(mols: list, center_coords: torch.Tensor) -> list:
