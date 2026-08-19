@@ -17,7 +17,7 @@ import numpy as np
 ROOT = "/home/shpark/prj-denovo/VoxBind"
 MAN = f"{ROOT}/voxbind/dataset/data/moleculeace_density/manifest.json"
 CAN = f"{ROOT}/voxbind/dataset/data/pdbbind/cliff_eval_canonical.json"
-TD_CSV = f"{ROOT}/notebook/html/260625/scatter_egnn_targetdiff.csv"
+TD_CSV = f"{ROOT}/notebook/html/scatter/scatter_egnn_targetdiff.csv"
 HB = [f"{ROOT}/base/hbgsa/results/preds_edrscc_40m_seed{s}.json" for s in range(3)]
 OUT = f"{ROOT}/voxbind/dataset/data/pdbbind/cliff_eval_moleculeace.json"
 

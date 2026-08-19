@@ -64,7 +64,7 @@ def probe_predict(model):
 
 preds = {m: probe_predict(m) for m in MODELS}
 preds["TargetDiff / EGNN"] = {r["pid"]: float(r["y_pred"]) for r in csv.DictReader(
-    open(f"{REPO}/notebook/html/260625/scatter_egnn_targetdiff.csv")) if r["pid"] in pKi}
+    open(f"{REPO}/notebook/html/scatter/scatter_egnn_targetdiff.csv")) if r["pid"] in pKi}
 hb_seed = [json.load(open(f"{REPO}/base/hbgsa/results/preds_edrscc_40m_seed{s}.json")) for s in range(3)]
 preds["HBGSA"] = {p: float(np.mean([dict(zip(h["pdb_id"], h["pred"]))[p]
                  for h in hb_seed if p in set(h["pdb_id"])]))

@@ -1,0 +1,46 @@
+phase,label,architecture,modality,knob,split,n_train,n_test,n_seeds,test_rho_mean,test_rho_std,test_r_mean,test_r_std,test_rmse_mean,test_rmse_std,test_mae_mean,test_mae_std
+1,coords-only,ViT,C,-,lp_edrscc,3850,1320,3,0.6048,0.002,0.6321,0.0067,1.5185,0.1169,1.2143,0.1084
+1,coords-only,ViT,C,-,lp,7015,3055,3,0.5924,0.0048,0.619,0.0095,1.3688,0.0164,1.0806,0.0186
+1+2,C+D+G,ViT,C+D+G,-,lp_edrscc,3850,1320,3,0.608,0.0016,0.6359,0.002,1.39,0.0227,1.0958,0.0193
+1+2,C+D+G,ViT,C+D+G,-,lp,7015,3055,3,0.6133,0.0017,0.6365,0.0008,1.3509,0.01,1.0633,0.0128
+2,C+D+G ChannelViT,ChannelViT,C+D+G,-,lp_edrscc,3850,1320,3,0.6297,0.0028,0.6448,0.0036,1.4132,0.0326,1.1184,0.0241
+2,C+D+G ChannelViT,ChannelViT,C+D+G,-,lp,7015,3055,3,0.6091,0.0021,0.6304,0.0054,1.3548,0.0113,1.0655,0.0077
+2,C+D+G ChA-MAEViT,ChA-MAEViT,C+D+G,-,lp_edrscc,3850,1320,3,0.573,0.0026,0.5932,0.0039,1.5462,0.0264,1.2404,0.0204
+2,C+D+G ChA-MAEViT,ChA-MAEViT,C+D+G,-,lp,7015,3055,3,0.587,0.0032,0.6105,0.0048,1.4061,0.0392,1.1135,0.0352
+3,"ChannelViT g[7,4,2]",ChannelViT,C+D+G,"channel_groups=[7,4,2]",lp_edrscc,3850,1320,3,0.6371,0.0057,0.6556,0.0057,1.3527,0.0307,1.0619,0.0272
+3,"ChannelViT g[11,1,1]",ChannelViT,C+D+G,"channel_groups=[11,1,1]",lp_edrscc,3850,1320,3,0.6286,0.0032,0.6417,0.0028,1.3983,0.0437,1.0958,0.0338
+3,"coords ChannelViT g[7,4]",ChannelViT,C,"channel_groups=[7,4]",lp_edrscc,3850,1320,3,0.6039,0.0043,0.633,0.0069,1.4009,0.0363,1.1052,0.0374
+3,"ChannelViT g[7,4,2] dw0.3",ChannelViT,C+D+G,dens+grad wt 0.3,lp_edrscc,3850,1320,3,0.6367,0.0038,0.651,0.0048,1.461,0.0844,1.1583,0.0758
+3,"ChannelViT g[7,4,2] mask0.6",ChannelViT,C+D+G,mask 0.6,lp_edrscc,3850,1320,3,0.6282,0.0034,0.6421,0.0031,1.379,0.0196,1.0894,0.0155
+3,"ChannelViT g[7,4,2] dw1.0",ChannelViT,C+D+G,dens+grad wt 1.0,lp_edrscc,3850,1320,3,0.6135,0.0012,0.6261,0.0026,1.4167,0.0231,1.1123,0.0207
+3,"ChannelViT g[7,4,2] mask0.75",ChannelViT,C+D+G,mask 0.75,lp_edrscc,3850,1320,3,0.6207,0.0008,0.6399,0.0008,1.4222,0.0501,1.1194,0.0388
+3,"ChannelViT g[11,2]",ChannelViT,C+D+G,"channel_groups=[11,2]",lp_edrscc,3850,1320,3,0.632,0.0038,0.6479,0.0042,1.4003,0.039,1.1048,0.0368
+3,"ChannelViT g[7,4,2] rope3d",ChannelViT,C+D+G,pos_encoding=rope3d,lp_edrscc,3850,1320,3,0.6097,0.0017,0.6333,0.0032,1.4056,0.0201,1.1123,0.0186
+3,"ChannelViT g[7,4,2] wd0.1",ChannelViT,C+D+G,weight_decay 0.05->0.10,lp_edrscc,3850,1320,3,0.6241,0.0055,0.6404,0.0071,1.4373,0.0359,1.1423,0.0333
+3,"ChannelViT g[7,4,2] hcs0.15",ChannelViT,C+D+G,HCS channel-group dropout p=0.15,lp_edrscc,3850,1320,3,0.6366,0.0053,0.6538,0.0064,1.3642,0.0258,1.0709,0.0235
+3,"ChannelViT g[7,4,2] hcs0.30",ChannelViT,C+D+G,HCS channel-group dropout p=0.30,lp_edrscc,3850,1320,3,0.6334,0.0048,0.6523,0.0063,1.3895,0.0425,1.0978,0.0335
+3,"ChannelViT g[7,4,2] dim768",ChannelViT,C+D+G,dim 512->768 heads 8->12 (2.1x params),lp_edrscc,3850,1320,3,0.626,0.0044,0.6396,0.0069,1.4293,0.0567,1.1329,0.0519
+3,"ChannelViT g[7,4,2] atombias",ChannelViT,C+D+G,mask_strategy=atom_biased,lp_edrscc,3850,1320,3,0.6408,0.0059,0.6571,0.0066,1.3848,0.0365,1.0871,0.0317
+3,"ChannelViT g[7,4,2] mask0.4",ChannelViT,C+D+G,mask_ratio 0.50->0.40,lp_edrscc,3850,1320,3,0.6265,0.0034,0.64,0.0065,1.4106,0.0341,1.1151,0.0282
+3,"ChannelViT g[7,4,2] block4",ChannelViT,C+D+G,mask block_size 8->4,lp_edrscc,3850,1320,3,0.5827,0.0025,0.5918,0.0027,1.5268,0.0618,1.2216,0.058
+4,"roleblob [1,1,1,1]",ChannelViT-role,C+D+G,"2 role ch, 7/4-vocab summed",lp_edrscc,3850,1320,3,0.5541,0.0017,0.5884,0.0043,1.6374,0.0257,1.3169,0.0238
+4,"roleblob-div [1,1,1,1]",ChannelViT-role,C+D+G,"2 role ch, ALL atoms (vdW size)",lp_edrscc,3850,1320,3,0.5847,0.0023,0.6094,0.0034,1.629,0.064,1.3161,0.0592
+4,"roleblob-div [1,1,2]",ChannelViT-role,C+D+G,2 role ch · ALL atoms · group D+G,lp_edrscc,3850,1320,3,0.5917,0.0015,0.6167,0.0042,1.5116,0.0748,1.2049,0.067
+4,"roleblob-div [1,1,2] atombias",ChannelViT-role,C+D+G,2 role ch · ALL atoms · atom_biased mask,lp_edrscc,3850,1320,3,0.5614,0.0076,0.5862,0.0116,1.5072,0.0755,1.1919,0.074
+5,"ChannelViT g[7,4,2] denoise",ChannelViT,C+D+G,pretext=denoise (density-denoising AE),lp_edrscc,3850,1320,3,0.5872,0.0048,0.6045,0.0134,1.5192,0.1225,1.2128,0.1108
+6,"ChannelViT g[7,4,2] s1ab",ChannelViT,C+D+G,atom-bias pretrain seed=1,lp_edrscc,3850,1320,3,0.6185,0.0104,0.6317,0.0127,1.4046,0.0307,1.1083,0.0287
+6,"ChannelViT g[7,4,2] s1base",ChannelViT,C+D+G,"base [7,4,2] pretrain seed=1",lp_edrscc,3850,1320,3,0.6295,0.0034,0.6502,0.0046,1.3617,0.0037,1.0737,0.0013
+7,ft g742 frozen,ChannelViT,C+D+G,frozen encoder (head-only),lp_edrscc,3850,1320,3,0.6371,0.0057,0.6556,0.0057,1.3527,0.0308,1.0617,0.0272
+7,ft g742 end-to-end,ChannelViT,C+D+G,end-to-end full-FT (encoder_lr 1e-5),lp_edrscc,3850,1320,3,0.6052,0.0008,0.6222,0.0032,1.5127,0.0778,1.1922,0.0651
+8,"cluster mask [7,4,2]",ChannelViT,C+D+G,trial1: cluster masking (n_seeds=4),lp_edrscc,3850,1320,3,0.6085,0.0009,0.6352,0.0007,1.3857,0.016,1.0928,0.0121
+8,"crossmodal [7,4,2]",ChannelViT,C+D+G,trial2: cross-modal masking (modal_mask_prob=0.5),lp_edrscc,3850,1320,3,0.6345,0.0041,0.6471,0.0047,1.4306,0.0591,1.1335,0.0535
+8,"ligand mask [7,4,2]",ChannelViT,C+D+G,trial3: ligand masking (pocket->ligand),lp_edrscc,3850,1320,3,0.6206,0.0021,0.6406,0.0028,1.4439,0.0522,1.1409,0.0465
+8,"interface mask [7,4,2]",ChannelViT,C+D+G,trial4: interface masking (contact),lp_edrscc,3850,1320,3,0.6105,0.0008,0.6353,0.0012,1.4687,0.0754,1.1699,0.0665
+4,"roleblob-div [1,1,2] v2-113K",ChannelViT-role,C+D+G,2 role ch · ALL atoms · 113K corpus (6.5x) · 50ep,lp_edrscc,3850,1320,3,0.5859,0.0024,0.6149,0.0022,1.494,0.081,1.1934,0.0708
+8,"contrastive [7,4,2]",ChannelViT,C+D+G,trial6: SimCLR InfoNCE aux (contrastive_weight=0.05),lp_edrscc,3850,1320,3,0.4986,0.0138,0.5039,0.0165,1.5704,0.0288,1.2661,0.0299
+8,"radius-embed [7,4,2]",ChannelViT,C+D+G,trial7: learned φ(vdW-radius)→4 per role (k=4),lp_edrscc,3850,1320,3,0.6236,0.0037,0.6497,0.0047,1.3663,0.0117,1.0799,0.0106
+8,"radius-embed k=8 [7,4,2]",ChannelViT,C+D+G,trial7 variant: radius_embed_k=8 (no compression),lp_edrscc,3850,1320,3,0.6134,0.0029,0.6337,0.0043,1.4620,0.1034,1.1500,0.0900
+8,"radius-embed-dist [7,4,2]",ChannelViT,C+D+G,trial8: radius-embed k=8 + learned radial profile (scales 0-2-4 vox),lp_edrscc,3850,1320,3,0.5738,0.0027,0.5941,0.0015,1.4450,0.0304,1.1400,0.0250
+8,"droppath [7,4,2]",ChannelViT,C+D+G,trial9: stochastic depth DropPath 0.1 (DeiT/MAE regularizer),lp_edrscc,3850,1320,3,0.6298,0.0015,0.6490,0.0022,1.3898,0.0453,1.0959,0.0400
+8,"patch4 [7,4,2]",ChannelViT,C+D+G,trial5: patch_size=4 (1Å patches / 12K tokens),lp_edrscc,3850,1320,3,0.6391,0.0020,0.6555,0.0041,1.4324,0.0584,1.1304,0.0492
+10,"data2vec [7,4,2]",ChannelViT,C+D+G,trial10: MAE + data2vec latent distillation (weight=0.1),lp_edrscc,3850,1320,3,0.6205,0.0036,0.6404,0.0046,1.4160,0.0386,1.1186,0.0346

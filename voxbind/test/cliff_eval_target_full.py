@@ -36,7 +36,7 @@ test_pids = CE["test_pids"]; SEEDS = CE["seeds"]
 pK = {p: float(v) for p, v in CE["pK"].items()}
 P = {m: {p: float(np.mean(CE["preds"][m][p])) for p in test_pids} for m in CE["models"]}
 P["TargetDiff / EGNN"] = {r["pid"]: float(r["y_pred"])
-                          for r in csv.DictReader(open(f"{REPO}/notebook/html/260625/scatter_egnn_targetdiff.csv"))}
+                          for r in csv.DictReader(open(f"{REPO}/notebook/html/scatter/scatter_egnn_targetdiff.csv"))}
 hb = [json.load(open(f"{REPO}/base/hbgsa/results/preds_edrscc_40m_seed{s}.json")) for s in range(3)]
 hbm = [dict(zip(h["pdb_id"], h["pred"])) for h in hb]
 P["HBGSA"] = {p: float(np.mean([m[p] for m in hbm if p in m]))

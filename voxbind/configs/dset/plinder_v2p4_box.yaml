@@ -1,0 +1,23 @@
+# PLINDER v2.4: v2 per-element corpus decontaminated against all 214 local
+# CASF-2016 evaluation complexes at ID30 and 80% shorter-sequence coverage.
+dset_name: crossdocked_xray
+data_dir: ${oc.env:VOXBIND_DATA_ROOT,dataset/data}
+data_file: pretrain/data_train_plinder_v2_perelem.pt
+crops_dir: ""
+ccp4_dir: ${oc.env:VOXBIND_DATA_ROOT,dataset/data}/ccp4
+resample_dir: ${oc.env:VOXBIND_DATA_ROOT,dataset/data}/pretrain/xray_resample_plinder_v2p4_perelem
+box_path: ${oc.env:VOXBIND_DATA_ROOT,dataset/data}/pretrain/xray_resample_plinder_v2p4_perelem/box116.dat
+ligand_radius: -1
+pocket_radius: -1
+n_lig_ch: 8
+n_poc_ch: 4
+max_len: 30
+delta_translate: 1.0
+use_xray: true
+gradmag_as_density: false
+cache_size: 32
+normalize: false
+subset_n: 101107
+subset_xray_only: true
+subset_val_n: 100
+

@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Binding-affinity representation similarity · 260820</title>
+<style>
+  :root {
+    --ink: #18212f;
+    --ink-soft: #586579;
+    --ink-faint: #7a8698;
+    --line: #e1e6ed;
+    --line-strong: #aeb8c6;
+    --bg: #f4f6f8;
+    --card: #ffffff;
+    --green: #276749;
+    --green-soft: #e9f5ee;
+    --blue: #315b99;
+    --blue-soft: #eaf0fa;
+    --amber: #a76412;
+    --amber-soft: #fff4df;
+    --red: #a33f46;
+    --red-soft: #fbecee;
+    --shadow: 0 1px 2px rgba(18, 28, 45, .04), 0 10px 28px rgba(18, 28, 45, .055);
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR",
+                 "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 16px;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  a { color: var(--blue); text-underline-offset: 3px; }
+  .page { max-width: 1280px; margin: 0 auto; padding: 46px 24px 96px; }
+  .doc-header { padding-bottom: 24px; border-bottom: 2px solid var(--ink); }
+  .eyebrow {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    margin-bottom: 10px; color: var(--ink-soft); font-size: 12px;
+    font-weight: 650; letter-spacing: .11em; text-transform: uppercase;
+  }
+  .status {
+    display: inline-flex; align-items: center; gap: 7px; padding: 3px 10px;
+    border-radius: 999px; background: var(--green-soft); color: var(--green);
+    font-size: 10px; font-weight: 760; letter-spacing: .07em;
+  }
+  .status::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
+  h1 {
+    max-width: 1000px; margin: 0; font-size: clamp(31px, 4.6vw, 50px);
+    line-height: 1.12; letter-spacing: -.035em; font-weight: 720;
+  }
+  .lead { max-width: 1000px; margin: 15px 0 0; color: var(--ink-soft); font-size: 15px; }
+  .question {
+    max-width: 950px; margin: 20px 0 0; padding: 15px 18px;
+    border-left: 4px solid var(--green); border-radius: 8px;
+    background: var(--card); color: var(--ink-soft); box-shadow: var(--shadow);
+  }
+  .question b { color: var(--ink); }
+
+  .toc {
+    display: flex; gap: 8px; flex-wrap: wrap; margin: 22px 0 54px;
+  }
+  .toc a {
+    padding: 7px 11px; border: 1px solid var(--line); border-radius: 999px;
+    background: var(--card); color: var(--ink-soft); font-size: 12px;
+    font-weight: 650; text-decoration: none;
+  }
+  .toc a:hover { color: var(--ink); border-color: var(--line-strong); }
+
+  .doc-section { margin-bottom: 68px; scroll-margin-top: 24px; }
+  .section-head {
+    display: flex; align-items: center; gap: 13px; margin: 0 0 25px;
+    padding-bottom: 12px; border-bottom: 2px solid var(--line-strong);
+    font-size: 23px; line-height: 1.25; font-weight: 700; letter-spacing: -.018em;
+  }
+  .sec-num {
+    display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center;
+    width: 31px; height: 31px; border-radius: 8px; background: var(--green);
+    color: #fff; font-size: 14px; font-weight: 780;
+  }
+  .section-intro { max-width: 1040px; margin: -5px 0 24px; color: var(--ink-soft); font-size: 14px; }
+  .subhead { margin: 32px 0 10px; font-size: 17px; line-height: 1.4; font-weight: 700; }
+  .small { color: var(--ink-faint); font-size: 12px; }
+
+  .kpi-grid {
+    display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 13px;
+  }
+  .kpi {
+    min-height: 122px; padding: 18px; border: 1px solid var(--line);
+    border-radius: 13px; background: var(--card); box-shadow: var(--shadow);
+  }
+  .kpi .label { color: var(--ink-soft); font-size: 11px; font-weight: 720; letter-spacing: .055em; text-transform: uppercase; }
+  .kpi .value { margin-top: 6px; font-size: 29px; line-height: 1.15; font-weight: 760; font-variant-numeric: tabular-nums; }
+  .kpi .note { margin-top: 7px; color: var(--ink-faint); font-size: 11.5px; line-height: 1.45; }
+
+  .finding-grid {
+    display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px;
+    margin-top: 18px;
+  }
+  .finding {
+    padding: 19px; border: 1px solid var(--line); border-radius: 13px;
+    background: var(--card); box-shadow: var(--shadow);
+  }
+  .finding .index { color: var(--green); font-size: 11px; font-weight: 800; letter-spacing: .1em; }
+  .finding h3 { margin: 5px 0 8px; font-size: 17px; line-height: 1.35; }
+  .finding p { margin: 0; color: var(--ink-soft); font-size: 13px; }
+  .finding.warn { border-top: 4px solid var(--amber); }
+  .finding.good { border-top: 4px solid var(--green); }
+  .finding.info { border-top: 4px solid var(--blue); }
+
+  .method-grid {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px;
+  }
+  .method-card {
+    padding: 17px 18px; border: 1px solid var(--line); border-radius: 12px; background: var(--card);
+  }
+  .method-card h3 { margin: 0 0 7px; font-size: 14px; }
+  .method-card p { margin: 0; color: var(--ink-soft); font-size: 12.5px; }
+  code { padding: 1px 5px; border-radius: 4px; background: #eef1f5; font-size: .91em; }
+
+  .table-wrap {
+    overflow-x: auto; border: 1px solid var(--line); border-radius: 13px;
+    background: var(--card); box-shadow: var(--shadow);
+  }
+  table { width: 100%; min-width: 790px; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  th, td { padding: 11px 10px; text-align: center; white-space: nowrap; }
+  thead th {
+    border-bottom: 1px solid var(--line); background: #f9fafc; color: var(--ink-soft);
+    font-size: 10.8px; line-height: 1.35; font-weight: 700; letter-spacing: .02em;
+  }
+  thead th.group { background: #f0f3f7; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
+  tbody tr { border-top: 1px solid var(--line); }
+  tbody tr:first-child { border-top: 0; }
+  tbody tr:hover { background: #fafcfd; }
+  tbody tr.top { background: #f6fbf8; }
+  .method { min-width: 162px; text-align: left; font-size: 12.5px; font-weight: 700; }
+  .method span { display: block; margin-top: 2px; color: var(--ink-faint); font-size: 10px; font-weight: 540; }
+  .metric-up { color: var(--green); font-weight: 760; }
+  .metric-warn { color: var(--amber); font-weight: 700; }
+  .pill {
+    display: inline-flex; align-items: center; padding: 2px 7px; border-radius: 999px;
+    background: var(--blue-soft); color: var(--blue); font-size: 9px; font-weight: 760;
+    letter-spacing: .04em; vertical-align: 1px;
+  }
+  .pill.trained { background: var(--green-soft); color: var(--green); }
+
+  .figure-card {
+    margin: 18px 0 28px; padding: 14px; border: 1px solid var(--line);
+    border-radius: 14px; background: var(--card); box-shadow: var(--shadow);
+  }
+  .figure-card img { display: block; width: 100%; height: auto; border-radius: 7px; }
+  .figure-card figcaption { padding: 10px 6px 2px; color: var(--ink-soft); font-size: 12px; }
+
+  .case-grid {
+    display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px;
+  }
+  .case {
+    padding: 14px 15px; border: 1px solid var(--line); border-radius: 10px; background: var(--card);
+  }
+  .case .count { font-size: 21px; line-height: 1.15; font-weight: 760; font-variant-numeric: tabular-nums; }
+  .case .name { margin-top: 4px; color: var(--ink-soft); font-size: 11px; line-height: 1.4; }
+
+  .callout {
+    margin-top: 18px; padding: 17px 19px; border-radius: 11px;
+    background: var(--amber-soft); color: #684613; font-size: 13px;
+  }
+  .callout strong { color: #513407; }
+  .takeaways { margin: 0; padding: 17px 20px 12px 39px; border-left: 4px solid var(--green); border-radius: 9px; background: var(--card); }
+  .takeaways li { margin-bottom: 8px; color: var(--ink-soft); font-size: 13.5px; }
+  .takeaways b { color: var(--ink); }
+  .next-list { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; counter-reset: next; }
+  .next-list li {
+    counter-increment: next; position: relative; padding: 15px 17px 15px 52px;
+    border: 1px solid var(--line); border-radius: 11px; background: var(--card); color: var(--ink-soft); font-size: 13px;
+  }
+  .next-list li::before {
+    content: counter(next); position: absolute; left: 16px; top: 14px;
+    display: inline-flex; align-items: center; justify-content: center; width: 23px; height: 23px;
+    border-radius: 7px; background: var(--blue-soft); color: var(--blue); font-size: 11px; font-weight: 800;
+  }
+  .next-list b { color: var(--ink); }
+
+  .files { display: flex; gap: 8px; flex-wrap: wrap; }
+  .files a {
+    padding: 7px 10px; border: 1px solid var(--line); border-radius: 7px;
+    background: var(--card); font-size: 11px; text-decoration: none;
+  }
+  footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line-strong); color: var(--ink-faint); font-size: 11px; }
+
+  @media (max-width: 900px) {
+    .kpi-grid, .finding-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .method-grid { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 620px) {
+    .page { padding: 30px 14px 70px; }
+    h1 { font-size: 31px; }
+    .kpi-grid, .finding-grid, .case-grid { grid-template-columns: 1fr; }
+  }
+  @media print {
+    body { background: #fff; }
+    .page { max-width: none; padding: 18px; }
+    .toc { display: none; }
+    .kpi, .finding, .table-wrap, .figure-card { box-shadow: none; break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+<main class="page">
+  <header class="doc-header">
+    <div class="eyebrow">
+      <span>VoxBind analysis · 2026-08-20</span>
+      <span class="status">CPU run complete</span>
+    </div>
+    <h1>Similar sequence,<br>similar representation?</h1>
+    <p class="lead">Binding-affinity regression에 사용되는 여섯 representation이 protein homology, binding-pocket sequence, ligand, affinity 변화에 어떻게 반응하는지 비교했다.</p>
+    <div class="question"><b>질문.</b> 서열이 비슷한 protein–ligand complex는 encoded representation도 비슷한가? 그렇다면 전체 protein sequence보다 실제 binding pocket의 sequence가 더 직접적인 설명 변수가 되는가?</div>
+  </header>
+
+  <nav class="toc" aria-label="문서 목차">
+    <a href="#summary">핵심 결론</a>
+    <a href="#setup">실험 설계</a>
+    <a href="#results">정량 결과</a>
+    <a href="#curves">Similarity curves</a>
+    <a href="#cliffs">Affinity cliffs</a>
+    <a href="#interpretation">해석과 다음 단계</a>
+  </nav>
+
+  <section class="doc-section" id="summary">
+    <h2 class="section-head"><span class="sec-num">1</span>핵심 결론</h2>
+    <div class="kpi-grid">
+      <article class="kpi">
+        <div class="label">Common cohort</div>
+        <div class="value">5,839</div>
+        <div class="note">6개 모델과 sequence, SMILES, pK, pocket mask가 모두 존재하는 complex</div>
+      </article>
+      <article class="kpi">
+        <div class="label">Analyzed pairs</div>
+        <div class="value">207,888</div>
+        <div class="note">homolog 186,271 + random controls 20,000 + same-ligand controls 1,617</div>
+      </article>
+      <article class="kpi">
+        <div class="label">Strongest pocket ρ</div>
+        <div class="value">0.628</div>
+        <div class="note">CheapNet · 동일 homolog subset에서 pocket identity와 representation similarity</div>
+      </article>
+      <article class="kpi">
+        <div class="label">Best cliff AUC</div>
+        <div class="value">0.605</div>
+        <div class="note">IPNet · 낮은 representation similarity로 affinity cliff를 식별</div>
+      </article>
+    </div>
+
+    <div class="finding-grid">
+      <article class="finding good">
+        <div class="index">FINDING 01</div>
+        <h3>Pocket sequence가 더 강하다</h3>
+        <p>동일 homolog pair에서 6개 모델 모두 pocket identity와 representation similarity의 상관이 양수였다. CheapNet은 ρ 0.370 → 0.628, GET은 0.448 → 0.619로 상승했다.</p>
+      </article>
+      <article class="finding info">
+        <div class="index">FINDING 02</div>
+        <h3>모델마다 보존하는 정보가 다르다</h3>
+        <p>CheapNet, GET, VoxBind-C는 pocket homology를 강하게 보존한다. 유사 ligand로 제한하면 GET과 IPNet의 pocket correlation이 각각 0.587, 0.570으로 높다.</p>
+      </article>
+      <article class="finding warn">
+        <div class="index">FINDING 03</div>
+        <h3>Similarity만으로 cliff는 어렵다</h3>
+        <p>Affinity-cliff AUC는 0.537–0.605에 머문다. 비슷한 pocket을 가깝게 encode하는 것과 미세한 affinity 차이를 분리하는 것은 별개의 능력이다.</p>
+      </article>
+    </div>
+  </section>
+
+  <section class="doc-section" id="setup">
+    <h2 class="section-head"><span class="sec-num">2</span>실험 설계</h2>
+    <p class="section-intro">모든 representation은 공통 complex와 공통 pair에서 비교했다. Encoder 추출과 pair 분석은 GPU 없이 CPU에서 수행했다.</p>
+
+    <div class="method-grid">
+      <article class="method-card">
+        <h3>Representation similarity</h3>
+        <p>각 feature dimension을 전체 공통 cohort에서 표준화한 뒤 cosine similarity를 계산했다. Raw cosine, centered cosine, z-scored distance도 sensitivity metric으로 함께 보존했다.</p>
+      </article>
+      <article class="method-card">
+        <h3>Full protein sequence</h3>
+        <p>Bundled CPU MMseqs2, minimum identity 0.20, bidirectional coverage 0.80. 본문 correlation은 MMseqs homolog pair에서 계산했다.</p>
+      </article>
+      <article class="method-card">
+        <h3>Pocket sequence</h3>
+        <p>구조 기반 pocket mask로 residue를 선택하고 parent-sequence 순서로 연결했다. BLOSUM62 global alignment, gap-open −10, gap-extension −0.5의 aligned identity를 사용했다.</p>
+      </article>
+      <article class="method-card">
+        <h3>Ligand and affinity</h3>
+        <p>Ligand는 Morgan radius 2 / 2,048-bit Tanimoto, affinity 변화는 |ΔpK|로 정의했다. Near-ligand subset은 Tanimoto ≥ 0.8이다.</p>
+      </article>
+    </div>
+
+    <h3 class="subhead">Compared representations</h3>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th class="method">Method</th><th>Dimension</th><th>Source</th><th>Analyzed representation</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="method">VoxBind-C <span>coordinates only</span></td><td>640</td><td><span class="pill">frozen</span></td><td>cached complex feature</td></tr>
+          <tr><td class="method">VoxBind-CDG <span>coordinates + density + gradient magnitude</span></td><td>640</td><td><span class="pill">frozen</span></td><td>cached complex feature</td></tr>
+          <tr><td class="method">IPNet <span>IPNet-frozen</span></td><td>256</td><td><span class="pill">frozen</span></td><td>cached complex feature</td></tr>
+          <tr><td class="method">DSMBind <span>DSMBind-frozen</span></td><td>513</td><td><span class="pill">frozen</span></td><td>cached complex feature</td></tr>
+          <tr><td class="method">CheapNet <span>seed 0</span></td><td>256</td><td><span class="pill trained">affinity-trained</span></td><td><code>l2p + p2l</code>, regression FC 직전</td></tr>
+          <tr><td class="method">GET <span>seed 0</span></td><td>64</td><td><span class="pill trained">affinity-trained</span></td><td>native <code>graph_repr</code>, normalized block sum</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="doc-section" id="results">
+    <h2 class="section-head"><span class="sec-num">3</span>정량 결과</h2>
+    <p class="section-intro">Spearman ρ는 모두 동일한 MMseqs homolog pair subset에서 계산했다. 따라서 full sequence와 pocket sequence 열을 직접 비교할 수 있다.</p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th class="method" rowspan="2">Method</th>
+            <th class="group" colspan="4">Sequence identity ↔ representation similarity</th>
+            <th class="group" colspan="2">Affinity-cliff sensitivity</th>
+          </tr>
+          <tr>
+            <th>Full-seq<br>ρ</th>
+            <th>Pocket<br>ρ</th>
+            <th>Pocket − full<br>Δρ</th>
+            <th>Pocket ρ<br>near ligand</th>
+            <th>Cliff AUC</th>
+            <th>Smooth − cliff<br>Δ similarity</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="top">
+            <td class="method">CheapNet <span>affinity-trained · seed 0</span></td>
+            <td>0.370</td><td class="metric-up">0.628</td><td class="metric-up">+0.258</td><td>0.395</td><td>0.551</td><td class="metric-warn">−0.003</td>
+          </tr>
+          <tr class="top">
+            <td class="method">VoxBind-C <span>coordinates only</span></td>
+            <td class="metric-up">0.473</td><td>0.627</td><td>+0.154</td><td>0.475</td><td>0.599</td><td>+0.032</td>
+          </tr>
+          <tr class="top">
+            <td class="method">GET <span>affinity-trained · seed 0</span></td>
+            <td>0.448</td><td>0.619</td><td>+0.171</td><td class="metric-up">0.587</td><td>0.583</td><td>+0.002</td>
+          </tr>
+          <tr>
+            <td class="method">IPNet <span>frozen</span></td>
+            <td>0.423</td><td>0.568</td><td>+0.145</td><td>0.570</td><td class="metric-up">0.605</td><td>+0.041</td>
+          </tr>
+          <tr>
+            <td class="method">VoxBind-CDG <span>coordinates + density + gradient</span></td>
+            <td>0.399</td><td>0.464</td><td>+0.065</td><td>0.433</td><td>0.589</td><td class="metric-up">+0.062</td>
+          </tr>
+          <tr>
+            <td class="method">DSMBind <span>frozen</span></td>
+            <td>0.204</td><td>0.339</td><td>+0.135</td><td>0.166</td><td>0.537</td><td class="metric-warn">−0.002</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="small">Near-ligand pocket ρ: homolog pair 중 ligand Tanimoto ≥ 0.8. Cliff AUC: 낮은 representation similarity를 이용해 near-sequence / near-ligand cliff를 smooth pair와 구분; 0.5는 random.</p>
+
+    <div class="callout"><strong>중요한 패턴.</strong> VoxBind-CDG는 VoxBind-C보다 pocket homology correlation은 낮지만 smooth–cliff separation Δ는 가장 크다. Density signal이 서열 보존보다는 ligand/interaction에 따른 variation을 더 반영하는지 확인할 가치가 있다.</div>
+  </section>
+
+  <section class="doc-section" id="curves">
+    <h2 class="section-head"><span class="sec-num">4</span>Similarity curves</h2>
+    <p class="section-intro">왼쪽은 ligand 전체, 오른쪽은 ligand Tanimoto ≥ 0.8로 제한한 결과다. Error bar는 pair-level SEM이다.</p>
+
+    <figure class="figure-card">
+      <img src="../../../voxbind/dataset/data/pdbbind/representation_similarity/current6_pocket/sequence_similarity_curve.png" alt="Protein full-sequence identity bin에 따른 모델별 representation similarity curve">
+      <figcaption><b>Full protein sequence.</b> Sequence identity가 높아질수록 전반적으로 representation similarity가 증가하지만, near-ligand 조건에서 모델별 차이가 커진다.</figcaption>
+    </figure>
+
+    <figure class="figure-card">
+      <img src="../../../voxbind/dataset/data/pdbbind/representation_similarity/current6_pocket/pocket_sequence_similarity_curve.png" alt="Pocket sequence identity bin에 따른 모델별 representation similarity curve">
+      <figcaption><b>Pocket sequence.</b> 여섯 모델 모두 더 단조롭고 가파른 증가를 보인다. CheapNet과 GET은 high-identity pocket에서 특히 높은 similarity를 유지한다.</figcaption>
+    </figure>
+  </section>
+
+  <section class="doc-section" id="cliffs">
+    <h2 class="section-head"><span class="sec-num">5</span>Binding-relevant pair cases</h2>
+    <p class="section-intro">Sequence, ligand, affinity gap을 조합해 representation이 어떤 variation을 보존하는지 확인했다.</p>
+
+    <div class="case-grid">
+      <article class="case"><div class="count">781</div><div class="name">Near sequence · near ligand · smooth<br>seq ≥ 0.9, ligand ≥ 0.8, |ΔpK| ≤ 0.5</div></article>
+      <article class="case"><div class="count">664</div><div class="name">Near sequence · near ligand · cliff<br>seq ≥ 0.9, ligand ≥ 0.8, |ΔpK| ≥ 1.0</div></article>
+      <article class="case"><div class="count">7,276</div><div class="name">Exact sequence · ligand shift<br>same full sequence, ligand ≤ 0.3</div></article>
+      <article class="case"><div class="count">46,380</div><div class="name">Near sequence · ligand shift<br>seq ≥ 0.9, non-exact, ligand ≤ 0.3</div></article>
+      <article class="case"><div class="count">465</div><div class="name">Remote sequence · near ligand · smooth<br>MMseqs non-hit, ligand ≥ 0.8, |ΔpK| ≤ 0.5</div></article>
+      <article class="case"><div class="count">813</div><div class="name">Remote sequence · near ligand · divergent<br>MMseqs non-hit, ligand ≥ 0.8, |ΔpK| ≥ 1.0</div></article>
+    </div>
+
+    <figure class="figure-card">
+      <img src="../../../voxbind/dataset/data/pdbbind/representation_similarity/current6_pocket/case_similarity.png" alt="Binding-relevant pair case별 모델 representation similarity bar chart">
+      <figcaption><b>Case-level mean similarity.</b> 대부분의 모델은 near-sequence / near-ligand pair를 매우 가깝게 encode한다. Cliff에서도 similarity가 높게 유지되어, global cosine만으로는 affinity discontinuity가 희석된다.</figcaption>
+    </figure>
+  </section>
+
+  <section class="doc-section" id="interpretation">
+    <h2 class="section-head"><span class="sec-num">6</span>해석, 한계, 다음 단계</h2>
+    <ul class="takeaways">
+      <li><b>초기 가설은 지지된다.</b> Similar sequence, 특히 similar pocket sequence는 similar encoded representation과 일관되게 연결된다.</li>
+      <li><b>Pocket은 전체 sequence보다 직접적인 축이다.</b> 동일 homolog subset에서 모든 모델의 pocket ρ가 full-sequence ρ보다 높다.</li>
+      <li><b>Affinity training이 cliff-aware geometry를 보장하지는 않는다.</b> CheapNet과 GET은 pocket homology를 강하게 보존하지만 cliff AUC는 각각 0.551, 0.583이다.</li>
+      <li><b>표현의 목적이 서로 다를 수 있다.</b> 높은 homology correlation은 좋은 retrieval/cluster geometry를 뜻할 수 있지만, binding-affinity 변화에 필요한 국소 interaction signal과는 동일하지 않다.</li>
+    </ul>
+
+    <h3 class="subhead">Caveats</h3>
+    <ul class="takeaways">
+      <li>Pocket residue는 공간적으로 선택된 불연속 residue를 parent-sequence 순서로 연결한 것이다. 따라서 일반적인 contiguous domain sequence identity와 동일하지 않다.</li>
+      <li>Pair들이 protein family와 PDB complex를 공유하므로 서로 독립적인 관측치가 아니다. 현재 SEM과 correlation은 family-level uncertainty를 반영하지 않는다.</li>
+      <li>GET affinity head는 variable-length block representation에 작용한다. 비교에는 모델의 native fixed-width <code>graph_repr</code>를 사용했으므로 정확한 pre-head sufficient statistic은 아니다.</li>
+      <li>Feature standardization은 전체 분석 cohort에서 수행한 descriptive analysis다. 별도의 predictive test metric으로 해석하면 안 된다.</li>
+    </ul>
+
+    <h3 class="subhead">Recommended follow-ups</h3>
+    <ol class="next-list">
+      <li><b>Partial correlation.</b> Full-sequence identity와 ligand Tanimoto를 통제한 뒤 pocket identity가 representation similarity를 추가로 설명하는지 측정한다.</li>
+      <li><b>Family-block bootstrap.</b> MMseqs cluster 단위로 bootstrap해 ρ와 cliff AUC의 confidence interval을 구한다.</li>
+      <li><b>Local representation comparison.</b> GET block states, attention-pooled pocket states, VoxBind spatial token을 직접 비교해 global pooling에서 희석되는 cliff signal을 찾는다.</li>
+      <li><b>Retrieval evaluation.</b> Representation nearest neighbors가 same pocket family, same ligand scaffold, 또는 similar pK를 얼마나 회수하는지 Recall@k / enrichment로 평가한다.</li>
+    </ol>
+  </section>
+
+  <section class="doc-section" id="artifacts">
+    <h2 class="section-head"><span class="sec-num">7</span>Artifacts</h2>
+    <div class="files">
+      <a href="../../../voxbind/dataset/data/pdbbind/representation_similarity/current6_pocket/summary.json">summary.json</a>
+      <a href="../../../voxbind/dataset/data/pdbbind/representation_similarity/current6_pocket/sequence_summary.csv">sequence_summary.csv</a>
+      <a href="../../../voxbind/dataset/data/pdbbind/representation_similarity/current6_pocket/pocket_sequence_summary.csv">pocket_sequence_summary.csv</a>
+      <a href="../../../voxbind/dataset/data/pdbbind/representation_similarity/current6_pocket/case_summary.csv">case_summary.csv</a>
+      <a href="../../../voxbind/dataset/data/pdbbind/representation_similarity/current6_pocket/pair_metrics.csv.gz">pair_metrics.csv.gz</a>
+      <a href="../../../voxbind/analysis/README.md">analysis README</a>
+    </div>
+  </section>
+
+  <footer>
+    CPU-only analysis · lp_edrscc_v2 common cohort · primary metric: per-feature standardized cosine similarity · prepared for 260820 meeting
+  </footer>
+</main>
+</body>
+</html>

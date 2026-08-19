@@ -6,6 +6,8 @@ lp_edrscc_v2 so val ρ / test r / test ρ / RMSE are directly comparable. Ensemb
 member features; the mse+corr row swaps the head loss. Writes notebook/html/ablation_cdg.json.
 
   OMP_NUM_THREADS=2 nice -19 python -u test/ablation_probe.py
+  PROBE_SPLIT=lp_edrscc_v2_cl123 PROBE_OUT=../notebook/html/ablation_cdg_cl123.json \
+    python -u test/ablation_probe.py
 """
 import os, sys, json
 import numpy as np, torch, torch.nn as nn, torch.nn.functional as F
@@ -16,8 +18,8 @@ REPO = "/home/shpark/prj-denovo/VoxBind"
 FDIR = f"{REPO}/voxbind/dataset/data/pdbbind/features"
 DEVICE = os.environ.get("PROBE_DEVICE", "cpu")
 HP = dict(hidden=128, dropout=0.1, lr=1e-3, wd=1e-4, max_epochs=300, patience=30, bs=128)
-SEEDS = list(range(5))
-SPLIT = "lp_edrscc_v2"
+SEEDS = list(range(int(os.environ.get("PROBE_SEEDS", "5"))))
+SPLIT = os.environ.get("PROBE_SPLIT", "lp_edrscc_v2")
 P = "atomblob_density_gradmag_e49_v5_"        # standard CDG feature prefix
 
 # num, label, group, kind, members(feature files), head, what-it-tests, verdict
@@ -52,6 +54,12 @@ E = [
     "Uniform-radius ligand (0.5) + vdW pocket = original VoxBind repr (matched 779; uniform-lig voxels cover 59%).","hurt"),
  (14,"All-uniform radius","Radius","single",[P+"260808_cdg_100m_v2_m075_uniformrad.pt"],"mse",
     "Uniform 0.5 radius for BOTH ligand and pocket — blobs lose steric size.","hurt"),
+ (15,"R2MAE variable mask (v2)","Masking","single",[P+"260813_cdg_100m_v2_varmask6090.pt"],"mse",
+    "Draw mask ratio r~U[0.6,0.9] per batch in ONE encoder — fold the ensemble's mask-diversity into a single model at 1x cost. Below champion: single-encoder mask-variety is NOT ensemble diversity (that needs separate weights).","hurt"),
+ (16,"R2MAE variable mask (v2.2)","Masking","single",[P+"260813_cdg_100m_v22_varmask6090.pt"],"mse",
+    "Same R2MAE on clean v2.2 (v2 minus 5,709 out-of-vocab-ligand complexes). +0.01 over the v2 varmask — data cleaning helps — but still below champion.","neutral"),
+ (17,"Channel-sep [7,4,1,1] (v2.2)","Arch","single",[P+"260813_cdg_100m_v22_g7411.pt"],"mse",
+    "Density &amp; gradmag as SEPARATE ChannelViT groups [7,4,1,1] vs grouped [7,4,2], on clean v2.2. +0.01 over dirty-v2 g7411 but grouped still wins — separating the physics channels hurts.","neutral"),
 ]
 
 
@@ -121,14 +129,18 @@ def main():
         try:
             data, nte = build(members, pK, sm)
             rs = [train_one(data, head, s) for s in SEEDS]
-            agg = {k: float(np.mean([r[k] for r in rs])) for k in ("val_rho", "test_r", "test_rho", "test_rmse")}
-            agg["test_rho_std"] = float(np.std([r["test_rho"] for r in rs]))
+            metric_keys = ("val_rho", "test_r", "test_rho", "test_rmse")
+            agg = {k: float(np.mean([r[k] for r in rs])) for k in metric_keys}
+            agg.update({f"{k}_std": float(np.std([r[k] for r in rs])) for k in metric_keys})
             rows.append(dict(num=num, label=label, group=group, what=what, verdict=verdict, n_test=nte, **agg))
-            print(f"#{num:2d} {label:32s} n={nte:4d}  valρ={agg['val_rho']:.3f}  testr={agg['test_r']:.3f}  "
-                  f"testρ={agg['test_rho']:.3f}±{agg['test_rho_std']:.3f}  rmse={agg['test_rmse']:.3f}")
+            print(f"#{num:2d} {label:32s} n={nte:4d}  "
+                  f"r={agg['test_r']:.3f}±{agg['test_r_std']:.3f}  "
+                  f"ρ={agg['test_rho']:.3f}±{agg['test_rho_std']:.3f}  "
+                  f"RMSE={agg['test_rmse']:.3f}±{agg['test_rmse_std']:.3f}  "
+                  f"valρ={agg['val_rho']:.3f}±{agg['val_rho_std']:.3f}")
         except Exception as ex:
             print(f"#{num:2d} {label:32s} FAILED: {ex}")
-    outp = f"{REPO}/notebook/html/ablation_cdg.json"
+    outp = os.environ.get("PROBE_OUT", f"{REPO}/notebook/html/ablation_cdg.json")
     json.dump(rows, open(outp, "w"), indent=1); print("wrote", outp, f"({len(rows)} rows)")
 
 if __name__ == "__main__":

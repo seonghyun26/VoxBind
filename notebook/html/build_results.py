@@ -195,10 +195,9 @@ FLAG["HonestAffinity"] = "new"
 COLOR["IPNet (frozen)"] = bar.PALETTE[13]      # lavender — IPDiff BAPNet, frozen (leaked)
 COLOR["IPNet (scratch)"] = bar.PALETTE[14]     # pink — IPDiff BAPNet, from scratch (clean)
 COLOR["Nesso-1"] = "#00838f"                   # teal — Nesso-1 cofolding (leaked: PDBbind-trained)
-# seq/SMILES DTA baselines (amber family, matching the seq tier) + CPES (3D curvature/PES)
+# seq/SMILES DTA baselines (amber family, matching the seq tier)
 COLOR["DeepDTA"] = "#c98a3a"; COLOR["MolTrans"] = "#a86a26"
-COLOR["CPES"] = "#6f5aa8"
-for _n in ("DeepDTA", "MolTrans", "CPES"):
+for _n in ("DeepDTA", "MolTrans"):
     FLAG[_n] = "new"
 
 TYPE = {  # display tag per method — three categories, distinctly colored
@@ -208,13 +207,12 @@ TYPE = {  # display tag per method — three categories, distinctly colored
     "IPNet (frozen)": "pretrained", "IPNet (scratch)": "supervised", "Nesso-1": "zero-shot",
     "C": "pretrained", "C+D+G": "pretrained", "C+D+G +corr": "pretrained",
     "DeepDTA": "supervised", "MolTrans": "supervised",
-    "CPES": "supervised",
 }
 TAGCLASS = {"supervised": "supervised", "pretrained": "pretrained", "zero-shot": "zeroshot"}
 
 # Input modality — what the method actually consumes. "seq" = protein sequence + ligand SMILES
 # only (no 3D coordinates); "3d" = needs the 3D structure (voxel/graph/pocket/energy). Methods not
-# listed here default to 3D, including our voxel C/C+D+G, CPES, the graph baselines, ProFSA, DSMBind.
+# listed here default to 3D, including our voxel C/C+D+G, the graph baselines, ProFSA, DSMBind.
 MODALITY = {
     "Nesso-1": "seq", "HonestAffinity": "seq",
     "DeepDTA": "seq", "MolTrans": "seq",
@@ -331,9 +329,10 @@ EXTERNAL = set()
 # suppress it (show "running") until we train them on our splits (base/get, model_type EGNN).
 PAPER_ONLY = {"EGNN", "EGNN + TargetDiff"}
 
-# Planned baseline with no official checkpoint/result on our cohorts. Keep every missing cell
-# explicitly TBA (rather than the generic live-campaign "running" state used by Table 1a).
-PLANNED_TBA = {"CPES"}
+# Planned baselines with no official checkpoint/result on our cohorts would go here (kept explicitly
+# TBA rather than the generic "running" state). CPES was removed — see the "Not included" list; its
+# released code omits the core ANM curvature module, so it cannot be reproduced.
+PLANNED_TBA = set()
 
 # method render order = bar.METHODS order (HonestAffinity, IPNet frozen/scratch, and Nesso-1 are
 # first-class entries in bar.METHODS so Table 1 and the bar charts share one source).
@@ -522,6 +521,25 @@ def load(method, split):
         # (no retraining) → schema-A JSON. Missing file → None (TBA).
         safe_m = "".join(c if c.isalnum() else "_" for c in method)
         return _read_result(f"base/_casf/novel_subsets/{safe_m}__{split}.json")
+    if split in ("cl123_test_novel60", "cl123_test_novel30"):
+        # Fresh five-seed CL3 probes, re-scored on test-only protein-novelty cohorts
+        # (733 test complexes; similarity to CL3 train).  Keep this separate from the
+        # earlier three-seed audit so Table 1b cannot silently mix the two campaigns.
+        import json as _j
+        path = os.path.join(
+            REPO, "base", "_casf", "cl123_seqfilter_5seed_260818", "results.json"
+        )
+        if not os.path.exists(path):
+            return None
+        method_key = {"CDG": "C+D+G"}.get(method, method)
+        d = _j.load(open(path)).get("methods", {}).get(method_key, {}).get(split)
+        if not d:
+            return None
+        return {
+            "r": (d["pearson"]["mean"], d["pearson"].get("std")),
+            "rho": (d["spearman"]["mean"], d["spearman"].get("std")),
+            "rmse": (d["rmse"]["mean"], d["rmse"].get("std")),
+        }
     if method == "CheapNet":
         return reg.read_cheapnet(split)                       # results_{split}.json (all 4 done)
     if method in PROBE_CSV:                                    # VoxBind C / C+D+G frozen-encoder probe
@@ -688,7 +706,7 @@ def tba_cell(divcls):
 def all_methods():
     """Every Section-1.1 baseline (bar.METHODS order) plus newer baseline additions, so the
     held-out tables list ALL methods — with TBA for any not yet run on the new consolidated subset."""
-    extra = [m for m in ("DeepDTA", "MolTrans", "CPES") if m not in ORDER]
+    extra = [m for m in ("DeepDTA", "MolTrans") if m not in ORDER]
     return list(ORDER) + extra
 
 
@@ -770,14 +788,28 @@ def casp16_rows():
     return cat_merged_rows(items, modality_category)
 
 
-# ── LBA-style protein-sequence-novelty splits (Table 1b) ─────────────────────
+# ── Protein-sequence-novelty stress tests (Table 1b) ─────────────────────────
 LBA_METHODS = all_methods()   # identical baseline universe in Tables 1a/1b; missing runs render TBA
-LBA_COLS = [   # base LP, then LP TEST masked by protein novelty (same model/features, no retrain), then CleanSplit
+LBA_COLS = [   # base LP, then LP TEST masked by protein novelty (same model/features, no retrain)
     ("lp_edrscc_v2", "LP-PDBBind", "1320"),
     ("lp_test_novel60", "LP &middot; novel protein<br>test id &lt; 60% to train", "813"),
     ("lp_test_novel30", "LP &middot; novel protein<br>test id &lt; 30% to train", "453"),
-    ("clean_ed_v1_indep",  "CleanSplit leak-free &middot; CASF-2016", "109"),
+    ("cl123_test_novel60", "CL3 test &middot; fresh 5-seed<br>protein id &lt; 60% to CL3 train", "454"),
+    ("cl123_test_novel30", "CL3 test &middot; fresh 5-seed<br>protein id &lt; 30% to CL3 train", "262"),
 ]
+
+# Appendix-only CASF stress test. Start from CL3-clean (exact CL3 train/val PDB
+# members removed), then keep only proteins below the stated maximum identity to CL3 train.
+# These are re-scores of the same saved predictions; no model is retrained on CASF.
+CASF_SIM_COLS = [
+    ("casf_clean_cl3_novel60", "CASF-2016 &middot; novel protein<br>id &lt; 60% to CL3 train", "64"),
+    ("casf_clean_cl3_novel30", "CASF-2016 &middot; novel protein<br>id &lt; 30% to CL3 train", "32"),
+]
+
+
+def load_casf_similarity(method, cohort):
+    safe_m = "".join(c if c.isalnum() else "_" for c in method)
+    return _read_result(f"base/_casf/casf_similarity/{safe_m}__{cohort}.json")
 
 
 def load_lba_table():
@@ -801,7 +833,7 @@ def lba_table_head():
 
 def lba_rows():
     """All Table-1 baselines as rows (same as §1.1). First column = the lp_edrscc_v2 value via load()
-    (identical to Table 1a); LBA & CleanSplit columns fill from each method's result file as runs land, else TBA."""
+    (identical to Table 1a); novelty columns are cached re-scores of the same test predictions."""
     best = {}
     for key, _, _ in LBA_COLS:
         present = [(m, load(m, key)) for m in LBA_METHODS]
@@ -826,30 +858,54 @@ def lba_rows():
     return cat_merged_rows(items)
 
 
-def lba_bar_svg():
-    """Table-1b values as dataset rows x metric columns, using the Table-1 method order."""
+def casf_similarity_table_head():
+    grp = ['<tr class="grp"><th class="col-modality" rowspan="2">Input</th>'
+           '<th class="col-method" rowspan="2">Method</th>']
+    for _, label, n in CASF_SIM_COLS:
+        grp.append(f'<th class="div-major" colspan="3">{label}<span class="nsub">N&nbsp;=&nbsp;{n}</span></th>')
+    grp.append("</tr>")
+    sub = ['<tr class="sub">']
+    for _ in CASF_SIM_COLS:
+        sub.append('<th class="div-major">Pearson&nbsp;<i>r</i></th>'
+                   '<th>Spearman&nbsp;&rho;</th><th>RMSE&nbsp;&darr;</th>')
+    sub.append("</tr>")
+    return "\n          ".join(grp) + "\n          " + "\n          ".join(sub)
+
+
+def casf_similarity_rows():
+    """Appendix CASF sequence-novel cohorts; deliberately no winner highlighting at N=29/60."""
     order = sorted(LBA_METHODS, key=lambda n: cat_sort_key(n, LBA_METHODS.index(n)))
-    panels = [
+    items = []
+    for name in order:
+        tds = [method_cell(name, show_leaked=True, pretrain_overlap=(name == "ProFSA"))]
+        for cohort, _, _ in CASF_SIM_COLS:
+            d = load_casf_similarity(name, cohort)
+            for k, metric in enumerate(("r", "rho", "rmse")):
+                divcls = "div-major" if k == 0 else ""
+                value = d.get(metric) if d else None
+                tds.append(metric_cell(value, False, divcls) if value else tba_cell(divcls))
+        items.append((name, "".join(tds)))
+    return cat_merged_rows(items)
+
+
+def cohort_bar_svg(cols, loader, row_labels, aria_label, title, desc,
+                   panels=None, rank_labels=True):
+    """Render cohort rows x metric columns, using the common Table-1 method order."""
+    order = sorted(LBA_METHODS, key=lambda n: cat_sort_key(n, LBA_METHODS.index(n)))
+    panels = panels or [
         ("r", "Test Pearson r", 0.35, 0.85, [0.40, 0.50, 0.60, 0.70, 0.80], True),
         ("rho", "Test Spearman &rho;", 0.35, 0.85, [0.40, 0.50, 0.60, 0.70, 0.80], True),
         ("rmse", "Test RMSE", 1.30, 1.90, [1.30, 1.50, 1.70, 1.90], False),
     ]
-    row_labels = {
-        "lp_edrscc_v2": ("LP-PDBBind", "base"),
-        "lp_test_novel60": ("Novel &lt;60%", "to train"),
-        "lp_test_novel30": ("Novel &lt;30%", "to train"),
-        "clean_ed_v1_indep": ("CleanSplit", "CASF-2016"),
-    }
     W, header_h, row_h, row_gap, bottom = 1130, 40, 160, 14, 16
-    H, ml, mr, col_gap = header_h + len(LBA_COLS) * row_h + (len(LBA_COLS) - 1) * row_gap + bottom, 160, 16, 24
+    H, ml, mr, col_gap = header_h + len(cols) * row_h + (len(cols) - 1) * row_gap + bottom, 160, 16, 24
     plot_w = (W - ml - mr - col_gap * (len(panels) - 1)) / len(panels)
     out = [
         f'<svg viewBox="0 0 {W} {H}" width="100%" style="max-width:{W}px;display:block;margin:0 auto" '
         'font-family="-apple-system,Segoe UI,Roboto,sans-serif" role="img" '
-        'aria-label="Table 1b generalization metrics across LP-PDBBind, protein-novel subsets, and CleanSplit">',
-        '<title>Generalization under leakage control</title>',
-        '<desc>Columns are Pearson correlation, Spearman correlation, and RMSE; rows are the four '
-        'Table 1b cohorts. Bars show available method means and whiskers show standard deviation.</desc>',
+        f'aria-label="{aria_label}">',
+        f'<title>{title}</title>',
+        f'<desc>{desc}</desc>',
     ]
 
     for pi, (_, title, _, _, _, _) in enumerate(panels):
@@ -857,7 +913,7 @@ def lba_bar_svg():
         out.append(f'<text x="{panel_x + plot_w / 2:.1f}" y="20" text-anchor="middle" '
                    f'font-size="11.5" font-weight="700" fill="#1c2433">{title}</text>')
 
-    for ri, (cohort, _, n_test) in enumerate(LBA_COLS):
+    for ri, (cohort, _, n_test) in enumerate(cols):
         row_y = header_h + ri * (row_h + row_gap)
         plot_top, plot_base = row_y + 10, row_y + 132
         main_label, sub_label = row_labels[cohort]
@@ -886,7 +942,7 @@ def lba_bar_svg():
             bar_width = min(9.0, pitch * 0.58)
             values = []
             for mi, name in enumerate(order):
-                data = load(name, cohort)
+                data = loader(name, cohort)
                 value = data.get(metric) if data else None
                 if not value or value[0] is None:
                     continue
@@ -894,7 +950,7 @@ def lba_bar_svg():
                 sd = value[1] if value[1] is not None else 0.0
                 values.append((mi, name, mean, sd, name in LEAKED))
 
-            ranked = [item for item in values if not item[4]]
+            ranked = [item for item in values if not item[4]] if rank_labels else []
             best_i = None
             if ranked:
                 best_i = (max if higher_better else min)(ranked, key=lambda item: item[2])[0]
@@ -927,6 +983,46 @@ def lba_bar_svg():
     return "\n      ".join(out)
 
 
+def lba_bar_svg():
+    return cohort_bar_svg(
+        LBA_COLS,
+        load,
+        {
+            "lp_edrscc_v2": ("LP-PDBBind", "base"),
+            "lp_test_novel60": ("Novel &lt;60%", "to train"),
+            "lp_test_novel30": ("Novel &lt;30%", "to train"),
+            "cl123_test_novel60": ("CL3 novel &lt;60%", "to CL3 train"),
+            "cl123_test_novel30": ("CL3 novel &lt;30%", "to CL3 train"),
+        },
+        "Table 1b generalization metrics across LP-PDBBind and protein-novel subsets",
+        "Generalization under leakage control",
+        "Columns are Pearson correlation, Spearman correlation, and RMSE; rows are the five "
+        "Table 1b cohorts. Bars show available method means and whiskers show standard deviation.",
+    )
+
+
+def casf_similarity_bar_svg():
+    panels = [
+        ("r", "Test Pearson r", 0.15, 0.85, [0.20, 0.40, 0.60, 0.80], True),
+        ("rho", "Test Spearman &rho;", 0.15, 0.85, [0.20, 0.40, 0.60, 0.80], True),
+        ("rmse", "Test RMSE", 1.30, 2.30, [1.30, 1.50, 1.70, 1.90, 2.10, 2.30], False),
+    ]
+    return cohort_bar_svg(
+        CASF_SIM_COLS,
+        load_casf_similarity,
+        {
+            "casf_clean_cl3_novel60": ("Novel &lt;60%", "to CL3 train"),
+            "casf_clean_cl3_novel30": ("Novel &lt;30%", "to CL3 train"),
+        },
+        "CASF-2016 metrics after strict protein-similarity filtering against CL3 train",
+        "CASF-2016 protein-novel diagnostic",
+        "Columns are Pearson correlation, Spearman correlation, and RMSE; rows are the strict "
+        "protein-identity cohorts. Bars show available method means and whiskers show standard deviation.",
+        panels=panels,
+        rank_labels=False,
+    )
+
+
 def lba_bar_legend():
     """Legend for methods with at least one value in Table 1b; TBA-only methods stay in the table."""
     order = sorted(LBA_METHODS, key=lambda n: cat_sort_key(n, LBA_METHODS.index(n)))
@@ -934,6 +1030,48 @@ def lba_bar_legend():
     methods = [(name, COLOR[name], "leaked" if name in LEAKED else False,
                 (None, None), (None, None), (None, None)) for name in plotted]
     return bar.legend(methods=methods, leaked_names=LEAKED)
+
+
+def casf_similarity_bar_legend():
+    """Legend for methods with at least one filtered-CASF value."""
+    order = sorted(LBA_METHODS, key=lambda n: cat_sort_key(n, LBA_METHODS.index(n)))
+    plotted = [name for name in order
+               if any(load_casf_similarity(name, cohort) for cohort, _, _ in CASF_SIM_COLS)]
+    methods = [(name, COLOR[name], "leaked" if name in LEAKED else False,
+                (None, None), (None, None), (None, None)) for name in plotted]
+    return bar.legend(methods=methods, leaked_names=LEAKED)
+
+
+# CASF-2016 CleanSplit is retained as an appendix-only diagnostic. Although its 109 test
+# complexes are exact-split held out, 103/109 test proteins have >=90% sequence identity to a
+# CleanSplit train protein; only 6 and 4 survive the same <60% and <30% novelty filters used above.
+CLEAN109_SPLIT = "clean_ed_v1_indep"
+
+
+def clean109_table_head():
+    return (
+        '<tr class="grp"><th class="col-modality" rowspan="2">Input</th>'
+        '<th class="col-method" rowspan="2">Method</th>'
+        '<th class="div-major" colspan="3">CASF-2016 CleanSplit'
+        '<span class="nsub">diagnostic only &middot; N&nbsp;=&nbsp;109</span></th></tr>\n'
+        '<tr class="sub"><th class="div-major">Pearson&nbsp;<i>r</i></th>'
+        '<th>Spearman&nbsp;&rho;</th><th>RMSE&nbsp;&darr;</th></tr>'
+    )
+
+
+def clean109_rows():
+    """Appendix-only CleanSplit-109 results, deliberately without winner highlighting."""
+    order = sorted(LBA_METHODS, key=lambda n: cat_sort_key(n, LBA_METHODS.index(n)))
+    items = []
+    for name in order:
+        d = load(name, CLEAN109_SPLIT)
+        cells = []
+        for k, metric in enumerate(("r", "rho", "rmse")):
+            divcls = "div-major" if k == 0 else ""
+            value = d.get(metric) if d else None
+            cells.append(metric_cell(value, False, divcls) if value else tba_cell(divcls))
+        items.append((name, method_cell(name, show_leaked=True) + "".join(cells)))
+    return cat_merged_rows(items)
 
 
 def affinity_table_head():
@@ -988,8 +1126,7 @@ def casf_table_head():
 
 
 def casf_rows():
-    """CASF appendix table — methods sorted by non-train ρ (honest), leaky + non-train × r/ρ/RMSE."""
-    best = best_per_col()
+    """Appendix-only CASF clean-92 rows, with no winner highlighting."""
     methods = all_methods()                       # ALL 1.1 baselines; TBA for those not yet on clean-92
     def cleanrho(m):
         d = load_casf(m, "clean") if m in CASF_KEY else None
@@ -997,7 +1134,7 @@ def casf_rows():
     order = sorted(methods, key=lambda m: cat_sort_key(m, -(cleanrho(m) if cleanrho(m) is not None else -99)))
     items = []
     for name in order:
-        tds = [method_cell(name)]
+        tds = [method_cell(name, show_leaked=True, pretrain_overlap=(name == "ProFSA"))]
         for which, _, _ in CASF_COLS:
             d = load_casf(name, which) if name in CASF_KEY else None
             for k, metric in enumerate(("r", "rho", "rmse")):
@@ -1118,68 +1255,22 @@ def holdout2019_common_rows():
     return cat_merged_rows(items)
 
 
-# ── Merged held-out table: CASF-2016 clean-92 (3 cols) | PDBbind 2019 holdout common (4 cols
-# incl. per-method N). Both are held-out, PDBbind-derived evals, so they share one table with two
-# column groups (like Table 1's split groups).
+# ── Main-text temporal holdout table: PDBbind 2019 only. CASF-2016 moved to Appendix A
+# because exact-PDB exclusion does not remove its very high protein-sequence memorization.
 def heldout_table_head():
     grp = ['<tr class="grp"><th class="col-modality" rowspan="2">Input</th>'
            '<th class="col-method" rowspan="2">Method</th>'
-           '<th class="div-major" colspan="3">CASF-2016<span class="nsub">clean-92 &middot; N&nbsp;=&nbsp;92</span></th>'
            f'<th class="div-major" colspan="4">PDBbind 2019 holdout<span class="nsub">common ED &middot; '
            f'N&nbsp;=&nbsp;{holdout2019_common_n()}</span></th></tr>']
     sub = ['<tr class="sub">'
-           '<th class="div-major">Pearson&nbsp;<i>r</i></th><th>Spearman&nbsp;&rho;</th><th>RMSE&nbsp;&darr;</th>'
            '<th class="div-major">Pearson&nbsp;<i>r</i></th><th>Spearman&nbsp;&rho;</th><th>RMSE&nbsp;&darr;</th>'
            '<th>N</th></tr>']
     return "\n          ".join(grp) + "\n          " + "\n          ".join(sub)
 
 
 def heldout_rows():
-    """One row per method: CASF-2016 clean-92 (no best-highlight — n=92 too small, top methods
-    tied) then PDBbind 2019 holdout common (ρ ranked). DSMBind reports |r|/|ρ| (†); CORR_ONLY RMSE
-    renders 'n/a'; partial-coverage N marked *; TBA where a method hasn't been run on that subset."""
-    R = load_holdout2019_common()
-    methods = all_methods()
-    crho_m = lambda m: (load_casf(m, "clean") or {}).get("rho", None)
-    crho_v = lambda m: crho_m(m)[0] if (m in CASF_KEY and crho_m(m)) else None
-    hrho_v = lambda m: R[m]["rho"]["mean"] if m in R else None
-    within = lambda m: -(hrho_v(m) if hrho_v(m) is not None
-                         else (crho_v(m) if crho_v(m) is not None else -99))
-    order = sorted(methods, key=lambda m: cat_sort_key(m, within(m)))
-    elig = [m for m in R if not R[m].get("partial") and m not in LEAKED]   # holdout ρ ranking pool
-    hbest = max((R[m]["rho"]["mean"] for m in elig), default=None)
-    items = []
-    for m in order:
-        # CASF-2016 clean-92 group (no best-highlight)
-        cd = load_casf(m, "clean") if m in CASF_KEY else None
-        casf_cells = ""
-        for k, metric in enumerate(("r", "rho", "rmse")):
-            divcls = "div-major" if k == 0 else ""
-            if cd is None or cd.get(metric) is None or cd[metric][0] is None:
-                casf_cells += tba_cell(divcls)
-            else:
-                casf_cells += metric_cell(cd[metric], False, divcls)
-        # PDBbind 2019 holdout common group (ρ ranked; DSMBind |·|; CORR_ONLY RMSE n/a; per-method N)
-        if m in R:
-            b = R[m]
-
-            def _hc(k):
-                divcls = "div-major" if k == "r" else ""
-                if k == "rmse" and m in CORR_ONLY:
-                    return ('<td class="metric"><span class="tbd" title="prediction not on the pK '
-                            'scale (zero-shot energy / SUM-pool features) &mdash; RMSE not meaningful; '
-                            '&rho; is the ranking metric">n/a</span></td>')
-                return metric_cell(absmetric(m, k, (b[k]["mean"], b[k]["std"])),
-                                   (k == "rho" and b["rho"]["mean"] == hbest and m in elig), divcls)
-            hold_cells = "".join(_hc(k) for k in ("r", "rho", "rmse"))
-            hold_cells += (f'<td class="metric"><span class="sd">{b["n"]}'
-                           f'{"*" if b.get("partial") else ""}</span></td>')
-        else:
-            hold_cells = "".join(tba_cell("div-major" if k == "r" else "") for k in ("r", "rho", "rmse"))
-            hold_cells += '<td class="metric"><span class="tbd">TBA</span></td>'
-        items.append((m, method_cell(m, dagger=(m in ABS_CORR), pretrain_overlap=(m == "ProFSA"))
-                      + casf_cells + hold_cells))
-    return cat_merged_rows(items)
+    """PDBbind 2019 common-ED rows; CASF-2016 is appendix-only."""
+    return holdout2019_common_rows()
 
 
 def load_holdout2019_scalable():
@@ -1597,6 +1688,9 @@ def ablation_section():
     intro = ('<ul class="caption-list">'
              '<li>Same frozen mean-pool &rarr; MLP probe; MSE, 5 seeds, <code>lp_edrscc_v2</code>.</li>'
              '<li>Only ensembles #4/#5 exceed the champion, by about +0.005 &#961;.</li>'
+             '<li>#15 <b>R2MAE</b> (draw the mask ratio <code>r~U[0.6,0.9]</code> inside ONE encoder) lands below champion &mdash; '
+             'the ensemble&rsquo;s mask-diversity gain needs genuinely separate <b>weights</b>, not one model trained on varied masks.</li>'
+             '<li>#16/#17 on clean <b>v2.2</b> (drop out-of-vocab-ligand complexes) beat their v2 twins by ~+0.01, but grouped [7,4,2] &amp; fixed-mask champion still win.</li>'
              '<li>* #13/#14 use N=779; matched champion &#961; = 0.611.</li></ul>')
     header = '<h3 class="subsec-head"><span class="sn">1.3</span> Ablation studies</h3>'
     return (header + intro
@@ -1615,8 +1709,8 @@ def build():
     table2 = mark_voxbind_reproduced(table2)
     table2 = strip_repeated_table_units(table2)
     vina_img = denovo_chart.render(table2)
-    pdbbind2016_chart = casf_bar_svg("clean")
-    pdbbind2016_legend = casf_bar_legend()
+    casf_similarity_chart = casf_similarity_bar_svg()       # Appendix A only
+    casf_similarity_legend = casf_similarity_bar_legend()   # Appendix A only
     holdout2019_common_chart = holdout2019_common_bar_svg()
     holdout2019_common_legend = holdout2019_common_bar_legend()
     lp_tiers_chart = lp_all_tiers_svg()
@@ -1686,7 +1780,17 @@ def build():
     <ul class="split-notes">
       <li><b>Data:</b> LP-PDBBind &cap; electron density, RSCC&nbsp;&ge;&nbsp;0.8, Kd/Ki only.</li>
       <li><b>Splits:</b> <code>lp_edrscc_v2</code> &rarr; <code>+CL1</code> &rarr; <code>+CL1+CL2</code> &rarr; <code>+CL1+CL2+CL3</code>.</li>
-      <li><b>Protocol:</b> sequence-clustered; each tier keeps the original train/val/test assignment; 3 seeds.</li>
+      <li><b>Protocol:</b> sequence-clustered; each tier keeps the original train/val/test assignment; 5 seeds.</li>
+    </ul>
+    <p class="subsec-intro">The affinity evaluation is reported in three complementary tables:</p>
+    <ul class="split-notes">
+      <li><b>Table&nbsp;1a &mdash; leakage-controlled CL tiers:</b> in-distribution LP-PDBBind and its nested
+          <code>+CL1/+CL2/+CL3</code> sequence-clustering filters; every method is retrained and tested within each tier.</li>
+      <li><b>Table&nbsp;1b &mdash; protein-sequence novelty:</b> the LP-PDBBind and CL3 test sets re-scored under strict
+          MMseqs2 protein-identity thresholds (&lt;60% / &lt;30% to train), isolating generalization to novel targets.</li>
+      <li><b>Table&nbsp;1c &mdash; CASF-2016 external test:</b> the standard CASF-2016 core set as an out-of-corpus
+          benchmark under increasing leak control &mdash; full core (leaky), train-removed (non-train),
+          protein-novel (id&lt;60% / &lt;30% to CL3 train), and the fully held-out clean-92.</li>
     </ul>
     <p class="subsec-intro"><b>Baseline methods</b></p>
     <ul class="split-notes">
@@ -1703,8 +1807,11 @@ def build():
       <li><a href="https://doi.org/10.1093/bioinformatics/btaa880">MolTrans</a> is a substructure-aware sequence/SMILES interaction transformer published in <i>Bioinformatics</i> in 2021.</li>
       <li><a href="https://arxiv.org/abs/2604.23115">HBGSA</a> models hydrogen-bond topology with graph self-attention and is currently an arXiv preprint from 2026 with no conference venue reported.</li>
       <li><a href="https://arxiv.org/abs/2606.03422">HonestAffinity</a> combines frozen ESM-2 features with an explicit pocket-position marker and is currently an arXiv preprint from 2026 with no conference venue reported.</li>
-      <li><a href="https://arxiv.org/abs/2606.14217">CPES</a> fuses curvature-derived potential-energy descriptors with geometry-aware message passing and is currently an arXiv preprint from 2026 with no conference venue reported.</li>
       <li><a href="https://www.valencelabs.com/wp-content/uploads/2026/07/nesso1.pdf">Nesso-1</a> is a sequence/SMILES affinity model released as a Valence Labs technical report in 2026 with no peer-reviewed venue reported.</li>
+    </ul>
+    <p class="subsec-intro"><b>Not included baselines</b></p>
+    <ul class="split-notes">
+      <li><a href="https://arxiv.org/abs/2606.14217">CPES</a> (Curvature-Informed Potential Energy Surface, arXiv 2606.14217) &mdash; <b>not reproducible from the public release.</b> The <a href="https://github.com/Peng-Fei-Sun/CPES">official repo</a> is an incomplete upload: <code>processdata.py</code> imports <code>build_anm_graphs.py</code> (the ANM curvature-spectrum builder that is the paper's core contribution), but that module is absent from the repository, and no author checkpoint is released. The GNN/training code alone cannot construct the model's inputs, so CPES is excluded rather than approximated with a from-spec reimplementation.</li>
     </ul>
 
     <h3 class="subsec-head"><span class="sn">1.1</span> LP-PDBBind</h3>
@@ -1729,8 +1836,9 @@ def build():
       <ul class="caption-list">
         <li><b>CL1 / CL2 / CL3:</b> nested leakage filters; every tier is retrained independently.</li>
         <li><b>Train / val / test:</b> v2 3850/817/1320; +CL1 2721/680/1166; +CL12 2643/659/1149; +CL123 1559/410/733.</li>
-        <li>Tables 1a/1b use the same 19-method baseline universe; unavailable runs remain explicit TBA/running placeholders rather than disappearing.</li>
-        <li><b>CPES:</b> source code is public but no author checkpoint is released; all cells stay TBA until cohort-specific training.</li>
+        <li>Tables 1a/1b use the same 18-method baseline universe. LP novelty columns retain the
+            existing campaign; the new CL3 novelty columns report fresh five-seed C, C+D+G, and
+            ProFSA probes, with unrun methods shown as TBA.</li>
         <li><span class="tag leaked">leaked</span> rows overlap affinity training and are excluded from ranking.</li>
         <li><b>+corr:</b> same frozen encoder; MSE + Pearson auxiliary loss.</li>
       </ul>
@@ -1745,7 +1853,7 @@ def build():
     </section>
 
     <section class="block">
-      <p class="table-title">Figure 1b &nbsp;&middot;&nbsp; Generalization across Table 1b cohorts</p>
+      <p class="table-title">Figure 1b &nbsp;&middot;&nbsp; Generalization across LP-PDBBind and CL3 protein-novelty cohorts</p>
       <div class="table-wrap" style="padding:16px 18px 10px;">
         {lba_chart}
         {lba_legend}
@@ -1757,24 +1865,20 @@ def build():
     </section>
 
     <section class="block">
-      <p class="table-title">Table 1b &nbsp;&middot;&nbsp; Generalization under leakage control &mdash; PLINDER-isolated protein-novelty (LBA) &amp; GEMS CleanSplit (mean &plusmn; std; deterministic zero-shot = 1 pass)</p>
+      <p class="table-title">Table 1b &nbsp;&middot;&nbsp; Generalization under protein-sequence novelty (LP: 3 seeds; CL3: fresh 5 seeds; deterministic zero-shot = 1 pass)</p>
       <ul class="caption-list">
-        <li><b>ATOM3D LBA60 / LBA30:</b> released official assignments intersected with
-            <code>lp_edrscc_v2</code>, then only downstream valid/test entries similar to the actual
-            PLINDER-v2.2 pretraining corpus were removed. PLINDER and downstream train are unchanged.</li>
-        <li><b>Isolation rule:</b> MMseqs2 exhaustive search, identity &ge;60% (ID60) or &ge;30% (ID30),
-            with &ge;80% query and target coverage (<code>--cov-mode 0</code>). Train/val/test becomes
-            2150/20/24 (ID60) and 2078/3/9 (ID30).</li>
-        <li><b>Small-cohort warning:</b> especially ID30 (val N=3, test N=9) has very high metric and
-            model-selection variance; use these columns as a contamination stress test, not a stable ranking.</li>
-        <li><b>CleanSplit:</b> leak-free CASF-2016 subset after ED/RSCC filtering.</li>
-        <li><b>Cached re-score coverage:</b> C, C+D+G, +corr, and IPNet-frozen cover every surviving LBA
-            complex. Nesso-1 covers 0/9 ID30 and 1/24 ID60 tests, so those cells remain TBA;
-            it covers CleanSplit 109/109.</li>
-        <li>Test cohorts differ; compare within columns or follow one method across columns.</li>
+        <li><b>Novelty subsets:</b> test predictions are re-scored after masking proteins by maximum
+            sequence identity to any protein in that split's downstream train partition. The new CL3
+            columns use five newly trained probes for C, C+D+G, and ProFSA; the novelty masks are
+            applied only after CL3 validation-based model selection.</li>
+        <li><b>Isolation rule:</b> fresh MMseqs2 <code>easy-search</code> with &ge;80% query and target
+            coverage (<code>--cov-mode 0</code>). Strict identity &lt;60% / &lt;30% leaves N=813 / 453
+            for LP and N=454 / 262 for CL3.</li>
+        <li><b>Fresh-run policy:</b> the CL3 five-seed predictions and sequence alignment were generated
+            in a new campaign directory; earlier cached three-seed CL3 results are not loaded.</li>
+        <li>Test cohorts are nested; compare within columns or follow one method across columns.</li>
         <li><b>Density gain is split-dependent:</b> C+D+G&minus;C &Delta;&rho; = +0.048 (base)
-            &rarr; &minus;0.011 (PLINDER-clean ID60) &rarr; +0.033 (PLINDER-clean ID30)
-            &rarr; +0.012 (CleanSplit leak-free).</li>
+            &rarr; +0.049 (novel &lt;60%) &rarr; +0.057 (novel &lt;30%).</li>
       </ul>
       <div class="table-wrap"><table class="results">
         <thead>
@@ -1786,16 +1890,13 @@ def build():
       </table></div>
     </section>
 
-    <h3 class="subsec-head"><span class="sn">1.2</span> Compared to recent works with holdout data</h3>
-    <p class="subsec-intro">Held-out CASF-2016 clean-92 and PDBbind 2019 temporal benchmarks. CASP16 is in Appendix&nbsp;A.</p>
+    <h3 class="subsec-head"><span class="sn">1.2</span> Compared to recent works with temporal holdout data</h3>
+    <p class="subsec-intro">PDBbind 2019 temporal holdout. CASF-2016 and CASP16 are retained as diagnostics in Appendices&nbsp;A and&nbsp;B.</p>
 
     <section class="block">
-      <p class="table-title">Figure 2 &nbsp;&middot;&nbsp; Held-out CASF-2016 and PDBbind 2019 performance</p>
+      <p class="table-title">Figure 2 &nbsp;&middot;&nbsp; PDBbind 2019 temporal-holdout performance</p>
       <div class="table-wrap" style="padding:12px 16px 16px;">
-        <p class="figure-cap" style="text-align:left;font-weight:700;color:#1c2433;margin:4px 0 2px;font-size:13px;">CASF-2016 clean-92</p>
-        {pdbbind2016_chart}
-        {pdbbind2016_legend}
-        <p class="figure-cap" style="text-align:left;font-weight:700;color:#1c2433;margin:22px 0 2px;font-size:13px;">PDBbind 2019 holdout &mdash; common ED set (N = {holdout2019_common_n()})</p>
+        <p class="figure-cap" style="text-align:left;font-weight:700;color:#1c2433;margin:4px 0 2px;font-size:13px;">Common ED set (N = {holdout2019_common_n()})</p>
         {holdout2019_common_chart}
         {holdout2019_common_legend}
         <ul class="caption-list">
@@ -1805,20 +1906,8 @@ def build():
     </section>
 
     <section class="block">
-      <p class="table-title">Table 2 &nbsp;&middot;&nbsp; Held-out generalization &mdash; <b>CASF-2016</b> (clean-92) &amp; <b>PDBbind 2019 holdout</b></p>
+      <p class="table-title">Table 2 &nbsp;&middot;&nbsp; Held-out generalization &mdash; <b>PDBbind 2019 temporal holdout</b></p>
       <ul class="caption-list">
-        <li><b>CASF cohort:</b> the <a href="https://pubs.acs.org/doi/10.1021/acs.jcim.8b00545">official
-            CASF-2016 set</a> has 285 complexes (57 targets &times; 5); 214 meet our electron-density/RSCC
-            evaluation requirements, and removing 90 v2-train plus 32 v2-val overlaps leaves clean-92.</li>
-        <li><b>PLINDER audit:</b> 5/214 evaluable CASF complexes occur in PLINDER-v2
-            (<code>1e66</code>, <code>1gpn</code>, <code>2r9w</code>, <code>3ge7</code>, <code>3n7a</code>),
-            but none occurs in clean-92.</li>
-        <li><b>ProFSA audit:</b> its supervised affinity head excludes clean-92, but its released
-            self-supervised train LMDB contains 3/214 evaluable CASF structures
-            (<code>2c3i</code>, <code>3u9q</code>, <code>4rfm</code>), including 2/92 clean structures
-            (<code>2c3i</code>, <code>4rfm</code>); the result is therefore marked as pretraining overlap,
-            not strictly leakage-free.</li>
-        <li><b>CASF-2016 clean-92:</b> no winner highlighted; bootstrap 95% CI on &rho; is about &plusmn;0.14.</li>
         <li><b>2019:</b> partial coverage is excluded from ranking; &dagger; reports |r| / |&rho;| for sign-arbitrary energy scores.</li>
       </ul>
       <div class="table-wrap"><table class="results">
@@ -1862,7 +1951,45 @@ def build():
   </div>
 
   <div class="doc-section">
-    <h2 class="section-head"><span class="sec-num" style="background:#566072">A</span> Appendix &mdash; CASP16 pharmaceutical blind affinity (chymase)</h2>
+    <h2 class="section-head"><span class="sec-num" style="background:#566072">A</span> Appendix &mdash; CASF-2016 protein-similarity diagnostic</h2>
+    <ul class="caption-list">
+      <li><b>Why an appendix:</b> unfiltered CASF-2016 has substantial target-family overlap with
+          LP-PDBBind train, so neither the full core set nor the unfiltered cohort is shown.</li>
+      <li><b>Base cohort:</b> CL3-clean removes every exact CL3 train/validation PDB member from the
+          214 ED/RSCC-evaluable CASF complexes (99 remain before sequence filtering).</li>
+      <li><b>Similarity filter:</b> MMseqs2 maximum protein identity to the 1,559 CL3 training
+          proteins, with &ge;80% query and target coverage and strict thresholds. This leaves 64
+          complexes at &lt;60% identity and 32 at &lt;30% identity.</li>
+      <li><b>Protocol:</b> the same LP-PDBBind-trained models and saved predictions are re-scored;
+          no CASF fitting or retraining is performed. Values are mean &plusmn; population SD over three
+          seeds where available.</li>
+      <li>No winner is highlighted because the filtered cohorts, especially N=29, are too small for
+          a stable method ranking. ProFSA retains a pretraining-overlap badge.</li>
+    </ul>
+
+    <section class="block">
+      <p class="table-title">Figure A1 &nbsp;&middot;&nbsp; CASF-2016 after protein-similarity filtering</p>
+      <div class="table-wrap" style="padding:12px 16px 16px;">
+        {casf_similarity_chart}
+        {casf_similarity_legend}
+      </div>
+    </section>
+
+    <section class="block">
+      <p class="table-title">Table A1 &nbsp;&middot;&nbsp; CASF-2016 strict protein-novel cohorts</p>
+      <div class="table-wrap"><table class="results">
+        <thead>
+          {casf_similarity_table_head()}
+        </thead>
+        <tbody>
+          {casf_similarity_rows()}
+        </tbody>
+      </table></div>
+    </section>
+  </div>
+
+  <div class="doc-section">
+    <h2 class="section-head"><span class="sec-num" style="background:#566072">B</span> Appendix &mdash; CASP16 pharmaceutical blind affinity (chymase)</h2>
     <ul class="caption-list">
       <li><b>Benchmark:</b> CASP16 affinity = 140 targets across two proteins (autotaxin&nbsp;123 + chymase&nbsp;17). The
           <b>density-common subset</b> &mdash; complexes with a deposited experimental structure <i>and</i> electron density &mdash;
@@ -1883,7 +2010,7 @@ def build():
     </ul>
 
     <section class="block">
-      <p class="table-title">Table A1 &nbsp;&middot;&nbsp; CASP16 chymase (L1000) &mdash; held-out affinity (3-seed mean&nbsp;&plusmn;&nbsp;std)</p>
+      <p class="table-title">Table B1 &nbsp;&middot;&nbsp; CASP16 chymase (L1000) &mdash; held-out affinity (3-seed mean&nbsp;&plusmn;&nbsp;std)</p>
       <div class="table-wrap"><table class="results">
         <thead>
           {casp16_table_head()}
@@ -1896,7 +2023,7 @@ def build():
   </div>
 
   <div class="doc-section">
-    <h2 class="section-head"><span class="sec-num" style="background:#566072">B</span> Appendix &mdash; Data processing: density normalization</h2>
+    <h2 class="section-head"><span class="sec-num" style="background:#566072">C</span> Appendix &mdash; Data processing: density normalization</h2>
     <ul class="caption-list">
       <li><b>Input:</b> experimental 2F<sub>o</sub>&minus;F<sub>c</sub>, resampled at the ligand pose.</li>
       <li><b>Issue:</b> heavy positive tail with near-zero and negative noise.</li>
@@ -1927,8 +2054,10 @@ def build():
     print(f"wrote {OUT}  ({len(html)} bytes)")
     methods = all_methods()
     done = sum(1 for m in methods for s, _, _ in SPLITS if load(m, s))
-    casf = sum(1 for m in methods for which, _, _ in CASF_COLS if load_casf(m, which))
-    print(f"  filled LP {done}/{len(methods) * len(SPLITS)} | CASF {casf}/{len(methods) * len(CASF_COLS)}")
+    casf_methods = sum(1 for m in methods
+                       if all(load_casf_similarity(m, cohort) for cohort, _, _ in CASF_SIM_COLS))
+    print(f"  filled LP {done}/{len(methods) * len(SPLITS)} | "
+          f"CASF appendix methods {casf_methods}/{len(methods)} (both similarity cohorts)")
 
 
 if __name__ == "__main__":

@@ -18,6 +18,7 @@ and `plinder_funnel.json` (full provenance funnel).
 |---|---|---|
 | **v1** | 17,721 | `max_res 2.5`, single-ligand, PLINDER `train` split only, `dedup=pdb`, RSCC≥0.8, no cofactors |
 | **v2** | ~10–11K | **no resolution cap** (RSCC≥**0.95** gates), all splits, multi-ligand, `dedup=none`, cofactors admitted, **`cap_per_ccd 1`** (one best-density example per ligand chemotype), **in-vocab C/O/N/S/F/Cl/P filter**. Strict + maximally diverse small set; median res 1.98 Å, median RSCC 0.968. |
+| **v2.4** (`v2p4`) | 102,376 frozen selections; 101,207 loadable positions | v2 decontaminated against all 214 local CASF-2016 evaluation complexes at ID≥30% and ≥80% coverage of the shorter protein sequence. The loader exposes 101,107 train + 100 validation positions and reuses the position-identical v2 density box. |
 
 ## Consumed by
 `dataset/legacy/03b,03c` (and the `build/` pipeline) via `voxbind.splits.frozen_plinder_selection(version=...)`,

@@ -184,6 +184,7 @@ class MAEPrefetcher:
         density_input: bool = True,
         n_lig_ch: int = 7,
         n_poc_ch: int = 4,
+        channel_groups: tuple = None,
     ):
         assert pretext_style in ("mae", "electra", "denoise")
         assert density_source in ("synthetic", "xray"), (
@@ -192,8 +193,8 @@ class MAEPrefetcher:
         assert input_mode in _VALID_INPUT_MODES, (
             f"input_mode={input_mode!r}; expected one of {_VALID_INPUT_MODES}"
         )
-        assert mask_strategy in ("uniform", "atom_biased", "cluster", "ligand", "interface"), (
-            f"mask_strategy={mask_strategy!r}; expected 'uniform', 'atom_biased', 'cluster', 'ligand' or 'interface'"
+        assert mask_strategy in ("uniform", "atom_biased", "cluster", "ligand", "interface", "per_group"), (
+            f"mask_strategy={mask_strategy!r}; expected 'uniform', 'atom_biased', 'cluster', 'ligand', 'interface' or 'per_group'"
         )
         for op in corruption_ops:
             if op not in _RULE_BASED_OPS:
@@ -259,6 +260,9 @@ class MAEPrefetcher:
         self.density_input = bool(density_input)
         self.n_lig_ch = int(n_lig_ch)
         self.n_poc_ch = int(n_poc_ch)
+        # ChannelViT groups (e.g. (7,4,1,1)) — needed by mask_strategy='per_group' to
+        # mask each channel group independently (per-channel-group masking).
+        self.channel_groups = tuple(int(c) for c in channel_groups) if channel_groups else None
         self.layout = _channel_layout(
             input_mode, with_gradmag, gradmag_reconstruct, density_input=self.density_input,
             mask_as_channel=self.mask_as_channel,
@@ -442,9 +446,26 @@ class MAEPrefetcher:
                         self.block_size, ratio,
                         tau=self.mask_atom_tau, generator=self.generator,
                     )
+                elif self.mask_strategy == "per_group":
+                    # Per-channel-group masking: sample an INDEPENDENT spatial block
+                    # mask for each ChannelViT group, so different channel groups get
+                    # DIFFERENT holes. The encoder must inpaint a group's masked region
+                    # from the OTHER groups still visible there (cross-channel inference
+                    # — e.g. recover ligand identity from the surrounding electron
+                    # density). Only meaningful WITH channel separation. Mask (B,C,G³).
+                    assert self.channel_groups is not None, \
+                        "per_group masking needs model.channel_groups"
+                    assert self.apo_prob == 0.0 and not self.contrastive and not self.mask_as_channel, \
+                        "per_group masking is incompatible with apo/contrastive/mask_as_channel"
+                    parts = [
+                        make_block_mask(B, G, self.block_size, ratio, device).expand(-1, g, -1, -1, -1)
+                        for g in self.channel_groups
+                    ]
+                    mask = torch.cat(parts, dim=1)     # (B, sum(groups)=C, G, G, G)
                 else:
                     mask = make_block_mask(B, G, self.block_size, ratio, device)
-                # mask: (B, 1, G, G, G) — broadcasts across all input channels
+                # mask: (B, 1, G, G, G) broadcast across channels, OR (B, C, G, G, G)
+                # per-channel-group (mask_strategy='per_group').
 
                 # apo augmentation (opt-in): for a random `apo_prob` fraction of samples, DELETE
                 # the ligand from the ENCODER INPUT but keep its density as a PREDICTION TARGET —
@@ -625,10 +646,15 @@ def compute_losses(
         out_key = "L_rtd"
     else:
         m = mask.to(out_pretext.dtype)
-        # mask broadcasts across channels: total masked (B,c,pos) entries =
-        # n_masked_spatial × n_channels — keep per-element MSE scale.
-        n_masked_spatial = m.sum().clamp(min=1.0)
         n_channels = out_pretext.shape[1]                     # = n_recon
+        # Two mask shapes are supported. Broadcast (B,1,G³): every channel masked at
+        # the SAME positions → total scored (channel,voxel) entries = m.sum()×n_channels.
+        # Per-channel-group (B,C,G³, mask_strategy='per_group'): each channel masked at
+        # its OWN positions → m.sum() already counts the scored entries. Normalise by the
+        # true entry count so the per-element MSE scale matches across both.
+        per_channel_mask = (m.shape[1] == n_channels and n_channels > 1)
+        n_masked_spatial = m.sum().clamp(min=1.0)
+        masked_entries = n_masked_spatial if per_channel_mask else (n_masked_spatial * n_channels)
         # When gradmag is input-only the head emits n_recon < n_in channels;
         # the recon target is the leading n_recon channels of x_clean (gradmag
         # trails and is excluded). Prefix slice → atom/density indices unchanged.
@@ -662,9 +688,9 @@ def compute_losses(
             w_full = ch_weight.to(diff_sq.device, diff_sq.dtype).view(1, n_channels, 1, 1, 1)
             diff_sq_weighted = diff_sq * w_full
             # Weights are normalized to sum=n_channels, so total mass is preserved.
-            L_pretext = diff_sq_weighted.sum() / (n_masked_spatial * n_channels)
+            L_pretext = diff_sq_weighted.sum() / masked_entries
         else:
-            L_pretext = diff_sq.sum() / (n_masked_spatial * n_channels)
+            L_pretext = diff_sq.sum() / masked_entries
         out_key = "L_dens"
 
         # Per-modality split over the RECONSTRUCTED channels — reported whenever
@@ -679,7 +705,9 @@ def compute_losses(
                     num = (diff_sq[:, c0:c1] * w_full[:, c0:c1]).sum()
                 else:
                     num = diff_sq[:, c0:c1].sum()
-                return num / (n_masked_spatial * (c1 - c0))
+                denom = (m[:, c0:c1].sum().clamp(min=1.0) if per_channel_mask
+                         else n_masked_spatial * (c1 - c0))
+                return num / denom
             if n_atom > 0:
                 losses["L_dens_atom"] = _masked_mean(0, n_atom)
             if n_density > 0:
@@ -1439,7 +1467,7 @@ def run(cfg: DictConfig, method: str) -> None:
             _wandb_name = _re.sub(r"^\d{6}_", "", cfg.exp_name)
             wandb.init(
                 project=cfg.get("wandb_project", "binding-affinity"),
-                entity="eddy26",
+                entity=cfg.get("wandb_entity", None),
                 config=OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True),
                 name=_wandb_name,
                 tags=_tags,
@@ -1816,6 +1844,8 @@ def run(cfg: DictConfig, method: str) -> None:
             density_input=bool(cfg.mae.get("density_input", True)),
             n_lig_ch=int(cfg.model.get("n_channels_ligand", 7)),
             n_poc_ch=int(cfg.model.get("n_channels_pocket", 4)),
+            channel_groups=(tuple(int(c) for c in cfg.model.channel_groups)
+                            if cfg.model.get("channel_groups", None) else None),
         )
         train_metrics, global_step = spec.train_epoch(
             cfg, prefetcher, model_train, optimizer, model_ema, device, global_step,

@@ -1,0 +1,57 @@
+{
+  "funnel": [
+    {
+      "stage": "all",
+      "ligand_instances": 1357906,
+      "unique_pdb": 143800
+    },
+    {
+      "stage": "X-ray diffraction",
+      "ligand_instances": 1046290,
+      "unique_pdb": 128915
+    },
+    {
+      "stage": "proper & !ion/artifact/cofactor",
+      "ligand_instances": 300276,
+      "unique_pdb": 85476
+    },
+    {
+      "stage": "!invalid & rdkit_loadable",
+      "ligand_instances": 289986,
+      "unique_pdb": 84323
+    },
+    {
+      "stage": "6 <= heavy <= 50",
+      "ligand_instances": 259509,
+      "unique_pdb": 76432
+    },
+    {
+      "stage": "!covalent",
+      "ligand_instances": 197369,
+      "unique_pdb": 66825
+    },
+    {
+      "stage": "exclude downstream-test",
+      "ligand_instances": 166448,
+      "unique_pdb": 53663
+    },
+    {
+      "stage": "unresolved_heavy == 0",
+      "ligand_instances": 153270,
+      "unique_pdb": 51879
+    },
+    {
+      "stage": "RSCC >= 0.8",
+      "ligand_instances": 113976,
+      "unique_pdb": 41833
+    },
+    {
+      "stage": "exclude CASF-2016 ID30 homologs (shorter coverage >= 80%)",
+      "ligand_instances": 102376,
+      "unique_pdb": 35746
+    }
+  ],
+  "n_selected": 102376,
+  "n_unique_pdb": 35746,
+  "n_chemotypes": 17574
+}

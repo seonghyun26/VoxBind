@@ -15,6 +15,7 @@ defaults:
 debug: false
 wandb: true
 wandb_tags: []
+wandb_entity: eddy26      # target the eddy26 team/workspace (requires the wandb login to be an eddy26 member)
 num_workers: 16
 prefetch_factor: 8
 resume: null

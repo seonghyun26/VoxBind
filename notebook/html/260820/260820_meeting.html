@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VoxBind Meeting · 260820</title>
+<style>
+  :root {
+    --ink: #1c2433;
+    --ink-soft: #5b6678;
+    --ink-faint: #7a8699;
+    --line: #e3e7ee;
+    --line-strong: #aeb6c4;
+    --bg: #f5f6f8;
+    --card: #ffffff;
+    --accent: #2f6f4f;
+    --accent-bg: #eaf5ee;
+    --blue: #38559b;
+    --blue-bg: #e7eefb;
+    --shadow: 0 1px 2px rgba(20,30,50,.04), 0 8px 24px rgba(20,30,50,.05);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 16px; line-height: 1.55; -webkit-font-smoothing: antialiased;
+  }
+  .page { display: flex; flex-direction: column; max-width: 1280px; margin: 0 auto; padding: 48px 24px 96px; }
+  header.doc { border-bottom: 2px solid var(--ink); padding-bottom: 20px; margin-bottom: 40px; }
+  .eyebrow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px;
+             color: var(--ink-soft); font-size: 13px; letter-spacing: .11em; text-transform: uppercase; }
+  .status { display: inline-flex; align-items: center; gap: 7px; padding: 3px 10px; border-radius: 999px;
+            background: var(--accent-bg); color: #1d5a3a; font-size: 11px; font-weight: 720; letter-spacing: .07em; }
+  .status::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+  header.doc h1 { max-width: 1050px; margin: 0; font-size: clamp(28px, 4vw, 42px); line-height: 1.13;
+                  font-weight: 680; letter-spacing: -.025em; }
+  header.doc .lead { max-width: 1040px; margin: 13px 0 0; color: var(--ink-soft); font-size: 15px; line-height: 1.65; }
+  .doc-section { margin-bottom: 68px; }
+  .section-head { display: flex; align-items: center; gap: 14px; margin: 0 0 28px; padding-bottom: 12px;
+                  border-bottom: 2px solid var(--line-strong); font-size: 23px; line-height: 1.25;
+                  font-weight: 680; letter-spacing: -.015em; }
+  .sec-num { display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; width: 31px; height: 31px;
+             border-radius: 8px; background: var(--accent); color: #fff; font-size: 15px; font-weight: 760; }
+  .section-intro { max-width: 1100px; margin: -5px 0 24px; color: var(--ink-soft); font-size: 13.7px; line-height: 1.65; }
+  .block { margin: 0 0 34px; }
+  .subsection-head { display: flex; align-items: center; gap: 10px; margin: 0 0 9px; font-size: 17px; font-weight: 680; }
+  .sub-lab { display: inline-flex; align-items: center; justify-content: center; min-width: 34px; height: 23px;
+             padding: 0 8px; border-radius: 6px; background: #eef1f6; color: var(--ink-soft);
+             font-size: 11px; font-weight: 760; }
+  .table-sub { max-width: 1100px; margin: 0 0 17px; color: var(--ink-soft); font-size: 13.3px; line-height: 1.6; }
+  .criteria { margin: 0 0 19px; padding: 14px 18px 10px 36px; border-left: 4px solid var(--accent);
+              border-radius: 8px; background: var(--card); color: var(--ink-soft); font-size: 13px; line-height: 1.55; }
+  .criteria li { margin: 0 0 5px; }
+  .criteria b { color: var(--ink); font-weight: 680; }
+  .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px;
+                background: var(--card); box-shadow: var(--shadow); }
+  table.results { width: 100%; min-width: 680px; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  table.results th, table.results td { padding: 10px 8px; text-align: center; white-space: nowrap; }
+  table.results thead th { border-bottom: 1px solid var(--line); background: #fafbfc; color: var(--ink-soft);
+                          font-size: 10.7px; line-height: 1.35; font-weight: 650; letter-spacing: .025em; }
+  table.results thead th.grp { background: #f2f4f7; color: var(--ink-soft); font-size: 10.2px;
+                               letter-spacing: .085em; text-transform: uppercase; }
+  table.results thead th.stub { vertical-align: bottom; }
+  table.results tbody tr { border-top: 1px solid var(--line); }
+  table.results tbody tr:first-child { border-top: 0; }
+  table.results tbody tr:hover { background: #fbfcfd; }
+  table.results tbody tr.best-row { background: #f8fcf9; }
+  table.results tbody tr.best-row:hover { background: #f2f8f4; }
+  .col-method { min-width: 174px; text-align: left !important; }
+  td.col-method { font-size: 12.3px; font-weight: 650; }
+  .method-note { display: block; margin-top: 2px; color: var(--ink-faint); font-size: 10.5px; font-weight: 520; }
+  .tag { display: inline-flex; margin-left: 5px; padding: 1px 6px; border-radius: 999px;
+         background: var(--blue-bg); color: var(--blue); font-size: 9px; font-weight: 760;
+         letter-spacing: .04em; text-transform: uppercase; vertical-align: 1px; }
+  .tag.best { background: var(--accent-bg); color: var(--accent); }
+  .placeholder { color: #a3acb9; }
+  code { padding: 1px 5px; border-radius: 4px; background: #f0f2f5; font-size: .92em; }
+  footer { margin-top: 62px; padding-top: 18px; border-top: 1px solid var(--line-strong);
+           color: var(--ink-faint); font-size: 10.8px; line-height: 1.6; }
+  @media (max-width: 620px) {
+    .page { padding: 30px 14px 70px; }
+    header.doc h1 { font-size: 29px; }
+  }
+  @media print {
+    body { background: #fff; }
+    .page { max-width: none; padding: 20px; }
+    .table-wrap { box-shadow: none; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <header class="doc">
+    <div class="eyebrow">
+      <span>Meeting note · 2026-08-20</span>
+      <span class="status">generation</span>
+    </div>
+    <h1>Drug generation and MCP generation</h1>
+    <p class="lead">Current drug-generation results and the MCP benchmark.</p>
+  </header>
+
+  <section class="doc-section" id="drug-generation">
+    <h2 class="section-head"><span class="sec-num">1</span>Drug generation</h2>
+    <p class="section-intro">Baseline, DecompDiff, and the current best density-conditioned trial.</p>
+
+    <section class="block" id="generation-performance">
+      <h3 class="subsection-head"><span class="sub-lab">1.1</span>Performance</h3>
+      <p class="table-sub">Vina and HA cells read <b>mean / median</b>. Lower Vina is better.</p>
+      <div class="table-wrap">
+        <table class="results">
+          <thead>
+            <tr>
+              <th class="col-method stub" rowspan="2">Method</th>
+              <th class="grp" colspan="3">Sample quality</th>
+              <th class="grp" colspan="4">Drug-likeness</th>
+              <th class="grp" colspan="4">Vina evaluation · mean / median</th>
+            </tr>
+            <tr>
+              <th>Validity</th><th>Unique</th><th>Diversity</th>
+              <th>QED</th><th>SA</th><th>logP</th><th>Lipinski</th>
+              <th>score</th><th>min</th><th>dock</th><th>HA</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="col-method">Baseline <span class="tag">reproduced</span><span class="method-note">Vanilla VoxBind</span></td>
+              <td>0.9986</td><td>1.000</td><td>0.741</td><td>0.557</td><td>0.688</td><td>2.57</td><td>4.65</td>
+              <td>−5.256 / −6.604</td><td>−6.837 / −7.005</td><td>−7.981 / −8.022</td><td>65.3% / 70.0%</td>
+            </tr>
+            <tr>
+              <td class="col-method">DecompDiff<span class="method-note">ref-informed · 25 samples/pocket</span></td>
+              <td class="placeholder">—</td><td>0.964</td><td>0.852</td><td>0.485</td><td>0.650</td><td>1.17</td><td>4.40</td>
+              <td>−5.278 / −5.507</td><td>−6.168 / −6.129</td><td>−7.258 / −7.449</td><td>49.2% / 50.0%</td>
+            </tr>
+            <tr class="best-row">
+              <td class="col-method">Best trial <span class="tag best">Trial 1</span><span class="method-note">Frozen atomblob7 v2.1 · σ0.9</span></td>
+              <td>0.9990</td><td>1.000</td><td>0.710</td><td>0.523</td><td>0.677</td><td>2.62</td><td>4.52</td>
+              <td><b>−5.513 / −7.526</b></td><td><b>−7.090 / −8.036</b></td><td><b>−8.238 / −8.750</b></td><td><b>67.5% / 74.0%</b></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="block" id="generation-similarity">
+      <h3 class="subsection-head"><span class="sub-lab">1.2</span>Similarity</h3>
+      <p class="table-sub"><b>Main metrics</b> summarize 2D structure, scaffold identity, and 3D shape. <b>Sub metrics</b> check fingerprint sensitivity. Similarity cells read <b>mean / max</b>.</p>
+      <ul class="criteria">
+        <li><b>Morgan:</b> ECFP radius 2, 2,048-bit fingerprint; Tanimoto similarity.</li>
+        <li><b>MACCS:</b> 167 structural keys; Tanimoto similarity.</li>
+        <li><b>AtomPair:</b> hashed 2,048-bit atom-pair fingerprint; Tanimoto similarity.</li>
+        <li><b>RDKit:</b> topological path fingerprint; Tanimoto similarity.</li>
+        <li><b>Dice:</b> count-based Morgan radius 2 fingerprint; Dice similarity.</li>
+        <li><b>Scaffold match:</b> exact canonical Bemis–Murcko scaffold match rate.</li>
+        <li><b>3D shape:</b> RDKit shape Tanimoto in the shared pocket frame, without alignment.</li>
+        <li><b>Aggregation:</b> compute mean and maximum against the reference within each pocket, then macro-average across pockets.</li>
+      </ul>
+      <div class="table-wrap">
+        <table class="results">
+          <thead>
+            <tr>
+              <th class="col-method stub" rowspan="2">Method</th>
+              <th class="grp" colspan="3">Main metrics</th>
+              <th class="grp" colspan="4">Sub metrics · mean / max</th>
+            </tr>
+            <tr>
+              <th>Morgan<br>mean / max</th><th>Scaffold<br>match</th><th>3D shape<br>mean / max</th>
+              <th>MACCS</th><th>AtomPair</th><th>RDKit</th><th>Dice</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="col-method">Baseline <span class="tag">reproduced</span><span class="method-note">Vanilla VoxBind</span></td>
+              <td>0.098 / 0.261</td><td>0.85%</td><td>0.375 / 0.540</td>
+              <td>0.349 / 0.645</td><td>0.204 / 0.407</td><td>0.235 / 0.441</td><td>0.204 / 0.439</td>
+            </tr>
+            <tr>
+              <td class="col-method">DecompDiff<span class="method-note">ref-informed · 25 samples/pocket</span></td>
+              <td>0.156 / 0.314</td><td>2.29%</td><td>0.545 / 0.638</td>
+              <td>0.448 / 0.662</td><td>0.278 / 0.475</td><td>0.283 / 0.471</td><td>0.293 / 0.505</td>
+            </tr>
+            <tr class="best-row">
+              <td class="col-method">Best trial <span class="tag best">Trial 1</span><span class="method-note">Frozen atomblob7 v2.1 · σ0.9</span></td>
+              <td>0.099 / 0.248</td><td>0.82%</td><td>0.401 / 0.564</td>
+              <td>0.362 / 0.631</td><td>0.212 / 0.394</td><td>0.243 / 0.442</td><td>0.208 / 0.426</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <ul class="criteria">
+      <li><b>VoxBind:</b> 79 CrossDocked pockets × 100 valid-unique molecules; pocket-level aggregation.</li>
+      <li><b>DecompDiff:</b> current ref-informed reproduction on 98 pockets, up to 25 molecules per pocket; true generation validity was not logged.</li>
+      <li><b>Similarity:</b> per-pocket means and maxima, then macro-average; 3D shape uses the shared pocket frame without alignment.</li>
+    </ul>
+  </section>
+
+  <section class="doc-section" id="mcp-generation">
+    <h2 class="section-head"><span class="sec-num">2</span>MCP generation</h2>
+    <p class="section-intro">Reference results from the <a href="https://arxiv.org/abs/2511.15906" target="_blank" rel="noopener">FuncBind MCP benchmark</a>.</p>
+    <section class="block">
+      <h3 class="subsection-head"><span class="sub-lab">2.1</span>Baseline comparison</h3>
+      <p class="table-sub">RMSD is in Å. Residues TS ≥ 0.5 and Vina improved are percentages.</p>
+      <div class="table-wrap">
+        <table class="results">
+          <thead>
+            <tr>
+              <th class="col-method">Method</th>
+              <th>TS ↑</th>
+              <th>Residues<br>TS ≥ 0.5 ↑</th>
+              <th>L-RMSD ↓</th>
+              <th>I-RMSD ↓</th>
+              <th>TM-score ↑</th>
+              <th>Vina<br>improved ↑</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="col-method">RFPeptide</td>
+              <td>0.31</td><td>29</td><td>12.0</td><td>3.3</td><td>0.33</td><td>8.8</td>
+            </tr>
+            <tr>
+              <td class="col-method">AfCycDesign</td>
+              <td>0.34</td><td>29</td><td>7.6</td><td>3.7</td><td>0.33</td><td>29</td>
+            </tr>
+            <tr class="best-row">
+              <td class="col-method">FuncBind <span class="tag best">paper</span></td>
+              <td>0.33</td><td>25</td><td><b>2.6</b></td><td><b>1.8</b></td><td><b>0.36</b></td><td><b>41</b></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <ul class="criteria">
+        <li><b>RFPeptide / AfCycDesign:</b> canonical amino acids with N-to-C cyclization.</li>
+        <li><b>FuncBind:</b> all-atom generation with non-canonical amino-acid support.</li>
+      </ul>
+    </section>
+  </section>
+
+  <footer>260820 · Drug generation · MCP generation</footer>
+</div>
+</body>
+</html>

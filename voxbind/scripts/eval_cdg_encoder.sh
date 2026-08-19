@@ -3,8 +3,9 @@
 # Extracts frozen mean-pool features on lp_edrscc_v2, then trains the probe head
 # with BOTH the plain-MSE recipe and the winning MSE+Pearson-corr aux recipe.
 #
-#   bash scripts/eval_cdg_encoder.sh <RUN_NAME> <EPOCH> <GPU> [AUX_WEIGHT]
+#   bash scripts/eval_cdg_encoder.sh <RUN_NAME> <EPOCH> <GPU> [AUX_WEIGHT] [CONDITION]
 #   e.g. bash scripts/eval_cdg_encoder.sh 260806_cdg_100m_v2_d2vaux05 49 0
+#   no-gradmag encoder (12-ch [7,4,1]):  bash scripts/eval_cdg_encoder.sh <RUN> 49 0 5 atomblob_density
 #
 # Champion reference: mse 0.644 / mse+corr 0.647 (test Spearman).
 set -uo pipefail
@@ -12,12 +13,16 @@ RUN="${1:?run name (exps/<RUN>)}"
 EP="${2:?epoch}"
 GPU="${3:?gpu id for feature extraction}"
 AUXW="${4:-5}"
-PY=/home/shpark/.conda/envs/voxbind/bin/python
+COND="${5:-atomblob_density_gradmag}"      # 13-ch CDG default; atomblob_density = 12-ch (no gradmag)
+# Cap CPU: torch defaults to ALL cores → probe head-training + voxelization can hog 15-20
+# cores each and drive load >100 (esp. several probes in parallel). Pin to 2 threads + nice.
+export OMP_NUM_THREADS=2 MKL_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2 NUMEXPR_NUM_THREADS=2
+PY="nice -n 19 /home/shpark/.conda/envs/voxbind/bin/python"
 cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 1
 TAG="$RUN"
-COND=atomblob_density_gradmag
+SEEDS="${6:-5}"                            # probe-head seeds (0..SEEDS-1); 5 to match the baselines
 COMMON=(--conditions "$COND" --epoch "$EP" --voxel_version v5 --split lp_edrscc_v2 \
-        --feature_tag "$TAG" --exp_dir "exps/$RUN" --allow_stale_features)
+        --feature_tag "$TAG" --exp_dir "exps/$RUN" --allow_stale_features --seeds "$SEEDS")
 
 echo "==== [1/3] extract features: $RUN e$EP on cuda:$GPU ===="
 CUDA_VISIBLE_DEVICES="$GPU" "$PY" dataset/01c_pdbbind_probe.py features \

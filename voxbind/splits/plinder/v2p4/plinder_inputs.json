@@ -1,0 +1,67 @@
+{
+  "name": "plinder_v2p4",
+  "description": "PLINDER v2.4: v2 per-element corpus decontaminated against the 214-complex CASF-2016 evaluation cohort at ID30.",
+  "plinder_bucket": "gs://plinder/2024-06/v2",
+  "selection_csv": "plinder_selected.csv",
+  "selection_sha256": "c81498c89a6f9fe0693d4123bf25b5b167f83d621b5605dfc1cb05c655939dbc",
+  "n_selected": 102376,
+  "filters": {
+    "min_rscc": 0.8,
+    "max_res": 0,
+    "min_heavy": 6,
+    "max_heavy": 50,
+    "single_ligand": false,
+    "allow_covalent": false,
+    "plinder_splits": [],
+    "dedup": "none",
+    "in_vocab_filter": false,
+    "casf2016_sequence_decontamination": {
+      "cohort": "voxbind/splits/casf2016_eval.csv (214 complexes)",
+      "identity_min_percent": 30.0,
+      "shorter_sequence_coverage_min_percent": 80.0,
+      "policy": "drop every ligand observation from a PDB with any qualifying protein-chain hit",
+      "removed_unique_pdb": 6087,
+      "removed_manifest_positions": 11526
+    }
+  },
+  "build": {
+    "shuffle_seed": 1234,
+    "val_tail": 100,
+    "max_len": 30,
+    "norm_version": "v6_arcsinh_z",
+    "pocket_radius": 10.0,
+    "frame": "deposited (transform=None)"
+  },
+  "leakage_holdout": {
+    "pdbbind_index_csv": {
+      "path": "dataset/data/pdbbind/index.csv",
+      "sha256": "cec303f95411b6acfc22fc6fbd58b89118b84f2625547d8bed7dc6fff79303e9"
+    },
+    "misato_pool_pids": {
+      "path": "dataset/data/misato/pool_pids.txt",
+      "sha256": "a76bf32fd8f0b90b4c626ff0ba650e3ee0ae54c9085e1ad408141d079b9d2d72"
+    },
+    "crossdocked_test_pt": {
+      "path": "dataset/data/data_test.pt",
+      "sha256": "24579bc2725b0b80b3a0e65fef649baab9e34fbb3f79ce92c0c4a5b1a9c2d2e8"
+    },
+    "casf2016_eval_csv": {
+      "path": "voxbind/splits/casf2016_eval.csv",
+      "sha256": "b88e3d9730b00c5a326e44cb8d0ef868ab6138e2d98f740afee28566122eecc7"
+    },
+    "plinder_v2_chain_fasta": {
+      "path": "base/openbind/leakage/plinder_v2_pretrain.fasta",
+      "sha256": "967c104d2b53d2bb41f3a163e8d792b17783d3ac2855badc540db8353fb2e68d"
+    }
+  },
+  "note": "CASF-clean v2.4 reuses v2 tuples and the position-aligned density box; the v2.4 manifest availability mask is the authoritative load-time filter.",
+  "source_version": "v2",
+  "materialized_loader": {
+    "source_manifest_positions": 112733,
+    "retained_manifest_positions": 101207,
+    "subset_n": 101107,
+    "subset_val_n": 100,
+    "source_data_file": "voxbind/dataset/data/pretrain/data_train_plinder_v2_perelem.pt",
+    "resample_dir": "voxbind/dataset/data/pretrain/xray_resample_plinder_v2p4_perelem"
+  }
+}

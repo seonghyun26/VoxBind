@@ -97,9 +97,17 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+import os as _os
+# CPU thread cap (probe = tiny MLP head + voxelization on CPU; torch/numpy default to ALL
+# cores → load >100 with several probes in parallel). Env MUST precede numpy/torch import;
+# torch.set_num_threads below is belt-and-braces. Respects an explicit higher override.
+for _v in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS", "NUMEXPR_NUM_THREADS"):
+    _os.environ.setdefault(_v, "2")
+
 import numpy as np
 import pandas as pd
 import torch
+torch.set_num_threads(int(_os.environ.get("OMP_NUM_THREADS", "2")))
 import torch.nn as nn
 import torch.nn.functional as F
 from omegaconf import OmegaConf
@@ -127,9 +135,9 @@ FEAT_DIR    = PDBBIND_DIR / "features"
 LP_CSV      = PDBBIND_DIR / "raw" / "LP_PDBBind.csv"
 RESULTS_DIR = PDBBIND_DIR / "results"          # per-run probe/finetune CSVs (own subfolder)
 RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-# Focused meeting-doc folder — default sink for single-seed scatter CSVs (pred vs true pK),
-# i.e. they land next to 260625_meeting.html / autoresearch.html. Override with --scatter_dir.
-MEETING_DIR = Path(__file__).resolve().parents[2] / "notebook" / "html" / "260625"
+# Canonical sink for single-seed per-complex predictions (pred vs true pK).
+# Keep generated data out of the dated meeting-report directory. Override with --scatter_dir.
+SCATTER_DIR = RESULTS_DIR / "scatter"
 # Per-complex protein-ligand H-bond counts (HBGSA cache, npz field `n`); used as an
 # alternative regression target via `probe --target hbonds`.
 HBOND_CACHE_DIR = Path(__file__).resolve().parents[2] / "hbgsa_baseline" / "cache" / "hbonds"
@@ -2785,10 +2793,10 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Override results CSV path")
     pr.add_argument("--no_write_csv",  action="store_true",
                     help="Print seed/summary metrics but do not write a results CSV.")
-    pr.add_argument("--scatter_dir",   default=str(MEETING_DIR),
+    pr.add_argument("--scatter_dir",   default=str(SCATTER_DIR),
                     help="Directory for the per-sample SINGLE-SEED scatter CSV (pid,y_true,y_pred). "
-                         "Defaults under the focused meeting doc (notebook/html/260625/), next to "
-                         "260625_meeting.html. Use --no_scatter to skip.")
+                         "Defaults to the canonical pdbbind results/scatter directory. "
+                         "Use --no_scatter to skip.")
     pr.add_argument("--scatter_seed",  type=int, default=0,
                     help="Which seed's held-out test predictions to dump for the scatter CSV (default 0).")
     pr.add_argument("--no_scatter",    action="store_true",

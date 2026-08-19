@@ -24,7 +24,8 @@ HERE = Path(__file__).resolve().parent
 DEFAULT_ROOT = HERE / "data" / "bdb2020plus"
 DEFAULT_SOURCE = DEFAULT_ROOT / "raw" / "BDB2020+"
 OFFICIAL_ARCHIVE_URL = (
-    "https://github.com/THGLab/LP-PDBBind/raw/main/BDB2020%2B/BDB2020%2B.tgz"
+    "https://raw.githubusercontent.com/THGLab/LP-PDBBind/"
+    "master/dataset/BDB2020%2B.tgz"
 )
 
 
@@ -116,11 +117,26 @@ def stage(source_dir: Path, output_root: Path, cutoff: float) -> None:
             f"expected BDB2020+.csv and dataset/ below {source_dir}"
         )
 
-    labels = pd.read_csv(labels_path)
+    upstream_labels = pd.read_csv(labels_path)
     required = {"pdbid", "value", "accurate", "pKa"}
-    missing = required.difference(labels.columns)
+    missing = required.difference(upstream_labels.columns)
     if missing:
         raise ValueError(f"missing official label columns: {sorted(missing)}")
+
+    # The paper's benchmark is the accurate-affinity subset.  The currently
+    # released CSV already contains exactly those 115 rows, but filter
+    # explicitly so a future archive containing the wider candidate pool can
+    # never silently change the evaluated cohort.
+    accurate = (
+        upstream_labels["accurate"]
+        .astype(str)
+        .str.strip()
+        .str.lower()
+        .isin({"true", "1", "yes"})
+    )
+    labels = upstream_labels[accurate].copy().reset_index(drop=True)
+    if labels.empty:
+        raise ValueError("BDB2020+ contains no rows with accurate=True")
     if labels["pdbid"].str.lower().duplicated().any():
         raise ValueError("BDB2020+ contains duplicate PDB IDs")
 
@@ -153,7 +169,7 @@ def stage(source_dir: Path, output_root: Path, cutoff: float) -> None:
                     "benchmark": "BDB2020+",
                     "source_pdb_id": source_id,
                     "value": float(record["value"]),
-                    "accurate": bool(record["accurate"]),
+                    "accurate": True,
                     "n_pocket_atoms": n_pocket_atoms,
                     "note": "",
                 }
@@ -168,7 +184,7 @@ def stage(source_dir: Path, output_root: Path, cutoff: float) -> None:
                     "benchmark": "BDB2020+",
                     "source_pdb_id": source_id,
                     "value": float(record["value"]),
-                    "accurate": bool(record["accurate"]),
+                    "accurate": True,
                     "n_pocket_atoms": 0,
                     "note": str(exc),
                 }
@@ -187,6 +203,7 @@ def stage(source_dir: Path, output_root: Path, cutoff: float) -> None:
         "source_archive": str(archive_path.resolve()) if archive_path.exists() else None,
         "source_archive_sha256": sha256(archive_path) if archive_path.exists() else None,
         "pocket_cutoff_angstrom": cutoff,
+        "n_upstream_rows": len(upstream_labels),
         "n_official": len(labels),
         "n_staged": len(rows) - len(failures),
         "n_failed": len(failures),

@@ -36,6 +36,7 @@
   tr.grp-label td { background:#f4f7fb; text-align:left; font-size:10.5px; letter-spacing:.1em; text-transform:uppercase;
     color:var(--ink-soft); font-weight:700; padding:7px 12px; border-top:2px solid var(--line-strong); }
   .v1 { color:#1a7f37; font-weight:600; } .v2 { color:#bc4c00; font-weight:600; } .v21 { color:#2b5fd0; font-weight:600; }
+  .v24 { color:#0f766e; font-weight:650; }
   .v22 { color:#8e44ad; font-weight:600; } .v4 { color:#0b7285; font-weight:650; }
   .v2p2 { color:#b5179e; font-weight:600; }
   .yes { color:var(--good); font-weight:600; } .no { color:var(--bad); } .mut { color:var(--ink-soft); font-size:12.5px; }
@@ -56,12 +57,13 @@
 </head><body><div class="page">
 
 <header class="doc">
-  <div class="date">2026 · 08 · 01 — Datasets</div>
+  <div class="date">2026 · 08 · 14 — Datasets</div>
   <h1>Density-pretrain dataset versions</h1>
   <p class="lead">Ligand-matched X-ray electron-density corpora for VoxBind MAE pretraining. Frozen affinity probe on
     <code>lp_edrscc_v2</code> (Kd/Ki; 3850/817/1320); all metrics = 3 probe seeds (Pearson&nbsp;r / Spearman&nbsp;&rho; / RMSE).
-    <span class="mut">The v4 apo/holo pocket-state corpus &mdash; built + trained but below champion, parked &mdash; is in
-    <a href="#appendix-v4">Appendix&nbsp;A</a>.</span></p>
+    <span class="mut"><a href="#plinder-v2p4">PLINDER v2.4</a> is the materialized, loader-validated
+    CASF-2016 ID30-clean derivative of v2; it has not yet been pretrained or evaluated. The v4 apo/holo pocket-state
+    corpus &mdash; built + trained but below champion, parked &mdash; is in <a href="#appendix-v4">Appendix&nbsp;A</a>.</span></p>
 </header>
 
 <div class="doc-section">
@@ -71,6 +73,8 @@
     <p class="table-sub">v1 = curated · v2 = max-coverage · <span class="v21">v2.1</span> = curated at scale ·
       <span class="v2p2">v2.2</span> = v2 in-vocab-only (7-element ligand vocab, out-of-vocab complexes dropped) ·
       <span class="v22">v3</span> = density-pose-diverse holo. Counts are frozen from the local-density build.
+      <span class="v24">v2.4</span> is not a new density recipe: it is a CASF sequence-decontaminated view of v2 and is
+      documented separately below.
       The v4 apo/holo pocket-state corpus is in <a href="#appendix-v4">Appendix&nbsp;A</a>.</p>
     <div class="table-wrap">
     <table class="results">
@@ -130,11 +134,53 @@
       Measured density-crop correlation: symmetry copies <b>0.86</b> (10/40 exactly 1.0) vs &gt;1&nbsp;&Aring;-pose copies <b>0.40</b>
       (cross-ligand baseline 0.005) &mdash; so duplicates are mostly redundant, but a minority are real alternate-pose density.
     </div>
+
+    <section class="block" id="plinder-v2p4" style="margin-top:36px">
+      <p class="table-title">Table 2 &nbsp;&middot;&nbsp; <span class="v24">PLINDER v2.4</span> &mdash; CASF-2016 ID30-clean pretraining corpus</p>
+      <p class="table-sub">A frozen v2 loader view for future CASF-2016 evaluation. The benchmark source has 285
+        complexes; the filter targets all <b>214 complexes in the local electron-density/RSCC-evaluable cohort</b>.
+        This is pretraining-side decontamination, not a new model result.</p>
+      <div class="card" style="border-color:#9bd4c8;background:#eef9f6">
+        <p><span class="pill keep">ready</span>&nbsp; <b>Materialized and loader-smoke validated.</b>
+          Train/validation expose 101,107/100 positions with valid 64<sup>3</sup> density and gradient-magnitude tensors.
+          <b>No encoder has been trained on v2.4 yet</b>, so the probe and held-out scores elsewhere in this report remain
+          results from v1/v2/v2.1/v2.2/v3, not v2.4.</p>
+      </div>
+      <div class="table-wrap">
+      <table class="results">
+        <thead><tr><th class="col-method">stage / contract</th><th>positions</th><th>unique PDB</th><th>rule / note</th></tr></thead>
+        <tbody>
+          <tr><td class="col-method">source v2 loader manifest</td><td>112,733</td><td>41,677</td><td class="mut">actual loadable per-element positions</td></tr>
+          <tr><td class="col-method"><span class="pill drop">excluded</span> CASF ID30 neighbors</td><td><b>11,526</b></td><td><b>6,087</b></td><td class="mut">drop the entire PLINDER PDB if any protein chain qualifies</td></tr>
+          <tr><td class="col-method"><span class="v24">v2.4 retained</span></td><td class="best"><b>101,207</b></td><td class="best"><b>35,590</b></td><td class="mut">101,107 train + 100 validation</td></tr>
+          <tr><td class="col-method">sequence threshold</td><td colspan="2">identity &ge;30%</td><td class="mut">DIAMOND sensitive search; alignment covers &ge;80% of the shorter sequence</td></tr>
+          <tr><td class="col-method">frozen selection CSV</td><td>102,376</td><td>35,746</td><td class="mut">pre-build ligand instances; loader structure/size/tail gates explain the larger count</td></tr>
+          <tr><td class="col-method">density storage</td><td colspan="2" class="yes">0 incremental box bytes</td><td class="mut">position-identical v2 <code>box116.dat</code> is hard-linked; the manifest <code>ok</code> mask is authoritative</td></tr>
+        </tbody>
+      </table>
+      </div>
+      <div class="notes">
+        <b>Why sequence filtering:</b> exact-PDB comparison found only 5/214 CASF structures in v2, but exact IDs do not
+        exclude homologous proteins. v2.4 searches every PLINDER-v2 protein chain against every chain from the 214-complex
+        cohort; one qualifying hit removes <i>all</i> ligand observations from that PLINDER PDB. This makes v2.4 suitable
+        as the <b>pretraining corpus</b> for a sequence-isolated CASF run. A complete leakage claim must still audit the
+        downstream supervised affinity train/validation sets and any other pretrained baseline components.
+        <ul>
+          <li><b>Frozen definition:</b> <a href="../../voxbind/splits/plinder/v2p4/README.md"><code>splits/plinder/v2p4/README.md</code></a>
+            · <a href="../../voxbind/splits/plinder/v2p4/casf_id30_audit.json"><code>casf_id30_audit.json</code></a>
+            · per-PDB witnesses in <code>casf_id30_matches.tsv</code>.</li>
+          <li><b>Build / validate:</b> <a href="../../voxbind/dataset/plinder/02b_make_v2p4_casf_clean.py"><code>02b_make_v2p4_casf_clean.py</code></a>
+            · <a href="../../voxbind/dataset/plinder/validate_v2p4.py"><code>validate_v2p4.py</code></a>.</li>
+          <li><b>Training config:</b> <a href="../../voxbind/configs/dset/plinder_v2p4_box.yaml"><code>configs/dset/plinder_v2p4_box.yaml</code></a>
+            (<code>n_lig_ch=8</code>, <code>subset_n=101107</code>, <code>subset_val_n=100</code>).</li>
+        </ul>
+      </div>
+    </section>
   </section>
 </div>
 
 <div class="doc-section">
-  <h2 class="section-head"><span class="sec-num">2</span> Build lineage &amp; the v2 audit</h2>
+  <h2 class="section-head"><span class="sec-num">2</span> Build lineage, the v2 audit &amp; v2.4 decontamination</h2>
   <div class="card">
     <p><span class="v1">v1 &rarr; v2</span> &nbsp;<span class="pill drop">removed filters</span>&nbsp; 17.7K &rarr; 113.9K by
       dropping the resolution cap, dedup, single-ligand, in-vocab and train-only restrictions. <b>Cost:</b> 59% of crops
@@ -143,6 +189,10 @@
       audit: pocket RSCC &ge; 0.8 (&minus;111), resolution &le; 2.5 &Aring; (&minus;25,939), dedup by PDB+CCD
       (&minus;50,041 redundant copies) &rarr; <b>37,859 clean crops (~2.2&times; v1)</b>. Kept v2's multi-ligand +
       all-splits + diverse vocab (so 4 recipe axes still differ from v1).</p>
+    <p><span class="v2">v2</span> <span class="v24">&rarr; v2.4</span> &nbsp;<span class="pill keep">CASF ID30-clean</span>&nbsp;
+      Independent branch from the actual 112,733-position v2 loader manifest: remove 11,526 positions from 6,087 PDBs
+      with a &ge;30% identity / &ge;80%-shorter-coverage chain match to local CASF-2016 (214), retaining
+      <b>101,207 positions from 35,590 PDBs</b>. Atom tuples and density rows are unchanged.</p>
   </div>
   <div class="notes"><b>Why v2's &ldquo;6.5&times;&rdquo; was mostly illusory:</b>
     <ul>
@@ -221,15 +271,18 @@
       <li><b>Clean &ne; enough:</b> clean-37K (0.632) &lt; noisy-112K champion (0.644) &mdash; size dominates; the champion's edge is raw scale.</li>
       <li><b>Pose diversity doesn't help either:</b> v3 (clean pose-diverse 72K, +HCS) = 0.632 &mdash; ties clean-37K despite 2&times; crops.
         New-structure scaling helps (size ladder +0.053), but extra <i>poses of the same complexes</i> add no probe signal. Champion 0.644 unbeaten.</li>
+      <li><b><span class="v24">v2.4 is the CASF-clean training choice, not a reported winner:</span></b> it removes
+        ID30 protein neighbors from v2 and is ready to train, but no v2.4 checkpoint or CASF score exists yet.</li>
     </ul>
   </div>
 </div>
 
 <div class="doc-section">
   <h2 class="section-head"><span class="sec-num">5</span> Data acquisition &amp; preprocessing pipeline</h2>
-  <p class="table-sub">How a PLINDER entry travels from PDBe to the training loop &mdash; five stages under
+  <p class="table-sub">How a PLINDER entry travels from PDBe to the training loop &mdash; five canonical stages under
     <code>voxbind/dataset/plinder/</code>, every artifact landing in <code>voxbind/dataset/data/</code> (git-ignored).
-    The mFo-DFc difference-map channel (added 2026&#8209;08&#8209;01) mirrors the same stages in parallel <code>_diff</code> dirs.</p>
+    The mFo-DFc difference-map channel (added 2026&#8209;08&#8209;01) mirrors the same stages in parallel <code>_diff</code> dirs;
+    v2.4 adds a manifest-only decontamination branch after the v2 box is complete.</p>
 
   <div class="table-wrap">
   <table class="results">
@@ -241,6 +294,8 @@
       <tr><td class="col-method">&#9313; download</td><td class="mut">03_download.py</td><td class="mut">PDBe entry-files</td><td><code>ccp4/{pid}.ccp4</code> (density) + <code>cif/{pid}.cif</code> (model)<div class="mut">URLs <code>entry-files/{pid}.ccp4</code> · <code>{pid}_updated.cif</code>; resumable pool, skips existing, records 404s</div></td></tr>
       <tr><td class="col-method">&#9314; build</td><td class="mut">04_build_perelem.py</td><td class="mut">cif + PLINDER annots</td><td><code>pretrain/data_train_&hellip;_perelem.pt</code> (atom tuples) + <code>pretrain/xray_resample_&hellip;/</code> (<code>train_manifest.npz</code> + <code>resample.json</code>)</td></tr>
       <tr><td class="col-method">&#9315; precompute</td><td class="mut">05_make_boxes.py</td><td class="mut">ccp4 + manifest</td><td><code>xray_resample_&hellip;/box116.dat</code><div class="mut">uint8-quantised 116³ canonical-pose density boxes · ~176 GB</div></td></tr>
+      <tr class="grp-label"><td colspan="4">CASF-clean branch from completed v2 artifacts</td></tr>
+      <tr><td class="col-method"><span class="v24">v2.4 filter</span></td><td class="mut">02b_make_v2p4_casf_clean.py</td><td class="mut">v2 manifest + chain FASTA + CASF-214 sequences</td><td><code>splits/plinder/v2p4/</code> audit + filtered <code>train_manifest.npz</code><div class="mut">hard-links the completed v2 box; no density rebuild or copy</div></td></tr>
       <tr><td class="col-method">&#9316; train</td><td class="mut">crossdocked_density_box.py</td><td class="mut">box116.dat + tuples</td><td class="mut">reads box → 64³ crop @ aug pose → recipe-norm → +gradmag → 15-ch input</td></tr>
     </tbody>
   </table>
@@ -285,6 +340,7 @@
         <tr><td class="col-method"><code>ccp4/</code> raw 2Fo-Fc maps</td><td>228 G</td><td class="mut">cold (build input)</td><td class="mut">shared across v2/v3; read only to build boxes</td></tr>
         <tr><td class="col-method"><code>cif/</code> deposited models</td><td>46 G</td><td class="mut">cold (build input)</td><td class="mut">read only to build tuples</td></tr>
         <tr><td class="col-method"><code>&hellip;_perelem/box116.dat</code> &times;N</td><td>176 G each</td><td class="yes">hot (train)</td><td class="mut">2Fo-Fc + mFo-DFc = 2 boxes today</td></tr>
+        <tr><td class="col-method"><span class="v24">v2.4</span> <code>box116.dat</code></td><td class="yes">0 G incremental</td><td class="yes">hot (train)</td><td class="mut">hard link to v2; filtered manifest selects 101,207 rows</td></tr>
         <tr><td class="col-method"><code>data_train_&hellip;_perelem.pt</code></td><td>~1 G</td><td class="yes">hot (train)</td><td class="mut">atom tuples</td></tr>
         <tr><td class="col-method"><code>ccp4_diff/</code> raw diff maps</td><td class="mut">deleted</td><td class="mut">&mdash;</td><td class="no">purged 08-01 (box retained; re-fetch to rebuild)</td></tr>
       </tbody>
@@ -305,8 +361,9 @@
           (176 G &rarr; ~99 G/box).</li>
         <li><b>Relative / env-rooted paths</b> &mdash; <code>resample.json</code> hard-codes absolute <code>/home/shpark/&hellip;</code>
           <code>ccp4_dir</code> (cross-server-fragile); a <code>VOXBIND_DATA_ROOT</code> prefix makes the whole tree portable.</li>
-        <li><b>Reuse boxes across versions</b> &mdash; v2/v3 sharing a (PDB, pose) can reference one canonical box row
-          instead of rebuilding, since maps are already deduplicated in the shared cache.</li>
+        <li><b>Reuse boxes across versions</b> &mdash; implemented for <span class="v24">v2.4</span>: its position-identical
+          v2 box is hard-linked and the filtered manifest chooses retained rows. The same row-reference design can avoid
+          rebuilding other v2/v3 derivatives.</li>
       </ul>
     </div>
   </section>
@@ -421,7 +478,7 @@
   </section>
 </div>
 
-<p class="foot">VoxBind · experimental-density pretraining · dataset generations v1 &ndash; v3 (+ Appendix&nbsp;A: v4 apo/holo,
-  parked) · frozen local-density build · 2026-08-11.</p>
+<p class="foot">VoxBind · experimental-density pretraining · dataset generations v1 &ndash; v3 +
+  <span class="v24">v2.4 CASF-ID30-clean</span> (+ Appendix&nbsp;A: v4 apo/holo, parked) · frozen local-density build · 2026-08-14.</p>
 
 </div></body></html>

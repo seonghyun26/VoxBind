@@ -190,6 +190,13 @@ def main():
     for s in range(HP["seeds"]):
         print(f"  seed {s}...")
         te_pids, yte, pte = train_predict(feats, pK, v2, casf_pids, s, loss_fn=loss_fn)
+        pred_tag = f"{args.model}{tag}"
+        pred_path = os.path.join(OUT, f"{pred_tag}_casf2016_preds_seed{s}.csv")
+        with open(pred_path, "w", newline="") as handle:
+            writer = csv.writer(handle)
+            writer.writerow(["pid", "pred", "y"])
+            writer.writerows((pid, float(pred), float(y))
+                             for pid, pred, y in zip(te_pids, pte, yte))
         nt_mask = np.array([p in nontrain for p in te_pids])
         cl_mask = np.array([p in clean_set for p in te_pids])
         lm = metrics(yte, pte)

@@ -15,7 +15,7 @@ from scipy.stats import spearmanr
 ROOT = "/home/shpark/prj-denovo/VoxBind"
 CAN = f"{ROOT}/voxbind/dataset/data/pdbbind/cliff_eval_canonical.json"
 OUT = f"{ROOT}/voxbind/dataset/data/pdbbind/cliff_eval_baselines.json"
-TD_CSV = f"{ROOT}/notebook/html/260625/scatter_egnn_targetdiff.csv"
+TD_CSV = f"{ROOT}/notebook/html/scatter/scatter_egnn_targetdiff.csv"
 HB_DIR = f"{ROOT}/base/hbgsa/results"
 HB_TAG = "preds_edrscc_40m"      # best test/cliff coverage on lp_edrscc_v2
 
