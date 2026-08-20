@@ -26,6 +26,12 @@ NTARGETS=${NTARGETS:-100}    # wjs.n_targets
 PER_GPU=${PER_GPU:-25}
 CHUNKS=${CHUNKS:-0,1,2,3}
 
+# Density crops must match what the run TRAINED on. receptor-ED runs need
+# xray_crops_receptor_ed_v5; its 79 shared test crops are hard-linked from
+# aligned_v5 (byte-identical), so the 79-pocket comparison stays exact and the
+# 13 extra pockets it covers just come along.
+CROPS=${CROPS:-$ROOT/dataset/data/xray_crops_aligned_v5}
+
 CKPT="$ROOT/exps/$EXP"
 SAVE="$ROOT/exps/$OUT"
 [ -f "$CKPT/checkpoint.pth.tar" ] || { echo "[62_eval] MISSING $CKPT/checkpoint.pth.tar"; exit 1; }
@@ -33,6 +39,13 @@ SAVE="$ROOT/exps/$OUT"
 
 export LD_LIBRARY_PATH=/opt/conda/envs/voxbind/lib:${LD_LIBRARY_PATH:-}
 export TORCHDYNAMO_DISABLE=1     # no C compiler on this box; inductor cannot build
+# Keep GPU WJS busy while CPU-only bond reconstruction runs in spawned workers.
+export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
+export MKL_NUM_THREADS="${MKL_NUM_THREADS:-1}"
+export VOXBIND_RECON_WORKERS="${VOXBIND_RECON_WORKERS:-4}"
+export VOXBIND_LOOKAHEAD_BATCHES="${VOXBIND_LOOKAHEAD_BATCHES:-2}"
+export VOXBIND_GPU_PEAKS="${VOXBIND_GPU_PEAKS:-1}"
+export VOXBIND_REFINE_BATCH="${VOXBIND_REFINE_BATCH:-25}"
 mkdir -p "$SAVE"
 cd "$ROOT" || exit 1
 
@@ -47,7 +60,7 @@ for g in ${CHUNKS//,/ }; do
             hydra.job.chdir=False \
             dset=crossdocked_xray \
             dset.data_dir='$ROOT/dataset/data' \
-            dset.crops_dir='$ROOT/dataset/data/xray_crops_aligned_v5' \
+            dset.crops_dir='$CROPS' \
             dset.normalize=false \
             dset.use_xray=true \
             dset.pocket_radius=-1 \

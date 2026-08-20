@@ -87,6 +87,8 @@ class VoxBind(torch.nn.Module):
         density_attenuate_strength: float = 1.0,
         density_attenuate_noise_sigma: float = 7.0,
         fusion: str = "default",
+        density_proj_hidden: int = None,
+        density_proj_kernel: int = 1,
         adapter_dim: int = 512,
         adapter_depth: int = 12,
         adapter_heads: int = 8,
@@ -292,11 +294,36 @@ class VoxBind(torch.nn.Module):
             # cnn and vit branches since both output (B, C/2, G, G, G).
             # v3 uses context_proj instead — don't build density_proj (unused → DDP error).
             if self.fusion not in ("v3", "cross_attn"):
-                self.density_proj = torch.nn.Conv3d(
-                    n_channels, n_channels // 2, kernel_size=1
-                )
-                torch.nn.init.zeros_(self.density_proj.weight)
-                torch.nn.init.zeros_(self.density_proj.bias)
+                proj_hidden = (int(density_proj_hidden)
+                               if density_proj_hidden is not None else None)
+                proj_kernel = int(density_proj_kernel)
+                if proj_kernel not in (1, 3):
+                    raise ValueError(
+                        f"density_proj_kernel must be 1 or 3, got {proj_kernel}"
+                    )
+                if proj_hidden is None and proj_kernel == 1:
+                    # Historical path: preserve the exact one-voxel 1x1 projection
+                    # and checkpoint layout for existing experiments.
+                    self.density_proj = torch.nn.Conv3d(
+                        n_channels, n_channels // 2, kernel_size=1
+                    )
+                    torch.nn.init.zeros_(self.density_proj.weight)
+                    torch.nn.init.zeros_(self.density_proj.bias)
+                else:
+                    # Spatial per-voxel MLP: the first layer can see a local 3x3x3
+                    # neighborhood, while the final layer remains zero-initialized.
+                    # Thus step 0 is still exactly the density-free VoxBind model.
+                    proj_hidden = proj_hidden or n_channels
+                    self.density_proj = torch.nn.Sequential(
+                        torch.nn.Conv3d(
+                            n_channels, proj_hidden,
+                            kernel_size=proj_kernel, padding=proj_kernel // 2,
+                        ),
+                        torch.nn.SiLU(),
+                        torch.nn.Conv3d(proj_hidden, n_channels // 2, kernel_size=1),
+                    )
+                    torch.nn.init.zeros_(self.density_proj[-1].weight)
+                    torch.nn.init.zeros_(self.density_proj[-1].bias)
 
         # v3 fusion: the frozen encoder replaces pocket_encoder entirely. context_proj is a
         # NORMAL-init ResidualBlock (in==out → identity skip), so the frozen pocket+density

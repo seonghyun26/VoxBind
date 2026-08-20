@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FuncBind MCP · 260820</title>
+<style>
+  :root {
+    --ink: #1c2433;
+    --ink-soft: #5b6678;
+    --ink-faint: #7a8699;
+    --line: #e3e7ee;
+    --line-strong: #aeb6c4;
+    --bg: #f5f6f8;
+    --card: #ffffff;
+    --accent: #2f6f4f;
+    --accent-bg: #eaf5ee;
+    --blue: #38559b;
+    --blue-bg: #e7eefb;
+    --warn: #9a6112;
+    --warn-bg: #fcf3e0;
+    --shadow: 0 1px 2px rgba(20,30,50,.04), 0 8px 24px rgba(20,30,50,.05);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 16px; line-height: 1.55; -webkit-font-smoothing: antialiased;
+  }
+  .page { display: flex; flex-direction: column; max-width: 1180px; margin: 0 auto; padding: 48px 24px 96px; }
+  header.doc { border-bottom: 2px solid var(--ink); padding-bottom: 20px; margin-bottom: 36px; }
+  .eyebrow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px;
+             color: var(--ink-soft); font-size: 13px; letter-spacing: .11em; text-transform: uppercase; }
+  .status { display: inline-flex; align-items: center; gap: 7px; padding: 3px 10px; border-radius: 999px;
+            background: var(--warn-bg); color: #7a4c0d; font-size: 11px; font-weight: 720; letter-spacing: .07em; }
+  .status::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--warn); }
+  header.doc h1 { margin: 0; font-size: clamp(28px, 4vw, 40px); line-height: 1.13; font-weight: 680; letter-spacing: -.025em; }
+  header.doc .lead { max-width: 900px; margin: 13px 0 0; color: var(--ink-soft); font-size: 15px; line-height: 1.65; }
+  section { margin-bottom: 40px; }
+  h2 { font-size: 20px; font-weight: 680; letter-spacing: -.01em; margin: 0 0 6px;
+       padding-bottom: 8px; border-bottom: 1px solid var(--line-strong); }
+  h2 .num { color: var(--ink-faint); font-weight: 600; margin-right: 10px; }
+  h2 .tag { float: right; font-size: 11px; font-weight: 720; letter-spacing: .07em; text-transform: uppercase;
+            padding: 3px 9px; border-radius: 999px; }
+  .tag.done { background: var(--accent-bg); color: #1d5a3a; }
+  .tag.partial { background: var(--warn-bg); color: #7a4c0d; }
+  h3 { font-size: 15px; font-weight: 680; margin: 26px 0 8px; }
+  p { margin: 10px 0; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+          padding: 18px 20px; box-shadow: var(--shadow); margin: 16px 0; }
+  .tablewrap { overflow-x: auto; margin: 14px 0; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; background: var(--card); }
+  th, td { text-align: right; padding: 8px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; }
+  thead th { background: #eef1f6; font-weight: 700; font-size: 12.5px;
+             letter-spacing: .04em; text-transform: uppercase; color: var(--ink-soft); }
+  tbody tr:last-child td { border-bottom: none; }
+  tr.total td { font-weight: 700; background: #eef1f6; }
+  tr.empty td { color: var(--ink-faint); font-style: italic; }
+  .num-cell { font-variant-numeric: tabular-nums; }
+  .win { color: #1d5a3a; font-weight: 700; }
+  .lose { color: #9a2f2f; font-weight: 700; }
+  .callout { border-left: 3px solid var(--blue); background: var(--blue-bg);
+             padding: 12px 16px; border-radius: 0 8px 8px 0; margin: 16px 0; font-size: 14.5px; }
+  .callout.warn { border-left-color: var(--warn); background: var(--warn-bg); }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+         font-size: 13px; background: #eef1f6; padding: 1.5px 5px; border-radius: 4px; }
+  ul { margin: 10px 0; padding-left: 22px; }
+  li { margin: 6px 0; }
+  .meta { color: var(--ink-faint); font-size: 13px; }
+  .defs dt { font-weight: 700; margin-top: 10px; font-size: 14.5px; }
+  .defs dd { margin: 2px 0 0 0; color: var(--ink-soft); font-size: 14.5px; }
+  footer { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--line-strong);
+           color: var(--ink-faint); font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="page">
+
+<header class="doc">
+  <div class="eyebrow">
+    <span>FuncBind · 260820</span>
+    <span class="status">Docking in progress — 49 / 331 molecules</span>
+  </div>
+  <h1>FuncBind MCP — vanilla vs receptor-ED fine-tune</h1>
+  <p class="lead">
+    Macrocyclic-peptide generation on 10 held-out MCP targets, comparing the density-free
+    <strong>vanilla</strong> FuncBind (<code>fb_unified</code>, 87.2M samples seen) against the
+    <strong>receptor-ED ControlNet fine-tune</strong> (<code>..._ga32_r3</code>, 3.17M samples on top).
+    Sampling and chemistry are complete; Vina docking is still running, so section 4 is a
+    partial snapshot and will move.
+  </p>
+</header>
+
+<section>
+  <h2><span class="num">1</span>Bottom line<span class="tag partial">mixed</span></h2>
+
+  <div class="callout">
+    <strong>The fine-tune's problem is yield, not quality.</strong> It produced
+    <strong>118 molecules against vanilla's 213</strong> from an identical sampling budget, and filled
+    the 25-molecule quota on only 3 of 10 targets versus vanilla's 7. On the molecules it does
+    produce, it is essentially tied with vanilla on every chemistry and docking measure so far.
+  </div>
+
+  <div class="tablewrap">
+  <table>
+    <thead>
+      <tr><th>Measure</th><th>Vanilla</th><th>Fine-tuned</th><th>Status</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Molecules produced</td><td class="num-cell win">213</td><td class="num-cell lose">118</td><td>complete</td></tr>
+      <tr><td>Targets at full quota (25)</td><td class="num-cell win">7 / 10</td><td class="num-cell lose">3 / 10</td><td>complete</td></tr>
+      <tr><td>Vina Dock (median)</td><td class="num-cell">−10.31</td><td class="num-cell">−10.04</td><td>partial</td></tr>
+      <tr><td>Diversity</td><td class="num-cell">0.475</td><td class="num-cell">0.468</td><td>complete</td></tr>
+      <tr><td>QED</td><td class="num-cell">0.200</td><td class="num-cell">0.193</td><td>complete</td></tr>
+      <tr><td>SA</td><td class="num-cell">0.489</td><td class="num-cell">0.477</td><td>complete</td></tr>
+      <tr><td>Heavy atoms (mean)</td><td class="num-cell">47.8</td><td class="num-cell">55.1</td><td>complete</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section>
+  <h2><span class="num">2</span>Setup<span class="tag done">complete</span></h2>
+  <div class="card">
+    <p style="margin-top:0">
+      <strong>Sampling</strong> — 25 samples per receptor, 256 chains, 1 attempt, seed 1,
+      <code>batch_size_render_codes=32</code>. Identical for both models; the only difference is the
+      checkpoint and the sampling config that carries the holo-density wiring.
+    </p>
+    <p>
+      <strong>Targets</strong> — receptor ids 0–9 of the MCP test split:
+      <code>1bm2 · 1bxo · 1jd2 · 1kmh · 1w0e · 2bdx · 2gpl · 3dv5 · 3e7a · 3egh</code>
+    </p>
+    <p style="margin-bottom:0">
+      <strong>Docking</strong> — full deposited receptor (<code>&lt;pdb&gt;-protein.pdb</code>), box derived
+      from the reference cyclic peptide (<code>&lt;pdb&gt;-CP.sdf</code>), Vina exhaustiveness 16.
+    </p>
+  </div>
+  <p class="meta">
+    The fine-tune checkpoint was picked by <code>acc_iter</code>, not by epoch: every resume restarts
+    the epoch counter, so <code>_r3</code> reads <code>epoch=3</code> while actually being the
+    furthest-trained of the chain at 3,170,876 samples.
+  </p>
+</section>
+
+<section>
+  <h2><span class="num">3</span>Yield per target<span class="tag done">complete</span></h2>
+
+  <div class="tablewrap">
+  <table>
+    <thead>
+      <tr><th>Target</th><th>PDB</th><th>Vanilla</th><th>Fine-tuned</th><th>Δ</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>target_00</td><td>1bm2</td><td class="num-cell">25</td><td class="num-cell">25</td><td class="num-cell">0</td></tr>
+      <tr><td>target_01</td><td>1bxo</td><td class="num-cell">25</td><td class="num-cell lose">9</td><td class="num-cell">−16</td></tr>
+      <tr><td>target_02</td><td>1jd2</td><td class="num-cell">25</td><td class="num-cell lose">2</td><td class="num-cell">−23</td></tr>
+      <tr><td>target_03</td><td>1kmh</td><td class="num-cell">25</td><td class="num-cell lose">3</td><td class="num-cell">−22</td></tr>
+      <tr><td>target_04</td><td>1w0e</td><td class="num-cell">14</td><td class="num-cell win">25</td><td class="num-cell">+11</td></tr>
+      <tr><td>target_05</td><td>2bdx</td><td class="num-cell">25</td><td class="num-cell">25</td><td class="num-cell">0</td></tr>
+      <tr><td>target_06</td><td>2gpl</td><td class="num-cell">25</td><td class="num-cell">17</td><td class="num-cell">−8</td></tr>
+      <tr class="empty"><td>target_07</td><td>3dv5</td><td class="num-cell">0</td><td class="num-cell">0</td><td class="num-cell">—</td></tr>
+      <tr><td>target_08</td><td>3e7a</td><td class="num-cell">24</td><td class="num-cell lose">7</td><td class="num-cell">−17</td></tr>
+      <tr><td>target_09</td><td>3egh</td><td class="num-cell">25</td><td class="num-cell lose">5</td><td class="num-cell">−20</td></tr>
+      <tr class="total"><td>Total</td><td>—</td><td class="num-cell">213</td><td class="num-cell">118</td><td class="num-cell">−95</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p>
+    The shortfall is not uniform: the fine-tune matches vanilla exactly on two targets and beats it on
+    <code>1w0e</code>, then collapses to single digits on four others. <code>3dv5</code> yields nothing
+    from either model, so it is excluded from all downstream averages — 9 targets, not 10.
+  </p>
+  <div class="callout warn">
+    <strong>Caveat — this ran at <code>n_attempts=1</code>.</strong> The paper configuration retries up
+    to 10 times per target, so a single failed attempt here is not recoverable and the absolute yields
+    are lower than a paper-setting run would give. Both models had the identical budget, so the
+    <em>comparison</em> is fair, but read these as relative numbers. Targets with 2–3 molecules also
+    make per-target statistics very noisy for the fine-tune.
+  </div>
+</section>
+
+<section>
+  <h2><span class="num">4</span>Vina docking<span class="tag partial">partial — 49/331</span></h2>
+
+  <div class="tablewrap">
+  <table>
+    <thead>
+      <tr><th>Metric</th><th>Vanilla (n=28)</th><th>Fine-tuned (n=21)</th><th>Reference ligand</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Vina Score — median</td><td class="num-cell">−7.37</td><td class="num-cell">−7.46</td><td class="num-cell">—</td></tr>
+      <tr><td>Vina Score — mean</td><td class="num-cell">+7.82</td><td class="num-cell">+43.46</td><td class="num-cell">—</td></tr>
+      <tr><td>Vina Min — median</td><td class="num-cell">−8.43</td><td class="num-cell">−8.05</td><td class="num-cell">—</td></tr>
+      <tr><td>Vina Min — mean</td><td class="num-cell">+0.08</td><td class="num-cell">+4.86</td><td class="num-cell">—</td></tr>
+      <tr><td>Vina Dock — median</td><td class="num-cell">−10.31</td><td class="num-cell">−10.04</td><td class="num-cell">—</td></tr>
+      <tr><td>Vina Dock — mean</td><td class="num-cell">−10.21</td><td class="num-cell">−10.05</td><td class="num-cell">−9.69</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p class="meta">
+    28 of 213 (vanilla) and 21 of 118 (fine-tuned) molecules scored so far, across 5 targets each;
+    4 of 9 reference ligands docked. High affinity is deliberately not reported yet — it needs every
+    molecule of a target plus that target's reference, and no target is complete.
+  </p>
+
+  <div class="callout warn">
+    <strong>Ignore the Score and Min means; read the medians.</strong> The means are positive
+    (+7.8 and +43.5) because a generated macrocycle that overlaps the receptor in its as-generated pose
+    scores in the hundreds, and one such pose swamps an average over 20–30 molecules. The medians
+    (−7.37 / −7.46) are the honest summary. Dock mode re-searches the pose, which is why its mean and
+    median agree and why it is the only one of the three that is stable at this sample size.
+  </div>
+
+  <p>
+    On the molecules scored so far the two models are within noise of each other on Dock
+    (−10.31 vs −10.04), and both beat the reference cyclic peptides (−9.69). Treat this as
+    directional only — 21–28 molecules over 5 targets is far too few to separate them.
+  </p>
+</section>
+
+<section>
+  <h2><span class="num">5</span>Chemistry and MCP validity<span class="tag done">complete</span></h2>
+
+  <div class="tablewrap">
+  <table>
+    <thead>
+      <tr><th>Metric</th><th>Vanilla</th><th>Fine-tuned</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Validity (connected, parseable)</td><td class="num-cell">1.000</td><td class="num-cell">1.000</td></tr>
+      <tr><td>Uniqueness</td><td class="num-cell">0.982</td><td class="num-cell">0.982</td></tr>
+      <tr><td>Diversity (1 − mean pairwise Tanimoto)</td><td class="num-cell">0.475</td><td class="num-cell">0.468</td></tr>
+      <tr><td>QED</td><td class="num-cell">0.200</td><td class="num-cell">0.193</td></tr>
+      <tr><td>SA</td><td class="num-cell">0.489</td><td class="num-cell">0.477</td></tr>
+      <tr><td>Heavy atoms (mean)</td><td class="num-cell">47.8</td><td class="num-cell">55.1</td></tr>
+      <tr><td>Cyclization</td><td class="num-cell">100%</td><td class="num-cell">100%</td></tr>
+      <tr><td>Single fragment</td><td class="num-cell">100%</td><td class="num-cell">100%</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p>
+    Every molecule from both models is a single connected fragment and cyclizes — the structural
+    contract of MCP generation holds on both sides. Diversity, QED and SA are indistinguishable.
+    The one real difference is size: the fine-tune's peptides average <strong>7.3 more heavy
+    atoms</strong> (55.1 vs 47.8).
+  </p>
+
+  <div class="callout">
+    <strong>QED ≈ 0.2 and SA ≈ 0.48 are expected here, not a red flag.</strong> Both are calibrated on
+    small-molecule drugs; a 48–55 heavy-atom macrocyclic peptide is far outside their design range and
+    scores low by construction. They are useful for comparing the two models against each other and
+    meaningless as absolute drug-likeness claims. Note also that larger ligands tend to dock better
+    simply by burying more surface, so the fine-tune's size advantage is a confound for any Vina
+    comparison — worth keeping in mind when the full docking numbers land.
+  </div>
+</section>
+
+<section>
+  <h2><span class="num">6</span>Reproducing</h2>
+  <div class="card">
+    <p style="margin-top:0"><strong>Sampling</strong> — four chunks, one per GPU, two per model</p>
+    <p style="margin:6px 0"><code>NAME=cmp10/vanilla_a GPU=0 IDS=[0,1,2,3,4] NTARGETS=5 NPR=25 NATT=1 BSRC=32 NCHAINS=256 bash scripts/run_mcpp_sampling.sh</code></p>
+    <p style="margin:6px 0"><code>CONFIG=sample_fb_mcpp_holo_density FB_PATH=exps/funcbind/20260816_..._ga32_r3 &lt;same&gt;</code></p>
+    <p><strong>Docking</strong> — reuses the VoxBind eval driver over an assembled eval tree</p>
+    <p style="margin:6px 0"><code>python voxbind/exps/frozenenc_probes/run_docking_eval_parallel.py &lt;eval_root&gt; --workers 5 --cpu 2 --exh 16</code></p>
+  </div>
+  <p class="meta">
+    <code>CONFIG</code> and <code>FB_PATH</code> were added to <code>run_mcpp_sampling.sh</code> for this
+    comparison — the script previously hardcoded the vanilla checkpoint and config. The fine-tune needs
+    both overrides: its architecture comes from the checkpoint's own config, the holo-density dataset
+    wiring from the sampling config.
+  </p>
+</section>
+
+<footer>
+  Generated 2026-08-20 09:25 KST · sampling complete (4/4 chunks, exit 0) · docking 49/331 molecules ·
+  9 of 10 targets carry molecules
+</footer>
+
+</div>
+</body>
+</html>

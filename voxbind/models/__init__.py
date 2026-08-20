@@ -87,6 +87,9 @@ def create_model(cfg, device="cuda") -> VoxBind:
         density_attenuate_quantile=float(cfg.model.get("density_attenuate_quantile", 0.90)),
         density_attenuate_strength=float(cfg.model.get("density_attenuate_strength", 1.0)),
         density_attenuate_noise_sigma=float(cfg.model.get("density_attenuate_noise_sigma", 7.0)),
+        density_proj_hidden=(int(cfg.model["density_proj_hidden"])
+                             if cfg.model.get("density_proj_hidden", None) is not None else None),
+        density_proj_kernel=int(cfg.model.get("density_proj_kernel", 1)),
         # "default": pocket_encoder + zero-init density_proj. "v3": frozen encoder replaces
         # pocket_encoder (pocket + apo density), fused via normal-init context_proj (early fusion).
         # "adapter": frozen VoxBind + frozen pretrained pocket encoder + trainable PocketAdapter.

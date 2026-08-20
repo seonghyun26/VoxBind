@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rigid-Fragment Consistency · 260827</title>
+<style>
+  :root {
+    --ink: #1c2433; --ink-soft: #5b6678; --ink-faint: #7a8699;
+    --line: #e3e7ee; --line-strong: #aeb6c4; --bg: #f5f6f8; --card: #ffffff;
+    --accent: #2f6f4f; --accent-bg: #eaf5ee; --blue: #38559b; --blue-bg: #e7eefb;
+    --warn: #9a6112; --warn-bg: #fcf3e0;
+    --shadow: 0 1px 2px rgba(20,30,50,.04), 0 8px 24px rgba(20,30,50,.05);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 16px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+  .page { display: flex; flex-direction: column; max-width: 1180px; margin: 0 auto; padding: 48px 24px 96px; }
+  header.doc { border-bottom: 2px solid var(--ink); padding-bottom: 20px; margin-bottom: 36px; }
+  .eyebrow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px;
+             color: var(--ink-soft); font-size: 13px; letter-spacing: .11em; text-transform: uppercase; }
+  .status { display: inline-flex; align-items: center; gap: 7px; padding: 3px 10px; border-radius: 999px;
+            background: var(--accent-bg); color: #1d5a3a; font-size: 11px; font-weight: 720; letter-spacing: .07em; }
+  .status::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+  header.doc h1 { margin: 0; font-size: clamp(28px, 4vw, 40px); line-height: 1.13; font-weight: 680; letter-spacing: -.025em; }
+  header.doc .lead { max-width: 900px; margin: 13px 0 0; color: var(--ink-soft); font-size: 15px; line-height: 1.65; }
+  section { margin-bottom: 40px; }
+  h2 { font-size: 20px; font-weight: 680; letter-spacing: -.01em; margin: 0 0 6px;
+       padding-bottom: 8px; border-bottom: 1px solid var(--line-strong); }
+  h2 .num { color: var(--ink-faint); font-weight: 600; margin-right: 10px; }
+  h3 { font-size: 15px; font-weight: 680; margin: 26px 0 8px; }
+  p { margin: 10px 0; }
+  ol.method { margin: 12px 0; padding-left: 22px; }
+  ol.method li { margin: 8px 0; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+          padding: 18px 20px; box-shadow: var(--shadow); margin: 16px 0; }
+  .tablewrap { overflow-x: auto; margin: 14px 0; }
+  table { border-collapse: collapse; width: 100%; font-size: 13.5px; background: var(--card); }
+  th, td { text-align: right; padding: 7px 10px; border-bottom: 1px solid var(--line); white-space: normal; }
+  th:first-child, td:first-child { text-align: left; }
+  thead th { background: #eef1f6; font-weight: 700; font-size: 12px; text-align: center;
+             letter-spacing: .04em; text-transform: uppercase; color: var(--ink-soft); }
+  thead tr.sub th { font-size: 11px; padding-top: 2px; text-transform: none; letter-spacing: 0; }
+  th[colspan] { border-bottom: 1px solid var(--line); }
+  tbody tr:last-child td { border-bottom: none; }
+  tr.ref td { color: var(--ink-soft); font-style: italic; }
+  tr.total td { font-weight: 700; background: #eef1f6; }
+  .num-cell { font-variant-numeric: tabular-nums; }
+  .win { color: #1d5a3a; font-weight: 700; }
+  .lose { color: #9a2f2f; font-weight: 700; }
+  figure { margin: 18px 0; }
+  figure img { width: 100%; height: auto; display: block; border: 1px solid var(--line);
+               border-radius: 8px; background: #fff; }
+  figcaption { margin-top: 8px; color: var(--ink-soft); font-size: 13px; }
+  .callout { border-left: 3px solid var(--blue); background: var(--blue-bg);
+             padding: 12px 16px; border-radius: 0 8px 8px 0; margin: 16px 0; font-size: 14.5px; }
+  .callout.warn { border-left-color: var(--warn); background: var(--warn-bg); }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+         font-size: 13px; background: #eef1f6; padding: 1.5px 5px; border-radius: 4px; }
+  ul { margin: 10px 0; padding-left: 22px; } li { margin: 6px 0; }
+  .meta { color: var(--ink-faint); font-size: 13px; }
+  footer { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--line-strong);
+           color: var(--ink-faint); font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="page">
+
+<header class="doc">
+  <div class="eyebrow">
+    <span>VoxBind · 260827</span>
+    <span class="status">79 pockets · 61,512 fragments</span>
+  </div>
+  <h1>Rigid-fragment consistency</h1>
+  <p class="lead">
+    The third structural-quality measure from the VoxBind paper — Figure 11(b) — implemented here for
+    the first time. Neither this repo nor the upstream copy had it; only strain energy (Fig 6) and
+    steric clashes (Fig 7) existed. It asks a question the other two cannot: is the model's
+    <em>local</em> geometry right?
+  </p>
+</header>
+
+<section>
+  <h2><span class="num">1</span>Bottom line</h2>
+
+  <div class="callout">
+    <strong>Local geometry is not where the fusion model loses.</strong> Both models sit at
+    crystal-ligand quality — vanilla's median fragment RMSD (0.0378 Å) is actually <em>below</em> the
+    reference ligands' (0.0402 Å), and fusion's (0.0467 Å) is 0.009 Å above it. That gap is an order
+    of magnitude below X-ray coordinate precision. Whatever drives the PoseCheck deficit, it is not
+    broken fragment geometry.
+  </div>
+
+  <div class="tablewrap">
+  <table>
+    <thead>
+      <tr><th>Model</th><th>Fragments</th><th>Median RMSD (Å)</th><th>Molecules</th><th>MMFF failures</th></tr>
+    </thead>
+    <tbody>
+      <tr class="ref"><td>Reference ligand (crystal)</td><td class="num-cell">294</td>
+          <td class="num-cell">0.0402</td><td class="num-cell">79</td><td class="num-cell">0 (0.0%)</td></tr>
+      <tr><td>Vanilla σ=0.9</td><td class="num-cell">31,094</td>
+          <td class="num-cell win">0.0378</td><td class="num-cell">7,888</td><td class="num-cell">310 (3.9%)</td></tr>
+      <tr><td>Holo ED fusion σ=0.9 (atomblob7 v2p1)</td><td class="num-cell">30,418</td>
+          <td class="num-cell lose">0.0467</td><td class="num-cell">7,873</td><td class="num-cell lose">470 (6.0%)</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p class="meta">
+    Lower is better. The overall median is dominated by the smallest bin (2-atom fragments are a third
+    of the total), so the size-binned table in section 3 is the comparison that matters — it is also
+    the form the paper reports.
+  </p>
+</section>
+
+<section>
+  <h2><span class="num">2</span>What the metric does</h2>
+
+  <p>
+    A rigid fragment has no internal degrees of freedom. A benzene ring, an amide, a fused bicycle —
+    each has exactly one correct shape, so a force field has no reason to move it. <strong>If it moves,
+    the generated geometry was wrong to begin with.</strong> That is the whole idea.
+  </p>
+
+  <ol class="method">
+    <li>Optimise the molecule with <strong>MMFF</strong> (hydrogens added first — MMFF requires them).</li>
+    <li>Cut every <strong>rotatable bond</strong>; the connected components left over are the rigid fragments.</li>
+    <li>Per fragment, take the RMSD between its atom coordinates <strong>before and after</strong> optimisation.</li>
+    <li>Report the <strong>median RMSD binned by fragment size</strong>.</li>
+  </ol>
+
+  <div class="card">
+    <p style="margin-top:0"><strong>Two implementation choices that decide whether the number means anything</strong></p>
+    <p>
+      <strong>Each fragment is Kabsch-superimposed before the RMSD.</strong> Optimising the rest of the
+      molecule inevitably translates and rotates every fragment bodily. That rigid-body drift is not a
+      geometry error, and without superposition it would dominate the RMSD and make the metric
+      meaningless. A reflection check is included, since a mirror image is not a rigid motion.
+    </p>
+    <p style="margin-bottom:0">
+      <strong>RMSD is read off heavy atoms only.</strong> MMFF needs hydrogens, but hydrogens are added
+      by RDKit at inferred positions, so including them would measure the H-placement heuristic rather
+      than the model. <code>AddHs</code> appends, leaving heavy-atom indices untouched.
+    </p>
+  </div>
+
+  <h3>How it differs from strain energy</h3>
+  <div class="tablewrap">
+  <table>
+    <thead><tr><th></th><th>Strain energy (Fig 6)</th><th>Rigid fragments (Fig 11b)</th></tr></thead>
+    <tbody>
+      <tr><td>Force field</td><td>UFF</td><td>MMFF</td></tr>
+      <tr><td>Quantity</td><td>energy difference (kcal/mol)</td><td>coordinate RMSD (Å)</td></tr>
+      <tr><td>Scope</td><td>whole-molecule conformation</td><td>inside rigid fragments only</td></tr>
+      <tr><td>Catches</td><td>globally contorted conformer</td><td>wrong bond lengths / angles / ring shape</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>
+    They are complements by construction. Strain relaxes under a 0.1 Å position constraint precisely so
+    that local imperfections wash out and only global strain is reported — which is exactly what this
+    metric targets. A model can be good at one and bad at the other.
+  </p>
+</section>
+
+<section>
+  <h2><span class="num">3</span>By fragment size</h2>
+
+  <figure>
+    <img src="rigid_fragment_consistency.png" alt="Rigid fragment consistency by size and RMSD ECDF">
+    <figcaption>
+      <strong>Left</strong> — median RMSD per fragment-size bin (lower is better), the paper's
+      Figure 11(b) form. <strong>Right</strong> — ECDF over all fragments on a log axis; further left
+      and higher is better.
+    </figcaption>
+  </figure>
+
+  <div class="tablewrap">
+  <table>
+    <thead>
+      <tr>
+        <th rowspan="2">Fragment<br>size</th>
+        <th colspan="3">Median RMSD (Å)</th>
+        <th colspan="2">n fragments</th>
+      </tr>
+      <tr class="sub">
+        <th>reference</th><th>vanilla</th><th>fusion</th>
+        <th>vanilla</th><th>fusion</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td>2</td><td class="num-cell">0.0058</td><td class="num-cell">0.0138</td><td class="num-cell lose">0.0166</td>
+          <td class="num-cell">10,952</td><td class="num-cell">9,705</td></tr>
+      <tr><td>3–4</td><td class="num-cell">0.0491</td><td class="num-cell">0.0470</td><td class="num-cell">0.0482</td>
+          <td class="num-cell">4,618</td><td class="num-cell">4,282</td></tr>
+      <tr><td>5–6</td><td class="num-cell">0.0324</td><td class="num-cell">0.0329</td><td class="num-cell lose">0.0404</td>
+          <td class="num-cell">7,503</td><td class="num-cell">7,470</td></tr>
+      <tr><td>7–9</td><td class="num-cell">0.0576</td><td class="num-cell">0.0782</td><td class="num-cell">0.0844</td>
+          <td class="num-cell">4,441</td><td class="num-cell">4,488</td></tr>
+      <tr><td>10–13</td><td class="num-cell">0.0609</td><td class="num-cell">0.1085</td><td class="num-cell lose">0.1243</td>
+          <td class="num-cell">2,466</td><td class="num-cell">2,907</td></tr>
+      <tr><td>14+</td><td class="num-cell">0.2837</td><td class="num-cell lose">0.3349</td><td class="num-cell win">0.2915</td>
+          <td class="num-cell">1,114</td><td class="num-cell">1,566</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>Three readings</h3>
+  <ul>
+    <li>
+      <strong>The gaps are tiny in absolute terms.</strong> Fusion trails vanilla by 0.001–0.016 Å
+      across the bins. For scale, heavy-atom coordinate precision in a good crystal structure is
+      ~0.1–0.2 Å; these differences are well inside the noise a crystallographer would ignore.
+    </li>
+    <li>
+      <strong>Both models track the reference closely up to ~6 atoms, then drift.</strong> At 7–9 and
+      10–13 atoms the generated fragments are noticeably worse than crystal ligands
+      (0.078 / 0.109 and 0.084 / 0.124 against 0.058 / 0.061). Medium-sized rigid systems — fused
+      rings, extended conjugation — are where voxel-decoded geometry is least accurate, and that is a
+      limitation <em>both</em> models share.
+    </li>
+    <li>
+      <strong>The largest bin reverses again.</strong> Fusion (0.2915) beats vanilla (0.3349) at 14+
+      atoms and nearly matches the reference (0.2837) — the same reversal seen in strain energy and
+      steric clashes. Three independent measures agreeing on this makes it a real property of the
+      fusion model, not noise.
+    </li>
+  </ul>
+</section>
+
+<section>
+  <h2><span class="num">4</span>What this settles, and what it does not</h2>
+
+  <p>
+    The working hypothesis from the PoseCheck write-up was that the fusion model is <em>not</em>
+    producing broken geometry, but rather poses that sit tighter against the receptor. This metric was
+    run as the discriminating test, since it measures local geometry directly and continuously — where
+    PoseBusters only applies pass/fail thresholds.
+  </p>
+
+  <div class="callout">
+    <strong>The hypothesis survives.</strong> Three lines now agree that local geometry is fine:
+    PoseBusters ties on every bond-length, bond-angle and flatness check; fragment RMSD differs by
+    0.009 Å overall; and both models sit at crystal-ligand quality. Meanwhile strain (+32%) and clashes
+    (+23%) are substantially worse for fusion. The deficit therefore lives in <strong>global
+    conformation and placement</strong>, not in how the model draws a ring or a bond.
+  </div>
+
+  <div class="callout warn">
+    <strong>Two honest caveats.</strong> First, the relative gap in fragment RMSD (+24%) is not far off
+    strain's (+32%) — it is the <em>absolute</em> magnitude that makes it negligible, and that argument
+    depends on accepting ~0.01 Å as physically unimportant. Second, MMFF failed on
+    <strong>6.0% of fusion molecules against 3.9% of vanilla's</strong>, and those molecules are
+    silently excluded. If the failures are enriched for bad geometry — plausible, since MMFF
+    parameterisation fails on unusual valences and atom types — then both models' numbers are
+    optimistic and fusion's more so. That failure-rate difference is itself the clearest local-chemistry
+    signal in this whole analysis, and it is worth a closer look on its own.
+  </div>
+
+  <p>
+    The remaining open question is unchanged: is the fusion deficit caused by the density conditioning
+    or simply by less training (350 epochs against 923)? The discriminating experiment is still to run
+    the same three measures on an intermediate fusion checkpoint and see whether the gap closes with
+    epochs.
+  </p>
+</section>
+
+<section>
+  <h2><span class="num">5</span>Reproducing</h2>
+  <div class="card">
+    <p style="margin-top:0"><strong>Evaluation</strong> — CPU only, no receptor needed, ~45 s per run at 12 workers</p>
+    <p style="margin:6px 0"><code>voxdock python voxbind/exps/frozenenc_probes/eval_rigid_fragments.py &lt;run_root&gt; --workers 12</code></p>
+    <p style="margin-bottom:0">
+      <code>&lt;run_root&gt;</code> holds <code>target_*/samples.sdf</code> — the same layout the docking
+      eval consumes. Output is <code>rigid_fragment_results.json</code> in that directory.
+    </p>
+  </div>
+  <p class="meta">
+    Inputs — vanilla: <code>exps/_vanilla_ep923/samples/full_eval_ep923/_dock79</code> ·
+    fusion: <code>exps/voxbind_frozenenc_atomblob7_v2p1_sig0.9/samples/full_eval_ep350</code> ·
+    reference ligands: the non-<code>samples.sdf</code> SDF in each target directory.
+    Outputs — <code>rigid_fragment_consistency.{png,svg}</code>, <code>rigid_fragment_summary.json</code>.
+  </p>
+</section>
+
+<footer>
+  Generated 2026-08-20 · 79 pockets · 61,512 rigid fragments from 15,761 generated molecules · MMFF / RDKit
+</footer>
+
+</div>
+</body>
+</html>

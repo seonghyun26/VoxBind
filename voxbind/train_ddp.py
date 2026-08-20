@@ -308,10 +308,12 @@ def main(cfg: DictConfig) -> None:
             # anything else means the architectures don't actually match.
             _stray = [k for k in _missing
                       if not k.startswith(("density_encoder.", "density_proj.", "context_proj."))]
-            if _unexpected or _stray:
+            _stray_unexpected = [k for k in _unexpected
+                                 if not k.startswith(("density_encoder.", "density_proj.", "context_proj."))]
+            if _stray_unexpected or _stray:
                 raise RuntimeError(
                     f"warm start from {pretrained_path} is not architecture-compatible: "
-                    f"unexpected={_unexpected[:8]} stray_missing={_stray[:8]}"
+                    f"unexpected={_stray_unexpected[:8]} stray_missing={_stray[:8]}"
                 )
             if is_main:
                 logger.info(

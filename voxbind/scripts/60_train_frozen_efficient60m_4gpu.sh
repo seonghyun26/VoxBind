@@ -35,6 +35,11 @@ OUT="$ROOT/exps/$EXP_NAME"
 NUM_EPOCHS="${NUM_EPOCHS:-350}"
 RESUME="${RESUME:-}"
 RESUME_EPOCH="${RESUME_EPOCH:-}"
+SIGMA="${SIGMA:-0.9}"
+CROPS_DIR="${CROPS_DIR:-$ROOT/dataset/data/xray_crops_aligned_v5}"
+SUBSET_N="${SUBSET_N:-78512}"
+SUBSET_VAL_N="${SUBSET_VAL_N:-100}"
+WANDB_TAGS="${WANDB_TAGS:-[voxbind,density_cond,frozen_encoder,efficient_60m,cross_attn]}"
 
 export LD_LIBRARY_PATH=/opt/conda/envs/voxbind/lib:${LD_LIBRARY_PATH:-}
 export TORCHDYNAMO_DISABLE=1
@@ -53,6 +58,7 @@ cd "$ROOT" || exit 1
 echo "[60_train] NUM_EPOCHS=$NUM_EPOCHS RESUME=${RESUME:-<none>} EXP=$OUT"
 echo "[60_train] WARM_START=${WARM_START:-<none, from scratch>}"
 echo "[60_train] GPUS=$CUDA_VISIBLE_DEVICES (nproc_per_node=$NPROC)"
+echo "[60_train] sigma=$SIGMA crops=$CROPS_DIR subset=$SUBSET_N+$SUBSET_VAL_N fusion=${FUSION:-default}"
 
 # DRY_RUN=1 → compose+print the Hydra config and exit (no GPUs, no DDP, no training).
 # Pre-flight for override syntax before killing a live run.
@@ -65,15 +71,15 @@ fi
 exec "$@" \
   --config-name config_train_voxbind_frozenenc_channelvit_atomblob7_v2p1 \
   wandb=true \
-  wandb_tags='[voxbind,density_cond,frozen_encoder,model_zoo,efficient_60m_v3_mask085,holo,full_density_crossdocked,direct_voxbind_trainer,faithful_direct,efficient_60m]' \
+  wandb_tags="$WANDB_TAGS" \
   num_workers=16 prefetch_factor=8 \
   exp_name="$EXP_NAME" output_dir="$OUT" \
   num_epochs="$NUM_EPOCHS" bsz=32 accum_steps=1 lr=1e-5 wd=1e-2 \
-  smooth_sigma=0.9 with_gradmag=false \
-  dset.crops_dir="$ROOT/dataset/data/xray_crops_aligned_v5" \
+  smooth_sigma="$SIGMA" with_gradmag=false \
+  dset.crops_dir="$CROPS_DIR" \
   dset.normalize=false dset.pocket_radius=-1 dset.ligand_radius=0.5 \
   dset.use_xray=true dset.subset_xray_only=true \
-  dset.subset_n=78512 dset.subset_val_n=100 dset.cache_size=32 \
+  dset.subset_n="$SUBSET_N" dset.subset_val_n="$SUBSET_VAL_N" dset.cache_size=32 \
   model.with_density=true model.density_encoder_type=vit model.density_freeze=true \
   model.density_pretrained_path="$ENCODER" \
   model.density_vit.patch=8 model.density_vit.dim=512 model.density_vit.depth=18 \
@@ -81,6 +87,7 @@ exec "$@" \
   model.density_vit.n_in_channels=13 \
   model.density_vit.patch_embed_mode=channel_group \
   model.density_vit.channel_groups='[7,4,2]' \
+  model.density_encoder_sees_ligand="${SEES_LIGAND:-false}" \
   model.density_mask_ligand="${MASK_LIGAND:-false}" model.fusion="${FUSION:-default}" \
   model.density_encoder_amp="${ENCODER_AMP:-true}" \
   model.density_attenuate="${ATTENUATE:-false}" \

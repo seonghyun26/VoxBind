@@ -58,7 +58,10 @@ done
 
 n_t=$(ls -d "$SAMPLE_DIR"/target_* 2>/dev/null | wc -l)
 say "docking $n_t target dirs (this is CPU-bound; GPUs are free for other work)"
-"$PY" "$DRIVER" "$SAMPLE_DIR" >>"$LOG" 2>&1
+# Extra driver flags. With the parallel driver this is where the worker count goes:
+# the box is capped at 32 cores by its cgroup quota (nproc reports 128 and lies), so
+# leaving headroom here is what keeps a co-running GPU job's dataloader fed.
+"$PY" "$DRIVER" "$SAMPLE_DIR" ${ARGS:-} >>"$LOG" 2>&1
 rc=$?
 say "docking eval exit=$rc -> $SAMPLE_DIR/eval_docking_results.json"
 exit $rc

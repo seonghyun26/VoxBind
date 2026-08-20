@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PoseCheck · 260820</title>
+<style>
+  :root {
+    --ink: #1c2433;
+    --ink-soft: #5b6678;
+    --ink-faint: #7a8699;
+    --line: #e3e7ee;
+    --line-strong: #aeb6c4;
+    --bg: #f5f6f8;
+    --card: #ffffff;
+    --accent: #2f6f4f;
+    --accent-bg: #eaf5ee;
+    --blue: #38559b;
+    --blue-bg: #e7eefb;
+    --warn: #9a6112;
+    --warn-bg: #fcf3e0;
+    --shadow: 0 1px 2px rgba(20,30,50,.04), 0 8px 24px rgba(20,30,50,.05);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 16px; line-height: 1.55; -webkit-font-smoothing: antialiased;
+  }
+  .page { display: flex; flex-direction: column; max-width: 1180px; margin: 0 auto; padding: 48px 24px 96px; }
+  header.doc { border-bottom: 2px solid var(--ink); padding-bottom: 20px; margin-bottom: 36px; }
+  .eyebrow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px;
+             color: var(--ink-soft); font-size: 13px; letter-spacing: .11em; text-transform: uppercase; }
+  .status { display: inline-flex; align-items: center; gap: 7px; padding: 3px 10px; border-radius: 999px;
+            background: var(--accent-bg); color: #1d5a3a; font-size: 11px; font-weight: 720; letter-spacing: .07em; }
+  .status::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+  header.doc h1 { margin: 0; font-size: clamp(28px, 4vw, 40px); line-height: 1.13; font-weight: 680; letter-spacing: -.025em; }
+  header.doc .lead { max-width: 900px; margin: 13px 0 0; color: var(--ink-soft); font-size: 15px; line-height: 1.65; }
+  section { margin-bottom: 40px; }
+  h2 { font-size: 20px; font-weight: 680; letter-spacing: -.01em; margin: 0 0 6px;
+       padding-bottom: 8px; border-bottom: 1px solid var(--line-strong); }
+  h2 .num { color: var(--ink-faint); font-weight: 600; margin-right: 10px; }
+  h3 { font-size: 15px; font-weight: 680; margin: 26px 0 8px; }
+  p { margin: 10px 0; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+          padding: 18px 20px; box-shadow: var(--shadow); margin: 16px 0; }
+  .tablewrap { overflow-x: auto; margin: 14px 0; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; background: var(--card); }
+  th, td { text-align: right; padding: 9px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; }
+  thead th { background: #eef1f6; font-weight: 700; font-size: 12.5px;
+             letter-spacing: .04em; text-transform: uppercase; color: var(--ink-soft); }
+  tbody tr:last-child td { border-bottom: none; }
+  tr.best td { background: var(--accent-bg); }
+  tr.ref td { color: var(--ink-soft); font-style: italic; }
+  .num-cell { font-variant-numeric: tabular-nums; }
+  .win { color: #1d5a3a; font-weight: 700; }
+  .lose { color: #9a2f2f; font-weight: 700; }
+  figure { margin: 18px 0; }
+  figure img { width: 100%; height: auto; display: block; border: 1px solid var(--line);
+               border-radius: 8px; background: #fff; }
+  figcaption { margin-top: 8px; color: var(--ink-soft); font-size: 13px; }
+  .callout { border-left: 3px solid var(--blue); background: var(--blue-bg);
+             padding: 12px 16px; border-radius: 0 8px 8px 0; margin: 16px 0; font-size: 14.5px; }
+  .callout.warn { border-left-color: var(--warn); background: var(--warn-bg); }
+  .callout strong { font-weight: 700; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+         font-size: 13px; background: #eef1f6; padding: 1.5px 5px; border-radius: 4px; }
+  ul { margin: 10px 0; padding-left: 22px; }
+  li { margin: 6px 0; }
+  .meta { color: var(--ink-faint); font-size: 13px; }
+  table.compact { font-size: 13.5px; }
+  table.compact th, table.compact td { padding: 7px 9px; white-space: normal; }
+  table.compact thead th { text-align: center; }
+  table.compact thead tr.sub th { font-size: 11px; letter-spacing: .02em; padding-top: 2px; }
+  table.compact th[colspan] { border-bottom: 1px solid var(--line); }
+  .defs { margin: 18px 0 4px; }
+  .defs dt { font-weight: 700; margin-top: 10px; font-size: 14.5px; }
+  .defs dd { margin: 2px 0 0 0; color: var(--ink-soft); font-size: 14.5px; }
+  footer { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--line-strong);
+           color: var(--ink-faint); font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="page">
+
+<header class="doc">
+  <div class="eyebrow">
+    <span>VoxBind · 260820</span>
+    <span class="status">79/79 pockets complete</span>
+  </div>
+  <h1>PoseCheck — structural quality of generated poses</h1>
+  <p class="lead">
+    PoseCheck (Harris et al., 2023) comparing vanilla VoxBind against the frozen-encoder
+    atomblob7 fusion model. Two measures: <strong>UFF strain energy</strong> (internal energy of the
+    generated pose relative to a relaxed one) and <strong>steric clash count</strong> (ligand against
+    the hydrogenated pocket). Where the 2026-08-13 version used only the 30-pocket intersection,
+    this run covers <strong>all 79 pockets</strong> for both models.
+  </p>
+</header>
+
+<section>
+  <h2><span class="num">1</span>Bottom line</h2>
+
+  <div class="callout">
+    <strong>Vanilla wins on pose quality.</strong> The fusion model's median strain is 32% higher
+    (81.9 vs 62.2) and it carries 23% more clashes (6.44 vs 5.23). Whatever the fusion model gains
+    in docking score does not show up in the physical plausibility of its poses — it loses ground there.
+  </div>
+
+  <div class="tablewrap">
+  <table>
+    <thead>
+      <tr>
+        <th>Model</th>
+        <th>Median strain</th>
+        <th>Strain IQR</th>
+        <th>Mean clashes [CI95]</th>
+        <th>Median clashes</th>
+        <th>n (molecules)</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr class="ref">
+        <td>Reference ligand</td>
+        <td class="num-cell">34.28</td>
+        <td class="num-cell">10.7 – 72.2</td>
+        <td class="num-cell">6.797 [5.56, 8.13]</td>
+        <td class="num-cell">5.0</td>
+        <td class="num-cell">79</td>
+      </tr>
+      <tr class="best">
+        <td>Vanilla σ=0.9</td>
+        <td class="num-cell win">62.19</td>
+        <td class="num-cell">22.7 – 197.9</td>
+        <td class="num-cell win">5.225 [4.73, 5.78]</td>
+        <td class="num-cell">4.0</td>
+        <td class="num-cell">7,855</td>
+      </tr>
+      <tr>
+        <td>Holo ED fusion σ=0.9 (atomblob7 v2p1)</td>
+        <td class="num-cell lose">81.92</td>
+        <td class="num-cell">30.9 – 280.9</td>
+        <td class="num-cell lose">6.439 [5.78, 7.18]</td>
+        <td class="num-cell">5.0</td>
+        <td class="num-cell">7,826</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+  <p class="meta">
+    Strain is the per-molecule distribution over all 100 molecules per pocket. The CI95 on mean
+    clashes comes from a 10,000-resample bootstrap at the <em>pocket</em> level (seed 260813) —
+    bootstrapping over molecules instead would ignore within-pocket correlation and report an
+    interval narrower than the truth.
+  </p>
+
+  <dl class="defs">
+    <dt>Strain energy</dt>
+    <dd>How much internal conformational energy the generated pose carries above the same molecule's
+        relaxed conformer — high strain means the pose is contorted into a shape the molecule would
+        not naturally hold.</dd>
+    <dt>Steric clash</dt>
+    <dd>How many ligand–protein atom pairs sit closer than their van der Waals radii allow — a count
+        of physically impossible overlaps between the molecule and the pocket.</dd>
+  </dl>
+
+  <h3>Three things worth reading off this</h3>
+  <ul>
+    <li>
+      <strong>Vanilla clashes less than the reference ligands themselves</strong> (5.23 vs 6.80),
+      with intervals that barely overlap. Crystal ligands do not score zero clashes because
+      PoseCheck re-protonates before judging; that value is the practical floor for this measure.
+    </li>
+    <li>
+      <strong>The fusion model is statistically indistinguishable from the reference on clashes</strong> —
+      [5.78, 7.18] against [5.56, 8.13], heavily overlapping. So the story is less "fusion is bad"
+      than "vanilla is unusually clean."
+    </li>
+    <li>
+      <strong>Both generative models carry more strain than the reference</strong> (62.2 / 81.9 vs 34.3).
+      Generated poses remain locally strained — a limitation the two models share.
+    </li>
+  </ul>
+</section>
+
+<section>
+  <h2><span class="num">2</span>Figures</h2>
+
+  <figure>
+    <img src="posecheck_fig6_strain_ecdf.png" alt="Strain energy ECDF">
+    <figcaption>
+      <strong>Figure 6 · strain energy ECDF (log x-axis).</strong> Further left and higher is better.
+      The vanilla curve sits above fusion across the whole range, with the reference furthest left.
+      90.6% of generated values fall inside the x-axis cap of 3,000; 77 values were clipped at the
+      lower floor of 0.01.
+    </figcaption>
+  </figure>
+
+  <figure>
+    <img src="posecheck_fig7_steric_clashes.png" alt="Steric clashes">
+    <figcaption>
+      <strong>Figure 7 · steric clash counts.</strong> Error bars are pocket-level bootstrap CI95.
+    </figcaption>
+  </figure>
+</section>
+
+<section>
+  <h2><span class="num">3</span>Is the gap just molecule size?</h2>
+
+  <p>
+    Strain rises with molecule size (Spearman &rho; = +0.60 between strain and heavy-atom count over
+    4,143 molecules), and the fusion model does generate slightly larger ligands — mean 24.93 heavy
+    atoms against vanilla's 24.00. So the obvious question is whether the whole gap is a size artifact.
+    Binning both models by heavy-atom count answers it: <strong>it is not</strong>.
+  </p>
+
+  <div class="tablewrap">
+  <table class="compact">
+    <thead>
+      <tr>
+        <th rowspan="2">Heavy<br>atoms</th>
+        <th colspan="2">n</th>
+        <th colspan="2">Median strain</th>
+        <th colspan="2">Mean clashes</th>
+      </tr>
+      <tr class="sub">
+        <th>van.</th><th>fus.</th>
+        <th>van.</th><th>fus.</th>
+        <th>van.</th><th>fus.</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td>10 – 18</td><td class="num-cell">1,759</td><td class="num-cell">1,541</td>
+          <td class="num-cell">21.3</td><td class="num-cell lose">24.4</td>
+          <td class="num-cell">3.83</td><td class="num-cell lose">4.61</td></tr>
+      <tr><td>18 – 22</td><td class="num-cell">963</td><td class="num-cell">769</td>
+          <td class="num-cell">46.1</td><td class="num-cell">48.0</td>
+          <td class="num-cell">4.49</td><td class="num-cell lose">5.27</td></tr>
+      <tr><td>22 – 26</td><td class="num-cell">1,272</td><td class="num-cell">1,146</td>
+          <td class="num-cell">60.8</td><td class="num-cell lose">81.7</td>
+          <td class="num-cell">5.01</td><td class="num-cell lose">6.47</td></tr>
+      <tr><td>26 – 30</td><td class="num-cell">1,285</td><td class="num-cell">1,279</td>
+          <td class="num-cell">75.8</td><td class="num-cell lose">102.5</td>
+          <td class="num-cell">5.65</td><td class="num-cell lose">7.35</td></tr>
+      <tr><td>30 – 36</td><td class="num-cell">1,322</td><td class="num-cell">1,527</td>
+          <td class="num-cell">108.7</td><td class="num-cell lose">128.5</td>
+          <td class="num-cell">6.21</td><td class="num-cell lose">8.02</td></tr>
+      <tr><td>36 – 60</td><td class="num-cell">801</td><td class="num-cell">1,078</td>
+          <td class="num-cell lose">341.4</td><td class="num-cell win">219.9</td>
+          <td class="num-cell">7.32</td><td class="num-cell">7.47</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p>
+    The fusion model is behind in <em>every</em> bin from 10 to 36 heavy atoms, so the deficit survives
+    size matching — the 0.93-atom mean difference is far too small to produce a 32% strain gap on its
+    own. Two details are worth noting: the gap peaks in the mid-size range (22–30 atoms, where median
+    strain runs 30–35% higher), and it <strong>reverses in the largest bin</strong>, where fusion is
+    substantially <em>better</em> on strain (219.9 vs 341.4) and tied on clashes. Whatever the fusion
+    signal is doing, it is not a uniform penalty.
+  </p>
+
+  <div class="callout warn">
+    <strong>Size is still a confound for docking, just not for this.</strong> Heavy-atom count
+    correlates with Vina Dock at &rho; = &minus;0.80 — far stronger than its effect on strain. Any
+    Vina comparison between models that generate different-sized ligands needs the same binning
+    treatment before it means anything.
+  </div>
+</section>
+
+<section>
+  <h2><span class="num">4</span>Where the deficit is — and is not</h2>
+
+  <p>
+    PoseCheck says the fusion model is behind, but PoseBusters — run on the same molecules — says the
+    two models are equivalent. Every hard validity check is a tie, and the headline PB-valid rate is
+    marginally <em>higher</em> for fusion.
+  </p>
+
+  <div class="tablewrap">
+  <table>
+    <thead>
+      <tr><th>PoseBusters check</th><th>Vanilla</th><th>Fusion</th><th>Δ</th></tr>
+    </thead>
+    <tbody>
+      <tr class="best"><td><strong>PB-valid (all checks pass)</strong></td>
+          <td class="num-cell">0.743</td><td class="num-cell win">0.754</td><td class="num-cell">+0.011</td></tr>
+      <tr><td>non-aromatic ring non-flatness</td><td class="num-cell">0.816</td><td class="num-cell">0.838</td><td class="num-cell">+0.022</td></tr>
+      <tr><td>volume overlap with protein</td><td class="num-cell">0.997</td><td class="num-cell">0.998</td><td class="num-cell">+0.001</td></tr>
+      <tr><td>minimum distance to protein</td><td class="num-cell">0.984</td><td class="num-cell">0.984</td><td class="num-cell">0.000</td></tr>
+      <tr><td>internal energy</td><td class="num-cell">0.978</td><td class="num-cell">0.976</td><td class="num-cell">−0.002</td></tr>
+      <tr><td>bond lengths</td><td class="num-cell">0.980</td><td class="num-cell">0.974</td><td class="num-cell">−0.006</td></tr>
+      <tr><td>bond angles</td><td class="num-cell">0.964</td><td class="num-cell">0.958</td><td class="num-cell">−0.006</td></tr>
+      <tr><td>internal steric clash</td><td class="num-cell">0.972</td><td class="num-cell">0.963</td><td class="num-cell">−0.009</td></tr>
+      <tr><td>aromatic ring flatness · double bond flatness · all atoms connected · sanitization</td>
+          <td class="num-cell">1.000</td><td class="num-cell">1.000</td><td class="num-cell">0.000</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p class="meta">
+    Fractions are the share of molecules passing each check, over the subset where the PoseBusters
+    worker completed (vanilla n = 4,295; fusion n = 3,293). The remainder timed out during the earlier
+    <code>--pose all</code> run and was never recomputed, so these subsets are not guaranteed
+    unbiased — treat the table as strong evidence of a tie rather than a precise measurement.
+  </p>
+
+  <h3>A hypothesis for the gap</h3>
+  <p>
+    Putting the two tools together points somewhere specific. PoseBusters asks
+    <em>pass or fail against a threshold</em>; PoseCheck measures <em>how much</em>. The fusion model
+    fails no more thresholds than vanilla, yet is consistently more strained and more clashed. So the
+    reading is:
+  </p>
+  <div class="callout">
+    <strong>The fusion model is probably not producing broken geometry — it is producing poses that sit
+    tighter against the receptor.</strong> It is conditioned on the receptor's electron density and
+    trained to fill that envelope, which pushes ligand atoms closer to the pocket surface. That buys
+    contact — and contact is what Vina rewards — at the cost of more near-contacts counted as clashes
+    and a slightly more contorted conformer needed to hold the position. On this reading the docking
+    gain and the PoseCheck loss are the same mechanism seen from two sides, not two independent
+    problems.
+  </div>
+  <p>
+    A second, non-exclusive possibility is simply <strong>training length</strong>: 350 epochs for the
+    fusion model against 923 for vanilla. Fine local geometry is what a denoiser refines late, and the
+    non-monotonic pattern in section 3 — fusion behind everywhere except the largest ligands — would
+    fit an undertrained model as readily as a density-driven one.
+  </p>
+  <div class="callout warn">
+    <strong>Both of these are untested hypotheses.</strong> The mechanism claim above is inference from
+    two static measurements, not a controlled result. The cheap discriminating experiment is to run the
+    same PoseCheck on an intermediate fusion checkpoint (e.g. ep200): if strain is falling with epochs,
+    training length is carrying the explanation; if it is flat, the density conditioning is.
+  </div>
+</section>
+
+<section>
+  <h2><span class="num">5</span>How to read this safely</h2>
+
+  <div class="callout warn">
+    <strong>Do not use mean strain.</strong> The means come out at 2.3&times;10<sup>8</sup> for vanilla
+    and 4.2&times;10<sup>9</sup> for fusion. A handful of pathological poses where UFF relaxation fails
+    dominates the average entirely, and no model comparison survives it. Judge on
+    <strong>median and IQR only</strong> — the same trap that made mean Vina scores swing on a
+    single clashing pose.
+  </div>
+
+  <h3>What changed going from 30 pockets to 79</h3>
+  <p>
+    The 2026-08-13 version kept only the 30 pockets where both models had finite strain and clash
+    values. Those numbers were 13.1 / 31.0 / 36.5 (reference / vanilla / fusion) — <strong>less than
+    half</strong> of the full 79-pocket result (34.3 / 62.2 / 81.9). That subset was skewed toward
+    <em>low-strain, easy pockets</em>.
+  </p>
+  <p>
+    The <strong>ranking did not change</strong>: vanilla &lt; fusion on both strain and clashes in
+    either version. But the gap between models widened — median strain difference went from +5.4 to
+    <strong>+19.7</strong>, and the clash difference from +0.67 to <strong>+1.21</strong>. The old
+    subset had been flattering the fusion model.
+  </p>
+
+  <h3>Why the earlier run stopped at 30</h3>
+  <p>
+    The <code>moleval</code> conda environment that hosts the PoseCheck worker was deleted along with
+    <code>/opt/conda/envs</code> on a container restart. After that, <code>metrics.py --pose</code>
+    silently recorded a pose error for every target, and the figures were drawn from whatever
+    intersection survived. The root cause was that the rebuild recipe existed nowhere as a script,
+    so it is now pinned in <code>voxbind/scripts/rebuild_moleval_env.sh</code>.
+  </p>
+</section>
+
+<section>
+  <h2><span class="num">6</span>Reproducing</h2>
+  <div class="card">
+    <p style="margin-top:0"><strong>Environment</strong> — posecheck / posebusters / prolif / hydride / reduce</p>
+    <p style="margin:6px 0"><code>bash voxbind/scripts/rebuild_moleval_env.sh</code></p>
+    <p><strong>Measurement</strong> — retries failed pose blocks, skips completed targets</p>
+    <p style="margin:6px 0"><code>python notebook/webapp/metrics.py &lt;run_root&gt; --pose posecheck --skip-existing</code></p>
+    <p><strong>Figures</strong></p>
+    <p style="margin:6px 0"><code>python voxbind/exps/frozenenc_probes/plot_posecheck_fig6_fig7.py --output-dir notebook/html/260820</code></p>
+  </div>
+  <p class="meta">
+    Inputs —
+    vanilla: <code>exps/exp_sig0.9+prefetch_factor16_wjs.n_targets0/samples/full_eval_ep923/_dock79</code> ·
+    fusion: <code>exps/voxbind_frozenenc_atomblob7_v2p1_sig0.9/samples/full_eval_ep350</code>.
+    Outputs — <code>posecheck_fig6_fig7_summary.{json,csv}</code>, <code>posecheck_fig6_strain_ecdf.{png,svg}</code>,
+    <code>posecheck_fig7_steric_clashes.{png,svg}</code>.
+  </p>
+</section>
+
+<footer>
+  Generated 2026-08-20 · 79/79 pockets · 100 molecules per pocket · 10,000-resample bootstrap (seed 260813)
+</footer>
+
+</div>
+</body>
+</html>
