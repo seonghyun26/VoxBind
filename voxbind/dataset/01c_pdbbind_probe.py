@@ -1405,16 +1405,20 @@ def make_pool(kind: str, dim: int, *, n_heads: int = 8, dropout: float = 0.0) ->
 
 
 class MLP2(nn.Module):
-    """Probe head: input_dim → hidden → out_dim (out_dim=1 → squeezed scalar)."""
-    def __init__(self, input_dim: int, hidden: int = 128, dropout: float = 0.1, out_dim: int = 1):
+    """Probe head: input_dim → [hidden → SiLU → Dropout] × (n_layers-1) → out_dim.
+    n_layers=2 (default) reproduces the original input→hidden→out 2-layer head; larger
+    n_layers stacks extra hidden blocks (Tönshoff-et-al. LRGB observation: a deeper/tuned
+    readout head can move a 'frozen-feature' benchmark a lot). n_layers=1 → bare Linear."""
+    def __init__(self, input_dim: int, hidden: int = 128, dropout: float = 0.1,
+                 out_dim: int = 1, n_layers: int = 2):
         super().__init__()
         self.out_dim = out_dim
-        self.net = nn.Sequential(
-            nn.Linear(input_dim, hidden),
-            nn.SiLU(),
-            nn.Dropout(dropout),
-            nn.Linear(hidden, out_dim),
-        )
+        layers, d = [], input_dim
+        for _ in range(max(0, n_layers - 1)):
+            layers += [nn.Linear(d, hidden), nn.SiLU(), nn.Dropout(dropout)]
+            d = hidden
+        layers += [nn.Linear(d, out_dim)]
+        self.net = nn.Sequential(*layers)
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         out = self.net(x)
         return out.squeeze(-1) if self.out_dim == 1 else out
@@ -1592,7 +1596,7 @@ def train_one(
     data: dict, *, seed: int, device: str, max_epochs: int, patience: int,
     batch_size: int, lr: float, weight_decay: float, hidden: int, dropout: float,
     head: str = "scalar", soft_sigma: float = 1.0, num_classes: Optional[int] = None,
-    probe_loss: str = "mse", aux_weight: float = 1.0,
+    probe_loss: str = "mse", aux_weight: float = 1.0, n_layers: int = 2,
 ) -> dict:
     """Train a single MLP probe; return metrics dict.
 
@@ -1619,7 +1623,8 @@ def train_one(
     else:
         out_dim = 1
 
-    model = MLP2(Xtr.shape[1], hidden=hidden, dropout=dropout, out_dim=out_dim).to(device)
+    model = MLP2(Xtr.shape[1], hidden=hidden, dropout=dropout, out_dim=out_dim,
+                 n_layers=n_layers).to(device)
     opt = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
     _reg_loss = build_probe_loss(probe_loss, aux_weight)     # scalar-head training loss
     # ranking/correlation terms need ≥2 distinct samples per batch; skip a tiny trailing
@@ -1904,6 +1909,7 @@ def run_probe(args: argparse.Namespace) -> None:
                 batch_size=args.batch_size, lr=args.lr,
                 weight_decay=args.weight_decay,
                 hidden=args.hidden, dropout=args.dropout,
+                n_layers=getattr(args, "probe_layers", 2),
                 head=args.head, soft_sigma=args.soft_sigma,
                 probe_loss=args.probe_loss, aux_weight=args.aux_weight,
             )
@@ -2749,6 +2755,8 @@ def build_parser() -> argparse.ArgumentParser:
     pr.add_argument("--seeds",         type=int,   default=3)
     pr.add_argument("--device",        default="cuda" if torch.cuda.is_available() else "cpu")
     pr.add_argument("--hidden",        type=int,   default=128)
+    pr.add_argument("--probe_layers",  type=int,   default=2,
+                    help="probe-head MLP depth: 2=input→hidden→out (default), 3 adds a hidden block")
     pr.add_argument("--dropout",       type=float, default=0.1)
     pr.add_argument("--lr",            type=float, default=1e-3)
     pr.add_argument("--weight_decay",  type=float, default=1e-4)

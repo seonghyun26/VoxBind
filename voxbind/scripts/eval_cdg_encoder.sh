@@ -25,16 +25,20 @@ COMMON=(--conditions "$COND" --epoch "$EP" --voxel_version v5 --split lp_edrscc_
         --feature_tag "$TAG" --exp_dir "exps/$RUN" --allow_stale_features --seeds "$SEEDS")
 
 echo "==== [1/3] extract features: $RUN e$EP on cuda:$GPU ===="
-CUDA_VISIBLE_DEVICES="$GPU" "$PY" dataset/01c_pdbbind_probe.py features \
+# NB: $PY is intentionally UNQUOTED — it holds a multi-word command ("nice -n 19 <python>")
+# that must word-split into argv. Quoting it treats the whole string as one binary path → fails.
+CUDA_VISIBLE_DEVICES="$GPU" $PY dataset/01c_pdbbind_probe.py features \
   --condition "$COND" --voxel_version v5 --epoch "$EP" --tag "$TAG" \
   --exp_dir "exps/$RUN" --device cuda:0 --num_workers 0 || { echo "extract FAILED"; exit 1; }
 
 echo "==== [2/3] probe head = MSE ===="
-"$PY" dataset/01c_pdbbind_probe.py probe "${COMMON[@]}" \
+# NB: pin CUDA_VISIBLE_DEVICES here too — without it, --device cuda:0 falls back to physical
+# GPU 0, which OOMs the probe when GPU 0 is occupied by another job.
+CUDA_VISIBLE_DEVICES="$GPU" $PY dataset/01c_pdbbind_probe.py probe "${COMMON[@]}" \
   --probe_loss mse --device cuda:0 --no_wandb --tag "${RUN}_mse"
 
 echo "==== [3/3] probe head = MSE+corr (aux_weight=$AUXW) ===="
-"$PY" dataset/01c_pdbbind_probe.py probe "${COMMON[@]}" \
+CUDA_VISIBLE_DEVICES="$GPU" $PY dataset/01c_pdbbind_probe.py probe "${COMMON[@]}" \
   --probe_loss mse+corr --aux_weight "$AUXW" --device cuda:0 --no_wandb --tag "${RUN}_msecorr${AUXW}"
 
 echo "==== DONE: $RUN e$EP ===="

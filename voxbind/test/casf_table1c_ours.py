@@ -27,9 +27,10 @@ from probe_casf_100m_mask075 import (  # noqa: E402
 import torch  # noqa: E402
 torch.set_num_threads(4)
 
-BUNDLES = {
-    "C+D+G": "atomblob_density_gradmag_e49_v5_260705_ar_cvit_100m_v2_mask075.pt",
-    "C":     "atomblob_e49_v5_260723_ar_cvit_100m_v2_mask075_coords.pt",
+BUNDLES = {  # label: (feature bundle, probe-head loss)
+    "C+D+G":       ("atomblob_density_gradmag_e49_v5_260705_ar_cvit_100m_v2_mask075.pt", "mse"),
+    "C":           ("atomblob_e49_v5_260723_ar_cvit_100m_v2_mask075_coords.pt", "mse"),
+    "C+D+G +corr": ("atomblob_density_gradmag_e49_v5_260705_ar_cvit_100m_v2_mask075.pt", "mse+corr"),
 }
 
 
@@ -62,9 +63,9 @@ def main():
                "id60": id60, "id30": id30}
     print("cohort sizes:", {k: len(v) for k, v in cohorts.items()}, "| seeds", args.seeds, flush=True)
 
-    loss_fn = build_loss(args.loss, 5.0)
     results = {}
-    for label, basename in BUNDLES.items():
+    for label, (basename, loss) in BUNDLES.items():
+        loss_fn = build_loss(loss, 5.0)
         feats = load_feats_basename(basename)
         dim = next(iter(feats.values())).shape[0]
         per = {c: [] for c in cohorts}

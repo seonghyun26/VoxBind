@@ -13,6 +13,7 @@ Section 2 — De novo drug design: Table 2 (+ heavy-atom count column) + the Vin
 
     python notebook/html/build_results.py
 """
+import json
 import os
 import re
 import sys
@@ -336,7 +337,13 @@ PLANNED_TBA = set()
 
 # method render order = bar.METHODS order (HonestAffinity, IPNet frozen/scratch, and Nesso-1 are
 # first-class entries in bar.METHODS so Table 1 and the bar charts share one source).
-ORDER = [name for (name, *_ ) in bar.METHODS]
+# IPNet (IPDiff) is a CrossDocked2020 pocket-conditioned *generation* model, not an affinity
+# regressor — excluded from the binding-affinity tables/charts.
+EXCLUDE_AFFINITY = {"IPNet (frozen)", "IPNet (scratch)"}
+ORDER = [name for (name, *_ ) in bar.METHODS if name not in EXCLUDE_AFFINITY]
+# Drop IPNet from bar.METHODS too, so every chart/legend that reads it (bar.svg, bar.legend,
+# lp_all_tiers_svg) excludes IPNet. Local to this generator run — other pages import bar fresh.
+bar.METHODS = [m for m in bar.METHODS if m[0] not in EXCLUDE_AFFINITY]
 
 # ── CASF-2016 evaluation columns (all methods trained on lp_edrscc_v2 TRAIN, tested on CASF) ──
 # leaky = full CASF-2016 core (214 ED-avail, 90 in v2-train → inflated); nontrain = the 124 held out.
@@ -790,12 +797,17 @@ def casp16_rows():
 
 # ── Protein-sequence-novelty stress tests (Table 1b) ─────────────────────────
 LBA_METHODS = all_methods()   # identical baseline universe in Tables 1a/1b; missing runs render TBA
-LBA_COLS = [   # base LP, then LP TEST masked by protein novelty (same model/features, no retrain)
+# Table 1b (main) = LP anchor + CL3 protein-novelty cohorts (the leak-proof novelty axis).
+LBA_COLS = [
+    ("lp_edrscc_v2", "LP-PDBBind", "1320"),
+    ("cl123_test_novel60", "CL3 test &middot; novel protein<br>id &lt; 60% to CL3 train", "454"),
+    ("cl123_test_novel30", "CL3 test &middot; novel protein<br>id &lt; 30% to CL3 train", "262"),
+]
+# Appendix = the LP-PDBBind protein-novelty cohorts (same model/features, no retrain).
+LBA_APPENDIX_COLS = [
     ("lp_edrscc_v2", "LP-PDBBind", "1320"),
     ("lp_test_novel60", "LP &middot; novel protein<br>test id &lt; 60% to train", "813"),
     ("lp_test_novel30", "LP &middot; novel protein<br>test id &lt; 30% to train", "453"),
-    ("cl123_test_novel60", "CL3 test &middot; fresh 5-seed<br>protein id &lt; 60% to CL3 train", "454"),
-    ("cl123_test_novel30", "CL3 test &middot; fresh 5-seed<br>protein id &lt; 30% to CL3 train", "262"),
 ]
 
 # Appendix-only CASF stress test. Start from CL3-clean (exact CL3 train/val PDB
@@ -818,24 +830,26 @@ def load_lba_table():
     return _j.load(open(p)) if os.path.exists(p) else {}
 
 
-def lba_table_head():
+def lba_table_head(cols=None):
+    cols = LBA_COLS if cols is None else cols
     grp = ['<tr class="grp"><th class="col-modality" rowspan="2">Input</th>'
            '<th class="col-method" rowspan="2">Method</th>']
-    for _, label, n in LBA_COLS:
+    for _, label, n in cols:
         grp.append(f'<th class="div-major" colspan="3">{label}<span class="nsub">N&nbsp;=&nbsp;{n}</span></th>')
     grp.append("</tr>")
     sub = ['<tr class="sub">']
-    for _ in LBA_COLS:
+    for _ in cols:
         sub.append('<th class="div-major">Pearson&nbsp;<i>r</i></th><th>Spearman&nbsp;&rho;</th><th>RMSE&nbsp;&darr;</th>')
     sub.append("</tr>")
     return "\n          ".join(grp) + "\n          " + "\n          ".join(sub)
 
 
-def lba_rows():
+def lba_rows(cols=None):
     """All Table-1 baselines as rows (same as §1.1). First column = the lp_edrscc_v2 value via load()
     (identical to Table 1a); novelty columns are cached re-scores of the same test predictions."""
+    cols = LBA_COLS if cols is None else cols
     best = {}
-    for key, _, _ in LBA_COLS:
+    for key, _, _ in cols:
         present = [(m, load(m, key)) for m in LBA_METHODS]
         present = [(m, d) for m, d in present
                    if m not in LEAKED and d and d.get("rho") and d["rho"][0] is not None]
@@ -845,7 +859,7 @@ def lba_rows():
     items = []
     for m in order:
         tds = [method_cell(m, show_leaked=True)]
-        for key, _, _ in LBA_COLS:
+        for key, _, _ in cols:
             d = load(m, key)
             for k, metric in enumerate(("r", "rho", "rmse")):
                 divcls = "div-major" if k == 0 else ""
@@ -886,6 +900,95 @@ def casf_similarity_rows():
                 tds.append(metric_cell(value, False, divcls) if value else tba_cell(divcls))
         items.append((name, "".join(tds)))
     return cat_merged_rows(items)
+
+
+# ── Table 1c: CASF-2016 external test across 5 leak-control cohorts ───────────────
+# leaky(214) full core | nontrain(124) train removed | novel id<60/<30 to CL3 train |
+# clean-92 held out from v2 train AND val. Ours (C, C+D+G) use the 5-seed
+# casf_table1c_ours_5seed.json for ALL cohorts; baselines use their per-method CASF json
+# (leaky/nontrain/clean) + casf_similarity (id60/id30).
+import json as _json1c
+_OURS_1C_PATH = os.path.join(REPO, "base", "_casf", "casf_table1c_ours_5seed.json")
+_OURS_1C = _json1c.load(open(_OURS_1C_PATH)) if os.path.exists(_OURS_1C_PATH) else {}
+CASF_1C_COLS = [
+    ("leaky",    "CASF-2016 core<br>train-overlap",             "214"),
+    ("nontrain", "CASF-2016<br>non-train",                      "124"),
+    ("id60",     "CASF-2016 &middot; novel<br>id &lt; 60% CL3", "64"),
+    ("id30",     "CASF-2016 &middot; novel<br>id &lt; 30% CL3", "32"),
+    ("clean",    "CASF-2016<br>clean held-out",                 "92"),
+]
+_SIM_COHORT = {"id60": "casf_clean_cl3_novel60", "id30": "casf_clean_cl3_novel30"}
+
+
+def load_casf_1c(method, cohort):
+    """CASF result for Table 1c → {'r','rho','rmse'} or None. ours = 5-seed file; else
+    per-method json (leaky/nontrain/clean) or casf_similarity (id60/id30)."""
+    if method in _OURS_1C and cohort in _OURS_1C[method]:
+        d = _OURS_1C[method][cohort]
+        g = lambda k: (d[k][0], d[k][1]) if isinstance(d.get(k), (list, tuple)) and len(d[k]) >= 2 else None
+        return {"r": g("pearson"), "rho": g("spearman"), "rmse": g("rmse")}
+    if cohort in ("leaky", "nontrain", "clean"):
+        return load_casf(method, cohort)
+    if cohort in _SIM_COHORT:
+        return load_casf_similarity(method, _SIM_COHORT[cohort])
+    return None
+
+
+def casf_1c_table_head():
+    grp = ['<tr class="grp"><th class="col-modality" rowspan="2">Input</th>'
+           '<th class="col-method" rowspan="2">Method</th>']
+    for _, label, n in CASF_1C_COLS:
+        grp.append(f'<th class="div-major" colspan="3">{label}<span class="nsub">N&nbsp;=&nbsp;{n}</span></th>')
+    grp.append("</tr>")
+    sub = ['<tr class="sub">']
+    for _ in CASF_1C_COLS:
+        sub.append('<th class="div-major">Pearson&nbsp;<i>r</i></th>'
+                   '<th>Spearman&nbsp;&rho;</th><th>RMSE&nbsp;&darr;</th>')
+    sub.append("</tr>")
+    return "\n          ".join(grp) + "\n          " + "\n          ".join(sub)
+
+
+def casf_1c_rows():
+    """All affinity methods on the 5 CASF cohorts; best non-leaked rho per cohort highlighted."""
+    order = sorted(LBA_METHODS, key=lambda n: cat_sort_key(n, LBA_METHODS.index(n)))
+    best = {}
+    for cohort, _, _ in CASF_1C_COLS:
+        present = [(m, load_casf_1c(m, cohort)) for m in order]
+        present = [(m, d) for m, d in present
+                   if m not in LEAKED and d and d.get("rho") and d["rho"][0] is not None]
+        if present:
+            best[cohort] = max(present, key=lambda x: x[1]["rho"][0])[0]
+    items = []
+    for name in order:
+        tds = [method_cell(name, show_leaked=True, pretrain_overlap=(name == "ProFSA"))]
+        for cohort, _, _ in CASF_1C_COLS:
+            d = load_casf_1c(name, cohort)
+            for k, metric in enumerate(("r", "rho", "rmse")):
+                divcls = "div-major" if k == 0 else ""
+                value = d.get(metric) if d else None
+                rank = "best" if (metric == "rho" and best.get(cohort) == name) else None
+                tds.append(metric_cell(value, rank, divcls) if value else tba_cell(divcls))
+        items.append((name, "".join(tds)))
+    return cat_merged_rows(items)
+
+
+def casf_1c_chart():
+    row_labels = {
+        "leaky":    ("CASF core", "train-overlap"),
+        "nontrain": ("Non-train", "train removed"),
+        "id60":     ("Novel &lt;60%", "id to CL3 train"),
+        "id30":     ("Novel &lt;30%", "id to CL3 train"),
+        "clean":    ("Clean-92", "held out train+val"),
+    }
+    return cohort_bar_svg(
+        CASF_1C_COLS, load_casf_1c, row_labels,
+        "CASF-2016 metrics across five leak-control cohorts",
+        "CASF-2016 external test", "Columns are Pearson r, Spearman rho, RMSE; rows are the "
+        "five leak-control cohorts. Bars show method means, whiskers standard deviation.")
+
+
+def casf_1c_legend():
+    return bar.legend(leaked_names=LEAKED)
 
 
 def cohort_bar_svg(cols, loader, row_labels, aria_label, title, desc,
@@ -983,9 +1086,9 @@ def cohort_bar_svg(cols, loader, row_labels, aria_label, title, desc,
     return "\n      ".join(out)
 
 
-def lba_bar_svg():
+def lba_bar_svg(cols=None):
     return cohort_bar_svg(
-        LBA_COLS,
+        LBA_COLS if cols is None else cols,
         load,
         {
             "lp_edrscc_v2": ("LP-PDBBind", "base"),
@@ -994,10 +1097,10 @@ def lba_bar_svg():
             "cl123_test_novel60": ("CL3 novel &lt;60%", "to CL3 train"),
             "cl123_test_novel30": ("CL3 novel &lt;30%", "to CL3 train"),
         },
-        "Table 1b generalization metrics across LP-PDBBind and protein-novel subsets",
+        "generalization metrics across protein-novel subsets",
         "Generalization under leakage control",
-        "Columns are Pearson correlation, Spearman correlation, and RMSE; rows are the five "
-        "Table 1b cohorts. Bars show available method means and whiskers show standard deviation.",
+        "Columns are Pearson correlation, Spearman correlation, and RMSE; rows are the "
+        "protein-novelty cohorts. Bars show available method means and whiskers show standard deviation.",
     )
 
 
@@ -1585,11 +1688,11 @@ def lp_all_tiers_svg():
 
 
 def ablation_section():
-    """Section 1.3 — CDG-encoder ablation: numbered table + bar chart from ablation_cdg.json."""
+    """Section 1.5 — CDG-encoder ablation: numbered table + bar chart from ablation_cdg.json."""
     import json
     jp = os.path.join(HERE, "ablation_cdg.json")
     if not os.path.exists(jp):
-        return ('<h3 class="subsec-head"><span class="sn">1.3</span> Ablation studies</h3>'
+        return ('<h3 class="subsec-head"><span class="sn">1.5</span> Ablation studies</h3>'
                 '<p class="subsec-intro">ablation_cdg.json missing &mdash; run '
                 '<code>voxbind/test/ablation_probe.py</code>.</p>')
     rows = sorted(json.load(open(jp)), key=lambda d: d["num"])
@@ -1692,7 +1795,7 @@ def ablation_section():
              'the ensemble&rsquo;s mask-diversity gain needs genuinely separate <b>weights</b>, not one model trained on varied masks.</li>'
              '<li>#16/#17 on clean <b>v2.2</b> (drop out-of-vocab-ligand complexes) beat their v2 twins by ~+0.01, but grouped [7,4,2] &amp; fixed-mask champion still win.</li>'
              '<li>* #13/#14 use N=779; matched champion &#961; = 0.611.</li></ul>')
-    header = '<h3 class="subsec-head"><span class="sn">1.3</span> Ablation studies</h3>'
+    header = '<h3 class="subsec-head"><span class="sn">1.5</span> Ablation studies</h3>'
     return (header + intro
             + '<section class="block"><p class="table-title">Figure 3 &nbsp;&middot;&nbsp; Test &#961; by ablation '
               'number &mdash; champion (dashed) vs attempts</p>'
@@ -1700,6 +1803,364 @@ def ablation_section():
             + '<section class="block"><p class="table-title">Table 3 &nbsp;&middot;&nbsp; CDG-encoder ablation '
               '&mdash; val &#961; / test r / test &#961; / RMSE (5 seeds, MSE head)</p>'
               '<div class="table-wrap">' + table + '</div></section>')
+
+
+def lep_section():
+    """§1.2 Ligand Efficacy Prediction (LEP) — the CheapNet paper's second experiment
+    (ATOM3D LEP, split-by-protein). Frozen-encoder mean-pool + MLP probe on the concat
+    of the active & inactive complex features vs. reported / reproduced baselines.
+    Data-driven: reads notebook/html/lep_results.json (fill baseline rows as runs land)."""
+    jp = os.path.join(HERE, "lep_results.json")
+    if not os.path.exists(jp):
+        return ('<h3 class="subsec-head"><span class="sn">1.3</span> Ligand Efficacy '
+                'Prediction (LEP)</h3><p class="subsec-intro">lep_results.json not found.</p>')
+    with open(jp) as f:
+        data = json.load(f)
+    methods = sorted(data["methods"], key=lambda m: (m["auroc"][0] is None, -(m["auroc"][0] or 0)))
+    best_auroc = max((m["auroc"][0] for m in methods if m["auroc"][0] is not None), default=None)
+    best_auprc = max((m["auprc"][0] for m in methods if m["auprc"][0] is not None), default=None)
+
+    def metric(v, is_best):
+        m, s = v
+        if m is None:
+            return '<td class="metric" style="text-align:center"><span class="na">&mdash;</span></td>'
+        val = f'{m:.3f}'
+        cls = "metric second" if is_best else "metric"
+        inner = f'<span class="val"{" style=font-weight:750" if is_best else ""}>{val}</span>'
+        if s is not None:
+            inner += f' <span class="sd">&plusmn;{s:.3f}</span>'
+        return f'<td class="{cls}" style="text-align:center">{inner}</td>'
+
+    prov_tag = {
+        "ours": '<span class="tag repro" title="this work">ours</span>',
+        "reproduced": '<span class="tag retrained" title="reproduced from released checkpoints">reproduced</span>',
+        "running": '<span class="tag" style="background:#fdf0d8;color:#9a6a15;border:1px solid #eed9a8" title="local run in progress">running&hellip;</span>',
+        "reported": '',
+    }
+    rows = []
+    for m in methods:
+        is_ours = m["cat"] == "ours"
+        mcell_cls = "col-method cat-ours" if is_ours else "col-method"
+        name = f'<b>{m["name"]}</b>' if is_ours else m["name"]
+        tag = prov_tag.get(m.get("prov", "reported"), "")
+        ref = m.get("ref")
+        if m.get("prov") == "ours":
+            src = "this work"
+        elif ref:
+            src = f'<a href="{ref}" style="color:#5b6678">ref</a>'
+        else:
+            src = '<span class="na">&mdash;</span>'
+        title = f' title="{m["note"]}"' if m.get("note") else ""
+        rows.append(
+            f'<tr{title}><td class="{mcell_cls}">{name} {tag}</td>'
+            f'<td class="col-modality">{m["type"]}</td>'
+            + metric(m["auroc"], m["auroc"][0] == best_auroc)
+            + metric(m["auprc"], m["auprc"][0] == best_auprc)
+            + f'<td style="text-align:center;font-size:11.5px">{src}</td></tr>')
+
+    n = data["n"]
+    head = (
+        '<h3 class="subsec-head"><span class="sn">1.3</span> Ligand Efficacy Prediction (LEP)</h3>'
+        '<p class="subsec-intro">The CheapNet paper\'s second benchmark &mdash; '
+        '<a href="https://www.atom3d.ai/lep.html">ATOM3D&nbsp;LEP</a>, <code>split-by-protein</code>. '
+        'Each example is one molecule presented in an <b>active-state</b> and an <b>inactive-state</b> '
+        'protein complex; the binary task is whether the molecule <b>activates</b> the protein. '
+        'We apply the same frozen-encoder protocol as &sect;1.1: voxelise both conformers, mean-pool the '
+        'encoder patch tokens (640-D each), and train a 2-layer MLP on the concatenation '
+        '[active&nbsp;&Vert;&nbsp;inactive] with BCE (3 seeds). Metrics = AUROC / AUPRC on the test set.</p>'
+        '<ul class="split-notes">'
+        f'<li><b>Split (split-by-protein):</b> train {n["train"]} / val {n["val"]} / test {n["test"]}; '
+        'pocket = protein atoms &le;6&nbsp;&#8491; of the ligand (CheapNet cutoff).</li>'
+        '<li><b>No electron density for LEP.</b> These are docked poses with no X-ray maps, so the '
+        'C+D+G encoder\'s density &amp; gradient channels are <b>zero-filled</b> &mdash; a transfer test of '
+        'the fuller encoder, not a real &ldquo;density helps&rdquo; comparison. Zero-filling is out-of-distribution '
+        'and slightly hurts (0.712 vs coords-only 0.736).</li>'
+        '<li><b>Frozen probe, no fine-tuning.</b> Our encoder lands at supervised-from-scratch 3D-GNN level '
+        '(&asymp;SchNet/EGNN), below fine-tuned pretrained encoders (Uni-Mol/ProFSA/BindNet) and the '
+        'supervised SOTA CheapNet. Reported baselines are on the same split.</li>'
+        '</ul>')
+    table = (
+        '<section class="block">'
+        '<p class="table-title">Table 1.3 &nbsp;&middot;&nbsp; ATOM3D LEP test metrics '
+        '&mdash; AUROC / AUPRC (ours: mean&nbsp;&plusmn;&nbsp;std, 3 seeds)</p>'
+        '<ul class="caption-list">'
+        '<li><span class="tag repro">ours</span> frozen encoder + MLP probe (this work); '
+        '<span class="tag retrained">reproduced</span> from released checkpoints; '
+        'un-tagged rows are <b>reported</b> on the same ATOM3D split (see ref).</li>'
+        '<li>Best per column is <span style="font-weight:750">bold</span>. '
+        '&mdash; = not reported / not yet run.</li>'
+        + (f'<li><b>Reproductions:</b> {data["repro_note"]}</li>' if data.get("repro_note") else '')
+        + '</ul>'
+        '<div class="table-wrap"><table class="results">'
+        '<thead><tr class="grp">'
+        '<th style="text-align:left">Method</th><th class="col-modality">Type</th>'
+        '<th class="div-block">AUROC</th><th>AUPRC</th><th>Source</th></tr></thead>'
+        '<tbody>' + "\n          ".join(rows) + '</tbody>'
+        '</table></div></section>')
+
+    # ── pocket-density ablation (real receptor 2Fo-Fc) ──
+    pd = data.get("pocket_density")
+    pd_html = ""
+    if pd:
+        pn = pd["n"]
+        prows = []
+        base = pd["rows"][0]["auroc"][0]
+        for r in pd["rows"]:
+            a, p = r["auroc"], r["auprc"]
+            hurt = r["auroc"][0] < 0.5
+            nm = (f'<span style="color:#b03030;font-weight:600">{r["name"]}</span>' if hurt else r["name"])
+            prows.append(
+                f'<tr><td class="col-method">{nm}</td>'
+                f'<td class="metric" style="text-align:center"><span class="val">{a[0]:.3f}</span> '
+                f'<span class="sd">&plusmn;{a[1]:.3f}</span></td>'
+                f'<td class="metric" style="text-align:center"><span class="val">{p[0]:.3f}</span> '
+                f'<span class="sd">&plusmn;{p[1]:.3f}</span></td></tr>')
+        pd_html = (
+            '<section class="block">'
+            '<p class="table-title">Table 1.2b &nbsp;&middot;&nbsp; Can real RECEPTOR density help? '
+            '&mdash; frozen C+D+G with experimental 2Fo-Fc pocket density (3 seeds)</p>'
+            '<ul class="caption-list">'
+            f'<li>{pd["note"]}</li>'
+            f'<li><b>Verdict:</b> {pd["verdict"]}</li>'
+            '</ul>'
+            '<div class="table-wrap"><table class="results">'
+            '<thead><tr class="grp"><th style="text-align:left">Condition '
+            f'(both-X-ray subset, test&nbsp;n={pn["test"]})</th>'
+            '<th class="div-block">AUROC</th><th>AUPRC</th></tr></thead>'
+            '<tbody>' + "\n          ".join(prows) + '</tbody></table></div></section>')
+
+    return head + table + pd_html
+
+
+# ── Section 1.2: does electron density help? C vs C+D+G across every test set ─────
+# Both encoders are the identical 100M ChannelViT (PLINDER-v2 pretrain, 75% mask, epoch 49);
+# C = coords-only channel-groups [7,4], C+D+G = coords + electron-density + density-gradient
+# [7,4,1,1]. Only the two density input channels differ, so each Δ isolates electron density.
+# Data pulled live from the same loaders as Tables 1a/1b/1c (+ lep_results.json counter-case).
+DENSITY_GROUPS = [
+    ("PDBbind &mdash; leakage-controlled CL tiers", [
+        ("LP-PDBBind",                     "in-distribution",     "split", "lp_edrscc_v2",       1320),
+        ("+&thinsp;CL1",                   "seq-cluster dedup",   "split", "lp_edrscc_v2_cl1",   1166),
+        ("+&thinsp;CL1-2",                 "stricter",            "split", "lp_edrscc_v2_cl12",  1149),
+        ("+&thinsp;CL1-2-3",               "strictest",           "split", "lp_edrscc_v2_cl123",  733),
+    ]),
+    ("Protein-novelty holdout (CL3 test, seq-id to train)", [
+        ("CL3 &middot; novel id&lt;60%",   "novel targets",       "split", "cl123_test_novel60",  454),
+        ("CL3 &middot; novel id&lt;30%",   "very novel",          "split", "cl123_test_novel30",  262),
+    ]),
+    ("CASF-2016 external core", [
+        ("CASF &middot; clean-92",         "held out train+val",  "casf",  "clean",                92),
+    ]),
+]
+
+
+def _density_pair(kind, key):
+    """(C, C+D+G) result dicts for one test set, via the Table-1a/1c loaders."""
+    if kind == "split":
+        return load("C", key), load("C+D+G", key)
+    return load_casf_1c("C", key), load_casf_1c("C+D+G", key)
+
+
+def _density_rows_data():
+    """Flatten DENSITY_GROUPS → list of (group|None, label, sub, n, C, CDG) with C/CDG loaded."""
+    rows = []
+    for gname, items in DENSITY_GROUPS:
+        rows.append(("GROUP", gname, None, None, None, None))
+        for label, sub, kind, key, n in items:
+            c, cdg = _density_pair(kind, key)
+            rows.append((None, label, sub, n, c, cdg))
+    return rows
+
+
+def density_helps_table():
+    def num(pair, digits=3):
+        if not pair or pair[0] is None:
+            return '<span class="na">&mdash;</span>'
+        m, s = pair
+        out = f'<span class="val">{m:.{digits}f}</span>'
+        if s is not None:
+            out += f' <span class="sd">&plusmn;{s:.{digits}f}</span>'
+        return out
+
+    def delta_span(d, good_positive=True, digits=3):
+        if d is None:
+            return '<span class="na">&mdash;</span>'
+        helps = (d > 0) if good_positive else (d < 0)
+        col = "#1a7a4f" if (helps and abs(d) >= 0.001) else ("#b03030" if abs(d) >= 0.001 else "#7a8699")
+        return f'<span style="font-weight:700;color:{col}">{d:+.{digits}f}</span>'
+
+    rows = []
+    for grp, label, sub, n, c, cdg in _density_rows_data():
+        if grp == "GROUP":
+            rows.append(f'<tr class="grp-band"><td colspan="10">{label}</td></tr>')
+            continue
+        cr, cro, crm = (c or {}).get("r"), (c or {}).get("rho"), (c or {}).get("rmse")
+        dr, dro, drm = (cdg or {}).get("r"), (cdg or {}).get("rho"), (cdg or {}).get("rmse")
+        d_r = (dr[0] - cr[0]) if (dr and cr and dr[0] is not None and cr[0] is not None) else None
+        d_rho = (dro[0] - cro[0]) if (dro and cro and dro[0] is not None and cro[0] is not None) else None
+        d_rmse = (crm[0] - drm[0]) if (drm and crm and drm[0] is not None and crm[0] is not None) else None  # C−CDG: +ve = density lowers error
+        rows.append(
+            f'<tr><td class="col-method" style="text-align:left">{label}'
+            f'<span style="display:block;font-size:10px;color:#9aa3b2;font-weight:400">{sub}</span></td>'
+            f'<td class="col-modality">{n}</td>'
+            f'<td class="metric div-block">{num(cr)}</td><td class="metric">{num(cro)}</td><td class="metric">{num(crm)}</td>'
+            f'<td class="metric div-block">{num(dr)}</td><td class="metric">{num(dro)}</td><td class="metric">{num(drm)}</td>'
+            f'<td class="metric div-block">{delta_span(d_r)}</td>'
+            f'<td class="metric" style="background:#eef7f1">{delta_span(d_rho)}</td>'
+            f'<td class="metric">{delta_span(d_rmse)}</td></tr>')
+    head = (
+        '<thead><tr class="grp">'
+        '<th rowspan="2" style="text-align:left">Test set</th>'
+        '<th rowspan="2" class="col-modality">N</th>'
+        '<th class="div-block" colspan="3">C &mdash; coords only</th>'
+        '<th class="div-block" colspan="3">C+D+G &mdash; coords + density</th>'
+        '<th class="div-block" colspan="3">&Delta; = density &minus; coords</th></tr>'
+        '<tr class="sub">'
+        '<th class="div-block">r</th><th>&rho;</th><th>RMSE&nbsp;&darr;</th>'
+        '<th class="div-block">r</th><th>&rho;</th><th>RMSE&nbsp;&darr;</th>'
+        '<th class="div-block">&Delta;r</th><th style="background:#eef7f1">&Delta;&rho;</th><th>&Delta;RMSE</th></tr></thead>')
+    return f'<table class="results density-cmp">{head}<tbody>' + "\n          ".join(rows) + '</tbody></table>'
+
+
+def density_helps_chart():
+    """Grouped horizontal bars of Spearman ρ (C vs C+D+G) per test set, Δρ annotated at right.
+    x-axis truncated to [0.30, 0.80] so the density gap is legible (noted in the caption)."""
+    data = _density_rows_data()
+    RHO_MIN, RHO_MAX = 0.30, 0.80
+    W = 1000
+    ML, BAR_X0, BAR_X1, DX = 22, 250, 815, 850          # label area | bar area | Δρ column
+    ROW_H, BAR_H, GRP_H, TOP, BOT = 30, 10, 26, 46, 40
+    body_h = sum(GRP_H if r[0] == "GROUP" else ROW_H for r in data)
+    H = TOP + body_h + BOT
+    cC, cCDG = COLOR["C"], COLOR["C+D+G"]
+
+    def x(rho):
+        rho = max(RHO_MIN, min(RHO_MAX, rho))
+        return BAR_X0 + (rho - RHO_MIN) / (RHO_MAX - RHO_MIN) * (BAR_X1 - BAR_X0)
+
+    out = [
+        f'<svg viewBox="0 0 {W} {H}" width="100%" style="max-width:{W}px;display:block;margin:0 auto" '
+        'font-family="-apple-system,Segoe UI,Roboto,sans-serif" role="img" '
+        'aria-label="Spearman rho for coords-only C vs C+D+G across affinity test sets">',
+        '<title>Density vs coords &mdash; Spearman &rho; across test sets</title>',
+        '<desc>Two horizontal bars per test set (C coords-only, C+D+G coords+density); '
+        'right column is the density gain in &rho;. x-axis starts at 0.30.</desc>',
+    ]
+    # axis: gridlines + top ticks
+    for t in [0.30, 0.40, 0.50, 0.60, 0.70, 0.80]:
+        xx = x(t)
+        out.append(f'<line x1="{xx:.1f}" y1="{TOP-8:.1f}" x2="{xx:.1f}" y2="{TOP+body_h:.1f}" '
+                   f'stroke="{"#c7ccd6" if t==0.30 else "#eceef2"}" stroke-width="1"/>')
+        out.append(f'<text x="{xx:.1f}" y="{TOP-12:.1f}" text-anchor="middle" font-size="9" '
+                   f'fill="#9aa3b2">{t:.2f}</text>')
+    out.append(f'<text x="{(BAR_X0+BAR_X1)/2:.1f}" y="16" text-anchor="middle" font-size="11" '
+               'font-weight="700" fill="#1c2433">Test Spearman &rho;  (x-axis starts at 0.30)</text>')
+    out.append(f'<text x="{DX+70}" y="16" text-anchor="middle" font-size="11" font-weight="700" '
+               'fill="#1c2433">&Delta;&rho;</text>')
+
+    y = TOP
+    for grp, label, sub, n, c, cdg in data:
+        if grp == "GROUP":
+            out.append(f'<text x="{ML}" y="{y+GRP_H-9:.1f}" font-size="10.5" font-weight="800" '
+                       f'fill="#566072" letter-spacing="0.02em">{label}</text>')
+            out.append(f'<line x1="{ML}" y1="{y+GRP_H-2:.1f}" x2="{BAR_X1}" y2="{y+GRP_H-2:.1f}" '
+                       'stroke="#e6e9ef" stroke-width="1"/>')
+            y += GRP_H
+            continue
+        cro = (c or {}).get("rho"); dro = (cdg or {}).get("rho")
+        cm = cro[0] if cro and cro[0] is not None else None
+        dm = dro[0] if dro and dro[0] is not None else None
+        csd = cro[1] if cro and cro[1] is not None else 0.0
+        dsd = dro[1] if dro and dro[1] is not None else 0.0
+        out.append(f'<text x="{ML+206}" y="{y+ROW_H/2-1:.1f}" text-anchor="end" font-size="10.5" '
+                   f'font-weight="650" fill="#39424f">{label}</text>')
+        out.append(f'<text x="{ML+206}" y="{y+ROW_H/2+11:.1f}" text-anchor="end" font-size="8.5" '
+                   f'fill="#9aa3b2">{sub} &middot; N={n}</text>')
+        by = y + (ROW_H - (2 * BAR_H + 3)) / 2
+        # C bar (top)
+        if cm is not None:
+            out.append(f'<rect x="{BAR_X0}" y="{by:.1f}" width="{x(cm)-BAR_X0:.1f}" height="{BAR_H}" '
+                       f'rx="1.5" fill="{cC}"><title>C: {cm:.3f} ± {csd:.3f}</title></rect>')
+            out.append(f'<text x="{x(cm)+4:.1f}" y="{by+BAR_H-1.5:.1f}" font-size="8.5" fill="{cC}" '
+                       f'font-weight="650">{cm:.3f}</text>')
+        # C+D+G bar (bottom)
+        by2 = by + BAR_H + 3
+        if dm is not None:
+            out.append(f'<rect x="{BAR_X0}" y="{by2:.1f}" width="{x(dm)-BAR_X0:.1f}" height="{BAR_H}" '
+                       f'rx="1.5" fill="{cCDG}"><title>C+D+G: {dm:.3f} ± {dsd:.3f}</title></rect>')
+            out.append(f'<text x="{x(dm)+4:.1f}" y="{by2+BAR_H-1.5:.1f}" font-size="8.5" fill="{cCDG}" '
+                       f'font-weight="700">{dm:.3f}</text>')
+        # Δρ column
+        if cm is not None and dm is not None:
+            d = dm - cm
+            dcol = "#1a7a4f" if d >= 0.001 else ("#b03030" if d <= -0.001 else "#7a8699")
+            out.append(f'<text x="{DX+70}" y="{y+ROW_H/2+3:.1f}" text-anchor="middle" font-size="11.5" '
+                       f'font-weight="800" fill="{dcol}">{d:+.3f}</text>')
+        y += ROW_H
+    # legend
+    ly = TOP + body_h + 20
+    out.append(f'<rect x="{BAR_X0}" y="{ly-9:.1f}" width="13" height="9" rx="1.5" fill="{cC}"/>')
+    out.append(f'<text x="{BAR_X0+18}" y="{ly:.1f}" font-size="10" fill="#39424f">C &mdash; coords-only ChannelViT</text>')
+    out.append(f'<rect x="{BAR_X0+215}" y="{ly-9:.1f}" width="13" height="9" rx="1.5" fill="{cCDG}"/>')
+    out.append(f'<text x="{BAR_X0+233}" y="{ly:.1f}" font-size="10" fill="#39424f">C+D+G &mdash; + electron density &amp; gradient</text>')
+    out.append('</svg>')
+    return "\n      ".join(out)
+
+
+def density_helps_section():
+    """§1.2 — synthesis of the C vs C+D+G contrast across every affinity test set."""
+    # LEP counter-case numbers (no X-ray density → zero-filled), from lep_results.json.
+    lep_c = lep_cdg = None
+    jp = os.path.join(HERE, "lep_results.json")
+    if os.path.exists(jp):
+        lm = {m["name"]: m for m in json.load(open(jp))["methods"]}
+        lep_c = lm.get("Ours (C)", {}).get("auroc", [None])[0]
+        lep_cdg = lm.get("Ours (C+D+G)", {}).get("auroc", [None])[0]
+    lep_line = ""
+    if lep_c is not None and lep_cdg is not None:
+        lep_line = (f' ATOM3D&nbsp;LEP has no X-ray maps, so C+D+G&rsquo;s density channels are '
+                    f'<b>zero-filled</b> (out-of-distribution): AUROC {lep_cdg:.3f} vs coords-only '
+                    f'{lep_c:.3f} ({lep_cdg-lep_c:+.3f}).')
+    return (
+        '<h3 class="subsec-head"><span class="sn">1.2</span> Does electron density help? '
+        '&mdash; C vs C+D+G across test sets</h3>'
+        '<p class="subsec-intro">Every affinity number in &sect;1.1 is reported for two '
+        '<b>otherwise-identical</b> 100M&nbsp;ChannelViT encoders: <b>C</b> (coords-only, channel groups '
+        '[7,4]) and <b>C+D+G</b> (coords&nbsp;+&nbsp;electron-density&nbsp;+&nbsp;density-gradient, [7,4,1,1]). '
+        'They share the same PLINDER-v2 pretraining, 75% masking, epoch&nbsp;49 and the same frozen-probe '
+        'protocol &mdash; the only difference is the two electron-density input channels, so each &Delta; '
+        'isolates electron density. This section collects that contrast across every test set to ask one '
+        'question: <b>does electron density help?</b></p>'
+        '<div class="keybox"><b>Yes &mdash; density helps on every test set.</b> '
+        'C+D+G improves Spearman&nbsp;&rho; everywhere by roughly +0.02 to +0.05, with the largest gains on '
+        'the protein-novel holdouts (CL3&nbsp;novel&lt;30% &Delta;&rho;&nbsp;+0.052) and a solid +0.030 on the '
+        'fully external CASF-2016 clean-92 set. The pattern is consistent: coordinates alone already memorise '
+        'train-similar complexes, and electron density adds the most exactly where the model must generalise '
+        'to novel pockets &mdash; the full CASF novelty breakdown, where the gain widens to +0.139 under strict '
+        'id&lt;30%, is in Table&nbsp;1c.</div>'
+        '<section class="block">'
+        '<p class="table-title">Figure 1.2 &nbsp;&middot;&nbsp; Density gain across test sets '
+        '&mdash; Spearman&nbsp;&rho; (C vs C+D+G)</p>'
+        '<div class="table-wrap" style="padding:16px 18px 10px;">'
+        f'{density_helps_chart()}'
+        '</div></section>'
+        '<section class="block">'
+        '<p class="table-title">Table 1.2 &nbsp;&middot;&nbsp; C vs C+D+G across every affinity test set '
+        '(ours: 5-seed mean&nbsp;&plusmn;&nbsp;std)</p>'
+        '<ul class="caption-list">'
+        '<li>Same 100M&nbsp;ChannelViT encoder for both rows; C+D+G adds only the electron-density and '
+        'density-gradient input channels. Frozen encoder&nbsp;+&nbsp;MLP probe, 5 seeds.</li>'
+        '<li><b>&Delta; sign convention:</b> all three &Delta; columns are oriented so that '
+        '<b>positive&nbsp;=&nbsp;density helps</b> (&Delta;r, &Delta;&rho;&nbsp;=&nbsp;C+D+G&nbsp;&minus;&nbsp;C; '
+        '&Delta;RMSE&nbsp;=&nbsp;C&nbsp;&minus;&nbsp;C+D+G, i.e. density lowers error). '
+        '&Delta;&rho; is shaded green.</li>'
+        '<li><b>Counter-case (no density).</b>' + lep_line +
+        ' CASP16 chymase (n=17, Appendix&nbsp;B) is the opposite tail &mdash; density roughly doubles a weak '
+        'within-series signal (&rho; 0.15&rarr;0.30) but is underpowered. Density helps when, and only when, '
+        'real electron density is present.</li>'
+        '</ul>'
+        f'<div class="table-wrap">{density_helps_table()}</div>'
+        '</section>')
 
 
 def build():
@@ -1717,7 +2178,9 @@ def build():
     lba_chart = lba_bar_svg()
     lba_legend = lba_bar_legend()
     legend = bar.legend(leaked_names=LEAKED)
-    abl_html = ablation_section()          # §1.3 CDG-encoder ablation (reads ablation_cdg.json)
+    abl_html = ablation_section()          # §1.5 CDG-encoder ablation (reads ablation_cdg.json)
+    density_html = density_helps_section() # §1.2 C vs C+D+G density synthesis (Tables 1a/1b/1c + LEP)
+    lep_html = lep_section()               # §1.3 Ligand Efficacy Prediction (reads lep_results.json)
 
     html = f"""<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8">
@@ -1765,6 +2228,12 @@ def build():
     border-bottom:2px solid #dfe4ea;}}
   .subsec-head .sn{{display:inline-block;min-width:34px;color:#566072;font-weight:720;}}
   .subsec-intro{{font-size:13.5px;color:var(--ink-soft);margin:8px 0 4px;max-width:1050px;line-height:1.55;}}
+  .keybox{{background:#eef7f1;border:1px solid #bfe0cd;border-left:4px solid #2e9e63;border-radius:7px;
+    padding:11px 15px;margin:12px 0 4px;max-width:1050px;font-size:13px;line-height:1.55;color:#204a35;}}
+  .keybox b{{color:#14603a;}}
+  table.results.density-cmp td.col-method{{border-right:1px solid #e6e9ef;}}
+  table.results.density-cmp tr.grp-band td{{background:#f1f4f9;color:#3a4453;font-weight:750;font-size:11.5px;
+    letter-spacing:.03em;text-transform:uppercase;padding:6px 11px;border-top:1px solid #cfd6df;}}
 </style>
 </head><body><div class="page">
 
@@ -1801,7 +2270,6 @@ def build():
       <li><a href="https://arxiv.org/abs/2311.16160">BindNet</a> is an ICLR 2024 self-supervised protein&ndash;ligand encoder trained through pair-distance prediction and masked-ligand reconstruction.</li>
       <li><a href="https://arxiv.org/abs/2310.07229">ProFSA</a> is an ICLR 2024 frozen pocket encoder pretrained by aligning protein-fragment pseudo-ligands with their surrounding pockets.</li>
       <li><a href="https://proceedings.neurips.cc/paper_files/paper/2023/hash/6a45a1b0697ee086bd8bf494cacc6567-Abstract-Conference.html">DSMBind</a> is the NeurIPS 2023 NERE energy model, trained without affinity labels through SE(3) denoising score matching.</li>
-      <li><a href="https://openreview.net/forum?id=qH9nrMNTIW">IPNet</a> is the E(3)-equivariant interaction-prior network from the ICLR 2024 IPDiff paper, evaluated here with both its released frozen weights and a from-scratch fit.</li>
       <li><a href="https://www.nature.com/articles/s42004-025-01428-y">AEV-PLIG</a> is a 3D atom-environment-vector affinity model published in <i>Communications Chemistry</i> in 2025.</li>
       <li><a href="https://doi.org/10.1093/bioinformatics/bty593">DeepDTA</a> is a sequence/SMILES convolutional affinity predictor published in <i>Bioinformatics</i> in 2018.</li>
       <li><a href="https://doi.org/10.1093/bioinformatics/btaa880">MolTrans</a> is a substructure-aware sequence/SMILES interaction transformer published in <i>Bioinformatics</i> in 2021.</li>
@@ -1811,6 +2279,7 @@ def build():
     </ul>
     <p class="subsec-intro"><b>Not included baselines</b></p>
     <ul class="split-notes">
+      <li><a href="https://openreview.net/forum?id=qH9nrMNTIW">IPNet</a> (IPDiff, ICLR 2024) &mdash; the interaction-prior network is a sub-module of a <b>CrossDocked2020 pocket-conditioned molecule <i>generation</i></b> model, not a binding-affinity regressor. Repurposing its features as an affinity baseline (frozen probe / from-scratch fit) is an off-task stretch, so it is excluded from the affinity tables.</li>
       <li><a href="https://arxiv.org/abs/2606.14217">CPES</a> (Curvature-Informed Potential Energy Surface, arXiv 2606.14217) &mdash; <b>not reproducible from the public release.</b> The <a href="https://github.com/Peng-Fei-Sun/CPES">official repo</a> is an incomplete upload: <code>processdata.py</code> imports <code>build_anm_graphs.py</code> (the ANM curvature-spectrum builder that is the paper's core contribution), but that module is absent from the repository, and no author checkpoint is released. The GNN/training code alone cannot construct the model's inputs, so CPES is excluded rather than approximated with a from-spec reimplementation.</li>
     </ul>
 
@@ -1824,7 +2293,7 @@ def build():
       {lp_tiers_chart}
       {legend}
       <ul class="caption-list">
-        <li>Bars = 3-seed mean; whiskers = &plusmn;1 std.</li>
+        <li>Bars = 5-seed mean; whiskers = &plusmn;1 std.</li>
         <li>The horizontal line separates the original split from CL-filtered tiers.</li>
         <li>Leaked references are faded and excluded from ranking.</li>
       </ul>
@@ -1832,7 +2301,7 @@ def build():
     </section>
 
     <section class="block">
-      <p class="table-title">Table 1a &nbsp;&middot;&nbsp; Test metrics across cleaning tiers &mdash; mean &plusmn; std (3 seeds; deterministic zero-shot = 1 pass)</p>
+      <p class="table-title">Table 1a &nbsp;&middot;&nbsp; Test metrics across cleaning tiers &mdash; mean &plusmn; std (5 seeds; deterministic zero-shot = 1 pass)</p>
       <ul class="caption-list">
         <li><b>CL1 / CL2 / CL3:</b> nested leakage filters; every tier is retrained independently.</li>
         <li><b>Train / val / test:</b> v2 3850/817/1320; +CL1 2721/680/1166; +CL12 2643/659/1149; +CL123 1559/410/733.</li>
@@ -1890,8 +2359,45 @@ def build():
       </table></div>
     </section>
 
-    <h3 class="subsec-head"><span class="sn">1.2</span> Compared to recent works with temporal holdout data</h3>
-    <p class="subsec-intro">PDBbind 2019 temporal holdout. CASF-2016 and CASP16 are retained as diagnostics in Appendices&nbsp;A and&nbsp;B.</p>
+    <section class="block">
+      <p class="table-title">Figure 1c &nbsp;&middot;&nbsp; CASF-2016 external test across leak-control cohorts</p>
+      <div class="table-wrap" style="padding:16px 18px 10px;">
+        {casf_1c_chart()}
+        {casf_1c_legend()}
+        <ul class="caption-list">
+          <li>Bars = mean; whiskers = &plusmn;1 std; TBA-only methods omitted. Black outline = best non-leaked result within each cohort and metric.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="block">
+      <p class="table-title">Table 1c &nbsp;&middot;&nbsp; CASF-2016 external test &mdash; five leak-control cohorts</p>
+      <ul class="caption-list">
+        <li><b>Cohorts (increasing leak control):</b> full core (214, includes train-overlap) &rarr;
+            non-train (124, exact train PDBs removed) &rarr; protein-novel id&nbsp;&lt;&nbsp;60% / &lt;&nbsp;30%
+            to CL3 train (64 / 32) &rarr; clean-92 (held out from <code>lp_edrscc_v2</code> train <i>and</i> validation).</li>
+        <li><b>Setup:</b> every method is trained on <code>lp_edrscc_v2</code> train and evaluated on CASF-2016
+            with no additional CASF fitting. Ours (C, C+D+G) use fresh 5-seed probes across all cohorts;
+            baselines use their reported CASF predictions. ProFSA carries a pretraining-overlap badge.</li>
+        <li><b>Small-N caution:</b> id&nbsp;&lt;&nbsp;30% (N=32) and clean-92 (N=92) carry wide seed variance;
+            compare within columns rather than reading absolute gaps.</li>
+      </ul>
+      <div class="table-wrap"><table class="results">
+        <thead>
+          {casf_1c_table_head()}
+        </thead>
+        <tbody>
+          {casf_1c_rows()}
+        </tbody>
+      </table></div>
+    </section>
+
+    {density_html}
+
+    {lep_html}
+
+    <h3 class="subsec-head"><span class="sn">1.4</span> Compared to recent works with temporal holdout data</h3>
+    <p class="subsec-intro">PDBbind 2019 temporal holdout. CASF-2016 is reported in Table&nbsp;1c; CASP16 blind affinity is Appendix&nbsp;B.</p>
 
     <section class="block">
       <p class="table-title">Figure 2 &nbsp;&middot;&nbsp; PDBbind 2019 temporal-holdout performance</p>
@@ -1951,38 +2457,33 @@ def build():
   </div>
 
   <div class="doc-section">
-    <h2 class="section-head"><span class="sec-num" style="background:#566072">A</span> Appendix &mdash; CASF-2016 protein-similarity diagnostic</h2>
+    <h2 class="section-head"><span class="sec-num" style="background:#566072">A</span> Appendix &mdash; LP-PDBBind protein-sequence-novelty</h2>
     <ul class="caption-list">
-      <li><b>Why an appendix:</b> unfiltered CASF-2016 has substantial target-family overlap with
-          LP-PDBBind train, so neither the full core set nor the unfiltered cohort is shown.</li>
-      <li><b>Base cohort:</b> CL3-clean removes every exact CL3 train/validation PDB member from the
-          214 ED/RSCC-evaluable CASF complexes (99 remain before sequence filtering).</li>
-      <li><b>Similarity filter:</b> MMseqs2 maximum protein identity to the 1,559 CL3 training
-          proteins, with &ge;80% query and target coverage and strict thresholds. This leaves 64
-          complexes at &lt;60% identity and 32 at &lt;30% identity.</li>
-      <li><b>Protocol:</b> the same LP-PDBBind-trained models and saved predictions are re-scored;
-          no CASF fitting or retraining is performed. Values are mean &plusmn; population SD over three
-          seeds where available.</li>
-      <li>No winner is highlighted because the filtered cohorts, especially N=29, are too small for
-          a stable method ranking. ProFSA retains a pretraining-overlap badge.</li>
+      <li><b>Cohorts:</b> the LP-PDBBind test set re-scored after masking test proteins by maximum MMseqs2
+          sequence identity to any protein in the LP train partition &mdash; &lt;&nbsp;60% (N&nbsp;=&nbsp;813) and
+          &lt;&nbsp;30% (N&nbsp;=&nbsp;453). Same models/features as Table&nbsp;1a; predictions are re-scored, not retrained.</li>
+      <li><b>Relation to Table&nbsp;1b:</b> Table&nbsp;1b reports the stricter <i>CL3</i> protein-novelty axis
+          (novelty measured on the leak-proof CL3 split). This appendix gives the complementary LP-split
+          novelty for completeness. CASF-2016 protein-novelty (id&nbsp;&lt;&nbsp;60/30%) now lives in Table&nbsp;1c.</li>
+      <li>Black outline = best non-leaked result within each cohort and metric; leaked references are faded.</li>
     </ul>
 
     <section class="block">
-      <p class="table-title">Figure A1 &nbsp;&middot;&nbsp; CASF-2016 after protein-similarity filtering</p>
-      <div class="table-wrap" style="padding:12px 16px 16px;">
-        {casf_similarity_chart}
-        {casf_similarity_legend}
+      <p class="table-title">Figure A1 &nbsp;&middot;&nbsp; LP-PDBBind protein-novelty generalization</p>
+      <div class="table-wrap" style="padding:16px 18px 10px;">
+        {lba_bar_svg(LBA_APPENDIX_COLS)}
+        {lba_bar_legend()}
       </div>
     </section>
 
     <section class="block">
-      <p class="table-title">Table A1 &nbsp;&middot;&nbsp; CASF-2016 strict protein-novel cohorts</p>
+      <p class="table-title">Table A1 &nbsp;&middot;&nbsp; LP-PDBBind protein-novelty cohorts</p>
       <div class="table-wrap"><table class="results">
         <thead>
-          {casf_similarity_table_head()}
+          {lba_table_head(LBA_APPENDIX_COLS)}
         </thead>
         <tbody>
-          {casf_similarity_rows()}
+          {lba_rows(LBA_APPENDIX_COLS)}
         </tbody>
       </table></div>
     </section>

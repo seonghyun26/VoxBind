@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VoxBind Meeting · 260827</title>
+<style>
+  :root {
+    --ink: #1c2433;
+    --ink-soft: #5b6678;
+    --ink-faint: #7a8699;
+    --line: #e3e7ee;
+    --line-strong: #aeb6c4;
+    --bg: #f5f6f8;
+    --card: #ffffff;
+    --accent: #2f6f4f;
+    --accent-2: #3f7f5e;
+    --accent-bg: #eaf5ee;
+    --blue: #38559b;
+    --blue-bg: #e7eefb;
+    --warn: #9a6112;
+    --warn-bg: #fcf3e0;
+    --shadow: 0 1px 2px rgba(20,30,50,.04), 0 8px 24px rgba(20,30,50,.05);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 16px; line-height: 1.55; -webkit-font-smoothing: antialiased;
+  }
+  .page { display: flex; flex-direction: column; max-width: 1280px; margin: 0 auto; padding: 48px 24px 96px; }
+  header.doc { border-bottom: 2px solid var(--ink); padding-bottom: 20px; margin-bottom: 40px; }
+  .eyebrow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px;
+             color: var(--ink-soft); font-size: 13px; letter-spacing: .11em; text-transform: uppercase; }
+  .status { display: inline-flex; align-items: center; gap: 7px; padding: 3px 10px; border-radius: 999px;
+            background: var(--accent-bg); color: #1d5a3a; font-size: 11px; font-weight: 720; letter-spacing: .07em; }
+  .status::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+  .status.wip { background: var(--warn-bg); color: #7c4d0c; }
+  .status.wip::before { background: var(--warn); }
+  header.doc h1 { max-width: 1050px; margin: 0; font-size: clamp(28px, 4vw, 42px); line-height: 1.13;
+                  font-weight: 680; letter-spacing: -.025em; }
+  header.doc .lead { max-width: 1040px; margin: 13px 0 0; color: var(--ink-soft); font-size: 15px; line-height: 1.65; }
+  .toc { margin: 22px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; list-style: none; }
+  .toc a { display: inline-flex; align-items: center; gap: 7px; padding: 5px 12px; border: 1px solid var(--line);
+           border-radius: 999px; background: var(--card); color: var(--ink-soft); font-size: 12.5px;
+           text-decoration: none; box-shadow: var(--shadow); }
+  .toc a:hover { border-color: var(--line-strong); color: var(--ink); }
+  .toc a .n { color: var(--accent); font-weight: 760; }
+  .doc-section { margin-bottom: 68px; scroll-margin-top: 20px; }
+  .section-head { display: flex; align-items: center; gap: 14px; margin: 0 0 28px; padding-bottom: 12px;
+                  border-bottom: 2px solid var(--line-strong); font-size: 23px; line-height: 1.25;
+                  font-weight: 680; letter-spacing: -.015em; }
+  .sec-num { display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; width: 31px; height: 31px;
+             border-radius: 8px; background: var(--accent); color: #fff; font-size: 15px; font-weight: 760; }
+  .section-intro { max-width: 1100px; margin: -5px 0 24px; color: var(--ink-soft); font-size: 13.7px; line-height: 1.65; }
+  .block { margin: 0 0 34px; }
+  .subsection-head { display: flex; align-items: center; gap: 10px; margin: 0 0 9px; font-size: 17px; font-weight: 680; }
+  .sub-lab { display: inline-flex; align-items: center; justify-content: center; min-width: 34px; height: 23px;
+             padding: 0 8px; border-radius: 6px; background: #eef1f6; color: var(--ink-soft);
+             font-size: 11px; font-weight: 760; }
+  .table-sub { max-width: 1100px; margin: 0 0 17px; color: var(--ink-soft); font-size: 13.3px; line-height: 1.6; }
+  .criteria { margin: 0 0 19px; padding: 14px 18px 10px 36px; border-left: 4px solid var(--accent);
+              border-radius: 8px; background: var(--card); color: var(--ink-soft); font-size: 13px; line-height: 1.55; }
+  .criteria li { margin: 0 0 5px; }
+  .criteria b { color: var(--ink); font-weight: 680; }
+  .callout { max-width: 1100px; margin: 0 0 20px; padding: 16px 20px; border-left: 4px solid var(--blue);
+             border-radius: 8px; background: linear-gradient(145deg, #f7f9fe, var(--blue-bg));
+             color: var(--ink); font-size: 15px; line-height: 1.6; }
+  .callout .k { display: block; margin-bottom: 5px; color: var(--blue); font-size: 11px; font-weight: 730;
+                letter-spacing: .08em; text-transform: uppercase; }
+  .callout em { color: var(--ink-soft); font-style: italic; }
+  .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px;
+                background: var(--card); box-shadow: var(--shadow); }
+  table.results { width: 100%; min-width: 680px; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  table.results th, table.results td { padding: 10px 8px; text-align: center; white-space: nowrap; }
+  table.results thead th { border-bottom: 1px solid var(--line); background: #fafbfc; color: var(--ink-soft);
+                          font-size: 10.7px; line-height: 1.35; font-weight: 650; letter-spacing: .025em; }
+  table.results thead th.grp { background: #f2f4f7; color: var(--ink-soft); font-size: 10.2px;
+                               letter-spacing: .085em; text-transform: uppercase; }
+  table.results thead th.stub { vertical-align: bottom; }
+  table.results tbody tr { border-top: 1px solid var(--line); }
+  table.results tbody tr:first-child { border-top: 0; }
+  table.results tbody tr:hover { background: #fbfcfd; }
+  .col-method { min-width: 170px; text-align: left !important; }
+  td.col-method { font-size: 12.3px; font-weight: 620; }
+  .col-trial { width: 52px; min-width: 52px; }
+  td.col-trial { font-size: 12.3px; font-weight: 620; }
+  td.al { text-align: left !important; }
+  .placeholder { color: #a3acb9; }
+  .pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 10.5px; font-weight: 720;
+          letter-spacing: .04em; }
+  .pill.todo { background: #f1f3f6; color: #7a8699; }
+  .pill.run { background: var(--warn-bg); color: #7c4d0c; }
+  .pill.done { background: var(--accent-bg); color: #1d5a3a; }
+  .summary-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 13px; margin: 0 0 26px; }
+  .summary-card { min-height: 118px; padding: 17px 18px; border: 1px solid var(--line); border-radius: 12px;
+                  background: var(--card); box-shadow: var(--shadow); }
+  .summary-card.primary { border-color: #b9d5c3; background: linear-gradient(145deg, #f8fcf9, var(--accent-bg)); }
+  .summary-card .label { color: var(--ink-soft); font-size: 11px; line-height: 1.35; font-weight: 710;
+                         letter-spacing: .075em; text-transform: uppercase; }
+  .summary-card .value { margin-top: 7px; font-size: 27px; line-height: 1.08; font-weight: 730;
+                         letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+  .summary-card .value.tbd { color: #b3bbc7; font-size: 22px; }
+  .summary-card .note { margin-top: 7px; color: var(--ink-faint); font-size: 11.7px; }
+  code { padding: 1px 5px; border-radius: 4px; background: #f0f2f5; font-size: .92em; }
+  footer { margin-top: 62px; padding-top: 18px; border-top: 1px solid var(--line-strong);
+           color: var(--ink-faint); font-size: 10.8px; line-height: 1.6; }
+  @media (max-width: 930px) { .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 620px) {
+    .page { padding: 30px 14px 70px; }
+    .summary-grid { grid-template-columns: 1fr; }
+    header.doc h1 { font-size: 29px; }
+  }
+  @media print {
+    body { background: #fff; }
+    .page { max-width: none; padding: 20px; }
+    .summary-card, .table-wrap { box-shadow: none; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <header class="doc">
+    <div class="eyebrow">
+      <span>Meeting note · 2026-08-27</span>
+      <span class="status wip">draft · placeholders</span>
+    </div>
+    <h1>Density intuition, holdouts, representation, PoseCheck, and MCP fine-tuning</h1>
+    <p class="lead">Working agenda for the 08-27 meeting. Every section below is a placeholder to be filled as
+      results land.</p>
+    <ul class="toc">
+      <li><a href="#intuition"><span class="n">0</span> Intuition</a></li>
+      <li><a href="#holdout"><span class="n">1</span> Riken holdout</a></li>
+      <li><a href="#representation"><span class="n">2</span> Representation analysis</a></li>
+      <li><a href="#posecheck"><span class="n">3</span> PoseCheck &amp; strain</a></li>
+      <li><a href="#mcp"><span class="n">4</span> MCP fine-tuning</a></li>
+      <li><a href="#appendix-a"><span class="n">A</span> Riken holdout data</a></li>
+    </ul>
+  </header>
+
+  <!-- 0 ─────────────────────────────────────────────────────────── -->
+  <section class="doc-section" id="intuition">
+    <h2 class="section-head"><span class="sec-num">0</span>Why density should help</h2>
+    <p class="section-intro">One-sentence intuition for why electron-density information would improve binding-affinity
+      prediction and drug design.</p>
+    <div class="callout">
+      <span class="k">One-sentence intuition</span>
+      <em>Placeholder — the single sentence goes here.</em>
+    </div>
+    <ul class="criteria">
+      <li><b>Supporting points:</b> <span class="placeholder">to fill</span></li>
+      <li><b>For affinity:</b> <span class="placeholder">to fill</span></li>
+      <li><b>For design / generation:</b> <span class="placeholder">to fill</span></li>
+    </ul>
+  </section>
+
+  <!-- 1 ─────────────────────────────────────────────────────────── -->
+  <section class="doc-section" id="holdout">
+    <h2 class="section-head"><span class="sec-num">1</span>Riken holdout</h2>
+    <p class="section-intro">Held-out evaluation on the RIKEN set — scope, cleanliness, and matched cohort still to be
+      defined. <span class="pill todo">open question</span></p>
+
+    <section class="block">
+      <h3 class="subsection-head"><span class="sub-lab">1.1</span>Cohort definition</h3>
+      <p class="table-sub">What is the RIKEN holdout, how many complexes, and how is leakage controlled? To be confirmed.</p>
+      <ul class="criteria">
+        <li><b>Source:</b> <span class="placeholder">define set</span></li>
+        <li><b>Temporal / identity split:</b> <span class="placeholder">define</span></li>
+        <li><b>Downstream-clean:</b> <span class="placeholder">exclude train/val members</span></li>
+        <li><b>Pretraining-clean:</b> <span class="placeholder">exclude SSL overlap</span></li>
+        <li><b>Input-ready:</b> <span class="placeholder">density / structure availability</span></li>
+        <li><b>N:</b> <span class="placeholder">TBD</span></li>
+      </ul>
+    </section>
+
+    <section class="block">
+      <h3 class="subsection-head"><span class="sub-lab">1.2</span>Results</h3>
+      <div class="table-wrap">
+        <table class="results">
+          <thead><tr><th class="col-method">Method</th><th>Cohort</th><th>N</th><th>Pearson r</th><th>Spearman ρ</th><th>RMSE</th></tr></thead>
+          <tbody>
+            <tr><td class="col-method placeholder">Method</td><td class="placeholder">RIKEN holdout</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </section>
+
+  <!-- 2 ─────────────────────────────────────────────────────────── -->
+  <section class="doc-section" id="representation">
+    <h2 class="section-head"><span class="sec-num">2</span>Representation analysis</h2>
+    <p class="section-intro">Probe what the encoder representations capture for pockets and for drug-like ligands.</p>
+
+    <section class="block">
+      <h3 class="subsection-head"><span class="sub-lab">2.1</span>Pockets</h3>
+      <p class="table-sub"><span class="placeholder">Pocket-side representation analysis — method and figures to fill.</span></p>
+      <div class="table-wrap">
+        <table class="results">
+          <thead><tr><th class="col-method">Probe</th><th>Target property</th><th>Encoder</th><th>Metric</th><th>Value</th><th>Status</th></tr></thead>
+          <tbody>
+            <tr><td class="col-method placeholder">Probe</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td><span class="pill todo">todo</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="block">
+      <h3 class="subsection-head"><span class="sub-lab">2.2</span>Drugs / ligands</h3>
+      <p class="table-sub"><span class="placeholder">Ligand-side representation analysis — method and figures to fill.</span></p>
+      <div class="table-wrap">
+        <table class="results">
+          <thead><tr><th class="col-method">Probe</th><th>Target property</th><th>Encoder</th><th>Metric</th><th>Value</th><th>Status</th></tr></thead>
+          <tbody>
+            <tr><td class="col-method placeholder">Probe</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td><span class="pill todo">todo</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </section>
+
+  <!-- 3 ─────────────────────────────────────────────────────────── -->
+  <section class="doc-section" id="posecheck">
+    <h2 class="section-head"><span class="sec-num">3</span>PoseCheck &amp; strain energy</h2>
+    <p class="section-intro">PoseCheck evaluation of generated poses, plus a re-check of the strain-energy definition.</p>
+
+    <section class="block">
+      <h3 class="subsection-head"><span class="sub-lab">3.1</span>Strain-energy definition re-check</h3>
+      <div class="callout">
+        <span class="k">Definition under review</span>
+        <em>Placeholder — restate the strain-energy definition being used, the reference convention, and what needs
+          correcting.</em>
+      </div>
+      <ul class="criteria">
+        <li><b>Current definition:</b> <span class="placeholder">to fill</span></li>
+        <li><b>Reference / expected convention:</b> <span class="placeholder">to fill</span></li>
+        <li><b>Discrepancy &amp; fix:</b> <span class="placeholder">to fill</span></li>
+      </ul>
+    </section>
+
+    <section class="block">
+      <h3 class="subsection-head"><span class="sub-lab">3.2</span>PoseCheck results</h3>
+      <p class="table-sub"><span class="placeholder">Strain energy and steric-clash results per trial — to fill.
+        (See prior figures: <code>260813/posecheck_fig6_strain_ecdf.png</code>, <code>posecheck_fig7_steric_clashes.png</code>.)</span></p>
+      <div class="table-wrap">
+        <table class="results">
+          <thead><tr><th class="col-trial stub">Trial</th><th>Strain energy (median)</th><th>Steric clashes</th><th>Interactions</th><th>Status</th></tr></thead>
+          <tbody>
+            <tr><td class="col-trial placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td><span class="pill todo">todo</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </section>
+
+  <!-- 4 ─────────────────────────────────────────────────────────── -->
+  <section class="doc-section" id="mcp">
+    <h2 class="section-head"><span class="sec-num">4</span>MCP fine-tuning results</h2>
+    <p class="section-intro">Fine-tuning the generator / encoder on the MCP set — configuration and outcomes.</p>
+
+    <section class="block">
+      <h3 class="subsection-head"><span class="sub-lab">4.1</span>Setup</h3>
+      <ul class="criteria">
+        <li><b>Base model:</b> <span class="placeholder">to fill</span></li>
+        <li><b>Fine-tune scope:</b> <span class="placeholder">frozen / partial / end-to-end</span></li>
+        <li><b>MCP data:</b> <span class="placeholder">targets, split, density availability</span></li>
+      </ul>
+    </section>
+
+    <section class="block">
+      <h3 class="subsection-head"><span class="sub-lab">4.2</span>Results</h3>
+      <div class="table-wrap">
+        <table class="results">
+          <thead><tr><th class="col-method">Run</th><th>What changed</th><th>Metric</th><th>Value</th><th>Δ vs base</th><th>Status</th></tr></thead>
+          <tbody>
+            <tr><td class="col-method placeholder">Run</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td><span class="pill todo">todo</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </section>
+
+  <!-- A ─────────────────────────────────────────────────────────── -->
+  <section class="doc-section" id="appendix-a">
+    <h2 class="section-head"><span class="sec-num">A</span>Appendix · Riken holdout dataset — why it's not plug-and-play</h2>
+    <p class="section-intro">The RIKEN ChEMBL-derived benchmark (Shimizu et&nbsp;al., <em>Chem-Bio Informatics J.</em> 26:11, 2026 —
+      the Boltz-2 affinity paper) is already curated and leakage-audited locally at
+      <code>base/chembl35_plinder30</code>. It is attractive as a genuinely held-out set, but our density model
+      <b>cannot be run on it directly</b>. Parked for now. <span class="pill todo">parked</span></p>
+
+    <div class="callout">
+      <span class="k">What the benchmark actually is</span>
+      A <b>per-target ligand-ranking (virtual-screening)</b> task: a fixed target pocket with many candidate ligands,
+      each carrying a median-pChEMBL label (IC50/Ki/Kd/EC50 mixed). Primary metric is <b>macro per-target Spearman</b>
+      — rank a compound series within each target, <em>not</em> cross-target absolute affinity.
+      Frozen cohort: <b>23 targets / 618 pairs</b> (615 model-ready), the subset of the paper's 99 targets that passes
+      our &lt;30% sequence-identity audit against both PLINDER-v2 pretraining and LP-EDRSCC train/val.
+      Reference to beat — <b>Boltz-2 macro-ρ 0.165</b> (all 23 targets) / <b>0.344</b> (256-pair rankable core).
+    </div>
+
+    <ul class="criteria">
+      <li><b>Ligand side is sequence + SMILES only.</b> The affinity pairs (Data&nbsp;S2/S6: UniProt + SMILES + pChEMBL)
+        carry <b>no bound complex and no pose</b> — these are ChEMBL bioassay compounds, never co-crystallized.</li>
+      <li><b>No ligand electron density.</b> Our headline C+D+G <b>ligand-density channel has no experimental source</b>
+        here, so a clean experimental CDG evaluation is impossible (<code>prepare_density.py</code> errors by design).</li>
+      <li><b>Pocket structure exists — but for a different ligand.</b> Each of the 23 targets has one representative
+        PDB, so pocket structure/density <em>is</em> obtainable; however it holds a different ligand or is apo, and
+        3/23 are only distant templates (26–48% identity to the assay construct).</li>
+      <li><b>Requires pose generation.</b> To score at all we'd have to dock / co-fold each ligand into the shared
+        pocket → <b>coords-only (C)</b>, ligand-density zero-filled (which we already know hurts).</li>
+      <li><b>Structurally hard targets.</b> Several are membrane proteins / channels / transporters (TRPA1, GPR84,
+        ABCG2, TLR2, MCT1, HHAT) and intrinsically disordered proteins (Myc, tau, α-synuclein, NRF2), where
+        docking-pose reliability is low.</li>
+    </ul>
+
+    <p class="table-sub"><b>Bottom line:</b> full experimental CDG is ruled out; a &ldquo;real pocket density +
+      generated ligand pose&rdquo; hybrid is technically feasible but pose-quality-limited. Deferred until we decide
+      it's worth the SBVS detour.</p>
+  </section>
+
+  <footer>260827 · Density intuition · Riken holdout · Representation analysis · PoseCheck &amp; strain · MCP fine-tuning · Appendix A Riken holdout data</footer>
+</div>
+</body>
+</html>
