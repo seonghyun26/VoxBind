@@ -5,10 +5,13 @@ Preserved "good" checkpoints for the density-pretrained affinity encoders, copie
 (metrics, configs, and the train-on-test diagnostic).
 
 Each subfolder holds the exact `cfg.yaml` (Hydra config the run trained under), `.hydra/`,
-the training log, and `checkpoint_e0049.pth.tar` (probe reads `encoder_state_dict_ema`).
+the training log, and a `checkpoint_e0049.pth.tar` (probe reads `encoder_state_dict_ema`).
+Exception: `atombias_100m_v2_e25` keeps `checkpoint_e0025.pth.tar` (its early-peak epoch) — reprobe it with `--epoch 25`.
 
 | folder | source exp | data | mask | test ρ / r / RMSE |
 |---|---|---|---|---|
+| `interface_100m_v2_e40` | 260821_cdg_100m_v2_interface_mask075 (**e40**) | v2 (112K) | 0.75 (**interface**) | FULL **0.648** · CL123-leakproof **0.626** (≥ atombias-e25 0.622) · **CASF clean-92 0.675 = ProFSA 0.676** (> champion 0.648). First PRETEXT-alignment win: masks the pocket-ligand CONTACT region. Early-peak at e40 (declines by e49). Reprobe with `--epoch 40` |
+| `atombias_100m_v2_e25` | 260806_cdg_100m_v2_ep100 (**e25**) | v2 (112K) | 0.75 (**atom_biased**) | **0.653 / 0.666 / 1.355** — best-on-record; CL3-leakproof ρ **0.622** (> champion 0.60). Early-peak: this 100-ep run peaks at e25 then declines (atom_biased overtrains); weight-soup of later epochs does NOT beat it |
 | `champion_100m_v2_mask075` | 260705_ar_cvit_100m_v2_mask075 | v2 (112K) | 0.75 | 0.644 / 0.660 / 1.349 |
 | `pareto_100m_v3_mask095` | 260725_ar_cvit_100m_v3_m095 | v3 (71.7K) | 0.95 | 0.644 / 0.663 / 1.334 (Pareto-best) |
 | `v3_100m_mask090` | 260725_ar_cvit_100m_v3_m090 | v3 (71.7K) | 0.90 | 0.645 / 0.660 / 1.383 |

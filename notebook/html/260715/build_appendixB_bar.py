@@ -47,6 +47,7 @@ METHODS = [
     ("BindNet",           PALETTE[6],  "new", (0.529, 0.020), (0.512, 0.012), (1.604, 0.122)),
     ("HonestAffinity",    PALETTE[11], "new",    (0.457, 0.043), (0.443, 0.048), (1.617, 0.011)),
     ("AEV-PLIG",          PALETTE[7],  False, (0.522, 0.019), (0.492, 0.019), (1.617, 0.004)),
+    ("GeoSSL",            "#800000",   False, (0.519, 0.012), (0.499, 0.013), (1.561, 0.024)),
     ("DSMBind",           PALETTE[8],  False, (0.541, 0.007), (0.507, 0.010), (1.494, 0.011)),
     ("IPNet (frozen)",    PALETTE[13], "leaked", (0.583, 0.007), (0.550, 0.005), (1.464, 0.012)),
     ("IPNet (scratch)",   PALETTE[14], False,    (0.578, 0.012), (0.553, 0.014), (1.458, 0.008)),
@@ -54,6 +55,9 @@ METHODS = [
     ("C",                 PALETTE[9],  False, (0.632, 0.002), (0.596, 0.001), (1.381, 0.014)),
     ("C+D+G",             PALETTE[10], True,  (0.660, 0.003), (0.644, 0.001), (1.349, 0.024)),
     ("C+D+G +corr",       "#0b6b3a",   "new", (0.665, 0.001), (0.647, 0.001), (1.325, 0.001)),
+    # headline "CDG v2" = v2_ep100_e25 (260806_cdg_100m_v2_ep100_e25) + mse+corr probe head;
+    # v2 = 01c 5-seed (r/rho/rmse). Distinct gold swatch. Data via PROBE_CSV/_OURS_1C/cl123-results.
+    ("CDG v2",       "#b8860b",   "new", (0.665, 0.004), (0.653, 0.005), (1.337, 0.013)),
 ]
 
 PANELS = [

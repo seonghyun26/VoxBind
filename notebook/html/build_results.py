@@ -205,8 +205,10 @@ TYPE = {  # display tag per method — three categories, distinctly colored
     "HBGSA": "supervised", "EGNN": "supervised", "EGNN + TargetDiff": "supervised",
     "GET": "supervised", "ProFSA": "pretrained", "CheapNet": "supervised", "BindNet": "supervised",
     "HonestAffinity": "supervised", "AEV-PLIG": "supervised", "DSMBind": "zero-shot",
+    "GeoSSL": "pretrained",
     "IPNet (frozen)": "pretrained", "IPNet (scratch)": "supervised", "Nesso-1": "zero-shot",
     "C": "pretrained", "C+D+G": "pretrained", "C+D+G +corr": "pretrained",
+    "CDG v2": "pretrained",
     "DeepDTA": "supervised", "MolTrans": "supervised",
 }
 TAGCLASS = {"supervised": "supervised", "pretrained": "pretrained", "zero-shot": "zeroshot"}
@@ -218,7 +220,7 @@ MODALITY = {
     "Nesso-1": "seq", "HonestAffinity": "seq",
     "DeepDTA": "seq", "MolTrans": "seq",
 }  # default → "3d"
-DENSITY_OURS = {"C+D+G", "C+D+G +corr"}   # our voxel+density models → their own top information tier
+DENSITY_OURS = {"C+D+G", "C+D+G +corr", "CDG v2"}   # our voxel+density models → their own top information tier
 
 # Methods with NO official author checkpoint — the whole model was re-trained from scratch on our
 # data (faithful reimplementation or vendored code). Flagged "re-trained" for transparency. NOT
@@ -245,15 +247,15 @@ def absmetric(name, metric, v):
     return (abs(v[0]), v[1])
 
 
-# Input-information tiers shown as a merged (rowspan) first column, ordered seq → 3D → +density,
-# with all LEAKED methods pulled into their own group pinned to the very BOTTOM of every table
-# (regardless of their real modality) so they read as an excluded reference block, not a ranked tier.
+# Input-information tiers shown as a merged (rowspan) first column, ordered seq → 3D → +density.
+# LEAKED methods stay in their real modality tier (e.g. Nesso-1 → seq/SMILES); they keep a "leaked"
+# badge and are de-ranked, but are NOT split into a separate "leaked (excluded)" input group.
 CAT_ORDER = {"seq": 0, "3d": 1, "ours": 2, "leaked": 3}
 CAT_LABEL = {"seq": "seq/SMILES", "3d": "3D structure",
              "ours": "3D structure<br>+&#8202;density <b>(ours)</b>",
              "leaked": "leaked<br>(excluded)"}
 TYPE_ORDER = {"supervised": 0, "zero-shot": 1, "pretrained": 2}
-OURS_ORDER = {"C+D+G": 0, "C+D+G +corr": 1}
+OURS_ORDER = {"CDG v2": -1, "C+D+G": 0, "C+D+G +corr": 1}
 
 
 def modality_category(name):
@@ -266,9 +268,7 @@ def modality_category(name):
 
 
 def category3(name):
-    if name in LEAKED:                    # leaked → own group at the bottom, before modality matters
-        return "leaked"
-    return modality_category(name)
+    return modality_category(name)        # leaked stays in its real modality; "leaked" badge marks it
 
 
 def cat_sort_key(name, within):
@@ -315,10 +315,12 @@ BACKBONE = {
     "HonestAffinity": ("ESM-2 650M",   "esm"),       # frozen per-residue ESM-2-650M seq embeddings
     "DSMBind":        ("ESM-2 3B",     "esm"),        # frozen per-residue ESM-2-3B pocket embeddings
     "ProFSA":         ("ProFSA-pre",   "backbone"),   # frozen pretrained pocket encoder
+    "GeoSSL":         ("GeoSSL-DDM",   "backbone"),   # frozen SchNet, self-supervised on Molecule3D (no protein data)
     "IPNet (frozen)": ("affinity-pre", "backbone"),   # BAPNet supervised-pretrained on PDBbind affinity
     "C":              ("voxel-MAE",    "backbone"),    # our SSL-pretrained voxel ViT (frozen)
     "C+D+G":          ("voxel-MAE",    "backbone"),
     "C+D+G +corr":    ("voxel-MAE",    "backbone"),    # same encoder; probe head = MSE + Pearson-aux (λ5)
+    "CDG v2":    ("voxel-MAE",    "backbone"),    # v2_ep100_e25 encoder + mse+corr head (headline)
     "Nesso-1":        ("ESM-2",        "esm"),         # cofolding trunk on ESM-2 protein embeddings
 }
 
@@ -358,7 +360,7 @@ CASF_COLS = [("clean", "CASF-2016 (held-out ED, clean-92)", 92)]
 CASF_KEY = {"C": "C_100m_mask075_coords", "C+D+G": "CDG_100m_mask075",
             "C+D+G +corr": "CDG_100m_mask075_corr5", "DSMBind": "DSMBind", "GET": "GET", "EGNN": "EGNN",
             "EGNN + TargetDiff": "EGNN_TD", "CheapNet": "CheapNet", "BindNet": "BindNet",
-            "AEV-PLIG": "AEV", "HBGSA": "HBGSA", "ProFSA": "ProFSA", "HonestAffinity": "HonestAffinity",
+            "AEV-PLIG": "AEV", "HBGSA": "HBGSA", "ProFSA": "ProFSA", "GeoSSL": "GeoSSL", "HonestAffinity": "HonestAffinity",
             "IPNet (frozen)": "IPNet_frozen", "IPNet (scratch)": "IPNet_retrain", "Nesso-1": "Nesso",
             "DeepDTA": "DeepDTA", "MolTrans": "MolTrans"}
 
@@ -431,6 +433,14 @@ PROBE_CSV = {
         "atom3d_lba30_edrscc_v2_v22clean": "probe_results_e49_v5_atom3d_lba30_v22cleansplit_loss-mse-corr-w5.csv",
         "clean_ed_v1_indep":  "probe_results_e49_v5_clean_ed_v1_indepsplit_loss-mse-corr-w5.csv",
     },
+    # headline "CDG v2" = v2_ep100_e25 (260806_cdg_100m_v2_ep100_e25) + mse+corr, 01c 5-seed.
+    # Table 1a only; novelty (Table 1b) via cl123-results.json, CASF (Table 1c) via _OURS_1C.
+    "CDG v2": {
+        "lp_edrscc_v2":       "probe_results_e25_v5_lp_edrscc_v2split_260806_cdg_100m_v2_ep100_e25_msecorr.csv",
+        "lp_edrscc_v2_cl1":   "probe_results_e25_v5_lp_edrscc_v2_cl1split_260806_cdg_100m_v2_ep100_e25_msecorr.csv",
+        "lp_edrscc_v2_cl12":  "probe_results_e25_v5_lp_edrscc_v2_cl12split_260806_cdg_100m_v2_ep100_e25_msecorr.csv",
+        "lp_edrscc_v2_cl123": "probe_results_e25_v5_lp_edrscc_v2_cl123split_260806_cdg_100m_v2_ep100_e25_msecorr.csv",
+    },
 }
 
 
@@ -452,6 +462,7 @@ METHOD_PATH = {
     "BindNet":           lambda s: f"base/bindnet/_edrscc/results_{s}.json",
     "ProFSA":            lambda s: f"base/profsa/results/profsa_{s}.json",
     "AEV-PLIG":          lambda s: f"base/aevplig/results/aevplig_{s}.json",
+    "GeoSSL":            lambda s: f"base/geossl/results/results_GEOSSL_{SHORT[s]}.json",
     "HBGSA":             lambda s: f"base/hbgsa/results/hbgsa_{SHORT[s]}.json",
     "HonestAffinity":    lambda s: f"base/honestaffinity/results/results_{s}.json",
     "DSMBind":           lambda s: f"base/dsmbind/results/dsmbind_probe_{s}.json",
@@ -648,6 +659,28 @@ def rank_per_col():
             if vals:
                 out[(split, metric)] = (vals[0][0], vals[1][0] if len(vals) > 1 else None)
     return out
+
+
+def rank2_cols(methods, keys, loader):
+    """{(key, metric): (best, second)} for EACH metric (r/ρ higher better, RMSE lower), per column.
+    LEAKED methods are excluded from the ranking (they'd win on memorization). Used by Tables 1b/1c
+    to mark best (bold) + second (underline) per metric, matching Table 1a."""
+    out = {}
+    for key in keys:
+        data = {m: loader(m, key) for m in methods if m not in LEAKED}
+        for metric, hi in (("r", True), ("rho", True), ("rmse", False)):
+            vals = [(m, d[metric][0]) for m, d in data.items()
+                    if d and d.get(metric) and d[metric][0] is not None]
+            vals.sort(key=lambda x: x[1], reverse=hi)
+            if vals:
+                out[(key, metric)] = (vals[0][0], vals[1][0] if len(vals) > 1 else None)
+    return out
+
+
+def rank_of(ranks, key, metric, name):
+    """'best' | 'second' | None for a method in a rank2_cols map."""
+    b, s = ranks.get((key, metric), (None, None))
+    return "best" if name == b else ("second" if name == s else None)
 
 
 def slice_between(text, start, end, frm=0, include_end=True):
@@ -848,13 +881,7 @@ def lba_rows(cols=None):
     """All Table-1 baselines as rows (same as §1.1). First column = the lp_edrscc_v2 value via load()
     (identical to Table 1a); novelty columns are cached re-scores of the same test predictions."""
     cols = LBA_COLS if cols is None else cols
-    best = {}
-    for key, _, _ in cols:
-        present = [(m, load(m, key)) for m in LBA_METHODS]
-        present = [(m, d) for m, d in present
-                   if m not in LEAKED and d and d.get("rho") and d["rho"][0] is not None]
-        if present:
-            best[key] = max(present, key=lambda x: x[1]["rho"][0])[0]
+    ranks = rank2_cols(LBA_METHODS, [key for key, _, _ in cols], load)  # best+second per metric
     order = sorted(LBA_METHODS, key=lambda n: cat_sort_key(n, LBA_METHODS.index(n)))  # match Table 1 modality order
     items = []
     for m in order:
@@ -866,8 +893,7 @@ def lba_rows(cols=None):
                 if d is None or d.get(metric) is None or d[metric][0] is None:
                     tds.append(tba_cell(divcls))
                 else:
-                    rank = "best" if (metric == "rho" and best.get(key) == m) else None
-                    tds.append(metric_cell(d[metric], rank, divcls))
+                    tds.append(metric_cell(d[metric], rank_of(ranks, key, metric, m), divcls))
         items.append((m, "".join(tds)))
     return cat_merged_rows(items)
 
@@ -949,15 +975,10 @@ def casf_1c_table_head():
 
 
 def casf_1c_rows():
-    """All affinity methods on the 5 CASF cohorts; best non-leaked rho per cohort highlighted."""
+    """All affinity methods on the 5 CASF cohorts; best (bold) + second (underline) per metric,
+    non-leaked, highlighted per cohort (matches Table 1a)."""
     order = sorted(LBA_METHODS, key=lambda n: cat_sort_key(n, LBA_METHODS.index(n)))
-    best = {}
-    for cohort, _, _ in CASF_1C_COLS:
-        present = [(m, load_casf_1c(m, cohort)) for m in order]
-        present = [(m, d) for m, d in present
-                   if m not in LEAKED and d and d.get("rho") and d["rho"][0] is not None]
-        if present:
-            best[cohort] = max(present, key=lambda x: x[1]["rho"][0])[0]
+    ranks = rank2_cols(order, [c for c, _, _ in CASF_1C_COLS], load_casf_1c)  # best+second per metric
     items = []
     for name in order:
         tds = [method_cell(name, show_leaked=True, pretrain_overlap=(name == "ProFSA"))]
@@ -966,8 +987,8 @@ def casf_1c_rows():
             for k, metric in enumerate(("r", "rho", "rmse")):
                 divcls = "div-major" if k == 0 else ""
                 value = d.get(metric) if d else None
-                rank = "best" if (metric == "rho" and best.get(cohort) == name) else None
-                tds.append(metric_cell(value, rank, divcls) if value else tba_cell(divcls))
+                tds.append(metric_cell(value, rank_of(ranks, cohort, metric, name), divcls)
+                           if value and value[0] is not None else tba_cell(divcls))
         items.append((name, "".join(tds)))
     return cat_merged_rows(items)
 
@@ -1688,11 +1709,11 @@ def lp_all_tiers_svg():
 
 
 def ablation_section():
-    """Section 1.5 — CDG-encoder ablation: numbered table + bar chart from ablation_cdg.json."""
+    """Section 1.3 — CDG-encoder ablation: numbered table + bar chart from ablation_cdg.json."""
     import json
     jp = os.path.join(HERE, "ablation_cdg.json")
     if not os.path.exists(jp):
-        return ('<h3 class="subsec-head"><span class="sn">1.5</span> Ablation studies</h3>'
+        return ('<h3 class="subsec-head"><span class="sn">1.3</span> Ablation studies</h3>'
                 '<p class="subsec-intro">ablation_cdg.json missing &mdash; run '
                 '<code>voxbind/test/ablation_probe.py</code>.</p>')
     rows = sorted(json.load(open(jp)), key=lambda d: d["num"])
@@ -1795,7 +1816,7 @@ def ablation_section():
              'the ensemble&rsquo;s mask-diversity gain needs genuinely separate <b>weights</b>, not one model trained on varied masks.</li>'
              '<li>#16/#17 on clean <b>v2.2</b> (drop out-of-vocab-ligand complexes) beat their v2 twins by ~+0.01, but grouped [7,4,2] &amp; fixed-mask champion still win.</li>'
              '<li>* #13/#14 use N=779; matched champion &#961; = 0.611.</li></ul>')
-    header = '<h3 class="subsec-head"><span class="sn">1.5</span> Ablation studies</h3>'
+    header = '<h3 class="subsec-head"><span class="sn">1.3</span> Ablation studies</h3>'
     return (header + intro
             + '<section class="block"><p class="table-title">Figure 3 &nbsp;&middot;&nbsp; Test &#961; by ablation '
               'number &mdash; champion (dashed) vs attempts</p>'
@@ -1803,133 +1824,6 @@ def ablation_section():
             + '<section class="block"><p class="table-title">Table 3 &nbsp;&middot;&nbsp; CDG-encoder ablation '
               '&mdash; val &#961; / test r / test &#961; / RMSE (5 seeds, MSE head)</p>'
               '<div class="table-wrap">' + table + '</div></section>')
-
-
-def lep_section():
-    """§1.2 Ligand Efficacy Prediction (LEP) — the CheapNet paper's second experiment
-    (ATOM3D LEP, split-by-protein). Frozen-encoder mean-pool + MLP probe on the concat
-    of the active & inactive complex features vs. reported / reproduced baselines.
-    Data-driven: reads notebook/html/lep_results.json (fill baseline rows as runs land)."""
-    jp = os.path.join(HERE, "lep_results.json")
-    if not os.path.exists(jp):
-        return ('<h3 class="subsec-head"><span class="sn">1.3</span> Ligand Efficacy '
-                'Prediction (LEP)</h3><p class="subsec-intro">lep_results.json not found.</p>')
-    with open(jp) as f:
-        data = json.load(f)
-    methods = sorted(data["methods"], key=lambda m: (m["auroc"][0] is None, -(m["auroc"][0] or 0)))
-    best_auroc = max((m["auroc"][0] for m in methods if m["auroc"][0] is not None), default=None)
-    best_auprc = max((m["auprc"][0] for m in methods if m["auprc"][0] is not None), default=None)
-
-    def metric(v, is_best):
-        m, s = v
-        if m is None:
-            return '<td class="metric" style="text-align:center"><span class="na">&mdash;</span></td>'
-        val = f'{m:.3f}'
-        cls = "metric second" if is_best else "metric"
-        inner = f'<span class="val"{" style=font-weight:750" if is_best else ""}>{val}</span>'
-        if s is not None:
-            inner += f' <span class="sd">&plusmn;{s:.3f}</span>'
-        return f'<td class="{cls}" style="text-align:center">{inner}</td>'
-
-    prov_tag = {
-        "ours": '<span class="tag repro" title="this work">ours</span>',
-        "reproduced": '<span class="tag retrained" title="reproduced from released checkpoints">reproduced</span>',
-        "running": '<span class="tag" style="background:#fdf0d8;color:#9a6a15;border:1px solid #eed9a8" title="local run in progress">running&hellip;</span>',
-        "reported": '',
-    }
-    rows = []
-    for m in methods:
-        is_ours = m["cat"] == "ours"
-        mcell_cls = "col-method cat-ours" if is_ours else "col-method"
-        name = f'<b>{m["name"]}</b>' if is_ours else m["name"]
-        tag = prov_tag.get(m.get("prov", "reported"), "")
-        ref = m.get("ref")
-        if m.get("prov") == "ours":
-            src = "this work"
-        elif ref:
-            src = f'<a href="{ref}" style="color:#5b6678">ref</a>'
-        else:
-            src = '<span class="na">&mdash;</span>'
-        title = f' title="{m["note"]}"' if m.get("note") else ""
-        rows.append(
-            f'<tr{title}><td class="{mcell_cls}">{name} {tag}</td>'
-            f'<td class="col-modality">{m["type"]}</td>'
-            + metric(m["auroc"], m["auroc"][0] == best_auroc)
-            + metric(m["auprc"], m["auprc"][0] == best_auprc)
-            + f'<td style="text-align:center;font-size:11.5px">{src}</td></tr>')
-
-    n = data["n"]
-    head = (
-        '<h3 class="subsec-head"><span class="sn">1.3</span> Ligand Efficacy Prediction (LEP)</h3>'
-        '<p class="subsec-intro">The CheapNet paper\'s second benchmark &mdash; '
-        '<a href="https://www.atom3d.ai/lep.html">ATOM3D&nbsp;LEP</a>, <code>split-by-protein</code>. '
-        'Each example is one molecule presented in an <b>active-state</b> and an <b>inactive-state</b> '
-        'protein complex; the binary task is whether the molecule <b>activates</b> the protein. '
-        'We apply the same frozen-encoder protocol as &sect;1.1: voxelise both conformers, mean-pool the '
-        'encoder patch tokens (640-D each), and train a 2-layer MLP on the concatenation '
-        '[active&nbsp;&Vert;&nbsp;inactive] with BCE (3 seeds). Metrics = AUROC / AUPRC on the test set.</p>'
-        '<ul class="split-notes">'
-        f'<li><b>Split (split-by-protein):</b> train {n["train"]} / val {n["val"]} / test {n["test"]}; '
-        'pocket = protein atoms &le;6&nbsp;&#8491; of the ligand (CheapNet cutoff).</li>'
-        '<li><b>No electron density for LEP.</b> These are docked poses with no X-ray maps, so the '
-        'C+D+G encoder\'s density &amp; gradient channels are <b>zero-filled</b> &mdash; a transfer test of '
-        'the fuller encoder, not a real &ldquo;density helps&rdquo; comparison. Zero-filling is out-of-distribution '
-        'and slightly hurts (0.712 vs coords-only 0.736).</li>'
-        '<li><b>Frozen probe, no fine-tuning.</b> Our encoder lands at supervised-from-scratch 3D-GNN level '
-        '(&asymp;SchNet/EGNN), below fine-tuned pretrained encoders (Uni-Mol/ProFSA/BindNet) and the '
-        'supervised SOTA CheapNet. Reported baselines are on the same split.</li>'
-        '</ul>')
-    table = (
-        '<section class="block">'
-        '<p class="table-title">Table 1.3 &nbsp;&middot;&nbsp; ATOM3D LEP test metrics '
-        '&mdash; AUROC / AUPRC (ours: mean&nbsp;&plusmn;&nbsp;std, 3 seeds)</p>'
-        '<ul class="caption-list">'
-        '<li><span class="tag repro">ours</span> frozen encoder + MLP probe (this work); '
-        '<span class="tag retrained">reproduced</span> from released checkpoints; '
-        'un-tagged rows are <b>reported</b> on the same ATOM3D split (see ref).</li>'
-        '<li>Best per column is <span style="font-weight:750">bold</span>. '
-        '&mdash; = not reported / not yet run.</li>'
-        + (f'<li><b>Reproductions:</b> {data["repro_note"]}</li>' if data.get("repro_note") else '')
-        + '</ul>'
-        '<div class="table-wrap"><table class="results">'
-        '<thead><tr class="grp">'
-        '<th style="text-align:left">Method</th><th class="col-modality">Type</th>'
-        '<th class="div-block">AUROC</th><th>AUPRC</th><th>Source</th></tr></thead>'
-        '<tbody>' + "\n          ".join(rows) + '</tbody>'
-        '</table></div></section>')
-
-    # ── pocket-density ablation (real receptor 2Fo-Fc) ──
-    pd = data.get("pocket_density")
-    pd_html = ""
-    if pd:
-        pn = pd["n"]
-        prows = []
-        base = pd["rows"][0]["auroc"][0]
-        for r in pd["rows"]:
-            a, p = r["auroc"], r["auprc"]
-            hurt = r["auroc"][0] < 0.5
-            nm = (f'<span style="color:#b03030;font-weight:600">{r["name"]}</span>' if hurt else r["name"])
-            prows.append(
-                f'<tr><td class="col-method">{nm}</td>'
-                f'<td class="metric" style="text-align:center"><span class="val">{a[0]:.3f}</span> '
-                f'<span class="sd">&plusmn;{a[1]:.3f}</span></td>'
-                f'<td class="metric" style="text-align:center"><span class="val">{p[0]:.3f}</span> '
-                f'<span class="sd">&plusmn;{p[1]:.3f}</span></td></tr>')
-        pd_html = (
-            '<section class="block">'
-            '<p class="table-title">Table 1.2b &nbsp;&middot;&nbsp; Can real RECEPTOR density help? '
-            '&mdash; frozen C+D+G with experimental 2Fo-Fc pocket density (3 seeds)</p>'
-            '<ul class="caption-list">'
-            f'<li>{pd["note"]}</li>'
-            f'<li><b>Verdict:</b> {pd["verdict"]}</li>'
-            '</ul>'
-            '<div class="table-wrap"><table class="results">'
-            '<thead><tr class="grp"><th style="text-align:left">Condition '
-            f'(both-X-ray subset, test&nbsp;n={pn["test"]})</th>'
-            '<th class="div-block">AUROC</th><th>AUPRC</th></tr></thead>'
-            '<tbody>' + "\n          ".join(prows) + '</tbody></table></div></section>')
-
-    return head + table + pd_html
 
 
 # ── Section 1.2: does electron density help? C vs C+D+G across every test set ─────
@@ -1973,14 +1867,21 @@ def _density_rows_data():
 
 
 def density_helps_table():
-    def num(pair, digits=3):
+    def num(pair, digits=3, best=False):
         if not pair or pair[0] is None:
             return '<span class="na">&mdash;</span>'
         m, s = pair
-        out = f'<span class="val">{m:.{digits}f}</span>'
+        out = f'<span class="val"{" style=font-weight:750" if best else ""}>{m:.{digits}f}</span>'
         if s is not None:
             out += f' <span class="sd">&plusmn;{s:.{digits}f}</span>'
         return out
+
+    def win(a, b, hi=True):
+        """(a_best, b_best) — which of C / C+D+G is better for this metric (bold the winner)."""
+        if not a or a[0] is None or not b or b[0] is None or a[0] == b[0]:
+            return (False, False)
+        a_better = (a[0] > b[0]) if hi else (a[0] < b[0])
+        return (a_better, not a_better)
 
     def delta_span(d, good_positive=True, digits=3):
         if d is None:
@@ -1999,12 +1900,15 @@ def density_helps_table():
         d_r = (dr[0] - cr[0]) if (dr and cr and dr[0] is not None and cr[0] is not None) else None
         d_rho = (dro[0] - cro[0]) if (dro and cro and dro[0] is not None and cro[0] is not None) else None
         d_rmse = (crm[0] - drm[0]) if (drm and crm and drm[0] is not None and crm[0] is not None) else None  # C−CDG: +ve = density lowers error
+        cw_r, dw_r = win(cr, dr, hi=True)
+        cw_ro, dw_ro = win(cro, dro, hi=True)
+        cw_rm, dw_rm = win(crm, drm, hi=False)  # RMSE lower = better
         rows.append(
             f'<tr><td class="col-method" style="text-align:left">{label}'
             f'<span style="display:block;font-size:10px;color:#9aa3b2;font-weight:400">{sub}</span></td>'
             f'<td class="col-modality">{n}</td>'
-            f'<td class="metric div-block">{num(cr)}</td><td class="metric">{num(cro)}</td><td class="metric">{num(crm)}</td>'
-            f'<td class="metric div-block">{num(dr)}</td><td class="metric">{num(dro)}</td><td class="metric">{num(drm)}</td>'
+            f'<td class="metric div-block">{num(cr, best=cw_r)}</td><td class="metric">{num(cro, best=cw_ro)}</td><td class="metric">{num(crm, best=cw_rm)}</td>'
+            f'<td class="metric div-block">{num(dr, best=dw_r)}</td><td class="metric">{num(dro, best=dw_ro)}</td><td class="metric">{num(drm, best=dw_rm)}</td>'
             f'<td class="metric div-block">{delta_span(d_r)}</td>'
             f'<td class="metric" style="background:#eef7f1">{delta_span(d_rho)}</td>'
             f'<td class="metric">{delta_span(d_rmse)}</td></tr>')
@@ -2109,18 +2013,6 @@ def density_helps_chart():
 
 def density_helps_section():
     """§1.2 — synthesis of the C vs C+D+G contrast across every affinity test set."""
-    # LEP counter-case numbers (no X-ray density → zero-filled), from lep_results.json.
-    lep_c = lep_cdg = None
-    jp = os.path.join(HERE, "lep_results.json")
-    if os.path.exists(jp):
-        lm = {m["name"]: m for m in json.load(open(jp))["methods"]}
-        lep_c = lm.get("Ours (C)", {}).get("auroc", [None])[0]
-        lep_cdg = lm.get("Ours (C+D+G)", {}).get("auroc", [None])[0]
-    lep_line = ""
-    if lep_c is not None and lep_cdg is not None:
-        lep_line = (f' ATOM3D&nbsp;LEP has no X-ray maps, so C+D+G&rsquo;s density channels are '
-                    f'<b>zero-filled</b> (out-of-distribution): AUROC {lep_cdg:.3f} vs coords-only '
-                    f'{lep_c:.3f} ({lep_cdg-lep_c:+.3f}).')
     return (
         '<h3 class="subsec-head"><span class="sn">1.2</span> Does electron density help? '
         '&mdash; C vs C+D+G across test sets</h3>'
@@ -2149,15 +2041,15 @@ def density_helps_section():
         '(ours: 5-seed mean&nbsp;&plusmn;&nbsp;std)</p>'
         '<ul class="caption-list">'
         '<li>Same 100M&nbsp;ChannelViT encoder for both rows; C+D+G adds only the electron-density and '
-        'density-gradient input channels. Frozen encoder&nbsp;+&nbsp;MLP probe, 5 seeds.</li>'
+        'density-gradient input channels. Frozen encoder&nbsp;+&nbsp;MLP probe, 5 seeds. '
+        'Per row&nbsp;&amp;&nbsp;metric the better of C&nbsp;/&nbsp;C+D+G is <b>bold</b>.</li>'
         '<li><b>&Delta; sign convention:</b> all three &Delta; columns are oriented so that '
         '<b>positive&nbsp;=&nbsp;density helps</b> (&Delta;r, &Delta;&rho;&nbsp;=&nbsp;C+D+G&nbsp;&minus;&nbsp;C; '
         '&Delta;RMSE&nbsp;=&nbsp;C&nbsp;&minus;&nbsp;C+D+G, i.e. density lowers error). '
         '&Delta;&rho; is shaded green.</li>'
-        '<li><b>Counter-case (no density).</b>' + lep_line +
-        ' CASP16 chymase (n=17, Appendix&nbsp;B) is the opposite tail &mdash; density roughly doubles a weak '
-        'within-series signal (&rho; 0.15&rarr;0.30) but is underpowered. Density helps when, and only when, '
-        'real electron density is present.</li>'
+        '<li><b>Counter-case.</b> CASP16 chymase (n=17, Appendix&nbsp;B) is the underpowered tail &mdash; '
+        'density roughly doubles a weak within-series signal (&rho; 0.15&rarr;0.30) but is too small to be '
+        'conclusive. Density helps when, and only when, real electron density is present.</li>'
         '</ul>'
         f'<div class="table-wrap">{density_helps_table()}</div>'
         '</section>')
@@ -2172,15 +2064,12 @@ def build():
     vina_img = denovo_chart.render(table2)
     casf_similarity_chart = casf_similarity_bar_svg()       # Appendix A only
     casf_similarity_legend = casf_similarity_bar_legend()   # Appendix A only
-    holdout2019_common_chart = holdout2019_common_bar_svg()
-    holdout2019_common_legend = holdout2019_common_bar_legend()
     lp_tiers_chart = lp_all_tiers_svg()
     lba_chart = lba_bar_svg()
     lba_legend = lba_bar_legend()
     legend = bar.legend(leaked_names=LEAKED)
-    abl_html = ablation_section()          # §1.5 CDG-encoder ablation (reads ablation_cdg.json)
-    density_html = density_helps_section() # §1.2 C vs C+D+G density synthesis (Tables 1a/1b/1c + LEP)
-    lep_html = lep_section()               # §1.3 Ligand Efficacy Prediction (reads lep_results.json)
+    abl_html = ablation_section()          # §1.3 CDG-encoder ablation (reads ablation_cdg.json)
+    density_html = density_helps_section() # §1.2 C vs C+D+G density synthesis (Tables 1a/1b/1c)
 
     html = f"""<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8">
@@ -2241,6 +2130,11 @@ def build():
     <div class="date">2026 · 07 · 16 — Results</div>
     <h1>VoxBind &mdash; Results</h1>
     <p class="lead">Binding-affinity regression and de novo drug design &mdash; headline tables and charts only.</p>
+    <p class="lead" style="margin-top:10px;padding:9px 13px;background:#fbf3df;border:1px solid #e8d69a;border-left:4px solid #b8860b;border-radius:7px;color:#5a4a10;">
+      <b>Ours:</b> <code>v2_ep100_e25</code> (<code>260806_cdg_100m_v2_ep100_e25</code>) encoder + <b>mse+corr</b> probe head
+      &mdash; the headline VoxBind result, shown as the <b>CDG v2</b> row (gold) in Tables&nbsp;1a/1b/1c.
+      The separate <code>C</code> / <code>C+D+G</code> / <code>C+D+G&nbsp;+corr</code> rows are the matched champion
+      (<code>260705_ar_cvit_100m_v2_mask075</code>) pair kept for the &sect;1.2 density ablation.</p>
   </header>
 
   <div class="doc-section">
@@ -2271,6 +2165,7 @@ def build():
       <li><a href="https://arxiv.org/abs/2310.07229">ProFSA</a> is an ICLR 2024 frozen pocket encoder pretrained by aligning protein-fragment pseudo-ligands with their surrounding pockets.</li>
       <li><a href="https://proceedings.neurips.cc/paper_files/paper/2023/hash/6a45a1b0697ee086bd8bf494cacc6567-Abstract-Conference.html">DSMBind</a> is the NeurIPS 2023 NERE energy model, trained without affinity labels through SE(3) denoising score matching.</li>
       <li><a href="https://www.nature.com/articles/s42004-025-01428-y">AEV-PLIG</a> is a 3D atom-environment-vector affinity model published in <i>Communications Chemistry</i> in 2025.</li>
+      <li><a href="https://arxiv.org/abs/2206.13602">GeoSSL</a> (GeoSSL-DDM, 2022) is a molecular-geometry self-supervised method that pretrains a 3D SchNet encoder by SE(3)-invariant denoising distance matching on single small molecules; we evaluate its released encoder <b>frozen</b>, with a 2-layer MLP probe on the pooled complex representation.</li>
       <li><a href="https://doi.org/10.1093/bioinformatics/bty593">DeepDTA</a> is a sequence/SMILES convolutional affinity predictor published in <i>Bioinformatics</i> in 2018.</li>
       <li><a href="https://doi.org/10.1093/bioinformatics/btaa880">MolTrans</a> is a substructure-aware sequence/SMILES interaction transformer published in <i>Bioinformatics</i> in 2021.</li>
       <li><a href="https://arxiv.org/abs/2604.23115">HBGSA</a> models hydrogen-bond topology with graph self-attention and is currently an arXiv preprint from 2026 with no conference venue reported.</li>
@@ -2281,6 +2176,7 @@ def build():
     <ul class="split-notes">
       <li><a href="https://openreview.net/forum?id=qH9nrMNTIW">IPNet</a> (IPDiff, ICLR 2024) &mdash; the interaction-prior network is a sub-module of a <b>CrossDocked2020 pocket-conditioned molecule <i>generation</i></b> model, not a binding-affinity regressor. Repurposing its features as an affinity baseline (frozen probe / from-scratch fit) is an off-task stretch, so it is excluded from the affinity tables.</li>
       <li><a href="https://arxiv.org/abs/2606.14217">CPES</a> (Curvature-Informed Potential Energy Surface, arXiv 2606.14217) &mdash; <b>not reproducible from the public release.</b> The <a href="https://github.com/Peng-Fei-Sun/CPES">official repo</a> is an incomplete upload: <code>processdata.py</code> imports <code>build_anm_graphs.py</code> (the ANM curvature-spectrum builder that is the paper's core contribution), but that module is absent from the repository, and no author checkpoint is released. The GNN/training code alone cannot construct the model's inputs, so CPES is excluded rather than approximated with a from-spec reimplementation.</li>
+      <li><a href="https://doi.org/10.1093/bioinformatics/btz111">DeepAffinity</a> (Karimi et al., <i>Bioinformatics</i> 2019) &mdash; <b>pretrained checkpoints exist but are not runnable in a probe-comparable form.</b> The released model is an end-to-end RNN&ndash;CNN attention regressor built on <b>TensorFlow&nbsp;1.1&nbsp;+&nbsp;TFLearn&nbsp;0.3</b> (a Python-2-era stack that will not run on current CUDA/GPUs without a full port), and its protein input is a <b>Structured Property-annotated Sequence (SPS)</b> that must be regenerated per protein through the authors' SCRATCH secondary-structure pipeline &mdash; there is no 3D-structure encoder to probe. Extracting a frozen embedding for our splits would require resurrecting the TF1.1 graph <i>and</i> rebuilding SPS for every PDBbind protein. The sequence/SMILES affinity niche it occupies is already represented in Table&nbsp;1 by <a href="https://doi.org/10.1093/bioinformatics/bty593">DeepDTA</a> and <a href="https://doi.org/10.1093/bioinformatics/btaa880">MolTrans</a>, so DeepAffinity is documented here rather than approximated.</li>
     </ul>
 
     <h3 class="subsec-head"><span class="sn">1.1</span> LP-PDBBind</h3>
@@ -2346,6 +2242,8 @@ def build():
         <li><b>Fresh-run policy:</b> the CL3 five-seed predictions and sequence alignment were generated
             in a new campaign directory; earlier cached three-seed CL3 results are not loaded.</li>
         <li>Test cohorts are nested; compare within columns or follow one method across columns.</li>
+        <li><b>Ranking (per metric, like Table&nbsp;1a):</b> best = <b>bold</b>, second-best =
+            <span style="text-decoration:underline;text-underline-offset:2px">underline</span>, among non-leaked methods.</li>
         <li><b>Density gain is split-dependent:</b> C+D+G&minus;C &Delta;&rho; = +0.048 (base)
             &rarr; +0.049 (novel &lt;60%) &rarr; +0.057 (novel &lt;30%).</li>
       </ul>
@@ -2381,6 +2279,9 @@ def build():
             baselines use their reported CASF predictions. ProFSA carries a pretraining-overlap badge.</li>
         <li><b>Small-N caution:</b> id&nbsp;&lt;&nbsp;30% (N=32) and clean-92 (N=92) carry wide seed variance;
             compare within columns rather than reading absolute gaps.</li>
+        <li><b>Ranking (per metric, like Table&nbsp;1a):</b> best = <b>bold</b>, second-best =
+            <span style="text-decoration:underline;text-underline-offset:2px">underline</span>, among non-leaked
+            methods. CheapNet leads leaky/non-train via train-overlap; Ours&nbsp;(best) leads the novel &amp; clean cohorts.</li>
       </ul>
       <div class="table-wrap"><table class="results">
         <thead>
@@ -2393,38 +2294,6 @@ def build():
     </section>
 
     {density_html}
-
-    {lep_html}
-
-    <h3 class="subsec-head"><span class="sn">1.4</span> Compared to recent works with temporal holdout data</h3>
-    <p class="subsec-intro">PDBbind 2019 temporal holdout. CASF-2016 is reported in Table&nbsp;1c; CASP16 blind affinity is Appendix&nbsp;B.</p>
-
-    <section class="block">
-      <p class="table-title">Figure 2 &nbsp;&middot;&nbsp; PDBbind 2019 temporal-holdout performance</p>
-      <div class="table-wrap" style="padding:12px 16px 16px;">
-        <p class="figure-cap" style="text-align:left;font-weight:700;color:#1c2433;margin:4px 0 2px;font-size:13px;">Common ED set (N = {holdout2019_common_n()})</p>
-        {holdout2019_common_chart}
-        {holdout2019_common_legend}
-        <ul class="caption-list">
-          <li>2019: Nesso-1 uses partial coverage; DSMBind/IPNet-frozen have no pK-scale RMSE.</li>
-        </ul>
-      </div>
-    </section>
-
-    <section class="block">
-      <p class="table-title">Table 2 &nbsp;&middot;&nbsp; Held-out generalization &mdash; <b>PDBbind 2019 temporal holdout</b></p>
-      <ul class="caption-list">
-        <li><b>2019:</b> partial coverage is excluded from ranking; &dagger; reports |r| / |&rho;| for sign-arbitrary energy scores.</li>
-      </ul>
-      <div class="table-wrap"><table class="results">
-        <thead>
-          {heldout_table_head()}
-        </thead>
-        <tbody>
-          {heldout_rows()}
-        </tbody>
-      </table></div>
-    </section>
 
     {abl_html}
   </div>

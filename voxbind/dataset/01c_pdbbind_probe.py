@@ -1396,12 +1396,49 @@ class AttnPool(nn.Module):
         return self.norm(out.squeeze(1))                 # (B, D)
 
 
+class GeMPool(nn.Module):
+    """Generalized-mean (GeM) pooling: (mean(clamp(x)^p))^(1/p), learnable p.
+    p=1 → mean, p→∞ → max; interpolates between them. Standard image-retrieval readout;
+    clamps to ≥eps (GeM assumes non-negative features)."""
+    def __init__(self, dim: int, p: float = 3.0, eps: float = 1e-6):
+        super().__init__()
+        self.p = nn.Parameter(torch.tensor(float(p)))
+        self.eps = eps
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:      # (B, N, D)
+        return x.clamp(min=self.eps).pow(self.p).mean(dim=1).pow(1.0 / self.p)
+
+
+class SelfAttnPool(nn.Module):
+    """One pre-norm self-attention transformer block over the N tokens (token↔token
+    interaction) → mean-pool. A light 'pair/interaction' readout in the PairMixer spirit:
+    lets voxel tokens exchange information before aggregation, instead of averaging blindly."""
+    def __init__(self, dim: int, n_heads: int = 8, dropout: float = 0.0, mlp_ratio: int = 2):
+        super().__init__()
+        self.norm1 = nn.LayerNorm(dim)
+        self.attn = nn.MultiheadAttention(dim, n_heads, dropout=dropout, batch_first=True)
+        self.norm2 = nn.LayerNorm(dim)
+        self.mlp = nn.Sequential(nn.Linear(dim, dim * mlp_ratio), nn.GELU(),
+                                 nn.Linear(dim * mlp_ratio, dim))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:      # (B, N, D)
+        h = self.norm1(x)
+        a, _ = self.attn(h, h, h, need_weights=False)
+        x = x + a
+        x = x + self.mlp(self.norm2(x))
+        return x.mean(dim=1)
+
+
 def make_pool(kind: str, dim: int, *, n_heads: int = 8, dropout: float = 0.0) -> nn.Module:
     if kind == "mean":
         return MeanPool()
     if kind == "attn":
         return AttnPool(dim, n_heads=n_heads, dropout=dropout)
-    raise ValueError(f"unknown pool: {kind!r} (expected 'mean' or 'attn')")
+    if kind == "gem":
+        return GeMPool(dim)
+    if kind == "selfattn":
+        return SelfAttnPool(dim, n_heads=n_heads, dropout=dropout)
+    raise ValueError(f"unknown pool: {kind!r} (expected mean|attn|gem|selfattn)")
 
 
 class MLP2(nn.Module):
@@ -2840,7 +2877,7 @@ def build_parser() -> argparse.ArgumentParser:
     # shared head architecture (identical across arms)
     pt.add_argument("--hidden",  type=int,   default=128)
     pt.add_argument("--dropout", type=float, default=0.1)
-    pt.add_argument("--pool", choices=["mean", "attn", "memtok"], default="mean",
+    pt.add_argument("--pool", choices=["mean", "attn", "gem", "selfattn", "memtok"], default="mean",
                     help="Token→vector pooling for the head. mean = fixed average "
                          "(matches the cached probe); attn = learned-query attention "
                          "pool over the live token sequence (trains with the head); "

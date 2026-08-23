@@ -57,7 +57,8 @@ from voxbind.models.adamw import AdamW
 from voxbind.models.mae_ops import (
     corrupt_noise, corrupt_reblur, corrupt_swap,
     gaussian_blur3d, gradient_magnitude3d, make_atom_biased_block_mask,
-    make_block_mask, make_cluster_mask, make_interface_mask, per_sample_zscore,
+    make_block_mask, make_cluster_mask, make_interface_mask,
+    make_interface_atom_mask, per_sample_zscore,
     region_keep_masks, voxel_mask_to_patch_target,
 )
 from voxbind.models.density_cha_mae import DensityChaMAE
@@ -193,8 +194,8 @@ class MAEPrefetcher:
         assert input_mode in _VALID_INPUT_MODES, (
             f"input_mode={input_mode!r}; expected one of {_VALID_INPUT_MODES}"
         )
-        assert mask_strategy in ("uniform", "atom_biased", "cluster", "ligand", "interface", "per_group"), (
-            f"mask_strategy={mask_strategy!r}; expected 'uniform', 'atom_biased', 'cluster', 'ligand', 'interface' or 'per_group'"
+        assert mask_strategy in ("uniform", "atom_biased", "cluster", "ligand", "interface", "interface_atom", "per_group"), (
+            f"mask_strategy={mask_strategy!r}; expected 'uniform', 'atom_biased', 'cluster', 'ligand', 'interface', 'interface_atom' or 'per_group'"
         )
         for op in corruption_ops:
             if op not in _RULE_BASED_OPS:
@@ -442,6 +443,15 @@ class MAEPrefetcher:
                     # Mask the ligand-pocket CONTACT region (where binding affinity lives),
                     # reconstruct it from its surroundings → learn interaction structure.
                     mask = make_interface_mask(
+                        v_lig.sum(dim=1, keepdim=True), v_poc.sum(dim=1, keepdim=True),
+                        self.block_size, ratio,
+                        tau=self.mask_atom_tau, generator=self.generator,
+                    )
+                elif self.mask_strategy == "interface_atom":
+                    # Priority fill: interface contacts first → atom-occupied region → empty
+                    # solvent last. Masks the MOST binding-relevant components first at any ratio
+                    # (fixes interface's random tie-break fill once contacts are exhausted).
+                    mask = make_interface_atom_mask(
                         v_lig.sum(dim=1, keepdim=True), v_poc.sum(dim=1, keepdim=True),
                         self.block_size, ratio,
                         tau=self.mask_atom_tau, generator=self.generator,

@@ -274,6 +274,67 @@ def make_interface_mask(
                  .repeat_interleave(block_size, dim=4)  # (B, 1, G, G, G) bool
 
 
+def make_interface_atom_mask(
+    lig_sum: torch.Tensor,
+    poc_sum: torch.Tensor,
+    block_size: int,
+    ratio: float,
+    tau: float = 0.0,
+    generator: torch.Generator = None,
+) -> torch.Tensor:
+    """PRIORITY masking: INTERFACE blocks first → ATOM-occupied blocks → EMPTY space.
+
+    make_interface_mask masks the top-K interface blocks, but once the (few) true contact
+    blocks are exhausted its tie-break fill lands on ARBITRARY zero-score blocks (mixing
+    atom-occupied and empty at random). Here the top-K spills over in a MEANINGFUL order:
+    strongest ligand–pocket contacts, then the rest of the atom-occupied region (densest
+    first, atom_biased-style), and only then EMPTY solvent. So at any `ratio` the most
+    binding-relevant components are always masked first, with empty space included last
+    (which the caller asked for — reconstructing solvent context can still help).
+
+    Strict tiering via large integer bases (+20 interface / +10 atom / +0 empty) so the
+    within-tier score and the `tau` tie-break jitter never cross a tier boundary.
+    Returns a (B,1,G,G,G) bool mask (broadcast across channels), exact cardinality.
+    """
+    B, _, G, _, _ = lig_sum.shape
+    assert G % block_size == 0, f"grid_dim {G} % block_size {block_size} != 0"
+    gb = G // block_size
+    n_blocks = gb ** 3
+    n_mask = max(1, int(round(ratio * n_blocks)))
+    # DILATED occupancy (adjacency) for the interface score — ligand & pocket atoms are
+    # adjacent, not overlapping, so the contact needs a 1-block dilation to register.
+    lb_d = F.max_pool3d(F.avg_pool3d(lig_sum, block_size), kernel_size=3, stride=1, padding=1).flatten(2)
+    pb_d = F.max_pool3d(F.avg_pool3d(poc_sum, block_size), kernel_size=3, stride=1, padding=1).flatten(2)
+    interface = lb_d * pb_d                                      # (B,1,gb³) high at contact (incl. the gap)
+    # RAW (non-dilated) occupancy for the atom tier — tier-1 = blocks that ACTUALLY contain
+    # ligand/pocket atoms (not the adjacent ring), so empty solvent stays strictly tier-0.
+    atom = (F.avg_pool3d(lig_sum, block_size) + F.avg_pool3d(poc_sum, block_size)).flatten(2)
+
+    def _norm01(x):                                            # within-tier rank in [0,1)
+        lo = x.amin(dim=2, keepdim=True)
+        rng = (x.amax(dim=2, keepdim=True) - lo).clamp(min=1e-6)
+        return (x - lo) / rng
+
+    has_if = (interface > 0).to(interface.dtype)
+    has_atom = (atom > 0).to(atom.dtype)
+    rnd = (torch.rand(interface.shape, device=interface.device, generator=generator)
+           if generator is not None else torch.rand_like(interface))   # empty-tier order
+    score = has_if * (20.0 + _norm01(interface)) \
+        + (1.0 - has_if) * has_atom * (10.0 + _norm01(atom)) \
+        + (1.0 - has_atom) * rnd                                # empty tier ∈ [0,1)
+    if tau > 0:                                                 # small in-tier jitter (< tier gap)
+        noise = (torch.randn(score.shape, device=score.device, generator=generator)
+                 if generator is not None else torch.randn_like(score))
+        score = score + noise.clamp(-3, 3) * tau * 0.1
+    _, top_idx = score.topk(n_mask, dim=2)
+    blocks_flat = torch.zeros_like(score, dtype=torch.bool)
+    blocks_flat.scatter_(2, top_idx, True)
+    blocks = blocks_flat.view(B, 1, gb, gb, gb)
+    return blocks.repeat_interleave(block_size, dim=2)\
+                 .repeat_interleave(block_size, dim=3)\
+                 .repeat_interleave(block_size, dim=4)  # (B, 1, G, G, G) bool
+
+
 def per_sample_zscore(x: torch.Tensor, eps: float = 1e-6) -> torch.Tensor:
     """Z-score each (C, G, G, G) volume independently along spatial dims."""
     mu = x.mean(dim=(2, 3, 4), keepdim=True)
