@@ -714,6 +714,21 @@ def main():
         {"per_encoder": q4, "frac_complexes_density_helps": frac_help,
          "mean_delta_pvi": mean_dpvi, "vinfo_gap_cdg_minus_coords": q4pack["vinfo_gap"]}, indent=2))
 
+    # §3.5 reconstruction granularity — read the precomputed granularity.json if present
+    # (recon_granularity.py writes it; kept out of the main build since it re-extracts tokens).
+    gran_path = RESULTS_DIR / "granularity.json"
+    gran = json.loads(gran_path.read_text()) if gran_path.exists() else None
+    s3["png_gran"] = None
+    if gran:
+        pt, cc = gran["patch_token"], gran["complex_control"]
+        s3["png_gran"] = grouped_bar(
+            ["Complex (pooled)", "Patch-token (local)"],
+            [("CDG → C", [cc["CDG->C"], pt["CDG->C"]]),
+             ("C → CDG", [cc["C->CDG"], pt["C->CDG"]])],
+            "C↔CDG reconstruction R² by granularity", "held-out R²",
+            colors=["#2f6f4f", "#b9c6d6"], ymax=1.0)
+    s3["granularity"] = gran
+
     page = render_page(names, subs, dims, n, CKA, CK5, CK50, singles, pairs, ANCHOR,
                        png_ck5, png_ck50, png_cka, png_scatter, s3, args.cdg_note)
     OUT_HTML.write_text(page)
@@ -808,6 +823,36 @@ def render_page(names, subs, dims, n, CKA, CK5, CK50, singles, pairs, anchor,
         r33 += (f'<tr{cls}><td class="col-method">{nm}{tag}</td><td>{rr["sim_to_cdg"]:.3f}</td>'
                 f'<td>{rr["zero_rho"]:.3f}</td><td>{gap:+.3f}</td></tr>')
 
+    gran = s3.get("granularity")
+    sec35 = ""
+    if gran:
+        pt, cc, vx = gran["patch_token"], gran["complex_control"], gran["voxel_input"]
+        sec35 = f"""
+    <section class="block" id="granularity">
+      <h3 class="subsection-head"><span class="sub-lab">3.5</span>Reconstruction granularity</h3>
+      <p class="table-sub">§3.1 reconstructs the <b>per-complex</b> pooled vector. Here we repeat C↔CDG
+        reconstruction at two finer scales (same encoders): per <b>spatial patch-token</b> (512 tokens per
+        complex, {pt['n_tokens']:,} rows, split by complex) and at the raw <b>input-voxel</b> level. The
+        CDG&nbsp;⊇&nbsp;C asymmetry persists locally but shrinks — a patch's density is largely its own blurred
+        atoms, so density's <i>unique</i> contribution is largest in aggregate.</p>
+      <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start">
+        <img src="data:image/png;base64,{s3['png_gran']}" style="max-width:48%;height:auto;border:1px solid var(--line);border-radius:8px">
+        <div class="table-wrap" style="min-width:330px"><table class="results">
+          <thead><tr><th class="col-method stub">Granularity</th><th>CDG→C</th><th>C→CDG</th><th>asym</th></tr></thead>
+          <tbody>
+            <tr><td class="col-method">Complex — pooled (§3.1 canonical, 5-fold)</td><td>0.937</td><td>0.603</td><td>+0.333</td></tr>
+            <tr><td class="col-method">Complex — control (this split)</td><td>{cc['CDG->C']:.3f}</td><td>{cc['C->CDG']:.3f}</td><td>{cc['asym']:+.3f}</td></tr>
+            <tr class="best-row"><td class="col-method">Patch-token — local</td><td>{pt['CDG->C']:.3f}</td><td>{pt['C->CDG']:.3f}</td><td>{pt['asym']:+.3f}</td></tr>
+          </tbody></table></div>
+      </div>
+      <p class="table-sub" style="margin-top:10px"><b>Input-voxel level.</b> Predicting CDG's extra input
+        channels (electron density + ‖∇ρ‖) from the 11 coordinate-blob channels reaches only
+        R²&nbsp;=&nbsp;{vx['coords->dg']:.2f} over {vx['n_voxels']:,} occupied voxels ({vx['n_complexes']} complexes)
+        — so ~{100 * (1 - vx['coords->dg']):.0f}% of the local density signal is not a function of atom coordinates,
+        confirming §3's density-unique information at the input level. <i>(The two "Complex" rows differ only in
+        protocol — 5-fold CV vs a single by-complex split — the asymmetry direction is identical.)</i></p>
+    </section>"""
+
     ceil_r2 = s3["ceil_r2"]; du = s3["density_unique"]
     r34 = ""
     for r in sorted(s3["ceilrows"], key=lambda z: -z["norm"]):
@@ -895,7 +940,7 @@ def render_page(names, subs, dims, n, CKA, CK5, CK50, singles, pairs, anchor,
           <tbody>{r34}</tbody></table></div>
       </div>
     </section>
-
+{sec35}
     <ul class="criteria">
       <li><b>Connector:</b> 2-layer MLP (Linear→GELU→Linear, hidden 384, weight-decay 1e-4, early-stopped),
         the low-capacity stitching map of Bansal et al. Source and target are per-dim standardised; R² is

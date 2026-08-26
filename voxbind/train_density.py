@@ -186,6 +186,8 @@ class MAEPrefetcher:
         n_lig_ch: int = 7,
         n_poc_ch: int = 4,
         channel_groups: tuple = None,
+        mask_channel_independent: bool = False,
+        mask_group_ratios: tuple = None,
     ):
         assert pretext_style in ("mae", "electra", "denoise")
         assert density_source in ("synthetic", "xray"), (
@@ -264,6 +266,13 @@ class MAEPrefetcher:
         # ChannelViT groups (e.g. (7,4,1,1)) — needed by mask_strategy='per_group' to
         # mask each channel group independently (per-channel-group masking).
         self.channel_groups = tuple(int(c) for c in channel_groups) if channel_groups else None
+        # Channel-independent masking (opt-in): re-sample the spatial mask INDEPENDENTLY per
+        # channel-group at per-group ratios (mask_group_ratios, aligned to channel_groups) — e.g.
+        # mask density+gradmag harder than coords so the encoder must reconstruct density FROM
+        # structure at the same voxel. Layers on top of mask_strategy (interface/atom_biased/uniform).
+        self.mask_channel_independent = bool(mask_channel_independent)
+        self.mask_group_ratios = ([float(r) for r in mask_group_ratios]
+                                  if mask_group_ratios is not None else None)
         self.layout = _channel_layout(
             input_mode, with_gradmag, gradmag_reconstruct, density_input=self.density_input,
             mask_as_channel=self.mask_as_channel,
@@ -419,7 +428,31 @@ class MAEPrefetcher:
                     ratio = self.mask_ratio_min + (self.mask_ratio_max - self.mask_ratio_min) * _u
                 else:
                     ratio = self.mask_ratio
-                if self.mask_strategy == "atom_biased":
+                if self.mask_channel_independent and self.channel_groups is not None:
+                    # Per-channel-group INDEPENDENT masking at per-group ratios: re-sample the
+                    # chosen spatial strategy separately for each ChannelViT group so groups get
+                    # DIFFERENT holes and (via mask_group_ratios) DIFFERENT amounts — e.g. mask
+                    # density+gradmag harder than coords → reconstruct density FROM structure.
+                    assert not (self.contrastive or self.mask_as_channel or self.apo_prob > 0.0), \
+                        "mask_channel_independent needs plain MAE (no contrastive/mask_as_channel/apo)"
+                    _rr = self.mask_group_ratios or [ratio] * len(self.channel_groups)
+
+                    def _spatial(r):
+                        if self.mask_strategy == "interface":
+                            return make_interface_mask(
+                                v_lig.sum(dim=1, keepdim=True), v_poc.sum(dim=1, keepdim=True),
+                                self.block_size, r, tau=self.mask_atom_tau, generator=self.generator)
+                        if self.mask_strategy == "atom_biased":
+                            return make_atom_biased_block_mask(
+                                v_lig.sum(dim=1, keepdim=True) + v_poc.sum(dim=1, keepdim=True),
+                                self.block_size, r, tau=self.mask_atom_tau, generator=self.generator)
+                        return make_block_mask(B, G, self.block_size, r, device)
+
+                    parts = [_spatial(float(_rr[gi]) if gi < len(_rr) else ratio)
+                             .expand(-1, g, -1, -1, -1)
+                             for gi, g in enumerate(self.channel_groups)]
+                    mask = torch.cat(parts, dim=1)                       # (B, C, G, G, G)
+                elif self.mask_strategy == "atom_biased":
                     mask = make_atom_biased_block_mask(
                         atoms_sum, self.block_size, ratio,
                         tau=self.mask_atom_tau, generator=self.generator,
@@ -1824,12 +1857,40 @@ def run(cfg: DictConfig, method: str) -> None:
             corruption_ops = ("swap",)        # unused in mae mode
             corruption_op_weights = (1.0,)
         prefetch_pretext = "mae" if method == "chamae" else pretext_style
+        # Curriculum mask-ratio (opt-in): ramp the FIXED per-epoch mask ratio from mask_ratio_min →
+        # mask_ratio_max over `mask_curriculum_epochs` (default = num_epochs), then hold at max.
+        # Easy→hard schedule on our salience (interface) masking. Two shapes via
+        # `mask_curriculum_steps`: null/<2 = smooth LINEAR ramp; N>=2 = CurriMAE-style STEP schedule
+        # (N discrete levels linspace(min,max), each held for ramp/N epochs, e.g. 4 → 0.6/0.7/0.8/0.9).
+        # Overrides the R2MAE per-batch draw (min/max → None). Default off = unchanged behaviour.
+        if bool(cfg.mae.get("mask_curriculum", False)):
+            _cmin = float(cfg.mae.mask_ratio_min); _cmax = float(cfg.mae.mask_ratio_max)
+            _cramp = int(cfg.mae.get("mask_curriculum_epochs", None) or cfg.num_epochs)
+            _csteps = cfg.mae.get("mask_curriculum_steps", None)
+            _e = max(0, epoch - start_epoch)
+            if _csteps and int(_csteps) >= 2:
+                _ns = int(_csteps)
+                _stage = min(_ns - 1, int(_e / (max(1, _cramp) / _ns)))
+                _epoch_ratio = _cmin + (_cmax - _cmin) * (_stage / (_ns - 1))
+                _shape = f"step {_stage + 1}/{_ns}"
+            else:
+                _prog = min(1.0, max(0.0, _e / float(max(1, _cramp - 1))))
+                _epoch_ratio = _cmin + (_cmax - _cmin) * _prog
+                _shape = f"linear prog={_prog:.2f}"
+            _pf_min, _pf_max = None, None
+            if is_main:
+                logger.info(f">> [mask_curriculum] epoch {epoch}: mask_ratio={_epoch_ratio:.4f} "
+                            f"({_cmin}->{_cmax} over {_cramp}ep, {_shape})")
+        else:
+            _epoch_ratio = cfg.mae.mask_ratio
+            _pf_min = cfg.mae.get("mask_ratio_min", None)
+            _pf_max = cfg.mae.get("mask_ratio_max", None)
         prefetcher = MAEPrefetcher(
             loader_train, voxelizer,
             sigma_blur_vox_range=sigma_blur_vox_range,
             sigma_noise=cfg.mae.sigma_noise,
             block_size=cfg.mae.block_size,
-            mask_ratio=cfg.mae.mask_ratio,
+            mask_ratio=_epoch_ratio,
             pretext_style=prefetch_pretext,
             corruption_ops=corruption_ops,
             corruption_op_weights=corruption_op_weights,
@@ -1838,8 +1899,8 @@ def run(cfg: DictConfig, method: str) -> None:
             mask_strategy=str(cfg.mae.get("mask_strategy", "uniform")),
             mask_atom_tau=float(cfg.mae.get("mask_atom_tau", 1.0)),
             mask_n_seeds=int(cfg.mae.get("mask_n_seeds", 4)),
-            mask_ratio_min=cfg.mae.get("mask_ratio_min", None),
-            mask_ratio_max=cfg.mae.get("mask_ratio_max", None),
+            mask_ratio_min=_pf_min,
+            mask_ratio_max=_pf_max,
             modal_mask_prob=float(cfg.mae.get("modal_mask_prob", 0.0)),
             density_visible=bool(cfg.mae.get("density_visible", False)),
             lig_mask_thresh=float(cfg.mae.get("lig_mask_thresh", 0.1)),
@@ -1856,6 +1917,9 @@ def run(cfg: DictConfig, method: str) -> None:
             n_poc_ch=int(cfg.model.get("n_channels_pocket", 4)),
             channel_groups=(tuple(int(c) for c in cfg.model.channel_groups)
                             if cfg.model.get("channel_groups", None) else None),
+            mask_channel_independent=bool(cfg.mae.get("mask_channel_independent", False)),
+            mask_group_ratios=(list(cfg.mae.get("mask_group_ratios", None))
+                               if cfg.mae.get("mask_group_ratios", None) else None),
         )
         train_metrics, global_step = spec.train_epoch(
             cfg, prefetcher, model_train, optimizer, model_ema, device, global_step,

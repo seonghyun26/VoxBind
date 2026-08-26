@@ -15,6 +15,19 @@ mask_atom_tau: 1.0
 # null = disabled → identical to fixed mask_ratio.
 mask_ratio_min: null
 mask_ratio_max: null
+# Curriculum mask-ratio (easy→hard): ramp the per-epoch fixed ratio from mask_ratio_min →
+# mask_ratio_max over mask_curriculum_epochs (null = num_epochs), then hold. Overrides R2MAE.
+# false = off. mask_curriculum_steps: null/<2 = smooth linear; N>=2 = CurriMAE-style step
+# schedule (N discrete levels, each held for ramp/N epochs; e.g. 4 → 0.6/0.7/0.8/0.9).
+mask_curriculum: false
+mask_curriculum_epochs: null
+mask_curriculum_steps: null
+# Channel-independent masking (hierarchical): when true, re-sample the spatial mask INDEPENDENTLY
+# per ChannelViT group at per-group ratios (mask_group_ratios, aligned to model.channel_groups) —
+# e.g. [7,4,2] with [0.6,0.6,0.85] masks density+gradmag harder than coords so the encoder must
+# reconstruct density FROM structure at the same voxel. null ratios → mask_ratio for all groups.
+mask_channel_independent: false
+mask_group_ratios: null
 density_channel_weight: 0.1
 gradmag_channel_weight: 0.1
 density_weight_warmup_epochs: 0

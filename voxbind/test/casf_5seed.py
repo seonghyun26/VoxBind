@@ -31,6 +31,10 @@ torch.set_num_threads(4)
 # ── candidate encoders (label -> exact feature bundle basename) ──────────────────
 SINGLES = {
     "champion_v2_m075_e49":  "atomblob_density_gradmag_e49_v5_260705_ar_cvit_100m_v2_mask075.pt",
+    # 260823 interface-masking campaign (pocket-ligand contact region)
+    "interface_v2_m075_e40": "atomblob_density_gradmag_e40_v5_260821_cdg_100m_v2_interface_mask075.pt",
+    "interface_v2_m085_e30": "atomblob_density_gradmag_e30_v5_260822_cdg_100m_v2_interface_mask085.pt",
+    "interface_curr_e20":    "atomblob_density_gradmag_e20_v5_260823_cdg_100m_v2_interface_curriculum_0609.pt",
     "champion_v2_m075_e100": "atomblob_density_gradmag_e99_v5_260705_ar_cvit_100m_v2_mask075_e100.pt",
     "v3_m085":               "atomblob_density_gradmag_e49_v5_260725_ar_cvit_100m_v3_m085.pt",
     "v3_m090":               "atomblob_density_gradmag_e49_v5_260725_ar_cvit_100m_v3_m090.pt",

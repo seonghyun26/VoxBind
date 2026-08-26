@@ -48,7 +48,9 @@ METHODS = [
     ("HonestAffinity",    PALETTE[11], "new",    (0.457, 0.043), (0.443, 0.048), (1.617, 0.011)),
     ("AEV-PLIG",          PALETTE[7],  False, (0.522, 0.019), (0.492, 0.019), (1.617, 0.004)),
     ("GeoSSL",            "#800000",   False, (0.519, 0.012), (0.499, 0.013), (1.561, 0.024)),
-    ("DSMBind",           PALETTE[8],  False, (0.541, 0.007), (0.507, 0.010), (1.494, 0.011)),
+    # 方式1 zero-shot binding energy on lp_edrscc_v2 test (deterministic, no seeds): |r|/|ρ| of
+    # (-energy) vs pK; RMSE None (energy not on the pK scale → excluded from the RMSE panel).
+    ("DSMBind",           PALETTE[8],  False, (0.308, 0.0), (0.363, 0.0), (None, None)),
     ("IPNet (frozen)",    PALETTE[13], "leaked", (0.583, 0.007), (0.550, 0.005), (1.464, 0.012)),
     ("IPNet (scratch)",   PALETTE[14], False,    (0.578, 0.012), (0.553, 0.014), (1.458, 0.008)),
     ("Nesso-1",           "#00838f",   "leaked", (0.670, 0.000), (0.663, 0.000), (1.410, 0.000)),
@@ -57,12 +59,15 @@ METHODS = [
     ("C+D+G +corr",       "#0b6b3a",   "new", (0.665, 0.001), (0.647, 0.001), (1.325, 0.001)),
     # headline "CDG v2" = v2_ep100_e25 (260806_cdg_100m_v2_ep100_e25) + mse+corr probe head;
     # v2 = 01c 5-seed (r/rho/rmse). Distinct gold swatch. Data via PROBE_CSV/_OURS_1C/cl123-results.
-    ("CDG v2",       "#b8860b",   "new", (0.665, 0.004), (0.653, 0.005), (1.337, 0.013)),
+    # CDG v2/v3 = MSE-only probe head (fair vs mse-only ProFSA/GeoSSL). corr aux dropped 260825.
+    ("CDG v2",       "#b8860b",   "new", (0.666, 0.004), (0.653, 0.005), (1.355, 0.013)),
+    # CDG v3 = interface+curriculum (260823 e20), MSE-only. (mse+corr had inflated CASF-clean 0.706→0.680.)
+    ("CDG v3",       "#e0a800",   "new", (0.659, 0.005), (0.644, 0.005), (1.381, 0.049)),
 ]
 
 PANELS = [
-    dict(idx=0, key=0, title="Test Pearson r",       vmin=0.40, vmax=0.70, ticks=[0.40, 0.45, 0.50, 0.55, 0.60, 0.65, 0.70]),
-    dict(idx=1, key=1, title="Test Spearman &rho;",  vmin=0.40, vmax=0.70, ticks=[0.40, 0.45, 0.50, 0.55, 0.60, 0.65, 0.70]),
+    dict(idx=0, key=0, title="Test Pearson r",       vmin=0.30, vmax=0.70, ticks=[0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60, 0.65, 0.70]),
+    dict(idx=1, key=1, title="Test Spearman &rho;",  vmin=0.30, vmax=0.70, ticks=[0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60, 0.65, 0.70]),
     dict(idx=2, key=2, title="Test RMSE",            vmin=1.30, vmax=1.75, ticks=[1.30, 1.40, 1.50, 1.60, 1.70]),
 ]
 PLOTW, TOP, BASE = 300.0, 36.0, 220.0     # taller plot (was BASE 176)
