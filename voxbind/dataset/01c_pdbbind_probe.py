@@ -91,6 +91,7 @@ token rep — the ONLY difference is whether encoder gradients flow:
 """
 
 import argparse
+import itertools
 import json
 import sys
 from dataclasses import dataclass
@@ -794,6 +795,63 @@ def encode_tokens(encoder: DensityViT, x: torch.Tensor) -> torch.Tensor:
     return forward_tokens(encoder, x)
 
 
+def _perm_parity(p: tuple) -> int:
+    """+1 for an even permutation, -1 for odd (inversion-count parity)."""
+    s = 1
+    for i in range(len(p)):
+        for j in range(i + 1, len(p)):
+            if p[i] > p[j]:
+                s = -s
+    return s
+
+
+def octahedral_ops() -> list[tuple[tuple[int, int, int], tuple[int, int, int]]]:
+    """The 24 PROPER rotations of a cubic grid, as (axis-permutation, sign-flips).
+
+    Each op is a signed permutation of the 3 spatial axes whose determinant is +1
+    (parity(perm)·∏signs == +1) → a proper rotation, NOT a mirror (molecules are
+    chiral, so reflections are deliberately excluded). Identity is first. Applied via
+    permute+flip so it is EXACT — no interpolation — which is valid here because every
+    input channel (atom-blob density, ρ, ‖∇ρ‖) is a scalar field, not a vector field.
+    """
+    ops = []
+    for perm in itertools.permutations(range(3)):
+        ps = _perm_parity(perm)
+        for signs in itertools.product((1, -1), repeat=3):
+            if ps * signs[0] * signs[1] * signs[2] == 1:
+                ops.append((perm, signs))
+    ident = ((0, 1, 2), (1, 1, 1))
+    ops.sort(key=lambda o: o != ident)                     # identity first
+    return ops                                             # len == 24
+
+
+def apply_octahedral(x: torch.Tensor, op) -> torch.Tensor:
+    """Apply one proper cube rotation (from `octahedral_ops`) to the 3 trailing spatial
+    dims of x=(B, C, X, Y, Z). permute reorders the axes, flip negates the -1 ones."""
+    perm, signs = op
+    x = x.permute(0, 1, 2 + perm[0], 2 + perm[1], 2 + perm[2])
+    flip = [2 + i for i, s in enumerate(signs) if s == -1]
+    if flip:
+        x = torch.flip(x, dims=flip)
+    return x.contiguous()
+
+
+@torch.no_grad()
+def encode_pooled(encoder: DensityViT, x: torch.Tensor, tta_ops=None) -> torch.Tensor:
+    """(B, n_in, G,G,G) → (B, D) mean-pooled feature. tta_ops=None → single forward
+    (identical to the untouched path). Otherwise average the pooled feature over the
+    given cube rotations (test-time rotation averaging ≈ a poor-man's rotation-invariant
+    encoder; probes whether orientation-averaging helps novel-pose / novel-protein
+    generalization)."""
+    if not tta_ops:
+        return encode_tokens(encoder, x).mean(dim=1)
+    acc = None
+    for op in tta_ops:
+        p = encode_tokens(encoder, apply_octahedral(x, op)).mean(dim=1)
+        acc = p if acc is None else acc + p
+    return acc / len(tta_ops)
+
+
 def load_voxels_for(
     pid: str,
     condition: str,
@@ -1069,6 +1127,13 @@ def run_features(args: argparse.Namespace) -> None:
         collate_fn=_extract_collate,
     )
 
+    # Test-time rotation averaging: 0/1 → single forward (untouched path); N>1 →
+    # average the pooled feature over the first N of the 24 proper cube rotations.
+    n_tta = int(getattr(args, "tta_rot", 0) or 0)
+    tta_ops = octahedral_ops()[:n_tta] if n_tta > 1 else None
+    if tta_ops:
+        print(f"  tta_rot        : {len(tta_ops)} cube rotations (feature-level averaging)")
+
     feat_chunks: list[torch.Tensor] = []                            # kept on-device
     ordered_pids: list[str] = []
     pbar = tqdm(loader, unit="batch", desc=f"encode {args.condition}")
@@ -1079,8 +1144,7 @@ def run_features(args: argparse.Namespace) -> None:
         if x is None:
             continue
         x = x.to(args.device, non_blocking=on_cuda)                # (B, n_in, G, G, G)
-        tokens = encode_tokens(encoder, x)                          # (B, N, D)
-        feat_chunks.append(tokens.mean(dim=1))                      # (B, D), still on device
+        feat_chunks.append(encode_pooled(encoder, x, tta_ops))      # (B, D), still on device
         ordered_pids.extend(batch_pids)
         pbar.set_postfix(saved=len(ordered_pids), err=n_err, refresh=False)
 
@@ -2742,6 +2806,13 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Override just the density-crop dir (gradmag still derived on-the-fly). "
                          "Use to feed RAW un-normalized density (voxels_v5_raw/density) to a "
                          "raw-density-trained encoder.")
+    pf.add_argument("--tta_rot", type=int, default=0,
+                    help="Test-time rotation averaging: average the pooled feature over the "
+                         "first N of the 24 proper cube rotations (exact permute+flip, no "
+                         "interpolation; all 13 channels are scalar fields so rotation is exact). "
+                         "0/1 = off (single forward, bit-identical to the untouched path). Use "
+                         "24 for the full octahedral group. Pair with --tag to keep the cache "
+                         "separate, e.g. --tta_rot 24 --tag tta24.")
     pf.set_defaults(func=run_features)
 
     pr = sub.add_parser(

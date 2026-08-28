@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VoxBind Meeting · 260903</title>
+<style>
+  :root {
+    --ink: #1c2433;
+    --ink-soft: #5b6678;
+    --ink-faint: #7a8699;
+    --line: #e3e7ee;
+    --line-strong: #aeb6c4;
+    --bg: #f5f6f8;
+    --card: #ffffff;
+    --accent: #2f6f4f;
+    --accent-2: #3f7f5e;
+    --accent-bg: #eaf5ee;
+    --blue: #38559b;
+    --blue-bg: #e7eefb;
+    --warn: #9a6112;
+    --warn-bg: #fcf3e0;
+    --shadow: 0 1px 2px rgba(20,30,50,.04), 0 8px 24px rgba(20,30,50,.05);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 16px; line-height: 1.55; -webkit-font-smoothing: antialiased;
+  }
+  .page { display: flex; flex-direction: column; max-width: 1280px; margin: 0 auto; padding: 48px 24px 96px; }
+  header.doc { border-bottom: 2px solid var(--ink); padding-bottom: 20px; margin-bottom: 40px; }
+  .eyebrow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px;
+             color: var(--ink-soft); font-size: 13px; letter-spacing: .11em; text-transform: uppercase; }
+  .status { display: inline-flex; align-items: center; gap: 7px; padding: 3px 10px; border-radius: 999px;
+            background: var(--accent-bg); color: #1d5a3a; font-size: 11px; font-weight: 720; letter-spacing: .07em; }
+  .status::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+  .status.wip { background: var(--warn-bg); color: #7c4d0c; }
+  .status.wip::before { background: var(--warn); }
+  header.doc h1 { max-width: 1050px; margin: 0; font-size: clamp(28px, 4vw, 42px); line-height: 1.13;
+                  font-weight: 680; letter-spacing: -.025em; }
+  header.doc .lead { max-width: 1040px; margin: 13px 0 0; color: var(--ink-soft); font-size: 15px; line-height: 1.65; }
+  .toc { margin: 22px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; list-style: none; }
+  .toc a { display: inline-flex; align-items: center; gap: 7px; padding: 5px 12px; border: 1px solid var(--line);
+           border-radius: 999px; background: var(--card); color: var(--ink-soft); font-size: 12.5px;
+           text-decoration: none; box-shadow: var(--shadow); }
+  .toc a:hover { border-color: var(--line-strong); color: var(--ink); }
+  .toc a .n { color: var(--accent); font-weight: 760; }
+  .doc-section { margin-bottom: 68px; scroll-margin-top: 20px; }
+  .section-head { display: flex; align-items: center; gap: 14px; margin: 0 0 28px; padding-bottom: 12px;
+                  border-bottom: 2px solid var(--line-strong); font-size: 23px; line-height: 1.25;
+                  font-weight: 680; letter-spacing: -.015em; }
+  .sec-num { display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; width: 31px; height: 31px;
+             border-radius: 8px; background: var(--accent); color: #fff; font-size: 15px; font-weight: 760; }
+  .section-intro { max-width: 1100px; margin: -5px 0 24px; color: var(--ink-soft); font-size: 13.7px; line-height: 1.65; }
+  .block { margin: 0 0 34px; }
+  .subsection-head { display: flex; align-items: center; gap: 10px; margin: 0 0 9px; font-size: 17px; font-weight: 680; }
+  .sub-lab { display: inline-flex; align-items: center; justify-content: center; min-width: 34px; height: 23px;
+             padding: 0 8px; border-radius: 6px; background: #eef1f6; color: var(--ink-soft);
+             font-size: 11px; font-weight: 760; }
+  .table-sub { max-width: 1100px; margin: 0 0 17px; color: var(--ink-soft); font-size: 13.3px; line-height: 1.6; }
+  .criteria { margin: 0 0 19px; padding: 14px 18px 10px 36px; border-left: 4px solid var(--accent);
+              border-radius: 8px; background: var(--card); color: var(--ink-soft); font-size: 13px; line-height: 1.55; }
+  .criteria li { margin: 0 0 5px; }
+  .criteria b { color: var(--ink); font-weight: 680; }
+  .callout { max-width: 1100px; margin: 0 0 20px; padding: 16px 20px; border-left: 4px solid var(--blue);
+             border-radius: 8px; background: linear-gradient(145deg, #f7f9fe, var(--blue-bg));
+             color: var(--ink); font-size: 15px; line-height: 1.6; }
+  .callout .k { display: block; margin-bottom: 5px; color: var(--blue); font-size: 11px; font-weight: 730;
+                letter-spacing: .08em; text-transform: uppercase; }
+  .callout em { color: var(--ink-soft); font-style: italic; }
+  .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px;
+                background: var(--card); box-shadow: var(--shadow); }
+  table.results { width: 100%; min-width: 680px; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  table.results th, table.results td { padding: 10px 8px; text-align: center; white-space: nowrap; }
+  table.results thead th { border-bottom: 1px solid var(--line); background: #fafbfc; color: var(--ink-soft);
+                          font-size: 10.7px; line-height: 1.35; font-weight: 650; letter-spacing: .025em; }
+  table.results thead th.grp { background: #f2f4f7; color: var(--ink-soft); font-size: 10.2px;
+                               letter-spacing: .085em; text-transform: uppercase; }
+  table.results thead th.stub { vertical-align: bottom; }
+  table.results tbody tr { border-top: 1px solid var(--line); }
+  table.results tbody tr:first-child { border-top: 0; }
+  table.results tbody tr:hover { background: #fbfcfd; }
+  .col-method { min-width: 170px; text-align: left !important; }
+  td.col-method { font-size: 12.3px; font-weight: 620; }
+  .col-trial { width: 52px; min-width: 52px; }
+  td.col-trial { font-size: 12.3px; font-weight: 620; }
+  td.al { text-align: left !important; }
+  .placeholder { color: #a3acb9; }
+  .pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 10.5px; font-weight: 720;
+          letter-spacing: .04em; }
+  .pill.todo { background: #f1f3f6; color: #7a8699; }
+  .pill.run { background: var(--warn-bg); color: #7c4d0c; }
+  .pill.done { background: var(--accent-bg); color: #1d5a3a; }
+  .pill.motiv { background: #eef1fb; color: #38559b; }
+  .pill.gen { background: #eaf5ee; color: #1d5a3a; }
+  .pill.aff { background: #fcf3e0; color: #7c4d0c; }
+  /* literature table */
+  table.lit { width: 100%; min-width: 720px; border-collapse: collapse; }
+  table.lit th, table.lit td { padding: 11px 12px; text-align: left; vertical-align: top; font-size: 13px; line-height: 1.5; }
+  table.lit thead th { border-bottom: 1px solid var(--line); background: #fafbfc; color: var(--ink-soft);
+                       font-size: 10.7px; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; white-space: nowrap; }
+  table.lit tbody tr { border-top: 1px solid var(--line); }
+  table.lit tbody tr:hover { background: #fbfcfd; }
+  table.lit .paper { font-weight: 660; color: var(--ink); }
+  table.lit .paper a { color: var(--blue); text-decoration: none; }
+  table.lit .paper a:hover { text-decoration: underline; }
+  table.lit .venue { white-space: nowrap; font-weight: 640; color: var(--ink); font-size: 12px; }
+  table.lit .venue small { display: block; color: var(--ink-faint); font-weight: 500; font-size: 10.5px; }
+  table.lit .why { color: var(--ink-soft); }
+  code { padding: 1px 5px; border-radius: 4px; background: #f0f2f5; font-size: .92em; }
+  footer { margin-top: 62px; padding-top: 18px; border-top: 1px solid var(--line-strong);
+           color: var(--ink-faint); font-size: 10.8px; line-height: 1.6; }
+  @media (max-width: 620px) {
+    .page { padding: 30px 14px 70px; }
+    header.doc h1 { font-size: 29px; }
+  }
+  @media print {
+    body { background: #fff; }
+    .page { max-width: none; padding: 20px; }
+    .table-wrap { box-shadow: none; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <header class="doc">
+    <div class="eyebrow">
+      <span>Meeting note · 2026-09-03</span>
+      <span class="status wip">draft · in progress</span>
+    </div>
+    <h1>Density literature backup, per-atom PoseCheck, overall SBDD results, and MCP fine-tuning</h1>
+    <p class="lead">Agenda for the 09-03 meeting. Section&nbsp;1 collects prior work supporting electron-density
+      representations; Sections&nbsp;2 and&nbsp;4 are placeholders; Section&nbsp;3 is the Vina-evaluation table to be
+      filled as the cross-server SBDD runs land.</p>
+    <ul class="toc">
+      <li><a href="#literature"><span class="n">1</span> Density literature</a></li>
+      <li><a href="#posecheck"><span class="n">2</span> PoseCheck per-atom</a></li>
+      <li><a href="#sbdd"><span class="n">3</span> Overall SBDD results</a></li>
+      <li><a href="#mcp"><span class="n">4</span> MCP fine-tuning</a></li>
+    </ul>
+  </header>
+
+  <!-- 1 ─────────────────────────────────────────────────────────── -->
+  <section class="doc-section" id="literature">
+    <h2 class="section-head"><span class="sec-num">1</span>Literature backup on density data</h2>
+    <p class="section-intro">Prior work motivating electron density as an input signal — organized into three lines of
+      evidence: (i)&nbsp;density is a <em>complete</em> physical descriptor, (ii)&nbsp;density-informed 3D generation
+      improves drug design, and (iii)&nbsp;density for pure affinity regression, where the evidence is more mixed.
+      Focused on Nature-family journals, PNAS, and ICLR/ICML/NeurIPS.</p>
+
+    <div class="callout">
+      <span class="k">Why density, in one line</span>
+      By the Hohenberg–Kohn theorem the ground-state electron density <em>uniquely determines every observable</em> of a
+      molecule, so a density channel is a physically complete descriptor of chemistry that atom-coordinate inputs only
+      approximate. Recent Nature/NeurIPS/ICML work shows density-derived features reach coupled-cluster accuracy and that
+      <b>density-informed 3D generators produce more physically valid, higher-success molecules</b> — the strongest support
+      is on the <b>generation / design</b> side; for raw affinity regression the gain is real but smaller and
+      context-dependent (matching our own findings).
+    </div>
+
+    <section class="block">
+      <h3 class="subsection-head"><span class="sub-lab">1.1</span>Density is a complete physical descriptor</h3>
+      <div class="table-wrap">
+        <table class="lit">
+          <thead><tr><th>Paper</th><th>Venue</th><th>Summary</th><th>Why it backs density</th></tr></thead>
+          <tbody>
+            <tr>
+              <td class="paper"><a href="https://www.nature.com/articles/s41467-020-19093-1">Quantum chemical accuracy from density functional approximations via machine learning</a><br><span style="color:#7a8699;font-weight:500">Bogojeski, Vogt-Maranto, Tuckerman, Müller, Burke</span></td>
+              <td class="venue">Nature Communications<small>2020 · <span class="pill motiv">motivation</span></small></td>
+              <td class="why">ML maps a DFT <b>electron density</b> to coupled-cluster energies, reaching &lt;1&nbsp;kcal/mol (Δ-DFT). Density is the input that carries the accuracy.</td>
+              <td class="why">The electron density alone is enough to recover chemically-accurate energetics — direct evidence that density encodes the physics coordinates miss.</td>
+            </tr>
+            <tr>
+              <td class="paper"><a href="https://arxiv.org/abs/2106.02347">SE(3)-equivariant prediction of molecular wavefunctions and electronic densities</a><br><span style="color:#7a8699;font-weight:500">Unke, Bogojeski, Gastegger, et&nbsp;al.</span></td>
+              <td class="venue">NeurIPS<small>2021 · <span class="pill motiv">motivation</span></small></td>
+              <td class="why">Equivariant network predicts full wavefunctions / <b>electron densities</b> directly from structure, transferably across chemical space.</td>
+              <td class="why">Shows density/wavefunction fields are a learnable, structured target — the same field we feed as an input channel.</td>
+            </tr>
+            <tr>
+              <td class="paper"><a href="https://www.pnas.org/doi/10.1073/pnas.2205221119">Informing geometric deep learning with electronic interactions to accelerate quantum chemistry (OrbNet-Equi)</a><br><span style="color:#7a8699;font-weight:500">Qiao, Welborn, Anandkumar, Manby, Miller</span></td>
+              <td class="venue">PNAS<small>2022 · <span class="pill motiv">motivation</span></small></td>
+              <td class="why">Molecular representations built from <b>electronic-structure (orbital) features</b> beat plain atomistic ML on energies, dipoles, densities, and orbital energies at ~1000× lower cost.</td>
+              <td class="why">Electronic/density-derived features consistently lower error vs. geometry-only inputs — the core premise of adding a density channel.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="block">
+      <h3 class="subsection-head"><span class="sub-lab">1.2</span>Density-informed 3D generation &amp; SBDD (design)</h3>
+      <div class="table-wrap">
+        <table class="lit">
+          <thead><tr><th>Paper</th><th>Venue</th><th>Summary</th><th>Why it backs density</th></tr></thead>
+          <tbody>
+            <tr>
+              <td class="paper"><a href="https://www.nature.com/articles/s42256-025-01095-7">Electron-density-informed effective and reliable de novo molecular design and optimization with ED2Mol</a></td>
+              <td class="venue">Nature Machine Intelligence<small>2025 · <span class="pill gen">generation</span></small></td>
+              <td class="why">Uses fundamental <b>electron-density</b> information to drive de novo design/optimization; reports a higher generation success rate and <b>&gt;97% physical reliability</b>, surpassing prior methods.</td>
+              <td class="why">Most on-point: density conditioning directly improves the quality/validity of generated drug-like molecules — our headline claim.</td>
+            </tr>
+            <tr>
+              <td class="paper"><a href="https://arxiv.org/abs/2405.03961">Structure-based drug design by denoising voxel grids (VoxBind)</a><br><span style="color:#7a8699;font-weight:500">Pinheiro et&nbsp;al.</span></td>
+              <td class="venue">ICML<small>2024 · <span class="pill gen">generation</span></small></td>
+              <td class="why">Score-based generator over 3D <b>atomic-density voxel grids</b> conditioned on the pocket; strong Vina/quality on CrossDocked.</td>
+              <td class="why">Our backbone: a density-grid representation is already SOTA-competitive for SBDD; we extend it with experimental electron density.</td>
+            </tr>
+            <tr>
+              <td class="paper"><a href="https://dl.acm.org/doi/10.5555/3666122.3669145">3D molecule generation by denoising voxel grids (VoxMol)</a><br><span style="color:#7a8699;font-weight:500">Pinheiro et&nbsp;al.</span></td>
+              <td class="venue">NeurIPS<small>2023 · <span class="pill gen">generation</span></small></td>
+              <td class="why">Represents molecules as 3D <b>density grids</b> and generates by voxel denoising (walk-jump); permutation-invariant, constant-time in atom count.</td>
+              <td class="why">Establishes the density-grid + denoising paradigm at a top venue — the foundation our density channel plugs into.</td>
+            </tr>
+            <tr>
+              <td class="paper"><a href="https://www.ncbi.nlm.nih.gov/pmc/articles/PMC9448726/">A pocket-based 3D molecule generative model fueled by experimental electron density</a></td>
+              <td class="venue">Scientific Reports<small>2022 · <span class="pill gen">generation</span></small></td>
+              <td class="why">Pocket-conditioned generator that is explicitly <b>fueled by experimental electron density</b> maps rather than coordinates alone.</td>
+              <td class="why">Precedent for using <em>experimental</em> (not just computed) density to condition generation — exactly our X-ray/CDG setting.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="block">
+      <h3 class="subsection-head"><span class="sub-lab">1.3</span>Density for binding-affinity regression (mixed)</h3>
+      <p class="table-sub">Included for honesty: on pure affinity regression the density gain is real but small and context-dependent —
+        consistent with our own matched-control finding (+0.02–0.05 ρ, largest on novel pockets).</p>
+      <div class="table-wrap">
+        <table class="lit">
+          <thead><tr><th>Paper</th><th>Venue</th><th>Summary</th><th>Takeaway for us</th></tr></thead>
+          <tbody>
+            <tr>
+              <td class="paper"><a href="https://pubs.rsc.org/ra/article/14/7/4492/826129/Exploring-protein-ligand-binding-affinity">Exploring protein–ligand binding affinity prediction with electron density-based geometric deep learning</a></td>
+              <td class="venue">RSC Advances<small>2024 · <span class="pill aff">affinity</span></small></td>
+              <td class="why">Uses electron-density <b>bond-critical points</b> as a physically-grounded representation; RMSE 1.4–1.8 (PDBbind), 1.0–1.7 (PDE10A) — <em>no</em> clear edge over benchmarks.</td>
+              <td class="why">Density helps affinity only context-dependently; supports our framing that the <b>generation</b> gain is the stronger story.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <ul class="criteria">
+        <li><b>To add if wanted:</b> <span class="placeholder">DeepDFT charge-density prediction (npj Comput. Mater. 2022); Fabrizio et&nbsp;al. electron-density learning of non-covalent systems (Chem. Sci. 2019) — say the word and I'll fold them in.</span></li>
+      </ul>
+    </section>
+  </section>
+
+  <!-- 2 ─────────────────────────────────────────────────────────── -->
+  <section class="doc-section" id="posecheck">
+    <h2 class="section-head"><span class="sec-num">2</span>PoseCheck evaluation per atom</h2>
+    <p class="section-intro">PoseCheck metrics (strain energy, steric clashes, interactions) stratified by molecule
+      heavy-atom count, to see whether density conditioning helps more for small vs. large molecules.
+      <span class="pill todo">placeholder</span></p>
+
+    <section class="block">
+      <h3 class="subsection-head"><span class="sub-lab">2.1</span>Per-atom-range breakdown</h3>
+      <p class="table-sub"><span class="placeholder">Bin generated molecules by heavy-atom count and report PoseCheck metrics per bin.
+        Atom ranges below are a starting guess — adjust to the actual size distribution.</span></p>
+      <div class="table-wrap">
+        <table class="results">
+          <thead>
+            <tr>
+              <th class="col-method">Method / trial</th>
+              <th>≤ 15</th><th>16–20</th><th>21–25</th><th>26–30</th><th>&gt; 30</th><th>All</th><th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td class="col-method placeholder">Strain energy (median)</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td><span class="pill todo">todo</span></td></tr>
+            <tr><td class="col-method placeholder">Steric clashes (mean)</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td><span class="pill todo">todo</span></td></tr>
+            <tr><td class="col-method placeholder">Interactions (mean)</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td><span class="pill todo">todo</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <ul class="criteria">
+        <li><b>Binning axis:</b> <span class="placeholder">heavy-atom count (define exact edges)</span></li>
+        <li><b>Metrics:</b> <span class="placeholder">strain energy, #steric clashes, #interactions (PoseCheck)</span></li>
+        <li><b>Compare:</b> <span class="placeholder">density (C+D+G) vs. coords-only (C) vs. baselines, within each bin</span></li>
+      </ul>
+    </section>
+  </section>
+
+  <!-- 3 ─────────────────────────────────────────────────────────── -->
+  <section class="doc-section" id="sbdd">
+    <h2 class="section-head"><span class="sec-num">3</span>Overall SBDD results</h2>
+    <p class="section-intro">Consolidated de&nbsp;novo generation benchmark (CrossDocked) across all methods, pulling the
+      cross-server runs into one Vina-evaluation table. <span class="pill run">runs in flight</span></p>
+
+    <section class="block">
+      <h3 class="subsection-head"><span class="sub-lab">3.1</span>Vina evaluation</h3>
+      <p class="table-sub"><b>Vina cells read Avg / Med</b> over the test pockets, kcal&nbsp;mol⁻¹ (lower is better); <b>High Affinity</b>
+        = fraction out-docking the reference ligand; QED / SA / Diversity are averages. Fill each cell as the run completes;
+        literature values may be dropped into the top rows for reference.</p>
+      <div class="table-wrap">
+        <table class="results">
+          <thead>
+            <tr>
+              <th class="col-method stub" rowspan="2">Method</th>
+              <th class="grp" colspan="2">Vina Score ↓</th>
+              <th class="grp" colspan="2">Vina Min ↓</th>
+              <th class="grp" colspan="2">Vina Dock ↓</th>
+              <th class="grp" colspan="2">High Affinity ↑</th>
+              <th class="stub" rowspan="2">QED ↑</th>
+              <th class="stub" rowspan="2">SA ↑</th>
+              <th class="stub" rowspan="2">Diversity ↑</th>
+              <th class="stub" rowspan="2">Status</th>
+            </tr>
+            <tr>
+              <th>Avg</th><th>Med</th><th>Avg</th><th>Med</th><th>Avg</th><th>Med</th><th>Avg</th><th>Med</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td class="col-method">AR</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td><span class="pill todo">todo</span></td></tr>
+            <tr><td class="col-method">Pocket2Mol</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td><span class="pill todo">todo</span></td></tr>
+            <tr><td class="col-method">DiffSBDD</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td><span class="pill todo">todo</span></td></tr>
+            <tr><td class="col-method">TargetDiff</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td><span class="pill todo">todo</span></td></tr>
+            <tr><td class="col-method">VoxBind</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td><span class="pill run">running</span></td></tr>
+            <tr><td class="col-method">FuncBind</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td><span class="pill run">running</span></td></tr>
+            <tr><td class="col-method"><b>Ours</b> (C+D+G)</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td><span class="pill run">running</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <ul class="criteria">
+        <li><b>Protocol:</b> <span class="placeholder">test pockets × samples/pocket (define; e.g. 100 pockets × 100 molecules)</span></li>
+        <li><b>Docking:</b> AutoDock Vina — <code>Score</code> at the generated pose, <code>Min</code> after local minimization,
+          <code>Dock</code> after full redocking.</li>
+        <li><b>Aggregation:</b> per-pocket average of its molecules, then Avg / Med over pockets.</li>
+        <li><b>Comparability caveat:</b> <span class="placeholder">note which rows are paper numbers vs. our reproduction, and which pocket set each uses (100-pocket vs. density-ready subset).</span></li>
+      </ul>
+    </section>
+  </section>
+
+  <!-- 4 ─────────────────────────────────────────────────────────── -->
+  <section class="doc-section" id="mcp">
+    <h2 class="section-head"><span class="sec-num">4</span>MCP fine-tuning results</h2>
+    <p class="section-intro">Fine-tuning the generator / encoder on the MCP set — configuration and outcomes.
+      <span class="pill todo">placeholder</span></p>
+
+    <section class="block">
+      <h3 class="subsection-head"><span class="sub-lab">4.1</span>Setup</h3>
+      <ul class="criteria">
+        <li><b>Base model:</b> <span class="placeholder">to fill</span></li>
+        <li><b>Fine-tune scope:</b> <span class="placeholder">frozen / partial / end-to-end</span></li>
+        <li><b>MCP data:</b> <span class="placeholder">targets, split, density availability</span></li>
+      </ul>
+    </section>
+
+    <section class="block">
+      <h3 class="subsection-head"><span class="sub-lab">4.2</span>Results</h3>
+      <div class="table-wrap">
+        <table class="results">
+          <thead><tr><th class="col-method">Run</th><th>What changed</th><th>Metric</th><th>Value</th><th>Δ vs base</th><th>Status</th></tr></thead>
+          <tbody>
+            <tr><td class="col-method placeholder">Run</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td><span class="pill todo">todo</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </section>
+
+  <footer>260903 · Density literature backup · PoseCheck per-atom · Overall SBDD results · MCP fine-tuning</footer>
+</div>
+</body>
+</html>

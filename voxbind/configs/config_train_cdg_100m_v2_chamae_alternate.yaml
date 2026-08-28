@@ -1,0 +1,105 @@
+defaults:
+  - dset: crossdocked_xray
+  - model: atomblob_density_gradmag_cha_mae_40m
+  - vox: default
+  - override hydra/job_logging: custom
+  - _self_
+
+# ── ChA-MAE at the CDG v2 champion recipe (260827) ─────────────────────────────
+# Variant B (FAITHFUL ChA-MAEViT): dcp_strategy=alternate → the encoder alternates
+# per step between patch masking (r_p=0.75) and whole-GROUP ("channel") masking.
+# Everything else copies the CDG v2 champion (260806_cdg_100m_v2_ep100): 100M
+# ChannelViT [7,4,2] dim640/depth18/heads10, PLINDER v2 112K OTF-resample, EMA
+# 0.999, patch_mask_ratio 0.75. The ONLY difference vs CDG v2 is the SSL objective
+# (DCP token-drop + memory tokens + channel-aware Fourier decoder, replacing the
+# atom_biased block-MAE). Tests whether the full ChA-MAE beats CDG v2 at MATCHED
+# scale — settling the "was ChA-MAE just under-scaled?" question (prior: −0.048 at
+# the old mask050 scale). compile OFF (ChA decoder torch.fft graph-breaks).
+
+debug: False
+wandb: True
+wandb_tags: [pretrain, cdg, 100m, v2, cha_mae, chamae, alternate, channelvit, memory_tokens, dcp, arch_retest, g742]
+num_workers: 6
+prefetch_factor: 2
+resume: null
+resume_epoch: null
+exp_dir: exps
+exp_name: 260827_cdg_100m_v2_chamae_alternate
+output_dir: null
+
+seed: 42
+num_epochs: 50
+aug: True
+bsz: 4           # 100M ChA at 24GB; eff batch = 4 x 8 x 4 GPU = 128 (matches CDG v2)
+accum_steps: 8
+lr: 1e-4
+wd: 5e-2
+
+amp:
+  enabled: true
+  dtype: bf16
+channels_last: false
+optimizer:
+  fused: false
+ema:
+  foreach: false
+compile:
+  enabled: false                   # ChA decoder torch.fft (Fourier loss) → graph-breaks under compile
+  backend: inductor
+  mode: default
+  fullgraph: false
+  dynamic: false
+
+input_mode: atomblob_density
+with_gradmag: true                 # + gradmag → 13 channels
+
+dset:
+  data_dir: ${oc.env:VOXBIND_DATA_ROOT,dataset/data}
+  crops_dir: ""
+  resample_dir: dataset/data/pretrain/xray_resample_plinder_v2_perelem
+  data_file: pretrain/data_train_plinder_v2_perelem.pt
+  normalize: false
+  ligand_radius: -1
+  pocket_radius: -1
+  subset_xray_only: true
+  subset_n: 112000                 # IDENTICAL sample budget to the CDG v2 champion
+  subset_val_n: 100
+  use_xray: true
+
+model:
+  dim: 640                         # ── 100M encoder (matches CDG v2) ──
+  depth: 18
+  heads: 10
+  channel_groups: [7, 4, 2]        # lig atoms / poc atoms / (density+gradmag) — CDG v2 grouping
+  patch_mask_ratio: 0.75           # r_p = CDG v2 mask ratio
+  dcp_strategy: alternate          # ← FAITHFUL ChA-MAE (patch + whole-group masking)
+  n_memory_tokens: 4               # (model default; kept explicit)
+
+mae:
+  density_source: xray
+  sigma_blur_a_lo: 0.30
+  sigma_blur_a_hi: 0.80
+  sigma_noise: 0.0
+  block_size: 8                    # MAEPrefetcher API (ChA ignores its block-mask output)
+  mask_ratio: 0.75                 #   ″  (kept = patch_mask_ratio for clarity)
+  mask_strategy: uniform           #   ″  (ChA DCP masking replaces this)
+  gradmag_reconstruct: true
+  ema_decay: 0.999
+  grad_clip: 1.0
+  val_every: 1
+  ckpt_every: 5                    # dense early ckpts to catch the early peak (CDG v2 peaked e25)
+
+hydra:
+  run:
+    dir: ./${exp_dir}/${exp_name}
+  job:
+    config:
+      override_dirname:
+        kv_sep: ""
+        item_sep: "_"
+        exclude_keys: [
+            "exp_dir", "lr", vox.grid_dim, "wd", "resume", "resume_epoch", "wandb",
+            "num_workers", "exp_name", "output_dir", "out_dir",
+            "bsz", "accum_steps", "seed", "num_epochs", "aug", "pocket_radius",
+            "grid_dim", "debug"
+]
