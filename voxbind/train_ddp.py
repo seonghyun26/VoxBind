@@ -201,14 +201,31 @@ def main(cfg: DictConfig) -> None:
     device = torch.device(f"cuda:{local_rank}")
 
     start_epoch = 0
-    create_exp_dir(cfg, write=is_main)
-    # Sync after create_exp_dir so non-main ranks don't race ahead and read
-    # cfg.yaml from disk while rank 0 is mid-write. This bites the resume
-    # path specifically: cfg.resume and cfg.output_dir resolve to the same
-    # directory, so OmegaConf.load(cfg.resume/cfg.yaml) below races with
-    # rank 0's create_exp_dir write. Without this barrier, ranks 1..W-1
-    # see a half-written YAML (e.g. missing top-level keys like `aug`) and
-    # crash at the first cfg attribute access.
+
+    # Resume? Load the saved cfg BEFORE create_exp_dir, exactly as train.py does.
+    # cfg.resume and cfg.output_dir resolve to the SAME directory, so writing
+    # cfg.yaml first clobbers the very file the resume path reads back — the
+    # restored run then silently inherits the current CLI's defaults (bsz, aug,
+    # model shape) instead of the original run's. Reading first also removes the
+    # rank-0-writer / rank-N-reader race the old barrier was papering over.
+    is_resume = cfg.resume is not None and os.path.isdir(cfg.resume)
+    if is_resume:
+        if is_main:
+            logger.info(f"resuming from: {cfg.resume}")
+        resume = cfg.resume
+        wjs_override = cfg.wjs
+        wandb_override = cfg.wandb
+        resume_epoch_override = cfg.resume_epoch
+        num_epochs_override = cfg.num_epochs   # let CLI extend training
+        cfg = OmegaConf.load(os.path.join(cfg.resume, "cfg.yaml"))
+        cfg.output_dir, cfg.resume = resume, resume
+        cfg.wandb = wandb_override
+        cfg.wjs = wjs_override
+        cfg.resume_epoch = resume_epoch_override
+        cfg.num_epochs = num_epochs_override
+    else:
+        # Fresh run: resolve output_dir from Hydra + write cfg.yaml (rank 0 only).
+        create_exp_dir(cfg, write=is_main)
     if world_size > 1:
         dist.barrier()
     # Every rank logs its DDP identity once — lets downstream tooling verify
@@ -223,22 +240,6 @@ def main(cfg: DictConfig) -> None:
     # Aug differs per rank (different shard + worker init); model init seed is
     # re-set below so all ranks build identical weights.
     seed_everything(cfg.seed + rank)
-
-    # resume?
-    if cfg.resume is not None and os.path.isdir(cfg.resume):
-        if is_main:
-            logger.info(f"resuming from: {cfg.resume}")
-        resume = cfg.resume
-        wjs_override = cfg.wjs
-        wandb_override = cfg.wandb
-        resume_epoch_override = cfg.resume_epoch
-        num_epochs_override = cfg.num_epochs   # let CLI extend training
-        cfg = OmegaConf.load(os.path.join(cfg.resume, "cfg.yaml"))
-        cfg.output_dir, cfg.resume = resume, resume
-        cfg.wandb = wandb_override
-        cfg.wjs = wjs_override
-        cfg.resume_epoch = resume_epoch_override
-        cfg.num_epochs = num_epochs_override
 
     if is_main:
         logger.info("cfg:\n" + OmegaConf.to_yaml(cfg))
@@ -419,6 +420,19 @@ def main(cfg: DictConfig) -> None:
     # called with t=None, plus a few attn-block biases). Cleaner long-term
     # fix is to gate the time-embed MLP creation on whether t is ever passed,
     # but for the smoke test we just enable the runtime check.
+    #
+    # ddp_static_graph=True is the cheaper way to say the same thing: DDP records
+    # the unused set once on the first iteration and reuses it, skipping the
+    # per-step autograd-graph traversal find_unused_parameters pays for. Same
+    # gradients, same math. It requires the unused set to be CONSTANT across
+    # iterations (it is — t is always None) and is unsupported alongside
+    # no_sync(), so it is refused when accum_steps > 1.
+    static_graph = bool(cfg.get("ddp_static_graph", False))
+    if static_graph and max(1, int(cfg.get("accum_steps", 1))) > 1:
+        if is_main:
+            logger.warning(">> ddp_static_graph ignored: incompatible with "
+                           "accum_steps>1 (DDP no_sync)")
+        static_graph = False
     model.to(device)
     if world_size > 1 and align is not None:
         # The projector lives outside `model`, so it needs its own reducer — otherwise
@@ -431,9 +445,13 @@ def main(cfg: DictConfig) -> None:
             model,
             device_ids=[local_rank],
             output_device=local_rank,
-            find_unused_parameters=True,
+            find_unused_parameters=not static_graph,
             gradient_as_bucket_view=True,
+            static_graph=static_graph,
         )
+        if is_main:
+            logger.info(f">> DDP static_graph={static_graph} "
+                        f"find_unused_parameters={not static_graph}")
     model_ema = ModelEma(_unwrap(model), decay=.999)
 
     # metrics (torchmetrics auto-syncs across ranks on .compute())

@@ -1,0 +1,92 @@
+defaults:
+  - dset: plinder_otf
+  - model: atomblob_density_gradmag_channelvit_mae_40m
+  - vox: default
+  - override hydra/job_logging: custom
+  - _self_
+
+# ChannelViT-MAE 40M — PLINDER OTF (on-the-fly resample-aug) C+D+G.
+# Architecture comparison vs. fused ViT (config_train_atomblob_density_gradmag_vit_mae_40m_plinder_otf_s0)
+# and ChaMAE (config_train_atomblob_density_gradmag_cha_mae_40m_plinder_otf_s0).
+# Identical recipe + data (PLINDER 17430, seed 0) — only the encoder differs:
+# patch_embed_mode=channel_group, channel_groups=[7,4,1,1] so each modality group
+# gets its own per-patch projection + group embedding; attention spans nG·N = 2048 tokens.
+
+debug: False
+wandb: True
+wandb_tags: [pretrain, channelvit, atomblob_density_gradmag, 40m, invfreq, plinder, otf, ligvdw, clip30, archcomp, seed0]
+num_workers: 16
+prefetch_factor: 8
+resume: null
+resume_epoch: null
+exp_dir: exps
+exp_name: 260619_channelvit_cdg_plinder_otf_s0_pretrain
+output_dir: null
+
+seed: 0
+num_epochs: 100
+aug: True
+bsz: 32
+accum_steps: 1
+lr: 1e-4
+wd: 5e-2
+
+amp:
+  enabled: true
+  dtype: bf16
+channels_last: false
+optimizer:
+  fused: false
+ema:
+  foreach: false
+compile:
+  enabled: true
+  backend: inductor
+  mode: default
+  fullgraph: false
+  dynamic: false
+
+input_mode: atomblob_density
+with_gradmag: true                 # + gradmag → 13 channels
+
+mae:
+  pretext_style: mae
+  density_source: xray
+  sigma_blur_a_lo: 0.30
+  sigma_blur_a_hi: 0.80
+  sigma_noise: 0.0
+  block_size: 8
+  mask_ratio: 0.60
+  mask_strategy: atom_biased
+  mask_atom_tau: 1.0
+  channel_weighting: inv_freq
+  channel_weight_clip_ratio: 30.0
+  density_channel_weight: 0.1
+  gradmag_channel_weight: 0.1
+  gradmag_reconstruct: true
+  gradmag_noise: false
+  atom_pos_weight: 10.0
+  atom_pos_thresh: 0.05
+  lambda_dens: 1.0
+  lambda_str: 1.0
+  struct_pos_weight: 100.0
+  struct_pos_thresh: 0.05
+  ema_decay: 0.999
+  grad_clip: 1.0
+  val_every: 1
+  ckpt_every: 50
+
+hydra:
+  run:
+    dir: ./${exp_dir}/${exp_name}
+  job:
+    config:
+      override_dirname:
+        kv_sep: ""
+        item_sep: "_"
+        exclude_keys: [
+            "exp_dir", "lr", vox.grid_dim, "wd", "resume", "resume_epoch", "wandb",
+            "num_workers", "exp_name", "output_dir", "out_dir",
+            "bsz", "accum_steps", "seed", "num_epochs", "aug", "pocket_radius",
+            "grid_dim", "debug"
+        ]

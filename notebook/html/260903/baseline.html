@@ -1,0 +1,484 @@
+<title>CrossDocked Baseline Bench</title>
+<style>
+  :root {
+    --ink: #1c2433; --ink-soft: #5b6678; --ink-faint: #7a8699;
+    --line: #e3e7ee; --line-strong: #aeb6c4;
+    --bg: #f5f6f8; --card: #ffffff;
+    --accent: #2f6f4f; --accent-bg: #eaf5ee;
+    --blue: #38559b; --blue-bg: #e7eefb;
+    --warn: #9a6112; --warn-bg: #fcf3e0;
+    --drift: #9a3b48;
+    --shadow: 0 1px 2px rgba(20,30,50,.04), 0 8px 24px rgba(20,30,50,.05);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+         font-size: 16px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+  .page { display: flex; flex-direction: column; max-width: 1320px; margin: 0 auto; padding: 48px 24px 96px; }
+  header.doc { border-bottom: 2px solid var(--ink); padding-bottom: 20px; margin-bottom: 40px; }
+  .eyebrow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px;
+             color: var(--ink-soft); font-size: 13px; letter-spacing: .11em; text-transform: uppercase; }
+  .status { display: inline-flex; align-items: center; gap: 7px; padding: 3px 10px; border-radius: 999px;
+            background: var(--accent-bg); color: #1d5a3a; font-size: 11px; font-weight: 720; letter-spacing: .07em; }
+  .status::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+  .status.wip { background: var(--warn-bg); color: #7c4d0c; }
+  .status.wip::before { background: var(--warn); }
+  header.doc h1 { max-width: 1050px; margin: 0; font-size: clamp(28px, 4vw, 42px); line-height: 1.13;
+                  font-weight: 680; letter-spacing: -.025em; }
+  header.doc .lead { max-width: 1040px; margin: 13px 0 0; color: var(--ink-soft); font-size: 15px; line-height: 1.65; }
+  .toc { margin: 22px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; list-style: none; }
+  .toc a { display: inline-flex; align-items: center; gap: 7px; padding: 5px 12px; border: 1px solid var(--line);
+           border-radius: 999px; background: var(--card); color: var(--ink-soft); font-size: 12.5px;
+           text-decoration: none; box-shadow: var(--shadow); }
+  .toc a:hover { border-color: var(--line-strong); color: var(--ink); }
+  .toc a .n { color: var(--accent); font-weight: 760; }
+  .doc-section { margin-bottom: 68px; scroll-margin-top: 20px; }
+  .section-head { display: flex; align-items: center; gap: 14px; margin: 0 0 28px; padding-bottom: 12px;
+                  border-bottom: 2px solid var(--line-strong); font-size: 23px; line-height: 1.25;
+                  font-weight: 680; letter-spacing: -.015em; }
+  .sec-num { display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; width: 31px; height: 31px;
+             border-radius: 8px; background: var(--accent); color: #fff; font-size: 15px; font-weight: 760; }
+  .section-intro { max-width: 1100px; margin: -5px 0 24px; color: var(--ink-soft); font-size: 13.7px; line-height: 1.65; }
+  .criteria { margin: 0 0 19px; padding: 15px 18px 11px 36px; border-left: 4px solid var(--accent);
+              border-radius: 8px; background: var(--card); color: var(--ink-soft); font-size: 13px; line-height: 1.55;
+              box-shadow: var(--shadow); }
+  .criteria li { margin: 0 0 7px; }
+  .criteria b { color: var(--ink); font-weight: 680; }
+  .criteria .cite { color: var(--ink-faint); font-size: 11.5px; }
+  .callout { max-width: 1100px; margin: 0 0 20px; padding: 16px 20px; border-left: 4px solid var(--blue);
+             border-radius: 8px; background: linear-gradient(145deg, #f7f9fe, var(--blue-bg));
+             color: var(--ink); font-size: 14.5px; line-height: 1.6; }
+  .callout .k { display: block; margin-bottom: 5px; color: var(--blue); font-size: 11px; font-weight: 730;
+                letter-spacing: .08em; text-transform: uppercase; }
+  .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px;
+                background: var(--card); box-shadow: var(--shadow); }
+  table.results { width: 100%; min-width: 1240px; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  table.results th, table.results td { padding: 10px 9px; text-align: center; white-space: nowrap; }
+  table.results thead th { border-bottom: 1px solid var(--line); background: #fafbfc; color: var(--ink-soft);
+                           font-size: 10.7px; line-height: 1.35; font-weight: 650; letter-spacing: .025em; }
+  table.results thead th.grp { background: var(--accent-bg); color: #1d5a3a; font-size: 10.2px;
+                               letter-spacing: .085em; text-transform: uppercase; }
+  table.results thead th.stub { vertical-align: bottom; }
+  table.results thead th .stat { display: block; margin-top: 2px; font-size: 9.4px; font-weight: 500;
+                                 letter-spacing: .05em; color: var(--ink-faint); text-transform: none; }
+  table.results tbody tr { border-top: 1px solid var(--line); font-size: 12.8px; }
+  table.results tbody .stat { display: block; margin-top: 1px; color: var(--ink-faint);
+                             font-size: 9.6px; font-weight: 400; }
+  table.results tbody tr:hover { background: #fbfcfd; }
+  table.results tbody tr.ref { background: #f7f9fb; }
+  .col-method { min-width: 190px; text-align: left !important; font-weight: 620; }
+  td.al { text-align: left !important; }
+  sub.variant { margin-left: 3px; color: var(--ink-faint); font-size: 10px; font-weight: 500;
+               letter-spacing: .02em; vertical-align: baseline; }
+  .src { display: block; color: var(--ink-faint); font-size: 10.8px; font-weight: 400; }
+  td.sep, th.sep { border-right: 1px dotted var(--line); }
+  td.grp-end, th.grp-end { border-right: 2px solid var(--line-strong); }
+  .placeholder { color: #a3acb9; }
+  .delta { margin-left: 6px; font-size: 10.4px; font-weight: 620; }
+  .delta.match { color: var(--accent); }
+  .delta.drift { color: var(--drift); }
+  .pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 10.5px; font-weight: 720;
+          letter-spacing: .04em; }
+  .pill.todo { background: #f1f3f6; color: #7a8699; }
+  .pill.run { background: var(--warn-bg); color: #7c4d0c; }
+  .pill.done { background: var(--accent-bg); color: #1d5a3a; }
+  .tbl-cap { max-width: 1100px; margin: 22px 0 9px; font-size: 13px; line-height: 1.55;
+             color: var(--ink-soft); }
+  .tbl-cap b { color: var(--ink); font-weight: 680; }
+  .table-sub { max-width: 1100px; margin: 13px 0 0; color: var(--ink-soft); font-size: 12.6px; line-height: 1.6; }
+  code { padding: 1px 5px; border-radius: 4px; background: #f0f2f5; font-size: .92em; }
+  pre { margin: 16px 0 0; padding: 15px 17px; border: 1px solid var(--line); border-radius: 10px;
+        background: var(--card); overflow-x: auto; font-size: 12.3px; line-height: 1.7;
+        box-shadow: var(--shadow); }
+  pre .c { color: var(--ink-faint); }
+  dl.notes { margin: 0; display: grid; border: 1px solid var(--line); border-radius: 12px;
+             background: var(--card); box-shadow: var(--shadow); overflow: hidden; }
+  dl.notes > div { display: grid; grid-template-columns: minmax(150px, 220px) 1fr; gap: 18px;
+                   padding: 14px 18px; border-bottom: 1px solid var(--line); }
+  dl.notes > div:last-child { border-bottom: 0; }
+  dl.notes dt { font-size: 12.6px; font-weight: 700; color: var(--accent); }
+  dl.notes dd { margin: 0; font-size: 13.2px; color: var(--ink-soft); line-height: 1.6; }
+  footer { margin-top: 62px; padding-top: 18px; border-top: 1px solid var(--line-strong);
+           color: var(--ink-faint); font-size: 10.8px; line-height: 1.7; }
+  @media (max-width: 620px) {
+    .page { padding: 30px 14px 70px; }
+    header.doc h1 { font-size: 29px; }
+    dl.notes > div { grid-template-columns: 1fr; gap: 4px; }
+  }
+  @media print { body { background: #fff; } .page { max-width: none; padding: 20px; }
+                 .table-wrap, dl.notes, pre, .criteria { box-shadow: none; } }
+</style>
+
+<div class="page">
+  <header class="doc">
+    <div class="eyebrow">
+      <span>CrossDocked2020 baselines &middot; 2026-08-28 21:54</span>
+      <span class="status">generation complete</span>
+    </div>
+    <h1>Five structure-based generative baselines, one evaluation path</h1>
+    <p class="lead">AR, Pocket2Mol, DiffSBDD, DecompDiff and FuncBind on the 100-pocket TargetDiff test
+      split &mdash; 100 ligands per pocket, from each model's official checkpoint &mdash; then scored
+      twice: with TargetDiff's AutoDock Vina 1.2.2 protocol, and with PoseCheck on the poses as
+      generated.</p>
+    <ul class="toc">
+      <li><a href="#models"><span class="n">&bull;</span> The baselines</a></li>
+      <li><a href="#vina"><span class="n">1</span> Vina evaluation</a></li>
+      <li><a href="#posecheck"><span class="n">2</span> PoseCheck evaluation</a></li>
+      <li><a href="#appendix-a"><span class="n">A</span> Setup &amp; porting</a></li>
+      <li><a href="#appendix-b"><span class="n">B</span> Reproducing</a></li>
+    </ul>
+  </header>
+
+  <section class="doc-section" id="models">
+    <h2 class="section-head"><span class="sec-num">&bull;</span>The baselines</h2>
+    <p class="section-intro">All five are pocket-conditioned generative models trained on the same
+      CrossDocked2020 split and run here from the checkpoints their authors released. They differ mainly
+      in whether the ligand is grown atom by atom, denoised as a whole, or represented as a field.</p>
+    <ul class="criteria">
+      <li><b>AR</b> <span class="cite">Luo et al., NeurIPS 2021</span><br>Autoregressive: places one atom at a time into the pocket, choosing each position from a learned 3D density over the empty space.</li>
+      <li><b>Pocket2Mol</b> <span class="cite">Peng et al., ICML 2022</span><br>Also autoregressive, but predicts a focal atom and then samples the next atom and its bonds from an E(3)-equivariant network, so bonds come out of the model rather than a post-hoc perception step.</li>
+      <li><b>DiffSBDD</b> <span class="cite">Schneuing et al., Nat Comput Sci 2024</span><br>Equivariant diffusion over atom positions and types conditioned on the full-atom pocket; the whole ligand is denoised at once rather than grown.</li>
+      <li><b>DecompDiff</b> <span class="cite">Guan et al., ICML 2023</span><br>Diffusion with decomposed priors &mdash; arms and scaffold get separate priors placed in the pocket. Run here with the reference-ligand prior.</li>
+      <li><b>FuncBind</b> <span class="cite">Kirchmeyer et al., arXiv 2025</span><br>Represents the molecule as a continuous neural field rather than a fixed atom set, so one model spans drug modalities; scored here on its small-molecule CrossDocked samples.</li>
+      <li><b>Reference</b> <span class="cite">CrossDocked2020</span><br>The crystal ligand of each test
+        pocket, scored through the identical pipeline &mdash; the control that says whether the evaluation
+        path itself is right.</li>
+    </ul>
+  </section>
+
+  <section class="doc-section" id="vina">
+    <h2 class="section-head"><span class="sec-num">1</span>Vina evaluation</h2>
+    <p class="section-intro">TargetDiff's <code>evaluate_from_meta.py</code>, unmodified apart from an
+      empty-pocket guard and a thread-count passthrough. AutoDock Vina 1.2.2, exhaustiveness 32, docking
+      into the <b>full receptor</b> (<code>*_rec.pdb</code>, ~2,100 atoms) with the search box centred on
+      the generated ligand plus a 5&nbsp;&#8491; buffer.</p>
+
+    <div class="callout">
+      <span class="k">Pipeline check</span>
+      Scoring the 100 reference ligands reproduces the TargetDiff paper exactly &mdash; Vina Score
+      &minus;6.36, Min &minus;6.71, Dock &minus;7.45, QED 0.476, SA 0.728. Pocket assignment was also
+      checked physically: for every baseline the generated molecules sit 0.2&ndash;7.7&nbsp;&#8491; from
+      the centroid of that pocket's reference ligand, none beyond 15&nbsp;&#8491;.
+    </div>
+
+    <ul class="criteria">
+      <li><b>Vina Score</b> &mdash; binding energy of the generated pose exactly as the model produced it, no relaxation.</li>
+      <li><b>Vina Min</b> &mdash; the same pose after local energy minimisation, without re-searching the pocket.</li>
+      <li><b>Vina Dock</b> &mdash; best energy after a full re-dock into the pocket.</li>
+      <li><b>High affinity</b> &mdash; share of generated molecules docking at least as well as that pocket's reference ligand.</li>
+      <li><b>QED</b> &mdash; drug-likeness, 0 to 1, higher is better. &nbsp;<b>SA</b> &mdash; synthetic accessibility rescaled to 0&ndash;1, higher is easier to make.</li>
+      <li><b>Diversity</b> &mdash; 1 minus the mean pairwise RDKFingerprint Tanimoto within a pocket.</li>
+      <li><b>Success</b> &mdash; share of molecules clearing QED&nbsp;&gt;&nbsp;0.25, SA&nbsp;&gt;&nbsp;0.59 and Vina&nbsp;Dock&nbsp;&lt;&nbsp;&minus;8.18 together.</li>
+    </ul>
+
+    <p class="tbl-cap"><b>Table 1a.</b> Vina 1.2.2 scores and sample quality over all 100 CrossDocked test pockets, 100 molecules generated per pocket.</p>
+    <div class="table-wrap">
+      <table class="results">
+        <thead>
+          <tr>
+            <th class="stub" rowspan="2">Model</th>
+            <th class="stub" rowspan="2">Pockets</th>
+            <th class="stub" rowspan="2">Mols</th>
+            <th class="grp" colspan="7">Vina &middot; kcal/mol, lower is better</th>
+            <th class="grp" colspan="8">Sample quality</th>
+          </tr>
+          <tr>
+            <th>Score<span class="stat">mean</span></th>
+            <th class="sep">Score<span class="stat">median</span></th>
+            <th>Min<span class="stat">mean</span></th>
+            <th class="sep">Min<span class="stat">median</span></th>
+            <th>Dock<span class="stat">mean</span></th>
+            <th class="sep">Dock<span class="stat">median</span></th>
+            <th class="grp-end">High aff.<span class="stat">%</span></th>
+            <th>QED<span class="stat">mean</span></th>
+            <th class="sep">QED<span class="stat">median</span></th>
+            <th>SA<span class="stat">mean</span></th>
+            <th class="sep">SA<span class="stat">median</span></th>
+            <th>Diversity<span class="stat">mean</span></th>
+            <th class="sep">Diversity<span class="stat">median</span></th>
+            <th>Atoms<span class="stat">per mol</span></th>
+            <th>Success<span class="stat">%</span></th>
+          </tr>
+        </thead>
+        <tbody>
+<tr class="ref"><td class="col-method al">Reference<span class="src">CrossDocked2020 test ligands</span></td><td><span class="pill done">100/100</span></td><td>100</td><td>-6.36</td><td class="sep">-6.46</td><td>-6.71</td><td class="sep">-6.49</td><td>-7.45</td><td class="sep">-7.25</td><td class="grp-end"><span class="placeholder">&mdash;</span></td><td>0.476</td><td class="sep">0.468</td><td>0.728</td><td class="sep">0.740</td><td><span class="placeholder">&mdash;</span></td><td class="sep"><span class="placeholder">&mdash;</span></td><td>22.8</td><td>25.0</td></tr>
+<tr><td class="col-method al">AR<span class="src">Luo et al., NeurIPS 2021</span></td><td><span class="pill done">100/100</span></td><td>9728</td><td>-5.89</td><td class="sep">-5.78</td><td>-6.24</td><td class="sep">-6.00</td><td>-6.83</td><td class="sep">-6.66</td><td class="grp-end">39.8</td><td>0.499</td><td class="sep">0.496</td><td>0.624</td><td class="sep">0.620</td><td>0.704</td><td class="sep">0.711</td><td>17.5</td><td>8.3</td></tr>
+<tr><td class="col-method al">Pocket2Mol<span class="src">Peng et al., ICML 2022</span></td><td><span class="pill done">100/100</span></td><td>9872</td><td>-5.04</td><td class="sep">-4.77</td><td>-6.46</td><td class="sep">-5.92</td><td>-7.29</td><td class="sep">-6.90</td><td class="grp-end">49.4</td><td>0.571</td><td class="sep">0.575</td><td>0.743</td><td class="sep">0.750</td><td>0.729</td><td class="sep">0.767</td><td>18.4</td><td>22.9</td></tr>
+<tr><td class="col-method al">DiffSBDD<span class="src">Schneuing et al., Nat Comput Sci 2024</span></td><td><span class="pill done">100/100</span></td><td>9777</td><td>-2.72</td><td class="sep">-4.67</td><td>-4.86</td><td class="sep">-5.44</td><td>-6.70</td><td class="sep">-6.85</td><td class="grp-end">39.0</td><td>0.493</td><td class="sep">0.495</td><td>0.625</td><td class="sep">0.610</td><td>0.793</td><td class="sep">0.792</td><td>20.3</td><td>8.4</td></tr>
+<tr><td class="col-method al">DecompDiff<sub class="variant">ref prior</sub><span class="src">Guan et al., ICML 2023</span></td><td><span class="pill done">100/100</span></td><td>8207</td><td>-5.14</td><td class="sep">-5.25</td><td>-6.01</td><td class="sep">-5.99</td><td>-7.06</td><td class="sep">-7.12</td><td class="grp-end">48.8</td><td>0.508</td><td class="sep">0.515</td><td>0.664</td><td class="sep">0.650</td><td>0.717</td><td class="sep">0.728</td><td>21.2</td><td>15.6</td></tr>
+<tr><td class="col-method al">FuncBind<span class="src">Kirchmeyer et al., arXiv 2025</span></td><td><span class="pill done">100/100</span></td><td>9992</td><td>-5.81</td><td class="sep">-5.65</td><td>-6.44</td><td class="sep">-6.20</td><td>-7.33</td><td class="sep">-7.26</td><td class="grp-end">47.9</td><td>0.506</td><td class="sep">0.518</td><td>0.649</td><td class="sep">0.640</td><td>0.705</td><td class="sep">0.716</td><td>19.0</td><td>16.5</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="block">
+      <h3 class="subsection-head"><span class="sub-lab">1b</span>Restricted to the 79 electron-density pockets</h3>
+      <p class="tbl-cap"><b>Table 1b.</b> Vina 1.2.2 scores and sample quality over the 79 test pockets whose receptor has usable deposited electron density, same 100 molecules per pocket.</p>
+      <div class="table-wrap">
+        <table class="results">
+          <thead>
+            <tr>
+              <th class="stub" rowspan="2">Model</th>
+              <th class="stub" rowspan="2">Pockets</th>
+              <th class="stub" rowspan="2">Mols</th>
+              <th class="grp" colspan="7">Vina &middot; kcal/mol, lower is better</th>
+              <th class="grp" colspan="8">Sample quality</th>
+            </tr>
+            <tr>
+              <th>Score<span class="stat">mean</span></th>
+              <th class="sep">Score<span class="stat">median</span></th>
+              <th>Min<span class="stat">mean</span></th>
+              <th class="sep">Min<span class="stat">median</span></th>
+              <th>Dock<span class="stat">mean</span></th>
+              <th class="sep">Dock<span class="stat">median</span></th>
+              <th class="grp-end">High aff.<span class="stat">%</span></th>
+              <th>QED<span class="stat">mean</span></th>
+              <th class="sep">QED<span class="stat">median</span></th>
+              <th>SA<span class="stat">mean</span></th>
+              <th class="sep">SA<span class="stat">median</span></th>
+              <th>Diversity<span class="stat">mean</span></th>
+              <th class="sep">Diversity<span class="stat">median</span></th>
+              <th>Atoms<span class="stat">per mol</span></th>
+              <th>Success<span class="stat">%</span></th>
+            </tr>
+          </thead>
+          <tbody>
+<tr class="ref"><td class="col-method al">Reference<span class="src">CrossDocked2020 test ligands</span></td><td><span class="pill done">79/79</span></td><td>79</td><td>-6.21</td><td class="sep">-6.10</td><td>-6.66</td><td class="sep">-6.15</td><td>-7.32</td><td class="sep">-6.99</td><td class="grp-end"><span class="placeholder">&mdash;</span></td><td>0.464</td><td class="sep">0.463</td><td>0.724</td><td class="sep">0.750</td><td><span class="placeholder">&mdash;</span></td><td class="sep"><span class="placeholder">&mdash;</span></td><td>22.8</td><td>21.5</td></tr>
+<tr><td class="col-method al">AR<span class="src">Luo et al., NeurIPS 2021</span></td><td><span class="pill done">79/79</span></td><td>7655</td><td>-5.76</td><td class="sep">-5.58</td><td>-6.16</td><td class="sep">-5.85</td><td>-6.73</td><td class="sep">-6.54</td><td class="grp-end">41.8</td><td>0.504</td><td class="sep">0.497</td><td>0.629</td><td class="sep">0.620</td><td>0.709</td><td class="sep">0.714</td><td>17.2</td><td>8.2</td></tr>
+<tr><td class="col-method al">Pocket2Mol<span class="src">Peng et al., ICML 2022</span></td><td><span class="pill done">79/79</span></td><td>7772</td><td>-5.06</td><td class="sep">-4.78</td><td>-6.47</td><td class="sep">-5.90</td><td>-7.27</td><td class="sep">-6.79</td><td class="grp-end">51.2</td><td>0.566</td><td class="sep">0.568</td><td>0.743</td><td class="sep">0.750</td><td>0.724</td><td class="sep">0.778</td><td>18.5</td><td>23.8</td></tr>
+<tr><td class="col-method al">DiffSBDD<span class="src">Schneuing et al., Nat Comput Sci 2024</span></td><td><span class="pill done">79/79</span></td><td>7720</td><td>-2.70</td><td class="sep">-4.62</td><td>-4.89</td><td class="sep">-5.41</td><td>-6.71</td><td class="sep">-6.78</td><td class="grp-end">41.3</td><td>0.495</td><td class="sep">0.499</td><td>0.628</td><td class="sep">0.620</td><td>0.796</td><td class="sep">0.796</td><td>20.2</td><td>8.1</td></tr>
+<tr><td class="col-method al">DecompDiff<sub class="variant">ref prior</sub><span class="src">Guan et al., ICML 2023</span></td><td><span class="pill done">79/79</span></td><td>6427</td><td>-5.00</td><td class="sep">-4.97</td><td>-5.90</td><td class="sep">-5.70</td><td>-6.89</td><td class="sep">-6.77</td><td class="grp-end">49.8</td><td>0.494</td><td class="sep">0.499</td><td>0.666</td><td class="sep">0.650</td><td>0.711</td><td class="sep">0.722</td><td>20.9</td><td>12.9</td></tr>
+<tr><td class="col-method al">FuncBind<span class="src">Kirchmeyer et al., arXiv 2025</span></td><td><span class="pill done">79/79</span></td><td>7895</td><td>-5.75</td><td class="sep">-5.57</td><td>-6.40</td><td class="sep">-6.09</td><td>-7.27</td><td class="sep">-7.13</td><td class="grp-end">49.4</td><td>0.503</td><td class="sep">0.510</td><td>0.656</td><td class="sep">0.650</td><td>0.702</td><td class="sep">0.713</td><td>19.0</td><td>15.6</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="table-sub">Same molecules and same protocol as table&nbsp;1a; only the set of pockets
+        averaged over changes. The reference row moves from &minus;7.45 to &minus;7.32 Vina Dock,
+        so this subset drops the <em>easier</em> pockets and these numbers are not comparable with
+        published 100-pocket figures.</p>
+    </div>
+
+    <div class="block">
+      <h3 class="subsection-head"><span class="sub-lab">1c</span>What the success rate is a share of</h3>
+      <p class="section-intro">Success rate and high affinity are shares of the molecules that
+        reached the Vina pass. Molecules a model fails to build are dropped before that point
+        &mdash; targetdiff's evaluation skips any SMILES containing a <code>.</code> &mdash; so they
+        cost nothing, and a model that discards more of its own output is scored on the part of it
+        that worked. That is the field's convention, and it is invisible unless the denominator is
+        written down.</p>
+      <p class="tbl-cap"><b>Table 1c.</b> Molecules from sampler draw to scored row, and the two
+        success-rate columns recomputed per generation attempt.</p>
+      <div class="table-wrap">
+        <table class="results">
+          <thead>
+            <tr>
+              <th class="stub" rowspan="2">Model</th>
+              <th class="grp" colspan="4">Molecules</th>
+              <th class="grp" colspan="2">Success rate &middot; %</th>
+              <th class="grp" colspan="2">High affinity &middot; %</th>
+            </tr>
+            <tr>
+              <th>Draws</th>
+              <th>Written<span class="stat">by the sampler</span></th>
+              <th>Scored<span class="stat">tables 1a / 2a</span></th>
+              <th class="grp-end">of 10,000<span class="stat">%</span></th>
+              <th>scored<span class="stat">as table 1a</span></th>
+              <th class="grp-end">per draw<span class="stat">of 10,000</span></th>
+              <th>scored<span class="stat">as table 1a</span></th>
+              <th>per draw<span class="stat">of 10,000</span></th>
+            </tr>
+          </thead>
+          <tbody>
+<tr><td class="col-method al">AR<span class="src">Luo et al., NeurIPS 2021</span></td><td><span class='placeholder'>retries</span></td><td>10,862<span class="stat">63&ndash;250 / pocket</span></td><td>9,728</td><td class="grp-end">97.3</td><td>8.3</td><td class="grp-end">&le;&thinsp;8.1</td><td>39.8</td><td>&le;&thinsp;38.7</td></tr>
+<tr><td class="col-method al">Pocket2Mol<span class="src">Peng et al., ICML 2022</span></td><td><span class='placeholder'>retries</span></td><td>11,970<span class="stat">36&ndash;258 / pocket</span></td><td>9,872</td><td class="grp-end">98.7</td><td>22.9</td><td class="grp-end">&le;&thinsp;22.6</td><td>49.4</td><td>&le;&thinsp;48.8</td></tr>
+<tr><td class="col-method al">DiffSBDD<span class="src">Schneuing et al., Nat Comput Sci 2024</span></td><td>10,000</td><td>10,000<span class="stat">100&ndash;100 / pocket</span></td><td>9,777</td><td class="grp-end">97.8</td><td>8.4</td><td class="grp-end">8.2</td><td>39.0</td><td>38.2</td></tr>
+<tr><td class="col-method al">DecompDiff<sub class="variant">ref prior</sub><span class="src">Guan et al., ICML 2023</span></td><td>10,000</td><td>8,207<span class="stat">36&ndash;100 / pocket</span></td><td>8,207</td><td class="grp-end">82.1</td><td>15.6</td><td class="grp-end">12.8</td><td>48.8</td><td>40.0</td></tr>
+<tr><td class="col-method al">FuncBind<span class="src">Kirchmeyer et al., arXiv 2025</span></td><td>10,000</td><td>10,000<span class="stat">100&ndash;100 / pocket</span></td><td>9,992</td><td class="grp-end">99.9</td><td>16.5</td><td class="grp-end">16.4</td><td>47.9</td><td>47.9</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="table-sub">Only DiffSBDD, DecompDiff and FuncBind take a fixed 100 shots per pocket,
+        so only their per-draw figures are exact. AR and Pocket2Mol keep sampling until they have
+        enough and write only what passes their own filters (10,862 and 11,970 molecules, 36&ndash;258
+        per pocket), so their rejected attempts are never recorded and their per-draw numbers are
+        upper bounds. DecompDiff is the one baseline where the choice of denominator changes the
+        ranking: of its 10,000 draws, 8,774 rebuilt as RDKit molecules and 8,207 came out as a
+        single connected fragment, which moves its success rate from 15.6&thinsp;% to
+        12.8&thinsp;% and its high affinity from 48.8&thinsp;% to 40.0&thinsp;%. Its decomposed
+        prior seeds arms and scaffold as separate blobs that the model has to bond together, and
+        the loss tracks the arm count &mdash; 87.6 valid molecules per 100 draws at one arm,
+        63.7 at three.</p>
+    </div>
+  </section>
+
+  <section class="doc-section" id="posecheck">
+    <h2 class="section-head"><span class="sec-num">2</span>PoseCheck evaluation</h2>
+    <p class="section-intro">PoseCheck scores the pose the model produced rather than a re-docked one, so
+      it asks a different question from Vina: is the geometry physically sane before docking software gets
+      a chance to fix it? Receptors are protonated with pdb2pqr and scored against the same full-atom
+      structures used for docking.</p>
+
+    <ul class="criteria">
+      <li><b>Clashes</b> &mdash; number of steric overlaps between ligand and protein heavy atoms; lower is better.</li>
+      <li><b>Strain</b> &mdash; internal energy of the generated conformer above its relaxed form, kcal/mol.
+        Reported as the median: the distribution has a long tail where UFF relaxation diverges, and a
+        handful of molecules move the mean by orders of magnitude.</li>
+      <li><b>HB donor / acceptor / hydrophobic / vdW</b> &mdash; mean number of each interaction type
+        formed with the pocket, from prolif.</li>
+    </ul>
+
+    <p class="tbl-cap"><b>Table 2a.</b> PoseCheck on the generated poses &mdash; steric clashes, torsional strain and interaction profile, all 100 pockets.</p>
+    <div class="table-wrap">
+      <table class="results">
+        <thead>
+          <tr>
+            <th class="stub" rowspan="2">Model</th>
+            <th class="stub" rowspan="2">Pockets</th>
+            <th class="stub" rowspan="2">Mols</th>
+            <th class="grp" colspan="2">Clashes</th>
+            <th class="grp" colspan="1">Strain</th>
+            <th class="grp" colspan="4">Interactions per molecule</th>
+          </tr>
+          <tr>
+            <th>mean</th>
+            <th class="grp-end">median</th>
+            <th class="grp-end">median<span class="stat">kcal/mol</span></th>
+            <th>HB donor</th>
+            <th>HB acceptor</th>
+            <th>hydrophobic</th>
+            <th>vdW contact</th>
+          </tr>
+        </thead>
+        <tbody>
+<tr><td class="col-method al">AR<span class="src">Luo et al., NeurIPS 2021</span></td><td><span class="pill done">100/100</span></td><td>9729</td><td>5.44</td><td class="grp-end">4.0</td><td class="grp-end">372</td><td>0.65</td><td>0.90</td><td>1.02</td><td>6.72</td></tr>
+<tr><td class="col-method al">Pocket2Mol<span class="src">Peng et al., ICML 2022</span></td><td><span class="pill done">100/100</span></td><td>9872</td><td>7.30</td><td class="grp-end">5.0</td><td class="grp-end">48</td><td>0.38</td><td>0.71</td><td>1.69</td><td>6.47</td></tr>
+<tr><td class="col-method al">DiffSBDD<span class="src">Schneuing et al., Nat Comput Sci 2024</span></td><td><span class="pill done">100/100</span></td><td>9777</td><td>14.07</td><td class="grp-end">7.0</td><td class="grp-end">321</td><td>0.54</td><td>0.90</td><td>1.62</td><td>8.44</td></tr>
+<tr><td class="col-method al">DecompDiff<sub class="variant">ref prior</sub><span class="src">Guan et al., ICML 2023</span></td><td><span class="pill done">100/100</span></td><td>8207</td><td>9.02</td><td class="grp-end">7.0</td><td class="grp-end">168</td><td>0.66</td><td>1.10</td><td>1.47</td><td>8.13</td></tr>
+<tr><td class="col-method al">FuncBind<span class="src">Kirchmeyer et al., arXiv 2025</span></td><td><span class="pill done">100/100</span></td><td>9992</td><td>6.41</td><td class="grp-end">5.0</td><td class="grp-end">207</td><td>0.75</td><td>1.02</td><td>1.18</td><td>7.28</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="table-sub">Interaction columns are averaged over the pockets where prolif returned a
+      profile; it raises on a minority of pockets, and those contribute clashes and strain but no
+      interaction counts.</p>
+
+    <div class="block">
+      <h3 class="subsection-head"><span class="sub-lab">2b</span>Restricted to the 79 electron-density pockets</h3>
+      <p class="tbl-cap"><b>Table 2b.</b> The same PoseCheck evaluation restricted to the 79 electron-density pockets.</p>
+      <div class="table-wrap">
+        <table class="results">
+          <thead>
+            <tr>
+              <th class="stub" rowspan="2">Model</th>
+              <th class="stub" rowspan="2">Pockets</th>
+              <th class="stub" rowspan="2">Mols</th>
+              <th class="grp" colspan="2">Clashes</th>
+              <th class="grp" colspan="1">Strain</th>
+              <th class="grp" colspan="4">Interactions per molecule</th>
+            </tr>
+            <tr>
+              <th>mean</th>
+              <th class="grp-end">median</th>
+              <th class="grp-end">median<span class="stat">kcal/mol</span></th>
+              <th>HB donor</th>
+              <th>HB acceptor</th>
+              <th>hydrophobic</th>
+              <th>vdW contact</th>
+            </tr>
+          </thead>
+          <tbody>
+<tr><td class="col-method al">AR<span class="src">Luo et al., NeurIPS 2021</span></td><td><span class="pill done">79/79</span></td><td>7655</td><td>5.07</td><td class="grp-end">4.0</td><td class="grp-end">326</td><td>0.56</td><td>0.80</td><td>1.05</td><td>6.43</td></tr>
+<tr><td class="col-method al">Pocket2Mol<span class="src">Peng et al., ICML 2022</span></td><td><span class="pill done">79/79</span></td><td>7772</td><td>7.25</td><td class="grp-end">5.0</td><td class="grp-end">47</td><td>0.40</td><td>0.68</td><td>1.75</td><td>6.51</td></tr>
+<tr><td class="col-method al">DiffSBDD<span class="src">Schneuing et al., Nat Comput Sci 2024</span></td><td><span class="pill done">79/79</span></td><td>7720</td><td>13.69</td><td class="grp-end">7.0</td><td class="grp-end">312</td><td>0.53</td><td>0.87</td><td>1.66</td><td>8.38</td></tr>
+<tr><td class="col-method al">DecompDiff<sub class="variant">ref prior</sub><span class="src">Guan et al., ICML 2023</span></td><td><span class="pill done">79/79</span></td><td>6427</td><td>8.58</td><td class="grp-end">7.0</td><td class="grp-end">158</td><td>0.62</td><td>1.04</td><td>1.48</td><td>7.90</td></tr>
+<tr><td class="col-method al">FuncBind<span class="src">Kirchmeyer et al., arXiv 2025</span></td><td><span class="pill done">79/79</span></td><td>7895</td><td>6.11</td><td class="grp-end">5.0</td><td class="grp-end">184</td><td>0.71</td><td>0.96</td><td>1.21</td><td>7.13</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="doc-section" id="appendix-a">
+    <h2 class="section-head"><span class="sec-num">A</span>Setup &amp; porting</h2>
+    <p class="section-intro">The GPUs here are Blackwell (compute capability 12.0). All four repositories
+      pin a PyTorch that predates that architecture and cannot launch a single kernel on it, so every
+      model was moved onto a common torch 2.10 / cu128 stack.</p>
+    <dl class="notes">
+      <div><dt>sm_120 GPUs</dt><dd>The pinned torch 1.8&ndash;1.13 builds stop at <code>sm_90</code> and
+        raise &ldquo;no kernel image is available&rdquo;. All four now run on torch 2.10.0+cu128 with
+        source-built <code>torch_scatter</code>, <code>torch_cluster</code> and <code>torch_sparse</code>.</dd></div>
+      <div><dt>NumPy 2.x</dt><dd><code>np.int</code>, <code>np.float</code> and <code>np.bool</code> were
+        removed; AR and DecompDiff used them while parsing ligands, silently skipping every datapoint.</dd></div>
+      <div><dt>Ragged arrays</dt><dd>Pocket2Mol built <code>np.array</code> over per-candidate log-prob
+        rows of different lengths, which NumPy now refuses &mdash; it killed 13 pockets. The ranking
+        function only sums each row, so the rows are passed through as a list.</dd></div>
+      <div><dt>Empty beam</dt><dd>AR takes a softmax over its beam candidates without checking the beam is
+        non-empty; two pockets exhausted it and crashed. The loop now stops and keeps what it has.</dd></div>
+      <div><dt>PyG 2.8</dt><dd><code>torch_geometric.utils.subgraph</code> is no longer a module, and
+        torch_cluster's kernels reject non-contiguous inputs, so Pocket2Mol's <code>knn</code> and
+        <code>radius</code> calls are wrapped.</dd></div>
+      <div><dt>Biopython 1.86</dt><dd><code>three_to_one</code> was removed; DiffSBDD's pocket parsing uses
+        a shim over <code>protein_letters_3to1</code>.</dd></div>
+      <div><dt>torch.load</dt><dd>2.6 flipped <code>weights_only</code> to <code>True</code>, rejecting all
+        of these checkpoints. DiffSBDD's Lightning 1.8 checkpoint is upgraded to 2.6 on read.</dd></div>
+      <div><dt>Two environments</dt><dd>Sampling needs python 3.12 for the modern CUDA stack, but Vina
+        1.2.2 has no wheel for it &mdash; only 1.2.7. Evaluation therefore stays in the older env that has
+        1.2.2, and molecules cross between them as SDF, since a meta pickled under numpy 2 cannot be read
+        under numpy 1.24.</dd></div>
+      <div><dt>Pocket indexing</dt><dd>AR and Pocket2Mol originally indexed 99 pockets:
+        <code>Y635_MYCTU_1_158_0</code> was dropped while staging their raw data, which also shifted every
+        later <code>data_id</code>. Collection follows each sampler's own pocket order rather than assuming
+        it matches the split, and the missing pocket was sampled separately from a one-entry dataset.</dd></div>
+      <div><dt>Sampling subset</dt><dd>AR and Pocket2Mol finish small molecules first &mdash; across 15
+        pockets their first 50 average ~14 atoms against ~20 for the next 50. Any subset of a pocket's
+        ligands is therefore taken evenly across generation order, never as a prefix, which moved AR's mean
+        molecule size from 13.7 to 16.8 atoms (published: ~17.7).</dd></div>
+      <div><dt>Docking in halves</dt><dd>A Vina worker holds a pocket until its last molecule is docked, so
+        the 100 ligands are split into two disjoint strided halves scored in separate passes &mdash;
+        verified to have zero overlap and to sum to the full generated set.</dd></div>
+      <div><dt>PoseCheck adaptations</dt><dd>Its protonation step (hydride) fails here with a Cython dtype
+        error, so receptors go through pdb2pqr instead. Metal ions in ~30 receptors need explicit vdW radii
+        for MDAnalysis to guess bonds. And prolif must be called with <code>n_jobs=1</code>: left unset it
+        spawns one process per CPU <em>inside</em> every pool worker.</dd></div>
+      <div><dt>FuncBind samples</dt><dd>Taken from the run already on disk (2026-08-03) rather than
+        re-sampled: its hydra config records <code>n_targets=100</code>,
+        <code>n_samples_per_receptor=100</code>, <code>split=test</code> and its own docking turned off,
+        and its test order matches this split 100/100. Only the scoring here is ours.</dd></div>
+      <div><dt>Negative residue ids</dt><dd>Five receptors number residues from a negative index and
+        prolif stores residue numbers as uint32, so PoseCheck failed on those pockets for every model.
+        The numbering is shifted before scoring; only interaction counts are reported, not which residue
+        each one hit.</dd></div>
+      <div><dt>Not run</dt><dd>DecompDiff's beta-prior variant. Its published priors are one file per
+        pocket on Google Drive and the download stops at 75 of 100 on a quota error; the ref-prior variant
+        needs no such file.</dd></div>
+    </dl>
+  </section>
+
+  <section class="doc-section" id="appendix-b">
+    <h2 class="section-head"><span class="sec-num">B</span>Reproducing</h2>
+    <p class="section-intro">Generation and evaluation are separate. Each baseline writes into
+      <code>_out/</code>, is collected into TargetDiff's meta format, then scored.</p>
+<pre><span class="c"># generate — one process per pocket, sharded across GPUs</span>
+bash _scripts/run_baseline.sh Pocket2Mol 2,3 13
+bash _scripts/run_diffsbdd.sh 4,5 4
+bash _scripts/run_decomp.sh ref_prior 6,7 4
+
+<span class="c"># collect, then score with Vina 1.2.2 (half 1; BASELINE_MOLS_PART=2 for the rest)</span>
+BASELINE_MAX_MOLS=50 BASELINE_MOLS_PART=1 python _scripts/build_meta.py Pocket2Mol
+python _scripts/evaluate_from_meta_mp.py _meta/Pocket2Mol.pt \
+    -n 100 --docking_mode vina_full --exhaustiveness 32 --skip_existing True \
+    --protein_root targetdiff/data/test_set --result_path _eval/Pocket2Mol
+
+<span class="c"># PoseCheck over the generated poses</span>
+python _scripts/run_posecheck.py Pocket2Mol 30 20
+
+<span class="c"># aggregate both and rebuild this page</span>
+python _scripts/summarize.py &amp;&amp; python _scripts/summarize_posecheck.py
+python _scripts/make_report.py</pre>
+  </section>
+
+  <footer>
+    Vina 1.2.2, exhaustiveness 32, full receptor, box = generated ligand extent + 5&nbsp;&#8491;.
+    Metric definitions follow targetdiff/notebooks/summary.ipynb.<br>
+    PoseCheck 1.3.1 on generated poses; receptors protonated with pdb2pqr (AMBER). Built 2026-08-28 21:54.
+  </footer>
+</div>

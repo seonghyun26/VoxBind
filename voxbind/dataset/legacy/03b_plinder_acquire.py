@@ -58,26 +58,33 @@ def load_module(path: Path, name: str):
 DL = load_module(Path(__file__).parent.parent / "00a_density_download.py", "dl00a")
 
 
-def _resolve_selection(cli):
-    """Prefer the committed FROZEN selection (splits/plinder/) — cross-server stable; verify its
-    sha256 vs plinder_inputs.json and fail loudly on drift. Else LOCAL fallback / explicit override."""
+def _resolve_selection(cli, version="v2"):
+    """Prefer the committed FROZEN selection (splits/plinder/<version>/) — cross-server stable;
+    verify its sha256 vs plinder_inputs.json and fail loudly on drift. Falls back to v1/ then the
+    legacy flat dir, then the LOCAL unfrozen selection. ``--selection`` overrides everything."""
     from pathlib import Path as _P
     import json as _json, hashlib as _hl
     if cli:
         return _P(cli)
-    fz_dir = VOX_ROOT / "splits" / "plinder"
-    fz_csv = fz_dir / "plinder_selected.csv"
-    if fz_csv.exists():
+    base = VOX_ROOT / "splits" / "plinder"
+    want = base / version
+    for fz_dir in (want, base / "v1", base):
+        fz_csv = fz_dir / "plinder_selected.csv"
+        if not fz_csv.exists():
+            continue
+        meta = {}
         inp = fz_dir / "plinder_inputs.json"
         if inp.exists():
-            meta = _json.loads(inp.read_text()); want = meta.get("selection_sha256")
+            meta = _json.loads(inp.read_text()); sha_want = meta.get("selection_sha256")
             got = _hl.sha256(fz_csv.read_bytes()).hexdigest()
-            if want and got != want:
+            if sha_want and got != sha_want:
                 raise SystemExit(
                     f"[selection] FROZEN selection hash MISMATCH: {fz_csv}\n"
-                    f"  expected {want}\n  got      {got}\n"
+                    f"  expected {sha_want}\n  got      {got}\n"
                     f"  re-pin deliberately via 03a_plinder_select.py --rederive --freeze")
-        print(f"  [selection] FROZEN committed (hash-verified): {fz_csv}")
+        if fz_dir != want:
+            print(f"  [selection] version {version!r} not found — using {fz_dir}")
+        print(f"  [selection] FROZEN committed (hash-verified): {fz_csv}  [{meta.get('name', '?')}]")
         return fz_csv
     local = PLINDER / "plinder_selected.csv"
     print(f"  [selection] WARNING: no frozen selection in splits/plinder/ — using LOCAL {local} "
@@ -89,12 +96,14 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0],
                                  formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     ap.add_argument("--selection", default=None,
-                    help="Selection CSV. Default: committed frozen selection (splits/plinder/), hash-verified.")
+                    help="Selection CSV. Default: committed frozen selection (splits/plinder/<version>/), hash-verified.")
+    ap.add_argument("--plinder_version", default="v2",
+                    help="frozen PLINDER selection version under splits/plinder/<version>/ (default v2)")
     ap.add_argument("--what", choices=["both", "maps", "cifs"], default="both")
     ap.add_argument("--limit", type=int, default=0, help="only the first N unique pids (pilot)")
     ap.add_argument("--workers", type=int, default=16)
     args = ap.parse_args()
-    args.selection = _resolve_selection(args.selection)   # frozen-first (cross-server stable)
+    args.selection = _resolve_selection(args.selection, args.plinder_version)   # frozen-first (cross-server stable)
 
     df = pd.read_csv(args.selection)
     pids = df.entry_pdb_id.astype(str).str.lower().drop_duplicates().tolist()

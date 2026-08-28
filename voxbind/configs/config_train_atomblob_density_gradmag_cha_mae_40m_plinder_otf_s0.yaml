@@ -1,0 +1,79 @@
+defaults:
+  - dset: plinder_otf
+  - model: atomblob_density_gradmag_cha_mae_40m
+  - vox: default
+  - override hydra/job_logging: custom
+  - _self_
+
+# ChA-MAEViT 40M — PLINDER OTF (on-the-fly resample-aug) C+D+G.
+# Architecture comparison vs. fused ViT and ChannelViT (all three on same PLINDER corpus, seed 0).
+# Token-drop MAE: DCP masking + channel-aware decoder inside the model; prefetcher
+# assembles clean 13-channel input only (its block-mask output is ignored by ChA).
+# Recipe mirrors the fused-ViT run so frozen-probe results are directly comparable.
+
+debug: False
+wandb: True
+wandb_tags: [pretrain, cha_mae, atomblob_density_gradmag, 40m, plinder, otf, ligvdw, channelvit, memory_tokens, dcp, archcomp, seed0]
+num_workers: 16
+prefetch_factor: 8
+resume: null
+resume_epoch: null
+exp_dir: exps
+exp_name: 260619_cha_mae_cdg_plinder_otf_s0_pretrain
+output_dir: null
+
+seed: 0
+num_epochs: 100
+aug: True
+bsz: 32
+accum_steps: 1
+lr: 1e-4
+wd: 5e-2
+
+amp:
+  enabled: true
+  dtype: bf16
+channels_last: false
+optimizer:
+  fused: false
+ema:
+  foreach: false
+compile:
+  enabled: false          # torch.fft.rfftn in Fourier loss graph-breaks under compile
+  backend: inductor
+  mode: default
+  fullgraph: false
+  dynamic: false
+
+input_mode: atomblob_density
+with_gradmag: true                 # + gradmag → 13 channels
+
+mae:
+  density_source: xray
+  sigma_blur_a_lo: 0.30
+  sigma_blur_a_hi: 0.80
+  sigma_noise: 0.0
+  block_size: 8
+  mask_ratio: 0.60
+  mask_strategy: atom_biased
+  mask_atom_tau: 1.0
+  gradmag_reconstruct: true
+  ema_decay: 0.999
+  grad_clip: 1.0
+  val_every: 1
+  ckpt_every: 50
+
+hydra:
+  run:
+    dir: ./${exp_dir}/${exp_name}
+  job:
+    config:
+      override_dirname:
+        kv_sep: ""
+        item_sep: "_"
+        exclude_keys: [
+            "exp_dir", "lr", vox.grid_dim, "wd", "resume", "resume_epoch", "wandb",
+            "num_workers", "exp_name", "output_dir", "out_dir",
+            "bsz", "accum_steps", "seed", "num_epochs", "aug", "pocket_radius",
+            "grid_dim", "debug"
+        ]

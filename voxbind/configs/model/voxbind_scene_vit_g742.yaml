@@ -1,0 +1,26 @@
+model_name: voxbind
+n_channels: 32
+ch_mults: [1, 2, 2, 4]
+is_attn: [False, False, True, True]
+n_blocks: 2
+n_groups: 16
+dropout: .1
+
+# ── Frozen full-scene Channel-ViT conditioning ──────────────────────────────────
+# Replaces the pocket+density conditioning with the pretrained 260623_ar_cvit_c1_g742
+# encoder (45.7M, channel_groups [7,4,2]). The ligand_encoder + U-Net + zero-init
+# density_proj train ON TOP of the frozen (B, C/2, G,G,G) latent.
+# REQUIRES top-level `with_gradmag: true` and a dataset that yields xray_density +
+# xray_gradmag (so forward receives density=(B,2,G,G,G)). The density_vit dims below
+# MUST match the checkpoint's cfg.model or the strict load fails.
+with_density: true
+density_encoder_type: scene_vit
+density_vit:
+  patch: 8
+  dim: 512
+  depth: 12
+  heads: 8
+  mlp_ratio: 4
+  dropout: 0.1
+density_pretrained_path: exps/260623_ar_cvit_c1_g742/checkpoint_e0099.pth.tar
+density_freeze: true

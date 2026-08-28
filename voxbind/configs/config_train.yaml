@@ -21,6 +21,9 @@ num_epochs: 350
 aug: True  # use data augmentation
 bsz: 64  # batch size
 accum_steps: 1  # gradient-accumulation micro-batches per optimizer step (1 = off)
+ddp_static_graph: False  # train_ddp.py only: let DDP record the unused-param set once instead
+                         # of re-traversing the graph every step (find_unused_parameters).
+                         # Same gradients; ignored when accum_steps>1 (needs no_sync).
 lr: 1e-5
 wd: 1e-2
 smooth_sigma: .9
