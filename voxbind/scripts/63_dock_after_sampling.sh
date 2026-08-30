@@ -33,6 +33,18 @@ export PATH="$(dirname "$PY"):$PATH"
 for bin in pdb2pqr30 obabel; do
     command -v "$bin" >/dev/null || { echo "[63_dock] MISSING $bin on PATH"; exit 1; }
 done
+
+# Every VoxBind Vina number in the paper is produced with vina 1.2.2 (the voxdock env).
+# A different build shifts absolute affinities — 1.2.7 lives in funcbind/.repro-env and is
+# easy to pick up by accident — so refuse to run rather than silently mix versions into one
+# table. Restore with scripts/rebuild_voxdock_env.sh, or from the data-vol1 archive:
+#   zstd -dc .../env-backups/voxdock-env-vina1.2.2.tar.zst | tar -C /opt/conda/envs -xf -
+VINA_REQ=${VINA_REQ:-1.2.2}
+vina_ver=$("$PY" -c 'import importlib.metadata as m; print(m.version("vina"))' 2>/dev/null)
+if [ "$vina_ver" != "$VINA_REQ" ]; then
+    echo "[63_dock] WRONG VINA: $PY has vina=${vina_ver:-none}, need $VINA_REQ"
+    exit 1
+fi
 mkdir -p "$SAMPLE_DIR"
 
 say "waiting for sampling chunks under $SAMPLE_DIR"

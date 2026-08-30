@@ -150,6 +150,42 @@ def _pose_blocks(mode: str) -> tuple[str, ...]:
     return ()
 
 
+# Root of the untouched CrossDocked receptors. The pocket10 crops each target dir
+# carries are a literal subset of these (matched-atom RMSD 0.0000 Å).
+FULL_RECEPTOR_ROOT = os.environ.get(
+    "FULL_RECEPTOR_ROOT", "/home1/irteam/VoxBind/targetdiff/data/test_set/test_set")
+
+
+def find_full_receptor(target_dir) -> Path | None:
+    """Whole-receptor PDB for a target dir, or None if it cannot be resolved.
+
+    PoseCheck's clash count is a ligand-atom x protein-atom distance test, so it can
+    only see the protein it is handed. The 10 Å crop keeps nearly every atom inside the
+    ligand box but drops 35-64% of atoms within van der Waals reach of the pose, which
+    makes crop-scored clash counts a structural UNDER-count -- and more so for larger
+    ligands, since they reach further into the deleted shell. Strain is unaffected
+    (it never sees the protein).
+
+    Two crop-naming layouts exist and both must resolve:
+      <subdir>__<ligbase>_pocket10.pdb   our sample dirs      -> split on the first __
+      <ligbase>_pocket10.pdb             base_drug/eval/...   -> subdir dropped, glob it
+    Returns None rather than falling back to the crop: a run that silently mixed the two
+    receptors would be uninterpretable, so the caller must decide what to do.
+    """
+    crop = find_pocket_pdb(target_dir)
+    if crop is None:
+        return None
+    base = Path(crop).name[:-len("_pocket10.pdb")]
+    ligbase = base.split("__", 1)[1] if "__" in base else base
+    stem = ligbase[:10] + ".pdb"                    # PDBId_Chain_rec.pdb
+    root = Path(FULL_RECEPTOR_ROOT)
+    if "__" in base:
+        cand = root / base.split("__", 1)[0] / stem
+        if cand.exists():
+            return cand
+    hits = sorted(root.glob(f"*/{stem}"))
+    return hits[0] if len(hits) == 1 else None
+
 def _has_pose_for_mode(row: dict, mode: str) -> bool:
     """Cached row already carries every pose block `mode` needs (error-free).
 
@@ -733,6 +769,7 @@ def compute_target_metrics(
     progress_cb: ProgressCb | None = None,
     force: bool = False,
     pose: str = "none",
+    pose_scope: str = "crop",
 ) -> dict:
     """Score every valid sample under `target_dir` and write metrics.json.
 
@@ -793,6 +830,11 @@ def compute_target_metrics(
     cached_by_smi: dict[str, dict] = {}
     if not force and metrics_are_fresh(target_dir):
         prev = load_metrics(target_dir)
+        # A cached pose block measured against a different receptor is not reusable:
+        # samples.sdf is unchanged, so nothing else would catch the mismatch.
+        if (prev is not None and pose != "none"
+                and prev.get("pose_receptor_scope", "crop") != pose_scope):
+            prev = None
         if prev is not None:
             for s in prev.get("samples", []):
                 if isinstance(s, dict) and isinstance(s.get("smiles"), str):
@@ -944,9 +986,19 @@ def compute_target_metrics(
     # pose blocks; only rows missing them for the requested `pose` are scored.
     pose_error: str | None = None
     if pose != "none":
-        pose_receptor = receptor_pdb or find_pocket_pdb(target_dir)
+        # Clashes are measured against whatever protein is handed in; --pose-scope full
+        # swaps the 10 Å crop for the whole receptor so the count is not an under-count.
+        if pose_scope == "full":
+            pose_receptor = find_full_receptor(target_dir)
+            if pose_receptor is None:
+                pose_error = (f"pose_scope='full' could not resolve a whole receptor for "
+                              f"{target_dir} under {FULL_RECEPTOR_ROOT}")
+        else:
+            pose_receptor = receptor_pdb or find_pocket_pdb(target_dir)
+            if pose_receptor is None:
+                pose_error = f"pose={pose!r} needs a *_pocket10.pdb in {target_dir}"
         if pose_receptor is None:
-            pose_error = f"pose={pose!r} needs a *_pocket10.pdb in {target_dir}"
+            pass
         else:
             needed_pose: list[tuple[int, Chem.Mol]] = [
                 (i, valid_mols[i]) for i, row in enumerate(sample_rows)
@@ -1004,6 +1056,7 @@ def compute_target_metrics(
         "computed_at": datetime.now().isoformat(timespec="seconds"),
         "docking": docking,
         "pose": pose,
+        "pose_receptor_scope": pose_scope if pose != "none" else None,
         "reference": reference,
         "samples": sample_rows,
         "aggregates": aggregates,
@@ -1159,6 +1212,17 @@ def _cli() -> None:
     ap.add_argument("--skip-existing", action="store_true",
                     help="skip targets whose metrics.json already satisfies the "
                          "requested docking AND pose modes")
+    ap.add_argument("--pose-scope", choices=("crop", "full"), default="crop",
+                    help="receptor for the PoseCheck clash/interaction terms. 'crop' is "
+                         "the target's *_pocket10.pdb (what every prior run used); 'full' "
+                         "is the whole CrossDocked receptor. Strain is unaffected either "
+                         "way -- it never sees the protein.")
+    ap.add_argument("--force", action="store_true",
+                    help="ignore the per-sample cache and recompute every block "
+                         "from scratch. Needed when a measurement changed for a "
+                         "reason the cache cannot detect (e.g. PoseCheck's strain "
+                         "seed), since samples.sdf is unchanged and the cache "
+                         "would otherwise be reused verbatim.")
     args = ap.parse_args()
 
     root = args.path.resolve()
@@ -1209,7 +1273,8 @@ def _cli() -> None:
                 tdir, coords, elems,
                 docking=args.docking, receptor_pdb=pdb,
                 exhaustiveness=args.exhaustiveness, cpu=args.cpu,
-                workers=args.workers, pose=args.pose,
+                workers=args.workers, pose=args.pose, force=args.force,
+                pose_scope=args.pose_scope,
             )
         except Exception as e:  # noqa: BLE001
             print(f"{tag}: FAILED — {type(e).__name__}: {e}")

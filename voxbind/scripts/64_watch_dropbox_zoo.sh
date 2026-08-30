@@ -25,11 +25,15 @@ STATE=/tmp/claude-500/-home1-irteam-VoxBind/f728513b-c34b-4a14-8006-b8671512085f
 # <exp>/checkpoint.pth.tar at a later epoch produces a file of the SAME BYTE SIZE
 # (same tensors, same layout). A size-only snapshot silently misses every such update
 # -- which is the common case, since checkpoints are rewritten in place each epoch.
+# rclone's stderr used to go to /dev/null, which is why a 70-minute outage on
+# 2026-08-23 showed up as seven identical "PROBLEM" lines with no cause and the new
+# encoder had to be pulled by hand. Keep the last error so the log can say why.
+SNAP_ERR=/tmp/dbx_zoo_snapshot_err.$$
 snapshot() {
   timeout 180 rclone lsl "$SRC" \
     --exclude "model_zoo_bundle.tar" --exclude "model_zoo_bundle.tar.sha256" \
     --exclude "*.sh" --exclude "*.html" --exclude "*.md" --exclude ".gitignore" \
-    2>/dev/null | awk '{print $4" "$1" "$2"_"$3}' | sort
+    2>"$SNAP_ERR" | awk '{print $4" "$1" "$2"_"$3}' | sort
 }
 
 [ -f "$STATE" ] || snapshot > "$STATE"
@@ -38,18 +42,18 @@ while true; do
   sleep "$POLL"
   now=$(snapshot)
   if [ -z "$now" ]; then
-    echo "PROBLEM: rclone listing failed or returned empty (network/auth?)"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] PROBLEM: rclone listing empty -- $(tr '\n' ' ' <"$SNAP_ERR" | cut -c1-300)"
     continue
   fi
   new=$(comm -13 "$STATE" <(echo "$now") | awk '{print $1}')
   if [ -n "$new" ]; then
-    echo "NEW on Dropbox: $(echo "$new" | paste -sd' ' | cut -c1-300)"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] NEW on Dropbox: $(echo "$new" | paste -sd' ' | cut -c1-300)"
     if timeout 3600 bash "$ZOO/dropbox_pull.sh" >/tmp/dbx_pull.$$ 2>&1; then
       landed=$(echo "$new" | while read -r f; do
                  [ -f "$ZOO/$f" ] && printf '%s(%s) ' "$f" \
                    "$(du -h "$ZOO/$f" 2>/dev/null | cut -f1)"
                done)
-      echo "PULLED: ${landed:-<nothing landed - check excludes>}"
+      echo "[$(date '+%Y-%m-%d %H:%M:%S')] PULLED: ${landed:-<nothing landed - check excludes>}"
       echo "$now" > "$STATE"
     else
       echo "PROBLEM: dropbox_pull.sh failed: $(tail -3 /tmp/dbx_pull.$$ | paste -sd' ')"

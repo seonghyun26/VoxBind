@@ -39,7 +39,26 @@
 set -uo pipefail
 ROOT=/home1/irteam/VoxBind/voxbind
 PY=/opt/conda/envs/voxbind/bin
-ENCODER="$ROOT/model_zoo/champion_100m_v2_mask075/checkpoint_e0049.pth.tar"
+# The encoder and its geometry travel together. model_zoo entries are NOT
+# interchangeable at fixed dims -- champion_100m is dim=640/heads=10 while
+# efficient_60m is dim=512/heads=8 -- so overriding ENCODER without the matching
+# VIT_* values loads a state_dict into the wrong shapes and fails. Read them out of
+# the encoder folder's own cfg.yaml.
+ENCODER="${ENCODER:-$ROOT/model_zoo/champion_100m_v2_mask075/checkpoint_e0049.pth.tar}"
+VIT_PATCH="${VIT_PATCH:-8}"
+VIT_DIM="${VIT_DIM:-640}"
+VIT_DEPTH="${VIT_DEPTH:-18}"
+VIT_HEADS="${VIT_HEADS:-10}"
+VIT_MLP_RATIO="${VIT_MLP_RATIO:-4}"
+VIT_DROPOUT="${VIT_DROPOUT:-0.1}"
+VIT_NCH="${VIT_NCH:-13}"
+VIT_GROUPS="${VIT_GROUPS:-[7,4,2]}"
+# Fraction of training examples whose density residual is zeroed. The frozen
+# encoder's own dropout is inert (it is held in eval()), so this is the only
+# regularization on the density path -- and the density-free branch it trains is
+# what a classifier-free guidance weight would later interpolate against.
+# 0 (default) reproduces every run made before 2026-08-23 exactly.
+COND_DROPOUT="${COND_DROPOUT:-0}"
 WARM_START="${WARM_START-$ROOT/exps/exp_sig0.9_v2/checkpoint.pth.tar}"
 EXP_NAME="${EXP_NAME:-voxbind_fusion_champion_reference}"
 OUT="$ROOT/exps/$EXP_NAME"
@@ -64,8 +83,8 @@ cd "$ROOT" || exit 1
   echo "[67_fusion] MISSING warm-start checkpoint $WARM_START"; exit 1; }
 
 echo "[67_fusion] EXP=$OUT NUM_EPOCHS=$NUM_EPOCHS RESUME=${RESUME:-<none>}"
-echo "[67_fusion] student=${WARM_START:-<scratch>}  encoder=champion_100m_v2_mask075 (frozen)"
-echo "[67_fusion] sees_ligand=${SEES_LIGAND:-true} mask_ligand=${MASK_LIGAND:-false} fusion=${FUSION:-default} sigma=$SIGMA"
+echo "[67_fusion] student=${WARM_START:-<scratch>}  encoder=$ENCODER (frozen, dim=$VIT_DIM depth=$VIT_DEPTH heads=$VIT_HEADS)"
+echo "[67_fusion] sees_ligand=${SEES_LIGAND:-true} mask_ligand=${MASK_LIGAND:-false} fusion=${FUSION:-default} sigma=$SIGMA cond_dropout=$COND_DROPOUT"
 echo "[67_fusion] GPUS=$CUDA_VISIBLE_DEVICES (nproc_per_node=$NPROC)"
 echo "[67_fusion] crops=$CROPS_DIR subset=$SUBSET_N+$SUBSET_VAL_N"
 
@@ -90,15 +109,16 @@ exec "$@" \
   dset.subset_n="$SUBSET_N" dset.subset_val_n="$SUBSET_VAL_N" dset.cache_size=32 \
   model.with_density=true model.density_encoder_type=vit model.density_freeze=true \
   model.density_pretrained_path="$ENCODER" \
-  model.density_vit.patch=8 model.density_vit.dim=640 model.density_vit.depth=18 \
-  model.density_vit.heads=10 model.density_vit.mlp_ratio=4 model.density_vit.dropout=0.1 \
-  model.density_vit.n_in_channels=13 \
+  model.density_vit.patch="$VIT_PATCH" model.density_vit.dim="$VIT_DIM" model.density_vit.depth="$VIT_DEPTH" \
+  model.density_vit.heads="$VIT_HEADS" model.density_vit.mlp_ratio="$VIT_MLP_RATIO" model.density_vit.dropout="$VIT_DROPOUT" \
+  model.density_vit.n_in_channels="$VIT_NCH" \
   model.density_vit.patch_embed_mode=channel_group \
-  model.density_vit.channel_groups='[7,4,2]' \
+  model.density_vit.channel_groups="$VIT_GROUPS" \
   model.density_encoder_sees_ligand="${SEES_LIGAND:-true}" \
   model.density_mask_ligand="${MASK_LIGAND:-false}" \
   model.fusion="${FUSION:-default}" \
   model.density_encoder_amp=true \
+  ++model.density_cond_dropout="$COND_DROPOUT" \
   wjs.n_targets=0 \
   pretrained_path="${WARM_START:-null}" \
   ${RESUME:+resume="$RESUME"} ${RESUME_EPOCH:+resume_epoch="$RESUME_EPOCH"}

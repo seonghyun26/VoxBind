@@ -19,9 +19,18 @@
 #   because docking_vina.py uses the OLD OBMol-based API (preparator.prepare(OBMol),
 #   write_pdbqt_file) which meeko >=0.5 removed.
 #
-#   After this, back it up so the next restart is a 30s restore, not a 10min rebuild:
-#     tar -C /opt/conda/envs -cf - voxdock | zstd -T8 -6 \
-#       > /home1/irteam/data-vol1/seonghyun/prj-sbdd/Voxbind/env-backups/voxdock-env.tar.zst
+#   PINNED VERSION: vina 1.2.2. Every VoxBind Vina number in the paper comes from this
+#   env; funcbind/.repro-env carries vina 1.2.7, which shifts absolute affinities, so the
+#   two must never be mixed in one table. scripts/63_dock_after_sampling.sh refuses to run
+#   unless `$PY` reports vina==1.2.2.
+#
+#   A verified archive of this env is kept on data-vol1, so the next restart is a 30s
+#   restore rather than a 10min rebuild:
+#     BK=/home1/irteam/data-vol1/seonghyun/prj-sbdd/Voxbind/env-backups
+#     restore:  zstd -dc $BK/voxdock-env-vina1.2.2.tar.zst | tar -C /opt/conda/envs -xf -
+#     refresh:  tar -C /opt/conda/envs -cf - voxdock \
+#                 | zstd -T8 -6 -o $BK/voxdock-env-vina1.2.2.tar.zst -f
+#   ($BK/voxdock-vina1.2.2.manifest.txt records the exact pins inside that archive.)
 set -uo pipefail
 ENV=voxdock
 PREFIX=/opt/conda/envs/$ENV

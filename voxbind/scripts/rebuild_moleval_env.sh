@@ -39,7 +39,12 @@ conda run -n "$ENV" pip install --no-cache-dir \
   || { log "FATAL: pip install (pose stack) failed"; exit 1; }
 
 log "(3/4) pip install posecheck (--no-deps: its deps are pinned above)"
-conda run -n "$ENV" pip install --no-cache-dir --no-deps posecheck \
+# PIN THE VERSION. posecheck changed the *definition* of strain energy in
+# upstream commit e021f3a (2024-01-18) without a semver signal, so an unpinned
+# reinstall after a container wipe would silently redefine the metric mid-study.
+# 1.3.1 == upstream main as of 2026-08 (verified byte-identical) and is the
+# definition all our reported numbers use; see pose_eval.py's module docstring.
+conda run -n "$ENV" pip install --no-cache-dir --no-deps 'posecheck==1.3.1' \
   || { log "FATAL: pip install posecheck failed"; exit 1; }
 
 log "(4/4) conda install reduce (the protonation binary PoseCheck shells out to)"

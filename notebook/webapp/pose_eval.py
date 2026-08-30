@@ -10,7 +10,21 @@ Given a protein pocket PDB and an SDF of ligands, it computes per ligand:
 
   PoseCheck  (Harris et al., 2023 — the tool VoxBind's paper uses):
       * clashes : # steric clashes between the ligand and the (hydrogenated) pocket
-      * strain  : UFF internal-energy strain of the generated pose vs a relaxed pose
+      * strain  : UFF internal-energy strain, as defined by posecheck >= 1.3.1's
+                  `calculate_strain_energy`:
+
+                      E(pose after position-constrained UFF relaxation, maxDispl 0.1 Å)
+                    − min E over {50 re-embedded + UFF-minimised conformers}
+                                 ∪ {unconstrained UFF minimisation from the given pose}
+
+                  i.e. locally-relaxed pose vs. an estimate of the global minimum —
+                  NOT the raw pose, and NOT the nearest conformer.  Upstream changed
+                  this in commit e021f3a (2024-01-18), *after* both the PoseCheck and
+                  VoxBind papers were written: those report the older
+                  E(raw pose) − E(one re-embedded relaxed conformer), which is ~an
+                  order of magnitude larger (VoxBind Fig. 6 reference median 102.5).
+                  Our numbers are internally consistent and use the current official
+                  API, but absolute values must NOT be placed next to the paper's.
       * interactions : prolif protein–ligand interaction fingerprint, summarised to
                        per-type counts (HBAcceptor / HBDonor / Hydrophobic / ...)
 
@@ -98,6 +112,40 @@ def _summarise_interactions(df) -> dict:
     return {"n_interactions": int(sum(counts.values())), "interactions": counts}
 
 
+def _seed_posecheck_strain(seed: int = 0) -> None:
+    """Make PoseCheck's strain energy reproducible.
+
+    Strain is (constrained-relaxed energy) minus (best global-relaxed conformer),
+    and posecheck builds that global conformer with an UNSEEDED embedding —
+    `posecheck/utils/strain.py` ships the seeded call commented out:
+
+        #AllChem.EmbedMolecule(mol, randomSeed=0xF00D)
+        AllChem.EmbedMolecule(mol)
+
+    So the same molecule measured twice gives different strain. Measured on our
+    78-pocket reference ligands the median moved 33.8 -> 34.6 between runs, which
+    is small but means no strain figure can be reproduced exactly.
+
+    Rather than edit the installed package (which a rebuild of the env would undo),
+    wrap EmbedMolecule in posecheck's own module namespace so every call it makes
+    carries randomSeed=<seed>. Idempotent: re-wrapping is a no-op.
+    """
+    from posecheck.utils import strain as _pcstrain
+
+    chem = _pcstrain.AllChem
+    if getattr(chem.EmbedMolecule, "_voxbind_seeded", False):
+        return
+
+    _orig = chem.EmbedMolecule
+
+    def _seeded(mol, *args, **kwargs):
+        kwargs.setdefault("randomSeed", seed)
+        return _orig(mol, *args, **kwargs)
+
+    _seeded._voxbind_seeded = True          # noqa: SLF001
+    chem.EmbedMolecule = _seeded
+
+
 def _strain_one(pc, m) -> tuple[float | None, str | None]:
     """Strain energy for one ligand, bounded by a per-mol wall-clock deadline.
 
@@ -128,6 +176,7 @@ def run_posecheck(protein_pdb: str, mols: list) -> list[dict]:
     """
     from posecheck import PoseCheck
 
+    _seed_posecheck_strain()
     pc = PoseCheck()
     # Protonate + load the pocket once. If this fails (hydride/reduce/pdb issue),
     # every ligand's posecheck block carries the same protein-level error.

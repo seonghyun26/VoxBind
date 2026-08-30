@@ -46,6 +46,26 @@ class PocketAdapter(torch.nn.Module):
         return self.out(x)                                          # (B, c_out, G, G, G), starts at 0
 
 
+def _intra_patch_offsets(grid_dim: int, patch: int) -> torch.Tensor:
+    """(1, 3, G, G, G) — each voxel's position WITHIN its own patch, normalised to [-1, 1].
+
+    A ViT token is constant across the p³ voxels of its patch, so a per-voxel MLP fed the
+    broadcast token alone cannot tell those voxels apart on the density side. One axis per
+    channel restores a position-dependent readout without reusing the frozen MAE basis.
+
+    Grid-index space, which is the augmented frame both branches already share: the rotation
+    augmentation is 90° axis swaps/flips, so it maps grid indices to grid indices and patch
+    boundaries stay aligned. Deterministic ⇒ registered non-persistent (never in a checkpoint).
+    """
+    off = (torch.arange(grid_dim) % patch).float() / max(patch - 1, 1) * 2.0 - 1.0   # (G,)
+    shape = (1, 1, grid_dim, grid_dim, grid_dim)
+    return torch.cat([
+        off.view(1, 1, -1, 1, 1).expand(shape),
+        off.view(1, 1, 1, -1, 1).expand(shape),
+        off.view(1, 1, 1, 1, -1).expand(shape),
+    ], dim=1).contiguous()
+
+
 class VoxBind(torch.nn.Module):
     def __init__(
         self,
@@ -87,8 +107,16 @@ class VoxBind(torch.nn.Module):
         density_attenuate_strength: float = 1.0,
         density_attenuate_noise_sigma: float = 7.0,
         fusion: str = "default",
+        density_cond_dropout: float = 0.0,
         density_proj_hidden: int = None,
         density_proj_kernel: int = 1,
+        density_token_spatial_norm: bool = True,
+        density_token_norm_gamma: float = 1.0,
+        density_token_group_dim: int = 256,
+        density_token_c: int = 64,
+        density_token_kernel: int = 3,
+        density_token_hidden: int = 64,
+        density_token_offsets: bool = True,
         adapter_dim: int = 512,
         adapter_depth: int = 12,
         adapter_heads: int = 8,
@@ -178,6 +206,7 @@ class VoxBind(torch.nn.Module):
         # molecule fed in directly. Judge the consequence by diversity / novelty-vs-reference
         # of the samples, not by assumption. Default off.
         self.density_encoder_sees_ligand = bool(density_encoder_sees_ligand)
+        self.density_cond_dropout = float(density_cond_dropout)
         # Global density->noise blend (see _blend_density_noise). 1.0 = exact no-op, so
         # every existing config/checkpoint is unaffected. Test-time dose-response knob.
         self.density_noise_alpha = float(density_noise_alpha)
@@ -203,7 +232,7 @@ class VoxBind(torch.nn.Module):
         self.fusion = str(fusion)
         # Validate explicitly: forward() dispatches with an `else` fallback, so an unknown value
         # (a typo) would otherwise run "default" silently and quietly train the wrong experiment.
-        _valid_fusions = ("default", "v3", "protein_first", "cross_attn")
+        _valid_fusions = ("default", "v3", "protein_first", "cross_attn", "v4")
         if self.fusion not in _valid_fusions:
             raise ValueError(
                 f"fusion must be one of {_valid_fusions}, got {fusion!r}"
@@ -292,8 +321,9 @@ class VoxBind(torch.nn.Module):
             # Training grows the density correction from zero, keeping early
             # iterations stable and identical to the baseline. Identical for
             # cnn and vit branches since both output (B, C/2, G, G, G).
-            # v3 uses context_proj instead — don't build density_proj (unused → DDP error).
-            if self.fusion not in ("v3", "cross_attn"):
+            # v3 uses context_proj, v4 uses token_proj — don't build density_proj for either
+            # (unused params are a DDP error).
+            if self.fusion not in ("v3", "cross_attn", "v4"):
                 proj_hidden = (int(density_proj_hidden)
                                if density_proj_hidden is not None else None)
                 proj_kernel = int(density_proj_kernel)
@@ -339,6 +369,97 @@ class VoxBind(torch.nn.Module):
             self.context_proj = ResidualBlock(
                 n_channels // 2, n_channels // 2, n_groups=0, dropout=0
             )
+
+        # v4 fusion: merge the frozen encoder's TOKENS, not its unpatchified voxel output.
+        # The voxel path (default/protein_first/v3) loses two things on the way out of the ViT:
+        #   * `_pool_groups` MEAN-POOLS the channel-group tokens (nG → 1) before decoding, so
+        #     with groups [7,4,1,1] the density and gradmag tokens arrive diluted to 1/4 each.
+        #     Here the groups are kept and concatenated on the channel axis.
+        #   * `decoder_proj` is a FROZEN Linear(D → c_out·p³) that was trained as an intermediate
+        #     of the MAE reconstruction head, so the within-patch readout is a fixed basis tuned
+        #     for reproducing the map — not for conditioning a denoiser. Here every voxel simply
+        #     receives its own patch's token and a TRAINABLE per-voxel MLP does the readout,
+        #     jointly with the local ligand+pocket features it is being fused into.
+        # This is the representation the affinity probe is scored on (`forward_features` stops
+        # before both of the above), so what the generator sees is what was measured.
+        # Channel reduction happens on the g_p³ token grid, BEFORE the broadcast: with a 1×1×1
+        # first layer that is mathematically identical to broadcasting the full nG·D width, and
+        # ~500x cheaper (g_p³ = 512 positions instead of G³ = 262,144).
+        # NOT fixed by this: the tokens themselves are patch-resolution (p·voxel_size), so no
+        # sub-patch density detail exists to recover — that is the encoder's granularity.
+        if self.fusion == "v4":
+            if not (self.with_density and density_encoder_type == "vit"):
+                raise ValueError(
+                    "fusion='v4' requires with_density=True and density_encoder_type='vit' "
+                    "(it consumes the encoder's patch tokens directly)."
+                )
+            n_tok_groups = 1
+            if density_vit_patch_embed_mode == "channel_group" and density_vit_channel_groups:
+                n_tok_groups = len(density_vit_channel_groups)
+                if self.density_drop_ligand_tokens and self.density_full_voxel:
+                    n_tok_groups -= 1          # the ligand group is all zeros -> constant keys
+            self.density_token_groups = int(n_tok_groups)
+            self.density_token_c = int(density_token_c)
+            self.density_token_offsets = bool(density_token_offsets)
+            # Token trunk, on the g_p³ grid where capacity is ~500x cheaper than at G³:
+            #   (1) GROUPED 1x1x1: each channel group is compressed on its own, D -> t_g. The
+            #       groups are distinct modalities (pocket atoms / rho / grad-rho, once the
+            #       always-zero ligand group is dropped) and they sit contiguously on the
+            #       channel axis, so `groups=nG` keeps them apart until mixing actually buys
+            #       something -- and costs nG x fewer parameters than a dense layer of the
+            #       same output width.
+            #   (2) DENSE k_t: mixes the groups with each other and, at k_t=3, each patch with
+            #       its 26 neighbours (a 6 A receptive field at 8³ x 2 A). This is the only
+            #       place the density branch gets ANY spatial mixing -- and it is BETWEEN
+            #       patches; sub-patch detail does not exist in the tokens to recover.
+            # Spatial normalisation of the frozen representation, over the PATCH axis
+            # (iREPA, ICLR 2026): z-score each feature channel across the g_p³ patches of a
+            # sample, which deliberately discards the component shared by every patch and
+            # keeps only how patches DIFFER from each other. Two reasons to want it here:
+            #   * post-LayerNorm ViT tokens are mu + delta with ||mu|| >> ||delta||, so without
+            #     centering the informative part is a small perturbation on a large constant.
+            #     This repo already hit exactly that in the U-REPA manifold loss, where a
+            #     missing centering made the projector converge to a uniform target.
+            #   * iREPA measures spatial-structure metrics correlating |r| ~ 0.85-0.89 with
+            #     generation quality while linear-probe accuracy correlates |r| = 0.26 --
+            #     and mixing global information INTO the patches raised probe accuracy while
+            #     making generation worse. The affinity probe used to pick encoders here is a
+            #     mean-pooled (i.e. global) quantity, so the same caveat applies.
+            # Channels are group-major, so per-channel statistics are automatically per-group.
+            # No learnable affine: the grouped conv immediately after can absorb one.
+            self.density_token_spatial_norm = bool(density_token_spatial_norm)
+            self.density_token_norm_gamma = float(density_token_norm_gamma)
+            _tok_w = self.density_token_groups * int(density_vit_dim)
+            _tg = int(density_token_group_dim or 0)
+            _kt = int(density_token_kernel)
+            if _kt not in (1, 3):
+                raise ValueError(f"density_token_kernel must be 1 or 3, got {_kt}")
+            _trunk = []
+            if _tg > 0:
+                _trunk += [torch.nn.Conv3d(_tok_w, self.density_token_groups * _tg,
+                                           kernel_size=1, groups=self.density_token_groups),
+                           torch.nn.SiLU()]
+                _tok_w = self.density_token_groups * _tg
+            _trunk += [torch.nn.Conv3d(_tok_w, self.density_token_c,
+                                       kernel_size=_kt, padding=_kt // 2),
+                       torch.nn.SiLU()]
+            self.token_trunk = torch.nn.Sequential(*_trunk)
+            if self.density_token_offsets:
+                self.register_buffer(
+                    "_patch_offsets",
+                    _intra_patch_offsets(int(density_grid_dim), int(density_vit_patch)),
+                    persistent=False,
+                )
+            _tok_in = (n_channels // 2 + self.density_token_c
+                       + (3 if self.density_token_offsets else 0))
+            self.token_proj = torch.nn.Sequential(
+                torch.nn.Conv3d(_tok_in, int(density_token_hidden), kernel_size=1),
+                torch.nn.SiLU(),
+                torch.nn.Conv3d(int(density_token_hidden), n_channels // 2, kernel_size=1),
+            )
+            # Zero-init the last layer, exactly as density_proj: step 0 is the density-free model.
+            torch.nn.init.zeros_(self.token_proj[-1].weight)
+            torch.nn.init.zeros_(self.token_proj[-1].bias)
 
         # fusion='adapter': transfer the FROZEN two-tower pocket encoder into a FROZEN VoxBind and
         # inject its spatial pocket features through a trainable residual PocketAdapter. Keeps the
@@ -507,21 +628,94 @@ class VoxBind(torch.nn.Module):
         # channel order MUST match pretraining: [ lig, poc, density, gradmag ]
         return torch.cat([lig0, pocket, density, gradmag], dim=1)
 
-    def _encode_density(self, enc_in: torch.Tensor, return_tokens: bool = False):
+    def _encode_density(self, enc_in: torch.Tensor, return_tokens: bool = False,
+                        tokens_only: bool = False):
         """Run the density encoder, optionally in bf16 (see `density_encoder_amp`).
 
         Only the encoder forward is autocast — `_density_encoder_input` (gradmag +
         z-score) stays fp32, and the result is cast back to fp32 so the downstream
         fusion conv and the whole denoiser see exactly the dtype they always did.
         """
+        def _run(z):
+            # tokens_only: `forward_features` stops before _pool_groups and decoder_proj, so
+            # neither the group mean-pool nor the frozen MAE voxel decode is computed at all.
+            if tokens_only:
+                return self.density_encoder.forward_features(z)
+            return self.density_encoder(z, return_tokens=return_tokens)
+
         if not (self.density_encoder_amp and enc_in.is_cuda):
-            return self.density_encoder(enc_in, return_tokens=return_tokens)
+            return _run(enc_in)
         with torch.autocast("cuda", dtype=torch.bfloat16):
-            out = self.density_encoder(enc_in, return_tokens=return_tokens)
-        if return_tokens:
+            out = _run(enc_in)
+        if return_tokens and not tokens_only:
             vox, tok = out
             return vox.float(), tok.float()
         return out.float()
+
+    def _density_token_grid(self, enc_in: "torch.Tensor") -> "torch.Tensor":
+        """v4: frozen-encoder patch tokens → (B, density_token_c, G, G, G).
+
+        Every voxel receives the (channel-reduced) token of the patch it belongs to. The
+        whole trunk runs on the g_p³ token grid and only then broadcasts -- 512 positions
+        instead of G³ = 262,144, so capacity there is ~500x cheaper than capacity after the
+        broadcast, which is why the trunk is wide and the per-voxel MLP is thin.
+        """
+        tok = self._encode_density(enc_in, tokens_only=True)          # (B, nG·N, D)
+        g_p = self.density_encoder.g_p
+        n_patch = g_p ** 3
+        if (self.density_drop_ligand_tokens and self.density_full_voxel
+                and tok.shape[1] > n_patch):
+            tok = tok[:, n_patch:]            # groups are token-major, ligand group first
+        if tok.shape[1] != self.density_token_groups * n_patch:
+            raise ValueError(
+                f"v4: expected {self.density_token_groups} token group(s) x {n_patch} patches, "
+                f"got {tok.shape[1]} tokens — check density_vit.channel_groups."
+            )
+        B, D = tok.shape[0], tok.shape[2]
+        nG = self.density_token_groups
+        # (B, nG·N, D) → (B, nG, N, D) → (B, nG, D, N) → (B, nG·D, g_p, g_p, g_p).
+        # N is laid out to match _tokens_to_voxels' reshape, so the last reshape puts each
+        # token at its own patch cell.
+        tok = (tok.reshape(B, nG, n_patch, D)
+                  .permute(0, 1, 3, 2)
+                  .reshape(B, nG * D, g_p, g_p, g_p))
+        if self.density_token_spatial_norm:
+            # z-score each channel across the g_p³ patch positions of its own sample
+            mu = tok.mean(dim=(2, 3, 4), keepdim=True)
+            var = tok.var(dim=(2, 3, 4), unbiased=False, keepdim=True)
+            tok = (tok - self.density_token_norm_gamma * mu) / torch.sqrt(var + 1e-6)
+        tok = self.token_trunk(tok)                                   # (B, c, g_p³)
+        p = self.density_encoder.patch_size
+        return (tok.repeat_interleave(p, dim=2)
+                   .repeat_interleave(p, dim=3)
+                   .repeat_interleave(p, dim=4))                      # (B, c, G, G, G)
+
+    def _drop_density_residual(self, delta: "torch.Tensor") -> "torch.Tensor":
+        """Zero the density residual on a random subset of the batch, training only.
+
+        The frozen encoder gives the density branch no regularization of its own: it is
+        held in eval() and its train() is overridden, so `density_vit.dropout` never
+        fires (models/__init__.py). Without this the model sees the density on every
+        single example and has no reason not to lean on it.
+
+        The residual is masked rather than `x_dens`, because zeroing the encoder output
+        does not produce a density-free example: density_proj still contributes its bias
+        and the x half of its input. Killing the residual leaves `x` untouched, which is
+        exactly the density-free baseline the zero-init was chosen to reproduce -- so a
+        dropped sample trains the same path the model must fall back to.
+
+        That path is also what makes classifier-free guidance possible at sampling time:
+        with a density-free branch the model has actually trained on, predictions can be
+        extrapolated as pred_free + w * (pred_dens - pred_free) to dial the condition
+        up or down without retraining.
+
+        density_cond_dropout=0.0 (default) returns delta untouched, so existing runs and
+        every checkpoint trained before this are bit-for-bit unaffected.
+        """
+        if not self.training or self.density_cond_dropout <= 0:
+            return delta
+        keep = torch.rand(delta.shape[0], device=delta.device) >= self.density_cond_dropout
+        return delta * keep.view(-1, *([1] * (delta.dim() - 1))).to(delta.dtype)
 
     def forward(
         self,
@@ -585,6 +779,27 @@ class VoxBind(torch.nn.Module):
             x = self.unet3d(x, None, ctx=dens_ctx)
             x = self.unet3d.act(x)
             return self.final_ligand(x)
+        elif self.fusion == "v4":
+            # Token fusion at FULL resolution: each voxel is concatenated with its own patch's
+            # token (channel-reduced) plus its position inside that patch, and a trainable
+            # per-voxel MLP maps the result back to the feature width. Same residual shape and
+            # same zero-init discipline as density_proj, so step 0 == density-free baseline.
+            x = self.ligand_encoder(ligand) + self.pocket_encoder(pocket)
+            if self.with_density and density is not None:
+                enc_in = self._density_encoder_input(pocket, density, dens_mask=dens_mask,
+                                                     enc_ligand=enc_ligand)
+                tok = self._density_token_grid(enc_in)
+                if tok.shape[-3:] != x.shape[-3:]:
+                    raise ValueError(
+                        f"v4: token grid {tuple(tok.shape[-3:])} != voxel grid "
+                        f"{tuple(x.shape[-3:])}; density_grid_dim must equal the ligand grid."
+                    )
+                parts = [x, tok]
+                if self.density_token_offsets:
+                    parts.append(self._patch_offsets.to(x.dtype)
+                                 .expand(x.shape[0], -1, -1, -1, -1))
+                x = x + self._drop_density_residual(
+                    self.token_proj(torch.cat(parts, dim=1)))
         elif self.fusion == "protein_first":
             # Density is fused into the PROTEIN representation on its own, and only the
             # result is added to the ligand features. density_proj therefore conditions on
@@ -597,7 +812,8 @@ class VoxBind(torch.nn.Module):
                 enc_in = self._density_encoder_input(pocket, density, dens_mask=dens_mask,
                                                  enc_ligand=enc_ligand)
                 x_dens = self._encode_density(enc_in)
-                x_poc = x_poc + self.density_proj(torch.cat([x_poc, x_dens], dim=1))
+                x_poc = x_poc + self._drop_density_residual(
+                    self.density_proj(torch.cat([x_poc, x_dens], dim=1)))
             x = self.ligand_encoder(ligand) + x_poc
         else:
             x = self.ligand_encoder(ligand) + self.pocket_encoder(pocket)
@@ -605,7 +821,8 @@ class VoxBind(torch.nn.Module):
                 enc_in = self._density_encoder_input(pocket, density, dens_mask=dens_mask,
                                                  enc_ligand=enc_ligand)
                 x_dens = self._encode_density(enc_in)
-                x = x + self.density_proj(torch.cat([x, x_dens], dim=1))
+                x = x + self._drop_density_residual(
+                    self.density_proj(torch.cat([x, x_dens], dim=1)))
 
         x = self.unet3d(x, None)
         x = self.unet3d.act(x)
