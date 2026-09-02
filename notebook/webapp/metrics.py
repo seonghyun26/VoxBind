@@ -770,6 +770,7 @@ def compute_target_metrics(
     force: bool = False,
     pose: str = "none",
     pose_scope: str = "crop",
+    dock_scope: str = "crop",
 ) -> dict:
     """Score every valid sample under `target_dir` and write metrics.json.
 
@@ -805,6 +806,19 @@ def compute_target_metrics(
     cache_dir: Path | None = None
     receptor_cached: Path | None = None
     if dock_on:
+        # --dock-scope full mirrors --pose-scope full for the affinity side.
+        # TargetDiff's VinaDockingTask resolves the WHOLE receptor
+        # (<protein_root>/<subdir>/<ligand[:10]>.pdb), not the 10 Å crop, so a
+        # crop-scored run is not comparable to published Vina numbers. It wins
+        # over an explicitly passed receptor_pdb, which is the caller's default
+        # crop lookup rather than a deliberate choice.
+        if dock_scope == "full":
+            receptor_pdb = find_full_receptor(target_dir)
+            if receptor_pdb is None:
+                raise FileNotFoundError(
+                    f"dock_scope='full' could not resolve a whole receptor for "
+                    f"{target_dir} under {FULL_RECEPTOR_ROOT}"
+                )
         if receptor_pdb is None:
             receptor_pdb = find_pocket_pdb(target_dir)
         if receptor_pdb is None:
@@ -834,6 +848,11 @@ def compute_target_metrics(
         # samples.sdf is unchanged, so nothing else would catch the mismatch.
         if (prev is not None and pose != "none"
                 and prev.get("pose_receptor_scope", "crop") != pose_scope):
+            prev = None
+        # Same for docking: a cached affinity measured against the crop is not a
+        # full-receptor affinity, and samples.sdf being unchanged hides that.
+        if (prev is not None and dock_on
+                and prev.get("dock_receptor_scope", "crop") != dock_scope):
             prev = None
         if prev is not None:
             for s in prev.get("samples", []):
@@ -1057,6 +1076,7 @@ def compute_target_metrics(
         "docking": docking,
         "pose": pose,
         "pose_receptor_scope": pose_scope if pose != "none" else None,
+        "dock_receptor_scope": dock_scope if dock_on else None,
         "reference": reference,
         "samples": sample_rows,
         "aggregates": aggregates,
@@ -1217,6 +1237,10 @@ def _cli() -> None:
                          "the target's *_pocket10.pdb (what every prior run used); 'full' "
                          "is the whole CrossDocked receptor. Strain is unaffected either "
                          "way -- it never sees the protein.")
+    ap.add_argument("--dock-scope", choices=("crop", "full"), default="crop",
+                    help="receptor for Vina: crop = the target's *_pocket10.pdb; "
+                         "full = the whole receptor under $FULL_RECEPTOR_ROOT, which "
+                         "is what TargetDiff's VinaDockingTask scores against")
     ap.add_argument("--force", action="store_true",
                     help="ignore the per-sample cache and recompute every block "
                          "from scratch. Needed when a measurement changed for a "
@@ -1274,7 +1298,7 @@ def _cli() -> None:
                 docking=args.docking, receptor_pdb=pdb,
                 exhaustiveness=args.exhaustiveness, cpu=args.cpu,
                 workers=args.workers, pose=args.pose, force=args.force,
-                pose_scope=args.pose_scope,
+                pose_scope=args.pose_scope, dock_scope=args.dock_scope,
             )
         except Exception as e:  # noqa: BLE001
             print(f"{tag}: FAILED — {type(e).__name__}: {e}")

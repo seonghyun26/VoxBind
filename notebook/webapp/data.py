@@ -14,10 +14,22 @@ RDLogger.DisableLog("rdApp.*")
 
 
 HERE = Path(__file__).resolve()
-VOXBIND = next((p for p in HERE.parents if p.name == "VoxBind"), None)
+# Checkouts disagree on capitalisation ("VoxBind" upstream, "Voxbind" on svr12), and
+# an exact-match walk raises before anything here can be used. Match case-insensitively
+# and confirm with a marker so a stray directory can't win.
+VOXBIND = next(
+    (p for p in HERE.parents
+     if p.name.lower() == "voxbind" and (p / "voxbind" / "__init__.py").is_file()),
+    None,
+)
 if VOXBIND is None:
     raise RuntimeError(f"Could not locate VoxBind project root from {HERE}")
-TARGETDIFF = VOXBIND.parent / "TargetDIff"
+# Same story for the TargetDiff sibling: "TargetDIff" upstream, "targetdiff" here.
+TARGETDIFF = next(
+    (VOXBIND.parent / n for n in ("TargetDIff", "TargetDiff", "targetdiff")
+     if (VOXBIND.parent / n).is_dir()),
+    VOXBIND.parent / "TargetDIff",
+)
 EXPS_ROOT = VOXBIND / "voxbind" / "exps"
 
 for _p in (str(VOXBIND), str(TARGETDIFF)):
@@ -56,6 +68,12 @@ def list_targets(exp_dir: Path, run: str = "res") -> list[Path]:
 
 
 def find_pocket_pdb(target_dir: Path) -> Path | None:
+    """The CrossDocked 10 A pocket crop sampling drops next to the samples.
+
+    To score against the whole receptor instead, use metrics.py's
+    find_full_receptor() / $FULL_RECEPTOR_ROOT with --pose-scope full and
+    --dock-scope full; this stays the crop lookup those build on.
+    """
     return next(iter(sorted(target_dir.glob("*_pocket10.pdb"))), None)
 
 

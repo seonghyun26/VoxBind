@@ -112,7 +112,7 @@
 <div class="page">
   <header class="doc">
     <div class="eyebrow">
-      <span>CrossDocked2020 baselines &middot; 2026-08-28 21:54</span>
+      <span>CrossDocked2020 baselines &middot; 2026-09-02 17:10</span>
       <span class="status">generation complete</span>
     </div>
     <h1>Five structure-based generative baselines, one evaluation path</h1>
@@ -171,14 +171,14 @@
       <li><b>Success</b> &mdash; share of molecules clearing QED&nbsp;&gt;&nbsp;0.25, SA&nbsp;&gt;&nbsp;0.59 and Vina&nbsp;Dock&nbsp;&lt;&nbsp;&minus;8.18 together.</li>
     </ul>
 
-    <p class="tbl-cap"><b>Table 1a.</b> Vina 1.2.2 scores and sample quality over all 100 CrossDocked test pockets, 100 molecules generated per pocket.</p>
+    <p class="tbl-cap"><b>Table 1a.</b> Vina 1.2.2 scores and sample quality over all 100 CrossDocked test pockets, 100 molecules generated per pocket. Mean and median are taken <b>over all generated molecules pooled together</b>, which is what the papers these rows are compared against do (see appendix&nbsp;A).</p>
     <div class="table-wrap">
       <table class="results">
         <thead>
           <tr>
             <th class="stub" rowspan="2">Model</th>
             <th class="stub" rowspan="2">Pockets</th>
-            <th class="stub" rowspan="2">Mols</th>
+            <th class="stub" rowspan="2">Mols<span class="stat">scored</span></th>
             <th class="grp" colspan="7">Vina &middot; kcal/mol, lower is better</th>
             <th class="grp" colspan="8">Sample quality</th>
           </tr>
@@ -201,25 +201,25 @@
           </tr>
         </thead>
         <tbody>
-<tr class="ref"><td class="col-method al">Reference<span class="src">CrossDocked2020 test ligands</span></td><td><span class="pill done">100/100</span></td><td>100</td><td>-6.36</td><td class="sep">-6.46</td><td>-6.71</td><td class="sep">-6.49</td><td>-7.45</td><td class="sep">-7.25</td><td class="grp-end"><span class="placeholder">&mdash;</span></td><td>0.476</td><td class="sep">0.468</td><td>0.728</td><td class="sep">0.740</td><td><span class="placeholder">&mdash;</span></td><td class="sep"><span class="placeholder">&mdash;</span></td><td>22.8</td><td>25.0</td></tr>
-<tr><td class="col-method al">AR<span class="src">Luo et al., NeurIPS 2021</span></td><td><span class="pill done">100/100</span></td><td>9728</td><td>-5.89</td><td class="sep">-5.78</td><td>-6.24</td><td class="sep">-6.00</td><td>-6.83</td><td class="sep">-6.66</td><td class="grp-end">39.8</td><td>0.499</td><td class="sep">0.496</td><td>0.624</td><td class="sep">0.620</td><td>0.704</td><td class="sep">0.711</td><td>17.5</td><td>8.3</td></tr>
-<tr><td class="col-method al">Pocket2Mol<span class="src">Peng et al., ICML 2022</span></td><td><span class="pill done">100/100</span></td><td>9872</td><td>-5.04</td><td class="sep">-4.77</td><td>-6.46</td><td class="sep">-5.92</td><td>-7.29</td><td class="sep">-6.90</td><td class="grp-end">49.4</td><td>0.571</td><td class="sep">0.575</td><td>0.743</td><td class="sep">0.750</td><td>0.729</td><td class="sep">0.767</td><td>18.4</td><td>22.9</td></tr>
-<tr><td class="col-method al">DiffSBDD<span class="src">Schneuing et al., Nat Comput Sci 2024</span></td><td><span class="pill done">100/100</span></td><td>9777</td><td>-2.72</td><td class="sep">-4.67</td><td>-4.86</td><td class="sep">-5.44</td><td>-6.70</td><td class="sep">-6.85</td><td class="grp-end">39.0</td><td>0.493</td><td class="sep">0.495</td><td>0.625</td><td class="sep">0.610</td><td>0.793</td><td class="sep">0.792</td><td>20.3</td><td>8.4</td></tr>
-<tr><td class="col-method al">DecompDiff<sub class="variant">ref prior</sub><span class="src">Guan et al., ICML 2023</span></td><td><span class="pill done">100/100</span></td><td>8207</td><td>-5.14</td><td class="sep">-5.25</td><td>-6.01</td><td class="sep">-5.99</td><td>-7.06</td><td class="sep">-7.12</td><td class="grp-end">48.8</td><td>0.508</td><td class="sep">0.515</td><td>0.664</td><td class="sep">0.650</td><td>0.717</td><td class="sep">0.728</td><td>21.2</td><td>15.6</td></tr>
-<tr><td class="col-method al">FuncBind<span class="src">Kirchmeyer et al., arXiv 2025</span></td><td><span class="pill done">100/100</span></td><td>9992</td><td>-5.81</td><td class="sep">-5.65</td><td>-6.44</td><td class="sep">-6.20</td><td>-7.33</td><td class="sep">-7.26</td><td class="grp-end">47.9</td><td>0.506</td><td class="sep">0.518</td><td>0.649</td><td class="sep">0.640</td><td>0.705</td><td class="sep">0.716</td><td>19.0</td><td>16.5</td></tr>
+<tr class="ref"><td class="col-method al">Reference<span class="src">CrossDocked2020 test ligands</span></td><td><span class="pill done">100/100</span></td><td>100<span class="stat">1 / pocket</span></td><td>-6.36</td><td class="sep">-6.46</td><td>-6.71</td><td class="sep">-6.49</td><td>-7.45</td><td class="sep">-7.25</td><td class="grp-end"><span class="placeholder">&mdash;</span></td><td>0.476</td><td class="sep">0.468</td><td>0.728</td><td class="sep">0.740</td><td><span class="placeholder">&mdash;</span></td><td class="sep"><span class="placeholder">&mdash;</span></td><td>22.8</td><td>25.0</td></tr>
+<tr><td class="col-method al">AR<span class="src">Luo et al., NeurIPS 2021</span></td><td><span class="pill done">100/100</span></td><td>9,729<span class="stat">97.3% of 10,000</span></td><td>-5.89</td><td class="sep">-5.78</td><td>-6.24</td><td class="sep">-6.00</td><td>-6.83</td><td class="sep">-6.67</td><td class="grp-end">39.8</td><td>0.499</td><td class="sep">0.496</td><td>0.624</td><td class="sep">0.620</td><td>0.704</td><td class="sep">0.711</td><td>17.5</td><td>8.3</td></tr>
+<tr><td class="col-method al">Pocket2Mol<span class="src">Peng et al., ICML 2022</span></td><td><span class="pill done">100/100</span></td><td>9,872<span class="stat">98.7% of 10,000</span></td><td>-5.04</td><td class="sep">-4.77</td><td>-6.46</td><td class="sep">-5.92</td><td>-7.29</td><td class="sep">-6.90</td><td class="grp-end">49.4</td><td>0.571</td><td class="sep">0.575</td><td>0.743</td><td class="sep">0.750</td><td>0.729</td><td class="sep">0.767</td><td>18.4</td><td>22.9</td></tr>
+<tr><td class="col-method al">DiffSBDD<span class="src">Schneuing et al., Nat Comput Sci 2024</span></td><td><span class="pill done">100/100</span></td><td>9,777<span class="stat">97.8% of 10,000</span></td><td>-2.72</td><td class="sep">-4.67</td><td>-4.86</td><td class="sep">-5.44</td><td>-6.70</td><td class="sep">-6.85</td><td class="grp-end">39.0</td><td>0.493</td><td class="sep">0.495</td><td>0.625</td><td class="sep">0.610</td><td>0.793</td><td class="sep">0.792</td><td>20.3</td><td>8.4</td></tr>
+<tr><td class="col-method al">DecompDiff<sub class="variant">ref prior</sub><span class="src">Guan et al., ICML 2023</span></td><td><span class="pill done">100/100</span></td><td>8,207<span class="stat">82.1% of 10,000</span></td><td>-5.14</td><td class="sep">-5.25</td><td>-6.01</td><td class="sep">-5.99</td><td>-7.06</td><td class="sep">-7.12</td><td class="grp-end">48.8</td><td>0.508</td><td class="sep">0.515</td><td>0.664</td><td class="sep">0.650</td><td>0.717</td><td class="sep">0.728</td><td>21.2</td><td>15.6</td></tr>
+<tr><td class="col-method al">FuncBind<span class="src">Kirchmeyer et al., arXiv 2025</span></td><td><span class="pill done">100/100</span></td><td>9,992<span class="stat">99.9% of 10,000</span></td><td>-5.81</td><td class="sep">-5.65</td><td>-6.44</td><td class="sep">-6.20</td><td>-7.33</td><td class="sep">-7.26</td><td class="grp-end">47.9</td><td>0.506</td><td class="sep">0.518</td><td>0.649</td><td class="sep">0.640</td><td>0.705</td><td class="sep">0.716</td><td>19.0</td><td>16.5</td></tr>
         </tbody>
       </table>
     </div>
     <div class="block">
       <h3 class="subsection-head"><span class="sub-lab">1b</span>Restricted to the 79 electron-density pockets</h3>
-      <p class="tbl-cap"><b>Table 1b.</b> Vina 1.2.2 scores and sample quality over the 79 test pockets whose receptor has usable deposited electron density, same 100 molecules per pocket.</p>
+      <p class="tbl-cap"><b>Table 1b.</b> Vina 1.2.2 scores and sample quality over the 79 test pockets whose receptor has usable deposited electron density, same 100 molecules per pocket, same pooled aggregation.</p>
       <div class="table-wrap">
         <table class="results">
           <thead>
             <tr>
               <th class="stub" rowspan="2">Model</th>
               <th class="stub" rowspan="2">Pockets</th>
-              <th class="stub" rowspan="2">Mols</th>
+              <th class="stub" rowspan="2">Mols<span class="stat">scored</span></th>
               <th class="grp" colspan="7">Vina &middot; kcal/mol, lower is better</th>
               <th class="grp" colspan="8">Sample quality</th>
             </tr>
@@ -242,12 +242,12 @@
             </tr>
           </thead>
           <tbody>
-<tr class="ref"><td class="col-method al">Reference<span class="src">CrossDocked2020 test ligands</span></td><td><span class="pill done">79/79</span></td><td>79</td><td>-6.21</td><td class="sep">-6.10</td><td>-6.66</td><td class="sep">-6.15</td><td>-7.32</td><td class="sep">-6.99</td><td class="grp-end"><span class="placeholder">&mdash;</span></td><td>0.464</td><td class="sep">0.463</td><td>0.724</td><td class="sep">0.750</td><td><span class="placeholder">&mdash;</span></td><td class="sep"><span class="placeholder">&mdash;</span></td><td>22.8</td><td>21.5</td></tr>
-<tr><td class="col-method al">AR<span class="src">Luo et al., NeurIPS 2021</span></td><td><span class="pill done">79/79</span></td><td>7655</td><td>-5.76</td><td class="sep">-5.58</td><td>-6.16</td><td class="sep">-5.85</td><td>-6.73</td><td class="sep">-6.54</td><td class="grp-end">41.8</td><td>0.504</td><td class="sep">0.497</td><td>0.629</td><td class="sep">0.620</td><td>0.709</td><td class="sep">0.714</td><td>17.2</td><td>8.2</td></tr>
-<tr><td class="col-method al">Pocket2Mol<span class="src">Peng et al., ICML 2022</span></td><td><span class="pill done">79/79</span></td><td>7772</td><td>-5.06</td><td class="sep">-4.78</td><td>-6.47</td><td class="sep">-5.90</td><td>-7.27</td><td class="sep">-6.79</td><td class="grp-end">51.2</td><td>0.566</td><td class="sep">0.568</td><td>0.743</td><td class="sep">0.750</td><td>0.724</td><td class="sep">0.778</td><td>18.5</td><td>23.8</td></tr>
-<tr><td class="col-method al">DiffSBDD<span class="src">Schneuing et al., Nat Comput Sci 2024</span></td><td><span class="pill done">79/79</span></td><td>7720</td><td>-2.70</td><td class="sep">-4.62</td><td>-4.89</td><td class="sep">-5.41</td><td>-6.71</td><td class="sep">-6.78</td><td class="grp-end">41.3</td><td>0.495</td><td class="sep">0.499</td><td>0.628</td><td class="sep">0.620</td><td>0.796</td><td class="sep">0.796</td><td>20.2</td><td>8.1</td></tr>
-<tr><td class="col-method al">DecompDiff<sub class="variant">ref prior</sub><span class="src">Guan et al., ICML 2023</span></td><td><span class="pill done">79/79</span></td><td>6427</td><td>-5.00</td><td class="sep">-4.97</td><td>-5.90</td><td class="sep">-5.70</td><td>-6.89</td><td class="sep">-6.77</td><td class="grp-end">49.8</td><td>0.494</td><td class="sep">0.499</td><td>0.666</td><td class="sep">0.650</td><td>0.711</td><td class="sep">0.722</td><td>20.9</td><td>12.9</td></tr>
-<tr><td class="col-method al">FuncBind<span class="src">Kirchmeyer et al., arXiv 2025</span></td><td><span class="pill done">79/79</span></td><td>7895</td><td>-5.75</td><td class="sep">-5.57</td><td>-6.40</td><td class="sep">-6.09</td><td>-7.27</td><td class="sep">-7.13</td><td class="grp-end">49.4</td><td>0.503</td><td class="sep">0.510</td><td>0.656</td><td class="sep">0.650</td><td>0.702</td><td class="sep">0.713</td><td>19.0</td><td>15.6</td></tr>
+<tr class="ref"><td class="col-method al">Reference<span class="src">CrossDocked2020 test ligands</span></td><td><span class="pill done">79/79</span></td><td>79<span class="stat">1 / pocket</span></td><td>-6.21</td><td class="sep">-6.10</td><td>-6.66</td><td class="sep">-6.15</td><td>-7.32</td><td class="sep">-6.99</td><td class="grp-end"><span class="placeholder">&mdash;</span></td><td>0.464</td><td class="sep">0.463</td><td>0.724</td><td class="sep">0.750</td><td><span class="placeholder">&mdash;</span></td><td class="sep"><span class="placeholder">&mdash;</span></td><td>22.8</td><td>21.5</td></tr>
+<tr><td class="col-method al">AR<span class="src">Luo et al., NeurIPS 2021</span></td><td><span class="pill done">79/79</span></td><td>7,655<span class="stat">96.9% of 7,900</span></td><td>-5.76</td><td class="sep">-5.58</td><td>-6.16</td><td class="sep">-5.85</td><td>-6.73</td><td class="sep">-6.54</td><td class="grp-end">41.8</td><td>0.504</td><td class="sep">0.497</td><td>0.629</td><td class="sep">0.620</td><td>0.709</td><td class="sep">0.714</td><td>17.2</td><td>8.2</td></tr>
+<tr><td class="col-method al">Pocket2Mol<span class="src">Peng et al., ICML 2022</span></td><td><span class="pill done">79/79</span></td><td>7,772<span class="stat">98.4% of 7,900</span></td><td>-5.06</td><td class="sep">-4.78</td><td>-6.47</td><td class="sep">-5.90</td><td>-7.27</td><td class="sep">-6.79</td><td class="grp-end">51.2</td><td>0.566</td><td class="sep">0.568</td><td>0.743</td><td class="sep">0.750</td><td>0.724</td><td class="sep">0.778</td><td>18.5</td><td>23.8</td></tr>
+<tr><td class="col-method al">DiffSBDD<span class="src">Schneuing et al., Nat Comput Sci 2024</span></td><td><span class="pill done">79/79</span></td><td>7,720<span class="stat">97.7% of 7,900</span></td><td>-2.70</td><td class="sep">-4.62</td><td>-4.89</td><td class="sep">-5.41</td><td>-6.71</td><td class="sep">-6.78</td><td class="grp-end">41.3</td><td>0.495</td><td class="sep">0.499</td><td>0.628</td><td class="sep">0.620</td><td>0.796</td><td class="sep">0.796</td><td>20.2</td><td>8.1</td></tr>
+<tr><td class="col-method al">DecompDiff<sub class="variant">ref prior</sub><span class="src">Guan et al., ICML 2023</span></td><td><span class="pill done">79/79</span></td><td>6,427<span class="stat">81.4% of 7,900</span></td><td>-5.00</td><td class="sep">-4.97</td><td>-5.90</td><td class="sep">-5.70</td><td>-6.89</td><td class="sep">-6.77</td><td class="grp-end">49.8</td><td>0.494</td><td class="sep">0.499</td><td>0.666</td><td class="sep">0.650</td><td>0.711</td><td class="sep">0.722</td><td>20.9</td><td>12.9</td></tr>
+<tr><td class="col-method al">FuncBind<span class="src">Kirchmeyer et al., arXiv 2025</span></td><td><span class="pill done">79/79</span></td><td>7,895<span class="stat">99.9% of 7,900</span></td><td>-5.75</td><td class="sep">-5.57</td><td>-6.40</td><td class="sep">-6.09</td><td>-7.27</td><td class="sep">-7.13</td><td class="grp-end">49.4</td><td>0.503</td><td class="sep">0.510</td><td>0.656</td><td class="sep">0.650</td><td>0.702</td><td class="sep">0.713</td><td>19.0</td><td>15.6</td></tr>
           </tbody>
         </table>
       </div>
@@ -288,10 +288,10 @@
             </tr>
           </thead>
           <tbody>
-<tr><td class="col-method al">AR<span class="src">Luo et al., NeurIPS 2021</span></td><td><span class='placeholder'>retries</span></td><td>10,862<span class="stat">63&ndash;250 / pocket</span></td><td>9,728</td><td class="grp-end">97.3</td><td>8.3</td><td class="grp-end">&le;&thinsp;8.1</td><td>39.8</td><td>&le;&thinsp;38.7</td></tr>
-<tr><td class="col-method al">Pocket2Mol<span class="src">Peng et al., ICML 2022</span></td><td><span class='placeholder'>retries</span></td><td>11,970<span class="stat">36&ndash;258 / pocket</span></td><td>9,872</td><td class="grp-end">98.7</td><td>22.9</td><td class="grp-end">&le;&thinsp;22.6</td><td>49.4</td><td>&le;&thinsp;48.8</td></tr>
-<tr><td class="col-method al">DiffSBDD<span class="src">Schneuing et al., Nat Comput Sci 2024</span></td><td>10,000</td><td>10,000<span class="stat">100&ndash;100 / pocket</span></td><td>9,777</td><td class="grp-end">97.8</td><td>8.4</td><td class="grp-end">8.2</td><td>39.0</td><td>38.2</td></tr>
-<tr><td class="col-method al">DecompDiff<sub class="variant">ref prior</sub><span class="src">Guan et al., ICML 2023</span></td><td>10,000</td><td>8,207<span class="stat">36&ndash;100 / pocket</span></td><td>8,207</td><td class="grp-end">82.1</td><td>15.6</td><td class="grp-end">12.8</td><td>48.8</td><td>40.0</td></tr>
+<tr><td class="col-method al">AR<span class="src">Luo et al., NeurIPS 2021</span></td><td><span class='placeholder'>retries</span></td><td>10,862<span class="stat">63&ndash;250 / pocket</span></td><td>9,729</td><td class="grp-end">97.3</td><td>8.3</td><td class="grp-end">&le;&thinsp;8.1</td><td>39.8</td><td>&le;&thinsp;39.2</td></tr>
+<tr><td class="col-method al">Pocket2Mol<span class="src">Peng et al., ICML 2022</span></td><td><span class='placeholder'>retries</span></td><td>11,970<span class="stat">36&ndash;258 / pocket</span></td><td>9,872</td><td class="grp-end">98.7</td><td>22.9</td><td class="grp-end">&le;&thinsp;22.6</td><td>49.4</td><td>&le;&thinsp;49.4</td></tr>
+<tr><td class="col-method al">DiffSBDD<span class="src">Schneuing et al., Nat Comput Sci 2024</span></td><td>10,000</td><td>10,000<span class="stat">100&ndash;100 / pocket</span></td><td>9,777</td><td class="grp-end">97.8</td><td>8.4</td><td class="grp-end">8.2</td><td>39.0</td><td>38.1</td></tr>
+<tr><td class="col-method al">DecompDiff<sub class="variant">ref prior</sub><span class="src">Guan et al., ICML 2023</span></td><td>10,000</td><td>8,207<span class="stat">36&ndash;100 / pocket</span></td><td>8,207</td><td class="grp-end">82.1</td><td>15.6</td><td class="grp-end">12.8</td><td>48.8</td><td>41.9</td></tr>
 <tr><td class="col-method al">FuncBind<span class="src">Kirchmeyer et al., arXiv 2025</span></td><td>10,000</td><td>10,000<span class="stat">100&ndash;100 / pocket</span></td><td>9,992</td><td class="grp-end">99.9</td><td>16.5</td><td class="grp-end">16.4</td><td>47.9</td><td>47.9</td></tr>
           </tbody>
         </table>
@@ -303,7 +303,7 @@
         upper bounds. DecompDiff is the one baseline where the choice of denominator changes the
         ranking: of its 10,000 draws, 8,774 rebuilt as RDKit molecules and 8,207 came out as a
         single connected fragment, which moves its success rate from 15.6&thinsp;% to
-        12.8&thinsp;% and its high affinity from 48.8&thinsp;% to 40.0&thinsp;%. Its decomposed
+        12.8&thinsp;% and its high affinity from 48.8&thinsp;% to 41.9&thinsp;%. Its decomposed
         prior seeds arms and scaffold as separate blobs that the model has to bond together, and
         the loss tracks the arm count &mdash; 87.6 valid molecules per 100 draws at one arm,
         63.7 at three.</p>
@@ -326,14 +326,14 @@
         formed with the pocket, from prolif.</li>
     </ul>
 
-    <p class="tbl-cap"><b>Table 2a.</b> PoseCheck on the generated poses &mdash; steric clashes, torsional strain and interaction profile, all 100 pockets.</p>
+    <p class="tbl-cap"><b>Table 2a.</b> PoseCheck on the generated poses &mdash; steric clashes, torsional strain and interaction profile, all 100 pockets, pooled over molecules as in section&nbsp;1.</p>
     <div class="table-wrap">
       <table class="results">
         <thead>
           <tr>
             <th class="stub" rowspan="2">Model</th>
             <th class="stub" rowspan="2">Pockets</th>
-            <th class="stub" rowspan="2">Mols</th>
+            <th class="stub" rowspan="2">Mols<span class="stat">scored</span></th>
             <th class="grp" colspan="2">Clashes</th>
             <th class="grp" colspan="1">Strain</th>
             <th class="grp" colspan="4">Interactions per molecule</th>
@@ -349,11 +349,11 @@
           </tr>
         </thead>
         <tbody>
-<tr><td class="col-method al">AR<span class="src">Luo et al., NeurIPS 2021</span></td><td><span class="pill done">100/100</span></td><td>9729</td><td>5.44</td><td class="grp-end">4.0</td><td class="grp-end">372</td><td>0.65</td><td>0.90</td><td>1.02</td><td>6.72</td></tr>
-<tr><td class="col-method al">Pocket2Mol<span class="src">Peng et al., ICML 2022</span></td><td><span class="pill done">100/100</span></td><td>9872</td><td>7.30</td><td class="grp-end">5.0</td><td class="grp-end">48</td><td>0.38</td><td>0.71</td><td>1.69</td><td>6.47</td></tr>
-<tr><td class="col-method al">DiffSBDD<span class="src">Schneuing et al., Nat Comput Sci 2024</span></td><td><span class="pill done">100/100</span></td><td>9777</td><td>14.07</td><td class="grp-end">7.0</td><td class="grp-end">321</td><td>0.54</td><td>0.90</td><td>1.62</td><td>8.44</td></tr>
-<tr><td class="col-method al">DecompDiff<sub class="variant">ref prior</sub><span class="src">Guan et al., ICML 2023</span></td><td><span class="pill done">100/100</span></td><td>8207</td><td>9.02</td><td class="grp-end">7.0</td><td class="grp-end">168</td><td>0.66</td><td>1.10</td><td>1.47</td><td>8.13</td></tr>
-<tr><td class="col-method al">FuncBind<span class="src">Kirchmeyer et al., arXiv 2025</span></td><td><span class="pill done">100/100</span></td><td>9992</td><td>6.41</td><td class="grp-end">5.0</td><td class="grp-end">207</td><td>0.75</td><td>1.02</td><td>1.18</td><td>7.28</td></tr>
+<tr><td class="col-method al">AR<span class="src">Luo et al., NeurIPS 2021</span></td><td><span class="pill done">100/100</span></td><td>9,729<span class="stat">97.3% of 10,000</span></td><td>5.44</td><td class="grp-end">4.0</td><td class="grp-end">372</td><td>0.65</td><td>0.90</td><td>1.02</td><td>6.72</td></tr>
+<tr><td class="col-method al">Pocket2Mol<span class="src">Peng et al., ICML 2022</span></td><td><span class="pill done">100/100</span></td><td>9,872<span class="stat">98.7% of 10,000</span></td><td>7.30</td><td class="grp-end">5.0</td><td class="grp-end">48</td><td>0.38</td><td>0.71</td><td>1.69</td><td>6.47</td></tr>
+<tr><td class="col-method al">DiffSBDD<span class="src">Schneuing et al., Nat Comput Sci 2024</span></td><td><span class="pill done">100/100</span></td><td>9,777<span class="stat">97.8% of 10,000</span></td><td>14.07</td><td class="grp-end">7.0</td><td class="grp-end">321</td><td>0.54</td><td>0.90</td><td>1.62</td><td>8.44</td></tr>
+<tr><td class="col-method al">DecompDiff<sub class="variant">ref prior</sub><span class="src">Guan et al., ICML 2023</span></td><td><span class="pill done">100/100</span></td><td>8,207<span class="stat">82.1% of 10,000</span></td><td>9.02</td><td class="grp-end">7.0</td><td class="grp-end">168</td><td>0.66</td><td>1.10</td><td>1.47</td><td>8.13</td></tr>
+<tr><td class="col-method al">FuncBind<span class="src">Kirchmeyer et al., arXiv 2025</span></td><td><span class="pill done">100/100</span></td><td>9,992<span class="stat">99.9% of 10,000</span></td><td>6.41</td><td class="grp-end">5.0</td><td class="grp-end">207</td><td>0.75</td><td>1.02</td><td>1.18</td><td>7.28</td></tr>
         </tbody>
       </table>
     </div>
@@ -370,7 +370,7 @@
             <tr>
               <th class="stub" rowspan="2">Model</th>
               <th class="stub" rowspan="2">Pockets</th>
-              <th class="stub" rowspan="2">Mols</th>
+              <th class="stub" rowspan="2">Mols<span class="stat">scored</span></th>
               <th class="grp" colspan="2">Clashes</th>
               <th class="grp" colspan="1">Strain</th>
               <th class="grp" colspan="4">Interactions per molecule</th>
@@ -386,11 +386,11 @@
             </tr>
           </thead>
           <tbody>
-<tr><td class="col-method al">AR<span class="src">Luo et al., NeurIPS 2021</span></td><td><span class="pill done">79/79</span></td><td>7655</td><td>5.07</td><td class="grp-end">4.0</td><td class="grp-end">326</td><td>0.56</td><td>0.80</td><td>1.05</td><td>6.43</td></tr>
-<tr><td class="col-method al">Pocket2Mol<span class="src">Peng et al., ICML 2022</span></td><td><span class="pill done">79/79</span></td><td>7772</td><td>7.25</td><td class="grp-end">5.0</td><td class="grp-end">47</td><td>0.40</td><td>0.68</td><td>1.75</td><td>6.51</td></tr>
-<tr><td class="col-method al">DiffSBDD<span class="src">Schneuing et al., Nat Comput Sci 2024</span></td><td><span class="pill done">79/79</span></td><td>7720</td><td>13.69</td><td class="grp-end">7.0</td><td class="grp-end">312</td><td>0.53</td><td>0.87</td><td>1.66</td><td>8.38</td></tr>
-<tr><td class="col-method al">DecompDiff<sub class="variant">ref prior</sub><span class="src">Guan et al., ICML 2023</span></td><td><span class="pill done">79/79</span></td><td>6427</td><td>8.58</td><td class="grp-end">7.0</td><td class="grp-end">158</td><td>0.62</td><td>1.04</td><td>1.48</td><td>7.90</td></tr>
-<tr><td class="col-method al">FuncBind<span class="src">Kirchmeyer et al., arXiv 2025</span></td><td><span class="pill done">79/79</span></td><td>7895</td><td>6.11</td><td class="grp-end">5.0</td><td class="grp-end">184</td><td>0.71</td><td>0.96</td><td>1.21</td><td>7.13</td></tr>
+<tr><td class="col-method al">AR<span class="src">Luo et al., NeurIPS 2021</span></td><td><span class="pill done">79/79</span></td><td>7,655<span class="stat">96.9% of 7,900</span></td><td>5.07</td><td class="grp-end">4.0</td><td class="grp-end">326</td><td>0.56</td><td>0.80</td><td>1.05</td><td>6.43</td></tr>
+<tr><td class="col-method al">Pocket2Mol<span class="src">Peng et al., ICML 2022</span></td><td><span class="pill done">79/79</span></td><td>7,772<span class="stat">98.4% of 7,900</span></td><td>7.25</td><td class="grp-end">5.0</td><td class="grp-end">47</td><td>0.40</td><td>0.68</td><td>1.75</td><td>6.51</td></tr>
+<tr><td class="col-method al">DiffSBDD<span class="src">Schneuing et al., Nat Comput Sci 2024</span></td><td><span class="pill done">79/79</span></td><td>7,720<span class="stat">97.7% of 7,900</span></td><td>13.69</td><td class="grp-end">7.0</td><td class="grp-end">312</td><td>0.53</td><td>0.87</td><td>1.66</td><td>8.38</td></tr>
+<tr><td class="col-method al">DecompDiff<sub class="variant">ref prior</sub><span class="src">Guan et al., ICML 2023</span></td><td><span class="pill done">79/79</span></td><td>6,427<span class="stat">81.4% of 7,900</span></td><td>8.58</td><td class="grp-end">7.0</td><td class="grp-end">158</td><td>0.62</td><td>1.04</td><td>1.48</td><td>7.90</td></tr>
+<tr><td class="col-method al">FuncBind<span class="src">Kirchmeyer et al., arXiv 2025</span></td><td><span class="pill done">79/79</span></td><td>7,895<span class="stat">99.9% of 7,900</span></td><td>6.11</td><td class="grp-end">5.0</td><td class="grp-end">184</td><td>0.71</td><td>0.96</td><td>1.21</td><td>7.13</td></tr>
           </tbody>
         </table>
       </div>
@@ -424,6 +424,23 @@
         1.2.2 has no wheel for it &mdash; only 1.2.7. Evaluation therefore stays in the older env that has
         1.2.2, and molecules cross between them as SDF, since a meta pickled under numpy 2 cannot be read
         under numpy 1.24.</dd></div>
+      <div><dt>Metric aggregation</dt><dd>Mean and median pool every generated molecule into one list,
+        which is what the papers these rows are read against state. DecompDiff (Guan et al., 2023,
+        arXiv:2403.07902): &ldquo;We collect all generated molecules across 100 test proteins and report
+        the mean and median of affinity-related metrics.&rdquo; VoxBind (Pinheiro et al., ICML 2024,
+        arXiv:2405.03961): &ldquo;For each metric, we compute the mean and the median over all generated
+        molecules.&rdquo; targetdiff's <code>evaluate_from_meta.py</code> flattens the same way in code,
+        and so does FuncBind's <code>aggregate_metrics.py</code>. Averaging within each pocket first and
+        reporting over the 100 pocket values instead is available as
+        <code>BASELINE_AGGREGATE=pocket</code>; it leaves the reference row identical &mdash; one ligand
+        per pocket makes the two definitions the same &mdash; and moves the models by up to
+        0.25&nbsp;kcal/mol, most for those whose per-pocket molecule counts vary.</dd></div>
+      <div><dt>No outlier clipping</dt><dd>FuncBind's own aggregation drops Vina Score and Vina Min above
+        +15&nbsp;kcal/mol (<code>vina_score_ &lt;= 15</code>, Vina Dock left unclipped); its paper does not
+        mention this. Nothing is clipped here, so a raw pose that overlaps the protein is counted as it
+        scores. That matters for one row: applying the same +15 cut would drop 4.2&nbsp;% of DiffSBDD's
+        molecules and move its Vina Score from &minus;2.72 to &minus;4.45, against &le;0.11 for every
+        other model.</dd></div>
       <div><dt>Pocket indexing</dt><dd>AR and Pocket2Mol originally indexed 99 pockets:
         <code>Y635_MYCTU_1_158_0</code> was dropped while staging their raw data, which also shifted every
         later <code>data_id</code>. Collection follows each sampler's own pocket order rather than assuming
@@ -479,6 +496,6 @@ python _scripts/make_report.py</pre>
   <footer>
     Vina 1.2.2, exhaustiveness 32, full receptor, box = generated ligand extent + 5&nbsp;&#8491;.
     Metric definitions follow targetdiff/notebooks/summary.ipynb.<br>
-    PoseCheck 1.3.1 on generated poses; receptors protonated with pdb2pqr (AMBER). Built 2026-08-28 21:54.
+    PoseCheck 1.3.1 on generated poses; receptors protonated with pdb2pqr (AMBER). Built 2026-09-02 17:10.
   </footer>
 </div>

@@ -55,6 +55,7 @@ import math
 import os
 import signal
 import sys
+import tempfile
 import warnings
 
 warnings.filterwarnings("ignore")
@@ -165,6 +166,66 @@ def _strain_one(pc, m) -> tuple[float | None, str | None]:
         return (None, f"{type(e).__name__}: {e}")
 
 
+def _sanitise_receptor(pdb_path: str) -> str | None:
+    """Rewrite a receptor PDB into a form prolif can load. Returns a temp path.
+
+    Two features of stock CrossDocked receptors abort the load outright, and
+    because the protein is loaded once per target, each one silently costs the
+    WHOLE target (every ligand records the same protein-level error):
+
+      * HETATM metals / cofactors — prolif has no van der Waals radius for
+        element types like CO (cobalt) and raises
+        `ValueError: vdw radii for types: CO`. PoseCheck's clash test is defined
+        against the protein, so dropping HETATM is the conventional scope rather
+        than a fudge; it does mean a clash with a bound metal is not counted.
+      * Negative residue numbers — expression-tag residues numbered -4..-1 are
+        cast to uint32 by prolif (residue.py), raising
+        `OverflowError: Python integer -2 out of bounds for uint32`. Shifting
+        every residue number by one constant preserves geometry and ordering;
+        only the labels move.
+
+    Returns None when nothing needed changing (so the caller does not retry a
+    load that would fail identically), or when the shift would overflow the
+    fixed-width resSeq column.
+    """
+    from pathlib import Path as _Path
+
+    lines = _Path(pdb_path).read_text().splitlines()
+    kept = [ln for ln in lines if not ln.startswith("HETATM")]
+    dropped_het = len(kept) != len(lines)
+
+    _RES = ("ATOM", "ANISOU", "TER")
+    nums = []
+    for ln in kept:
+        if ln.startswith(_RES):
+            try:
+                nums.append(int(ln[22:26]))
+            except ValueError:
+                pass
+    shift = (1 - min(nums)) if nums and min(nums) < 1 else 0
+
+    if not dropped_het and shift == 0:
+        return None
+    if nums and shift and max(nums) + shift > 9999:
+        return None
+
+    out = []
+    for ln in kept:
+        if shift and ln.startswith(_RES):
+            try:
+                n = int(ln[22:26]) + shift
+            except ValueError:
+                out.append(ln)
+                continue
+            ln = f"{ln[:22]}{n:4d}{ln[26:]}"
+        out.append(ln)
+
+    fd, tmp = tempfile.mkstemp(suffix=".pdb")
+    with os.fdopen(fd, "w") as fh:
+        fh.write("\n".join(out) + "\n")
+    return tmp
+
+
 def run_posecheck(protein_pdb: str, mols: list) -> list[dict]:
     """PoseCheck (clashes, strain, interaction summary) for every ligand.
 
@@ -180,11 +241,28 @@ def run_posecheck(protein_pdb: str, mols: list) -> list[dict]:
     pc = PoseCheck()
     # Protonate + load the pocket once. If this fails (hydride/reduce/pdb issue),
     # every ligand's posecheck block carries the same protein-level error.
+    #
+    # Two loader limitations kill whole targets on stock CrossDocked receptors, so
+    # retry once on a sanitised copy (see _sanitise_receptor) before giving up.
     try:
         pc.load_protein_from_pdb(protein_pdb)
     except Exception as e:  # noqa: BLE001
-        err = f"protein load failed: {type(e).__name__}: {e}"
-        return [{"error": err} for _ in mols]
+        first = f"{type(e).__name__}: {e}"
+        clean = _sanitise_receptor(protein_pdb)
+        if clean is None:
+            return [{"error": f"protein load failed: {first}"} for _ in mols]
+        try:
+            pc = PoseCheck()
+            pc.load_protein_from_pdb(clean)
+        except Exception as e2:  # noqa: BLE001
+            return [{"error": f"protein load failed: {first}; "
+                              f"after sanitise: {type(e2).__name__}: {e2}"}
+                    for _ in mols]
+        finally:
+            try:
+                os.remove(clean)
+            except OSError:
+                pass
 
     valid = [(i, m) for i, m in enumerate(mols) if m is not None]
     out: list[dict] = [{"error": "unparsable mol"} for _ in mols]
