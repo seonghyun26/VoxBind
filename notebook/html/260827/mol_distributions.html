@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Molecular Distributions · 260827</title>
+<style>
+  :root {
+    --ink: #1c2433; --ink-soft: #5b6678; --ink-faint: #7a8699;
+    --line: #e3e7ee; --line-strong: #aeb6c4; --bg: #f5f6f8; --card: #ffffff;
+    --accent: #2f6f4f; --accent-bg: #eaf5ee; --blue: #38559b; --blue-bg: #e7eefb;
+    --warn: #9a6112; --warn-bg: #fcf3e0;
+    --shadow: 0 1px 2px rgba(20,30,50,.04), 0 8px 24px rgba(20,30,50,.05);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 16px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+  .page { display: flex; flex-direction: column; max-width: 1180px; margin: 0 auto; padding: 48px 24px 96px; }
+  header.doc { border-bottom: 2px solid var(--ink); padding-bottom: 20px; margin-bottom: 36px; }
+  .eyebrow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px;
+             color: var(--ink-soft); font-size: 13px; letter-spacing: .11em; text-transform: uppercase; }
+  .status { display: inline-flex; align-items: center; gap: 7px; padding: 3px 10px; border-radius: 999px;
+            background: var(--accent-bg); color: #1d5a3a; font-size: 11px; font-weight: 720; letter-spacing: .07em; }
+  .status::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+  header.doc h1 { margin: 0; font-size: clamp(28px, 4vw, 40px); line-height: 1.13; font-weight: 680; letter-spacing: -.025em; }
+  header.doc .lead { max-width: 900px; margin: 13px 0 0; color: var(--ink-soft); font-size: 15px; line-height: 1.65; }
+  section { margin-bottom: 40px; }
+  h2 { font-size: 20px; font-weight: 680; letter-spacing: -.01em; margin: 0 0 6px;
+       padding-bottom: 8px; border-bottom: 1px solid var(--line-strong); }
+  h2 .num { color: var(--ink-faint); font-weight: 600; margin-right: 10px; }
+  h3 { font-size: 15px; font-weight: 680; margin: 26px 0 8px; }
+  p { margin: 10px 0; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+          padding: 18px 20px; box-shadow: var(--shadow); margin: 16px 0; }
+  .tablewrap { overflow-x: auto; margin: 14px 0; }
+  table { border-collapse: collapse; width: 100%; font-size: 13.5px; background: var(--card); }
+  th, td { text-align: right; padding: 7px 10px; border-bottom: 1px solid var(--line); white-space: normal; }
+  th:first-child, td:first-child { text-align: left; }
+  thead th { background: #eef1f6; font-weight: 700; font-size: 12px; text-align: center;
+             letter-spacing: .04em; text-transform: uppercase; color: var(--ink-soft); }
+  tbody tr:last-child td { border-bottom: none; }
+  tr.total td { font-weight: 700; background: #eef1f6; }
+  tr.ref td { color: var(--ink-soft); font-style: italic; }
+  .num-cell { font-variant-numeric: tabular-nums; }
+  .win { color: #1d5a3a; font-weight: 700; }
+  .lose { color: #9a2f2f; font-weight: 700; }
+  figure { margin: 18px 0; }
+  figure img { width: 100%; height: auto; display: block; border: 1px solid var(--line);
+               border-radius: 8px; background: #fff; }
+  figcaption { margin-top: 8px; color: var(--ink-soft); font-size: 13px; }
+  .callout { border-left: 3px solid var(--blue); background: var(--blue-bg);
+             padding: 12px 16px; border-radius: 0 8px 8px 0; margin: 16px 0; font-size: 14.5px; }
+  .callout.warn { border-left-color: var(--warn); background: var(--warn-bg); }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+         font-size: 13px; background: #eef1f6; padding: 1.5px 5px; border-radius: 4px; }
+  ul { margin: 10px 0; padding-left: 22px; } li { margin: 6px 0; }
+  .meta { color: var(--ink-faint); font-size: 13px; }
+  footer { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--line-strong);
+           color: var(--ink-faint); font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="page">
+
+<header class="doc">
+  <div class="eyebrow">
+    <span>VoxBind · 260827</span>
+    <span class="status">15,761 molecules · 417k bonds</span>
+  </div>
+  <h1>Molecular distributions — rings, aromaticity, bonds, atom types</h1>
+  <p class="lead">
+    The VoxBind paper's Figure 10 (ring sizes, rings per molecule, aromatic-atom fraction) and
+    Figure 11(a) (Jensen-Shannon divergence of bond distances), plus the atom-type distribution,
+    computed for vanilla VoxBind and the density-conditioned fusion model. Where the pose-quality
+    measures ask <em>is this molecule placed well</em>, these ask <em>does this model draw the right
+    kind of molecule at all</em>.
+  </p>
+</header>
+
+<section>
+  <h2><span class="num">1</span>Bottom line</h2>
+
+  <div class="callout">
+    <strong>Vanilla reproduces reference bond geometry better; the fusion model builds bigger,
+    more heavily ringed molecules.</strong> Mean bond-distance JSD is 0.193 for vanilla against
+    0.218 for fusion, driven almost entirely by single bonds (C–C 0.228 → 0.312, C–O 0.217 → 0.293).
+    Fusion averages 3.24 rings per molecule against vanilla's 2.78 and the reference's 2.56.
+    Atom-type composition is a tie.
+  </div>
+
+  <div class="tablewrap">
+  <table>
+    <thead>
+      <tr><th>Measure</th><th>Reference ligand</th><th>Vanilla σ=0.9</th><th>Holo ED fusion σ=0.9</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Mean bond-distance JSD ↓</td><td class="num-cell">0.283*</td>
+          <td class="num-cell win">0.193</td><td class="num-cell lose">0.218</td></tr>
+      <tr><td>Atom-type JSD ↓</td><td class="num-cell">0.062</td>
+          <td class="num-cell">0.077</td><td class="num-cell">0.076</td></tr>
+      <tr><td>Mean rings per molecule</td><td class="num-cell">2.56</td>
+          <td class="num-cell">2.78</td><td class="num-cell lose">3.24</td></tr>
+      <tr><td>Mean aromatic-atom fraction</td><td class="num-cell">0.295</td>
+          <td class="num-cell">0.309</td><td class="num-cell">0.316</td></tr>
+      <tr><td>Molecules / bonds</td><td class="num-cell">79 / 1,919</td>
+          <td class="num-cell">7,888 / 203,273</td><td class="num-cell">7,873 / 213,820</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p class="meta">
+    * The crystal reference ligands' own JSD is <strong>not</strong> a quality floor — see the caveat
+    in section 3. All JSD values are computed against the CrossDocked2020 empirical distributions that
+    TargetDiff ships, which is the reference every baseline in the paper is scored against.
+  </p>
+</section>
+
+<section>
+  <h2><span class="num">2</span>Figure 10 — rings and aromaticity</h2>
+
+  <figure>
+    <img src="mol_ring_aromatic_hist.png" alt="Ring size, rings per molecule and aromatic fraction histograms">
+    <figcaption>
+      <strong>Top</strong> ring sizes over all rings · <strong>middle</strong> rings per molecule ·
+      <strong>bottom</strong> fraction of aromatic atoms per molecule.
+    </figcaption>
+  </figure>
+
+  <h3>What the panels say</h3>
+  <ul>
+    <li>
+      <strong>Ring sizes are near-perfect for both models.</strong> Only 5- and 6-membered rings appear
+      in any quantity, exactly as in the reference — no 3-, 4- or 8-membered strain traps. Both models
+      over-produce 6-rings relative to crystal ligands (0.77 / 0.78 against 0.64) and correspondingly
+      under-produce 5-rings (0.19 / 0.19 against 0.31). That skew toward benzene is shared, not a
+      fusion artifact.
+    </li>
+    <li>
+      <strong>Ring count is where the two models separate.</strong> The reference peaks at 3 rings and
+      15% of its ligands have none at all. Vanilla shifts right (mean 2.78); fusion shifts further
+      (mean 3.24), with visibly more mass at 4, 5, 6 and 7 rings and only 6.5% ring-free molecules.
+      Conditioning on receptor density appears to push the model toward filling the pocket with fused
+      ring systems.
+    </li>
+    <li>
+      <strong>Aromatic fraction follows the same pattern, mildly.</strong> Both models under-produce
+      the reference's large ring-free/low-aromatic population and over-produce the 0.2–0.5 band.
+      The means differ by only 0.007 between models — far less than the ring-count gap, meaning the
+      extra fusion rings are disproportionately <em>non</em>-aromatic.
+    </li>
+  </ul>
+</section>
+
+<section>
+  <h2><span class="num">3</span>Figure 11(a) — bond-distance JSD and atom types</h2>
+
+  <figure>
+    <img src="mol_bond_jsd_atomtype.png" alt="Bond distance JSD and atom type distribution">
+    <figcaption>
+      <strong>Left</strong> JSD between each model's bond-distance distribution and the CrossDocked2020
+      reference, per bond type (lower is better). <strong>Right</strong> heavy-atom composition, log scale.
+    </figcaption>
+  </figure>
+
+  <div class="tablewrap">
+  <table>
+    <thead>
+      <tr><th>Bond type</th><th>Reference ligand*</th><th>Vanilla σ=0.9</th><th>Holo ED fusion σ=0.9</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>C:C (aromatic)</td><td class="num-cell">0.165</td><td class="num-cell">0.151</td><td class="num-cell">0.151</td></tr>
+      <tr><td>C–C</td><td class="num-cell">0.160</td><td class="num-cell win">0.228</td><td class="num-cell lose">0.312</td></tr>
+      <tr><td>C–O</td><td class="num-cell">0.259</td><td class="num-cell win">0.217</td><td class="num-cell lose">0.293</td></tr>
+      <tr><td>C–N</td><td class="num-cell">0.222</td><td class="num-cell win">0.204</td><td class="num-cell">0.237</td></tr>
+      <tr><td>C=O</td><td class="num-cell">0.253</td><td class="num-cell win">0.209</td><td class="num-cell">0.251</td></tr>
+      <tr><td>C=C</td><td class="num-cell">0.478</td><td class="num-cell">0.281</td><td class="num-cell">0.272</td></tr>
+      <tr><td>C:N (aromatic)</td><td class="num-cell">0.210</td><td class="num-cell">0.123</td><td class="num-cell win">0.095</td></tr>
+      <tr><td>C=N</td><td class="num-cell">0.516</td><td class="num-cell">0.132</td><td class="num-cell">0.134</td></tr>
+      <tr class="total"><td>Mean</td><td class="num-cell">0.283*</td><td class="num-cell">0.193</td><td class="num-cell">0.218</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="callout warn">
+    <strong>* Do not read the reference column as a target.</strong> The 79 crystal ligands contribute
+    only 1,919 bonds against the models' 200k+, so their empirical histograms are sparse and noisy, and
+    JSD against a smooth reference is inflated by that alone. It shows up plainly in the rare bond
+    types: C=N scores 0.516 for the crystal ligands and 0.13 for both models, which is a sample-size
+    artifact and not a statement about crystal geometry. The column is included only to show what
+    small-sample noise looks like on this scale.
+  </div>
+
+  <h3>Reading the bond types</h3>
+  <ul>
+    <li>
+      <strong>The gap is a single-bond gap.</strong> Fusion is worse on C–C (+0.084), C–O (+0.076),
+      C–N (+0.033) and C=O (+0.042), while the two are tied on aromatic C:C and C=N, and fusion is
+      actually <em>better</em> on aromatic C:N (0.095 vs 0.123). Aromatic bonds are geometrically
+      constrained by the ring, so a model can get them right almost for free; freely rotating single
+      bonds are where a generator has to place atoms accurately, and that is where fusion slips.
+    </li>
+    <li>
+      <strong>This corroborates the rigid-fragment result rather than contradicting it.</strong>
+      Rigid fragments contain almost no rotatable single bonds by construction — that is what makes
+      them rigid — so a metric restricted to them was always going to miss a single-bond deficit.
+      Read together, the two say local geometry <em>inside</em> rigid units is fine while the bonds
+      <em>between</em> them are less accurate for fusion.
+    </li>
+    <li>
+      <strong>Atom types are a tie</strong> (JSD 0.077 vs 0.076). Both models under-produce oxygen
+      badly relative to crystal ligands (12.7% / 11.3% against 21.4%) and over-produce carbon
+      (75.3% / 74.4% against 64.0%). Phosphorus is the standout: crystal ligands are 1.61% P while
+      the models manage 0.24% and 0.33%. Since P-containing molecules are also what MMFF most often
+      fails to parameterise in these sets, phosphorus is plainly the element both models handle worst.
+    </li>
+  </ul>
+</section>
+
+<section>
+  <h2><span class="num">4</span>Reproducing</h2>
+  <div class="card">
+    <p style="margin-top:0"><strong>Evaluation</strong> — CPU only, a few minutes per run</p>
+    <p style="margin:6px 0"><code>voxdock python voxbind/exps/frozenenc_probes/eval_mol_distributions.py --ref &lt;root&gt; --run "name=&lt;root&gt;" --out mol_distributions.json</code></p>
+    <p style="margin-bottom:0">
+      Bond-length binning, the eight reference bond types and the CrossDocked2020 empirical
+      distributions all come from TargetDiff's <code>utils.evaluation.eval_bond_length_config</code>,
+      so the JSD column sits on the same scale as the paper's baselines rather than a private one.
+    </p>
+  </div>
+  <p class="meta">
+    Note on naming: scipy's <code>jensenshannon</code> returns the JS <em>distance</em> (the square
+    root of the divergence). TargetDiff's evaluator uses it as-is and the published baselines inherit
+    that convention, so it is kept here — the numbers are comparable to the paper's whatever the label
+    says. Inputs — vanilla: <code>exps/_vanilla_ep923/samples/full_eval_ep923/_dock79</code> ·
+    fusion: <code>exps/voxbind_frozenenc_atomblob7_v2p1_sig0.9/samples/full_eval_ep350</code>.
+  </p>
+</section>
+
+<footer>
+  Generated 2026-08-20 · 79 pockets · 15,761 generated molecules · 417,093 bonds ·
+  reference distributions from CrossDocked2020
+</footer>
+
+</div>
+</body>
+</html>

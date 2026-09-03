@@ -89,6 +89,18 @@
   .placeholder { color: #a3acb9; }
   .pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 10.5px; font-weight: 720;
           letter-spacing: .04em; }
+  figure { margin: 0; }
+  figure img { width: 100%; height: auto; display: block; border: 1px solid var(--line);
+               border-radius: 10px; background: #fff; }
+  figcaption { margin-top: 7px; color: var(--ink-soft); font-size: 12.2px; line-height: 1.55; }
+  .figgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+             gap: 18px; margin: 16px 0 6px; }
+  .figrow-head { margin: 26px 0 2px; font-size: 14px; font-weight: 720; color: var(--ink); }
+  .figrow-head .rng { display: inline-block; min-width: 62px; padding: 1px 9px; margin-right: 9px;
+                      border-radius: 999px; background: #eef1f6; color: #46536b;
+                      font-variant-numeric: tabular-nums; text-align: center; }
+  table.results td.win .val, table.results td.win { color: #1d5a3a; font-weight: 700; }
+  table.results td.lose .val, table.results td.lose { color: #9a2f2f; }
   .pill.todo { background: #f1f3f6; color: #7a8699; }
   .pill.run { background: var(--warn-bg); color: #7c4d0c; }
   .pill.done { background: var(--accent-bg); color: #1d5a3a; }
@@ -251,31 +263,193 @@
     <h2 class="section-head"><span class="sec-num">2</span>PoseCheck evaluation per atom</h2>
     <p class="section-intro">PoseCheck metrics (strain energy, steric clashes, interactions) stratified by molecule
       heavy-atom count, to see whether density conditioning helps more for small vs. large molecules.
-      <span class="pill todo">placeholder</span></p>
+      Three methods: TargetDiff, vanilla VoxBind and Ours&nbsp;v1. <span class="pill done">measured</span></p>
 
     <section class="block">
       <h3 class="subsection-head"><span class="sub-lab">2.1</span>Per-atom-range breakdown</h3>
-      <p class="table-sub"><span class="placeholder">Bin generated molecules by heavy-atom count and report PoseCheck metrics per bin.
-        Atom ranges below are a starting guess — adjust to the actual size distribution.</span></p>
+      <p class="table-sub">Same 78 CrossDocked pockets used throughout this project. Bins are the doc's
+        original edges, kept because every one holds at least 900 molecules per method. Strain is reported as a <b>median</b> only; clashes are given as
+        <b>mean / median</b>, because for a small-integer count the two differ enough to matter
+        (TargetDiff at &gt;30 atoms: mean 18.30, median 14). The reason for no strain mean: 4&ndash;7% of molecules per method fail UFF
+        relaxation and land at 10<sup>4</sup>&ndash;10<sup>10</sup>&nbsp;kcal&nbsp;mol<sup>&minus;1</sup>,
+        so a strain mean would report the failure rate instead of the strain. Green marks the best of the
+        three methods in that bin.</p>
       <div class="table-wrap">
         <table class="results">
           <thead>
             <tr>
-              <th class="col-method">Method / trial</th>
-              <th>≤ 15</th><th>16–20</th><th>21–25</th><th>26–30</th><th>&gt; 30</th><th>All</th><th>Status</th>
+              <th class="col-method">Method</th>
+              <th>≤15</th><th>16–20</th><th>21–25</th><th>26–30</th><th>>30</th>
+              <th>n (total)</th>
             </tr>
           </thead>
           <tbody>
-            <tr><td class="col-method placeholder">Strain energy (median)</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td><span class="pill todo">todo</span></td></tr>
-            <tr><td class="col-method placeholder">Steric clashes (mean)</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td><span class="pill todo">todo</span></td></tr>
-            <tr><td class="col-method placeholder">Interactions (mean)</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td><span class="pill todo">todo</span></td></tr>
+            <tr class="grp-top"><td class="col-method" colspan="7"><b>Strain energy &mdash; median &darr;</b></td></tr>
+            <tr><td class="col-method">TargetDiff</td><td class="metric"><span class="val">54.7</span></td><td class="metric"><span class="val">253.6</span></td><td class="metric"><span class="val">473.8</span></td><td class="metric"><span class="val">672.2</span></td><td class="metric"><span class="val">1206.9</span></td><td class="metric"><span class="val">7,144</span></td></tr>
+            <tr><td class="col-method">VoxBind σ=0.9</td><td class="metric win"><span class="val">16.8</span></td><td class="metric win"><span class="val">39.8</span></td><td class="metric win"><span class="val">57.7</span></td><td class="metric win"><span class="val">80.6</span></td><td class="metric"><span class="val">187.1</span></td><td class="metric"><span class="val">7,756</span></td></tr>
+            <tr><td class="col-method">Ours · v1</td><td class="metric"><span class="val">17.7</span></td><td class="metric"><span class="val">43.1</span></td><td class="metric"><span class="val">79.4</span></td><td class="metric"><span class="val">104.8</span></td><td class="metric win"><span class="val">168.4</span></td><td class="metric"><span class="val">7,727</span></td></tr>
+            <tr><td class="col-method">Reference ligand</td><td class="metric"><span class="val">9.6</span></td><td class="metric"><span class="val">34.3</span></td><td class="metric"><span class="val">25.5</span></td><td class="metric"><span class="val">54.2</span></td><td class="metric"><span class="val">57.0</span></td><td class="metric"><span class="val">78</span></td></tr>
+            <tr class="grp-top"><td class="col-method" colspan="7"><b>Steric clashes &mdash; mean / median &darr;</b></td></tr>
+            <tr><td class="col-method">TargetDiff</td><td class="metric"><span class="val">5.23 <span class="sd">/ 4</span></span></td><td class="metric"><span class="val">8.04 <span class="sd">/ 7</span></span></td><td class="metric"><span class="val">10.08 <span class="sd">/ 8</span></span></td><td class="metric"><span class="val">11.95 <span class="sd">/ 10</span></span></td><td class="metric"><span class="val">18.30 <span class="sd">/ 14</span></span></td><td class="metric"><span class="val">7,144</span></td></tr>
+            <tr><td class="col-method">VoxBind σ=0.9</td><td class="metric win"><span class="val">3.96 <span class="sd">/ 3</span></span></td><td class="metric win"><span class="val">4.23 <span class="sd">/ 4</span></span></td><td class="metric win"><span class="val">5.01 <span class="sd">/ 4</span></span></td><td class="metric win"><span class="val">5.80 <span class="sd">/ 5</span></span></td><td class="metric win"><span class="val">6.80 <span class="sd">/ 6</span></span></td><td class="metric"><span class="val">7,756</span></td></tr>
+            <tr><td class="col-method">Ours · v1</td><td class="metric"><span class="val">4.50 <span class="sd">/ 4</span></span></td><td class="metric"><span class="val">5.08 <span class="sd">/ 4</span></span></td><td class="metric"><span class="val">6.46 <span class="sd">/ 5</span></span></td><td class="metric"><span class="val">7.49 <span class="sd">/ 6</span></span></td><td class="metric"><span class="val">7.85 <span class="sd">/ 7</span></span></td><td class="metric"><span class="val">7,727</span></td></tr>
+            <tr><td class="col-method">Reference ligand<span class="sub" style="display:block;font-size:11px;color:#7a8699">mean only (n=10–24/bin)</span></td><td class="metric"><span class="val">5.00</span></td><td class="metric"><span class="val">5.64</span></td><td class="metric"><span class="val">5.20</span></td><td class="metric"><span class="val">8.54</span></td><td class="metric"><span class="val">9.35</span></td><td class="metric"><span class="val">78</span></td></tr>
+            <tr class="grp-top"><td class="col-method"><b>Molecules per bin</b></td><td class="metric"><span class="val">2008/1707/1699</span></td><td class="metric"><span class="val">999/1118/908</span></td><td class="metric"><span class="val">1442/1520/1289</span></td><td class="metric"><span class="val">1319/1579/1553</span></td><td class="metric"><span class="val">1376/1832/2278</span></td><td class="metric"><span class="val">TD/van/v1</span></td></tr>
           </tbody>
         </table>
       </div>
       <ul class="criteria">
-        <li><b>Binning axis:</b> <span class="placeholder">heavy-atom count (define exact edges)</span></li>
-        <li><b>Metrics:</b> <span class="placeholder">strain energy, #steric clashes, #interactions (PoseCheck)</span></li>
-        <li><b>Compare:</b> <span class="placeholder">density (C+D+G) vs. coords-only (C) vs. baselines, within each bin</span></li>
+        <li><b>Why stratify:</b> strain and clashes both rise with molecule size (Spearman +0.52 and +0.28),
+          and the three methods draw different size mixes &mdash; Ours&nbsp;v1 puts 29% of its molecules above
+          30 heavy atoms against vanilla's 24% and TargetDiff's 19%. A pooled number therefore partly reports
+          the size mix rather than pose quality.</li>
+        <li><b>What the bins say:</b> vanilla is cleanest in the four bins up to 30 heavy atoms, and
+          Ours&nbsp;v1 trails it by a widening margin (strain 16.8&nbsp;vs&nbsp;17.7 at &le;15, growing to
+          80.6&nbsp;vs&nbsp;104.8 at 26&ndash;30). Above 30 the ordering <b>flips</b>: 187.1&nbsp;vs&nbsp;168.4.
+          TargetDiff is 3&ndash;10&times; worse than either in every bin.</li>
+        <li><b>Clashes never flip:</b> Ours&nbsp;v1 stays above vanilla in all five bins (+0.5 to +1.5), but
+          from 26 atoms up both sit <em>below</em> the crystal reference (7.49 and 5.80 against 8.54), so at
+          the sizes that matter for filling a pocket neither is clashing more than a real ligand does.</li>
+        <li><b>Not yet done:</b> Ours&nbsp;v2/v3 and the remaining baselines; interaction counts.</li>
+      </ul>
+    </section>
+
+    <section class="block">
+      <h3 class="subsection-head"><span class="sub-lab">2.2</span>Distributions per atom range</h3>
+      <p class="table-sub">The table above takes one number per bin; these show the distribution the number
+        came from. The clash panels use a log-spaced y axis &mdash; fitted as log<sub>10</sub>(clashes+1) so the
+        1.6&ndash;5.5% of poses with zero clashes stay on the plot &mdash; because TargetDiff's tail reaches 148
+        while the other two sit at 4&ndash;8, and a linear axis flattens exactly the range being compared. Reference ligands are the crystal poses of the same pockets, thinly sampled per bin
+        (10&ndash;24 molecules), so they mark the floor rather than a comparable series.</p>
+      <p class="figrow-head"><span class="rng">≤15</span>heavy atoms &mdash;
+        1,699 molecules from Ours&nbsp;v1, 1,707 from vanilla,
+        2,008 from TargetDiff</p>
+      <div class="figgrid">
+        <figure>
+          <img src="strain_ecdf_le15.png" alt="Cumulative probability of UFF strain energy for ≤15 heavy atoms">
+          <figcaption><b>Strain energy, cumulative probability.</b> A curve that sits left and high is the
+            relaxed one. Log x-axis because strain is heavy-tailed; the whole distribution is shown rather
+            than a single median.</figcaption>
+        </figure>
+        <figure>
+          <img src="clash_violin_le15.png" alt="Steric clash distribution for ≤15 heavy atoms">
+          <figcaption><b>Steric clashes.</b> Violin is the full distribution, thick bar the IQR, white dot
+            the median. Crystal references clash too, so zero is not the target.</figcaption>
+        </figure>
+      </div>
+      <p class="figrow-head"><span class="rng">16–20</span>heavy atoms &mdash;
+        908 molecules from Ours&nbsp;v1, 1,118 from vanilla,
+        999 from TargetDiff</p>
+      <div class="figgrid">
+        <figure>
+          <img src="strain_ecdf_16_20.png" alt="Cumulative probability of UFF strain energy for 16–20 heavy atoms">
+          <figcaption><b>Strain energy, cumulative probability.</b> A curve that sits left and high is the
+            relaxed one. Log x-axis because strain is heavy-tailed; the whole distribution is shown rather
+            than a single median.</figcaption>
+        </figure>
+        <figure>
+          <img src="clash_violin_16_20.png" alt="Steric clash distribution for 16–20 heavy atoms">
+          <figcaption><b>Steric clashes.</b> Violin is the full distribution, thick bar the IQR, white dot
+            the median. Crystal references clash too, so zero is not the target.</figcaption>
+        </figure>
+      </div>
+      <p class="figrow-head"><span class="rng">21–25</span>heavy atoms &mdash;
+        1,289 molecules from Ours&nbsp;v1, 1,520 from vanilla,
+        1,442 from TargetDiff</p>
+      <div class="figgrid">
+        <figure>
+          <img src="strain_ecdf_21_25.png" alt="Cumulative probability of UFF strain energy for 21–25 heavy atoms">
+          <figcaption><b>Strain energy, cumulative probability.</b> A curve that sits left and high is the
+            relaxed one. Log x-axis because strain is heavy-tailed; the whole distribution is shown rather
+            than a single median.</figcaption>
+        </figure>
+        <figure>
+          <img src="clash_violin_21_25.png" alt="Steric clash distribution for 21–25 heavy atoms">
+          <figcaption><b>Steric clashes.</b> Violin is the full distribution, thick bar the IQR, white dot
+            the median. Crystal references clash too, so zero is not the target.</figcaption>
+        </figure>
+      </div>
+      <p class="figrow-head"><span class="rng">26–30</span>heavy atoms &mdash;
+        1,553 molecules from Ours&nbsp;v1, 1,579 from vanilla,
+        1,319 from TargetDiff</p>
+      <div class="figgrid">
+        <figure>
+          <img src="strain_ecdf_26_30.png" alt="Cumulative probability of UFF strain energy for 26–30 heavy atoms">
+          <figcaption><b>Strain energy, cumulative probability.</b> A curve that sits left and high is the
+            relaxed one. Log x-axis because strain is heavy-tailed; the whole distribution is shown rather
+            than a single median.</figcaption>
+        </figure>
+        <figure>
+          <img src="clash_violin_26_30.png" alt="Steric clash distribution for 26–30 heavy atoms">
+          <figcaption><b>Steric clashes.</b> Violin is the full distribution, thick bar the IQR, white dot
+            the median. Crystal references clash too, so zero is not the target.</figcaption>
+        </figure>
+      </div>
+      <p class="figrow-head"><span class="rng">>30</span>heavy atoms &mdash;
+        2,278 molecules from Ours&nbsp;v1, 1,832 from vanilla,
+        1,376 from TargetDiff</p>
+      <div class="figgrid">
+        <figure>
+          <img src="strain_ecdf_gt30.png" alt="Cumulative probability of UFF strain energy for >30 heavy atoms">
+          <figcaption><b>Strain energy, cumulative probability.</b> A curve that sits left and high is the
+            relaxed one. Log x-axis because strain is heavy-tailed; the whole distribution is shown rather
+            than a single median.</figcaption>
+        </figure>
+        <figure>
+          <img src="clash_violin_gt30.png" alt="Steric clash distribution for >30 heavy atoms">
+          <figcaption><b>Steric clashes.</b> Violin is the full distribution, thick bar the IQR, white dot
+            the median. Crystal references clash too, so zero is not the target.</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section class="block">
+      <h3 class="subsection-head"><span class="sub-lab">2.3</span>Why these use the cropped protein</h3>
+      <p class="table-sub">Every PoseCheck number above is scored against the target's
+        <code>*_pocket10.pdb</code> crop. That is deliberate, and it was checked rather than assumed: all
+        three methods were re-measured against the <b>whole</b> CrossDocked receptor over the same 78
+        pockets (234 target-runs, 0 failures).</p>
+
+      <div class="callout">
+        <span class="k">Two reasons to keep the crop</span>
+        <b>1. It is what PoseCheck itself uses.</b> The library's own CrossDocked loader
+        (<code>posecheck/utils/loading.py</code>, <code>get_ids_to_pockets</code>) keys on entry
+        <code>[0]</code> of each split record &mdash; which <em>is</em> the <code>_pocket10.pdb</code>. So
+        published PoseCheck numbers are crop-scored, and our TargetDiff clash mean of 10.39 reproducing the
+        ~10.8 in the VoxBind paper depends on matching that.<br>
+        <b>2. The whole receptor does not change any conclusion.</b> Clashes do rise, but by almost the
+        same amount for the two models being compared, so the gap survives:
+        Ours&nbsp;v1 &minus; vanilla is <b>+1.23</b> on the crop and <b>+1.28</b> on the
+        whole receptor. The ranking vanilla &lt; Ours&nbsp;v1 &lt; TargetDiff is unchanged in every size bin.
+      </div>
+
+      <p class="table-sub">Steric clashes, mean per pose &mdash; <b>crop &rarr; whole receptor</b>, with the shift.</p>
+      <div class="table-wrap">
+        <table class="results">
+          <thead>
+            <tr><th class="col-method">Method</th><th>≤15</th><th>16–20</th><th>21–25</th><th>26–30</th><th>>30</th><th>All</th></tr>
+          </thead>
+          <tbody>
+                        <tr><td class="col-method">TargetDiff</td><td class="metric"><span class="val">5.23 &rarr; 5.64</span> <span class="sd">+0.41</span></td><td class="metric"><span class="val">8.04 &rarr; 8.86</span> <span class="sd">+0.82</span></td><td class="metric"><span class="val">10.08 &rarr; 10.68</span> <span class="sd">+0.60</span></td><td class="metric"><span class="val">11.95 &rarr; 12.85</span> <span class="sd">+0.90</span></td><td class="metric"><span class="val">18.30 &rarr; 19.60</span> <span class="sd">+1.30</span></td><td class="metric"><span class="val">10.39 &rarr; 11.11</span> <span class="sd">+0.72</span></td></tr>
+            <tr><td class="col-method">VoxBind σ=0.9</td><td class="metric"><span class="val">3.96 &rarr; 4.15</span> <span class="sd">+0.19</span></td><td class="metric"><span class="val">4.23 &rarr; 4.53</span> <span class="sd">+0.31</span></td><td class="metric"><span class="val">5.01 &rarr; 5.64</span> <span class="sd">+0.62</span></td><td class="metric"><span class="val">5.80 &rarr; 6.92</span> <span class="sd">+1.12</span></td><td class="metric"><span class="val">6.80 &rarr; 9.24</span> <span class="sd">+2.45</span></td><td class="metric"><span class="val">5.25 &rarr; 6.27</span> <span class="sd">+1.02</span></td></tr>
+            <tr><td class="col-method">Ours · v1</td><td class="metric"><span class="val">4.50 &rarr; 4.78</span> <span class="sd">+0.28</span></td><td class="metric"><span class="val">5.08 &rarr; 5.30</span> <span class="sd">+0.22</span></td><td class="metric"><span class="val">6.46 &rarr; 7.25</span> <span class="sd">+0.79</span></td><td class="metric"><span class="val">7.49 &rarr; 8.28</span> <span class="sd">+0.79</span></td><td class="metric"><span class="val">7.85 &rarr; 10.12</span> <span class="sd">+2.26</span></td><td class="metric"><span class="val">6.49 &rarr; 7.55</span> <span class="sd">+1.06</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <ul class="criteria">
+        <li><b>The under-count is real but size-dependent.</b> Below 20 heavy atoms the crop misses
+          0.2&ndash;0.8 clashes per pose; above 30 it misses <b>2.2&ndash;2.5</b>. Larger ligands physically
+          reach into the 10&nbsp;Å shell the crop deletes. Unlike Vina Dock &mdash; where the crop mattered
+          because re-docking <em>moves</em> the ligand into the hollow edge &mdash; PoseCheck scores the pose
+          as generated, so this is reach, not relocation.</li>
+        <li><b>Strain is unaffected by construction.</b> <code>calculate_strain_energy(mol)</code> takes only
+          the ligand; the protein never enters it. The small shifts seen between the two runs
+          (&minus;1.6 to &minus;9.6, i.e. &minus;2 to &minus;3%) are the PoseCheck conformer <b>seed</b>, which
+          was fixed at 0 for the whole-receptor run and left unseeded in the original &mdash; not a receptor effect.</li>
+        <li><b>Caveat on quoting either.</b> Crop numbers are comparable to the literature but are a floor on
+          the true clash count; whole-receptor numbers are physically closer but not comparable to any
+          published PoseCheck figure. Do not mix them in one table.</li>
       </ul>
     </section>
   </section>

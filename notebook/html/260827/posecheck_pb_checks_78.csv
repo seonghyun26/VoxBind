@@ -1,0 +1,16 @@
+model,n,pb_valid_pct,ring_flatness_fail_pct,valid_excl_ring_pct,ring_only_fail_pct,check,check_fail_pct
+Reference ligand,42,95.24,0.00,95.24,0.00,minimum_distance_to_protein,4.762
+VoxBind sigma=0.9,4195,74.21,18.43,91.11,16.90,non-aromatic_ring_non-flatness,18.427
+VoxBind sigma=0.9,4195,74.21,18.43,91.11,16.90,bond_angles,3.600
+VoxBind sigma=0.9,4195,74.21,18.43,91.11,16.90,internal_steric_clash,2.837
+VoxBind sigma=0.9,4195,74.21,18.43,91.11,16.90,internal_energy,2.217
+VoxBind sigma=0.9,4195,74.21,18.43,91.11,16.90,bond_lengths,2.002
+VoxBind sigma=0.9,4195,74.21,18.43,91.11,16.90,minimum_distance_to_protein,1.597
+VoxBind sigma=0.9,4195,74.21,18.43,91.11,16.90,volume_overlap_with_protein,0.310
+Ours v1,3194,75.64,16.09,89.98,14.34,non-aromatic_ring_non-flatness,16.093
+Ours v1,3194,75.64,16.09,89.98,14.34,bond_angles,4.133
+Ours v1,3194,75.64,16.09,89.98,14.34,internal_steric_clash,3.663
+Ours v1,3194,75.64,16.09,89.98,14.34,bond_lengths,2.567
+Ours v1,3194,75.64,16.09,89.98,14.34,internal_energy,2.379
+Ours v1,3194,75.64,16.09,89.98,14.34,minimum_distance_to_protein,1.628
+Ours v1,3194,75.64,16.09,89.98,14.34,volume_overlap_with_protein,0.219

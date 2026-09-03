@@ -1,0 +1,166 @@
+================================================================================
+LIGAND SIMILARITY — appendix text (final) + measured values + provenance
+작성 2026-09-03 · 대상: de-novo CrossDocked 표 (notebook/html/260903/)
+빌더: notebook/html/build_reference_similarity.py → 이 파일: 260903/build_ligand_similarity_appendix.py
+지표 출처 정리: notebook/html/reference_similarity_metrics.md
+================================================================================
+
+--------------------------------------------------------------------------------
+[1] 논문용 LaTeX — 표
+--------------------------------------------------------------------------------
+필요 패키지: booktabs, multirow. (\shortstack 은 순정 LaTeX이라 makecell 불필요)
+
+\begin{table}[t]
+    \centering
+    \caption{
+        \textbf{Reference-ligand similarity} on the CrossDocked benchmark. Metrics are averaged over pockets.
+    }
+    \label{tab:result-drug-reference-similarity}
+    \begin{tabular}{@{}llccccc@{}}
+        \toprule
+        \multicolumn{2}{@{}l}{\textbf{Method}} & \textbf{TargetDiff} & \textbf{FuncBind} & \textbf{VoxBind\textsubscript{\scriptsize $\sigma$=0.9}} & \textbf{VoxBind\textsubscript{\scriptsize $\sigma$=1.0}} & \textbf{Ours} \\
+        \midrule
+        \multirow{2}{*}{ECFP4} & mean & 0.091 & 0.118 & 0.099 & 0.103 & 0.099 \\
+         & median & 0.087 & 0.110 & 0.092 & 0.099 & 0.094 \\
+        \addlinespace
+        \multicolumn{2}{@{}l}{\shortstack[l]{Scaffold\\ match}} & 0.62\% & 1.30\% & 0.96\% & 1.18\% & 0.81\% \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+본문 옆에 끼우는 wraptable 판 (260820 표와 같은 배치, wrapfig 추가로 필요):
+
+\begin{wraptable}{r}{0.55\textwidth}
+    \centering
+    \caption{
+        \textbf{Reference-ligand similarity} on the CrossDocked benchmark. Metrics are averaged over pockets.
+    }
+    \label{tab:result-drug-reference-similarity}
+    \resizebox{.98\linewidth}{!}{%
+        \begin{tabular}{@{}llccccc@{}}
+            \toprule
+            \multicolumn{2}{@{}l}{\textbf{Method}} & \textbf{TargetDiff} & \textbf{FuncBind} & \textbf{VoxBind\textsubscript{\scriptsize $\sigma$=0.9}} & \textbf{VoxBind\textsubscript{\scriptsize $\sigma$=1.0}} & \textbf{Ours} \\
+            \midrule
+            \multirow{2}{*}{ECFP4} & mean & 0.091 & 0.118 & 0.099 & 0.103 & 0.099 \\
+             & median & 0.087 & 0.110 & 0.092 & 0.099 & 0.094 \\
+            \addlinespace
+            \multicolumn{2}{@{}l}{\shortstack[l]{Scaffold\\ match}} & 0.62\% & 1.30\% & 0.96\% & 1.18\% & 0.81\% \\
+            \bottomrule
+        \end{tabular}
+    }
+\end{wraptable}
+
+--------------------------------------------------------------------------------
+[2] 논문용 LaTeX — 본문 문단
+--------------------------------------------------------------------------------
+캡션에서 지표 설명을 뺐으므로 정의는 이 문단이 담당합니다.
+
+\textbf{Ligand similarity.} Since our conditioning comes from experimental density maps
+of protein--ligand complexes, we verify that the generated molecules do not simply
+reproduce each pocket's reference ligand. We report the ECFP4 Tanimoto similarity to that
+reference and the rate at which its Bemis--Murcko scaffold is recovered. As shown in
+\cref{tab:result-drug-reference-similarity}, our ligands stay within the range spanned by
+prior methods on both, and match their density-free counterpart
+(VoxBind\textsubscript{\scriptsize $\sigma$=0.9}) exactly in mean ECFP4 similarity. The
+density representation therefore supplies additional pocket information that yields
+favorable predicted interactions, rather than a template the model copies.
+
+주의 — "no more similar than prior methods" 로 강화하지 않았습니다. Ours 는 ECFP4 0.099 /
+scaffold 0.81% 로 TargetDiff(0.091 / 0.62%)보다 두 지표 모두 높습니다. 대신 density 없는
+같은 모델(VoxBind σ=0.9)과 ECFP4 평균이 0.099 로 정확히 같다는 점을 근거로 썼습니다 —
+density 를 넣어도 레퍼런스 모방이 늘지 않았다는 가장 직접적인 증거입니다.
+
+--------------------------------------------------------------------------------
+[3] 측정값
+--------------------------------------------------------------------------------
+79개 공통 포켓, 포켓별 평균/중앙값을 낸 뒤 포켓 간 macro-average.
+
+  method         pockets   n mol.   ECFP4 mean  ECFP4 median  Scaffold match
+  -------------------------------------------------------------------------
+  TargetDiff          79     7798       0.091         0.087           0.62%
+  FuncBind            79     7886       0.118         0.110           1.30%
+  VoxBind σ=0.9       79     7888       0.099         0.092           0.96%
+  VoxBind σ=1.0       79     7870       0.103         0.099           1.18%
+  Ours                79     7873       0.099         0.094           0.81%
+
+표에서 뺀 우리 나머지 arm (같은 79 포켓, 2026-09-03 측정):
+  Ours σ=1.0        ECFP4 0.107 / 0.102   scaffold 1.23%
+  Ours ligmask      ECFP4 0.107 / 0.100   scaffold 1.44%
+
+--------------------------------------------------------------------------------
+[4] 지표와 출처 논문
+--------------------------------------------------------------------------------
+메인 표 (이 둘만)
+  ECFP4 / Morgan Tanimoto   radius 2, 2048-bit folded. 레퍼런스 리간드와 비교.
+      Rogers & Hahn, "Extended-Connectivity Fingerprints",
+      J. Chem. Inf. Model. 50(5):742-754, 2010. doi:10.1021/ci100050t
+  Bemis-Murcko scaffold match   canonical scaffold SMILES 완전일치율. 고리 없는
+      분자는 non-match.
+      Bemis & Murcko, "The Properties of Known Drugs. 1. Molecular Frameworks",
+      J. Med. Chem. 39(15):2887-2893, 1996. doi:10.1021/jm9602928
+
+이 둘로 고른 이유: MOSES 의 SNN 은 Morgan ECFP4, Scaff 는 Bemis-Murcko 이고, GuacaMol 의
+nearest-neighbour similarity 도 ECFP4, TargetDiff/DecompDiff/Pocket2Mol 계열도 Morgan
+Tanimoto 를 씁니다.
+  Polykovskiy et al., MOSES, Front. Pharmacol. 11:565644, 2020. arXiv:1811.12823
+  Brown et al., GuacaMol, J. Chem. Inf. Model. 59(3):1096-1108, 2019. doi:10.1021/acs.jcim.8b00839
+  Guan et al., TargetDiff, ICLR 2023. arXiv:2303.03543
+
+부록용 (--full / --with-3d 로만 나옴, 방법 순위는 ECFP4 와 동일)
+  MACCS 167-bit keys       Durant et al., J. Chem. Inf. Comput. Sci. 42(6):1273-1280, 2002.
+                           doi:10.1021/ci010132r
+  AtomPair 2048-bit        Carhart, Smith & Venkataraghavan,
+                           J. Chem. Inf. Comput. Sci. 25(2):64-73, 1985. doi:10.1021/ci00046a002
+  RDKit path fingerprint   논문 없음. Daylight theory manual + RDKit toolkit 인용.
+  Dice (unfolded count Morgan)  Rogers & Hahn 2010 + Dice, Ecology 26(3):297-302, 1945.
+                           ※ folded 2048-bit 로 계산하면 값이 달라짐 (0.222 vs 0.208).
+  3D shape Tanimoto        Grant, Gallardo & Pickup, J. Comput. Chem. 17(14):1653-1666, 1996.
+  Tanimoto 계수 자체        Jaccard 1901 / Rogers & Tanimoto, Science 132:1115-1118, 1960.
+
+건드리면 안 되는 것: Vina 표의 Diversity 열은 TargetDiff 가 Chem.RDKFingerprint 로 계산한
+값이고 DecompDiff/DiffSBDD 가 그 코드를 물려받았습니다. 정리한다고 Morgan 으로 바꾸면
+baseline 과 조용히 비교불가가 됩니다.
+
+--------------------------------------------------------------------------------
+[5] 재현
+--------------------------------------------------------------------------------
+이 서버:
+    /opt/conda/envs/voxbind/bin/python notebook/html/build_reference_similarity.py
+    옵션: --full (MACCS/AtomPair/RDKit/Dice) · --with-3d (3D shape)
+          --own-pockets (교집합 대신 각 방법 전체 포켓) · --methods <이름...>
+    산출: reference_similarity.{json,csv,tex} + _wrap.tex + _table.html (notebook/html/)
+    results2latex.ipynb 마지막 셀이 _table.html 을 읽어 위 [1] 의 두 판 모두와
+    byte-identical 한 LaTeX 를 냅니다. 그 다음 이 파일을 재생성:
+    /opt/conda/envs/voxbind/bin/python notebook/html/260903/build_ligand_similarity_appendix.py
+
+분자는 전부 samples.sdf 에서 sanitize=True 로 읽습니다. target_*/metrics.json 의 캐시된
+SMILES 가 더 빠르지만 방법마다 집합이 달라서(TargetDiff 7,287 vs SDF 7,798) --from-metrics
+는 경고와 함께 opt-in 입니다.
+
+이 서버에 있는 것: TargetDiff (base_drug/eval/targetdiff), FuncBind
+(funcbind/artifacts/reproduction/crossdocked/paper_run/gpu0..3/samples, 25포켓씩 샤딩),
+VoxBind σ=0.9 / σ=1.0, Ours (frozenenc atomblob7 v2.1 σ=0.9) + 표에서 뺀 arm 2개.
+
+여기 없는 것 — AR, Pocket2Mol, DiffSBDD, DecompDiff. Blackwell(sm_120) 박스에서
+샘플링했고 집계값만 260903/baseline_vina.json 으로 왔습니다. base_drug/samples/ 밑의
+{ar,pocket2mol,decompdiff} 는 sweep 잔해(54/23/15 포켓, .pt)라 못 씁니다. 그쪽에서:
+
+    scp notebook/html/build_reference_similarity.py <blackwell>:~/
+    # METHODS 를 그쪽 sample root 로 교체. root = target_*/ 를 담은 디렉터리이고
+    # 각 target_*/ 안에 samples.sdf 와 레퍼런스 리간드(*_ref.sdf 또는 *_pocket10.pdb
+    # 옆의 *_lig_*.sdf)가 있으면 됩니다. GPU 샤딩된 run 은 root 리스트로 줘도 됩니다.
+    METHODS = {
+        "AR":         "/…/eval/ar",
+        "Pocket2Mol": "/…/eval/pocket2mol",
+        "DiffSBDD":   "/…/eval/diffsbdd",
+        "DecompDiff": "/…/eval/decompdiff",
+    }
+    python build_reference_similarity.py --own-pockets   # rdkit 외 의존성 없음
+
+    → reference_similarity.json 을 여기로 가져와 병합. 포켓 세트가 같으면 --own-pockets
+      없이 교집합으로 돌리는 편이 비교에 맞습니다.
+
+Reference 행은 일부러 없습니다 — 결정 구조 리간드의 자기 자신과의 유사도는 1.0 이고
+scaffold 는 항상 일치해서 정보가 없습니다.
+
+================================================================================

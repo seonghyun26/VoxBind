@@ -1,0 +1,5 @@
+model,n,rho_strain_dock,rho_strain_dock_partial_atoms,rho_clash_dock,rho_clash_dock_partial_atoms,rho_atoms_dock
+TargetDiff,2288,-0.5837,0.0794,-0.4212,0.1489,-0.8059
+VoxBind sigma=0.9,4451,-0.2916,0.2095,-0.2791,-0.0628,-0.7185
+Ours v1,4143,-0.4141,0.1310,-0.3662,-0.1418,-0.7976
+Ours v2,2635,-0.5109,0.1204,-0.4080,-0.0911,-0.8480

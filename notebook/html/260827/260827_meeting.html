@@ -123,17 +123,17 @@
   <header class="doc">
     <div class="eyebrow">
       <span>Meeting note · 2026-08-27</span>
-      <span class="status wip">draft · placeholders</span>
+      <span class="status wip">draft · §4–5 filled</span>
     </div>
-    <h1>Density intuition, holdouts, representation, PoseCheck, and MCP fine-tuning</h1>
-    <p class="lead">Working agenda for the 08-27 meeting. Every section below is a placeholder to be filled as
-      results land.</p>
+    <h1>Density intuition, holdouts, representation, PoseCheck, ligand size, and MCP fine-tuning</h1>
+    <p class="lead">Working agenda for the 08-27 meeting. Sections&nbsp;4 and&nbsp;5 carry measured results; the remaining sections are placeholders to be filled as results land.</p>
     <ul class="toc">
       <li><a href="#intuition"><span class="n">0</span> Intuition</a></li>
       <li><a href="#holdout"><span class="n">1</span> Riken holdout</a></li>
       <li><a href="#representation"><span class="n">2</span> Representation analysis</a></li>
       <li><a href="#posecheck"><span class="n">3</span> PoseCheck &amp; strain</a></li>
-      <li><a href="#mcp"><span class="n">4</span> MCP fine-tuning</a></li>
+      <li><a href="#size"><span class="n">4</span> Ligand size vs affinity</a></li>
+      <li><a href="#mcp"><span class="n">5</span> MCP fine-tuning</a></li>
       <li><a href="#appendix-a"><span class="n">A</span> Riken holdout data</a></li>
     </ul>
   </header>
@@ -252,30 +252,352 @@
     </section>
   </section>
 
+
   <!-- 4 ─────────────────────────────────────────────────────────── -->
-  <section class="doc-section" id="mcp">
-    <h2 class="section-head"><span class="sec-num">4</span>MCP fine-tuning results</h2>
-    <p class="section-intro">Fine-tuning the generator / encoder on the MCP set — configuration and outcomes.</p>
+  <section class="doc-section" id="size">
+    <h2 class="section-head"><span class="sec-num">4</span>Ligand size vs affinity</h2>
+    <p class="section-intro">Ours&nbsp;v1 beats vanilla VoxBind by 0.41&nbsp;kcal/mol on Vina Dock, and it also draws
+      0.84 more heavy atoms per molecule. Since Vina rewards size, the two facts have to be separated before the
+      gain means anything. Binning by generated-ligand size does that directly: inside a bin both models draw
+      the same-sized molecules, so whatever gap survives is not a size effect.</p>
 
     <section class="block">
-      <h3 class="subsection-head"><span class="sub-lab">4.1</span>Setup</h3>
+      <h3 class="subsection-head"><span class="sub-lab">4.1</span>Vina Dock by generated-ligand size</h3>
+
+      <figure>
+        <img src="vina_by_size_curve.png" alt="Vina Dock at every generated-ligand heavy-atom count, vanilla vs Ours v1, with the size distribution below">
+        <figcaption><b>Figure&nbsp;1 &middot; Vina Dock at every ligand size, 78 CrossDocked pockets.</b>
+          <i>Top:</i> mean Vina Dock per exact heavy-atom count with a 95% bootstrap band (1,500 resamples,
+          seed 260827), drawn where at least 20 molecules share that count. Stars are the crystal reference
+          ligands, one per pocket, at their own size — two at 42 heavy atoms score −15.9 and −14.6 and fall
+          below the panel. <i>Bottom:</i> how many molecules each model puts at each size (bars, left axis),
+          with the crystal reference ligands' own size distribution overlaid (red, right axis — 77 of 78 fall
+          inside the plotted range, Gaussian-smoothed at σ = 1.6 atoms since 78 ligands over 32 distinct sizes
+          are too sparse raw). The two generated distributions have the same shape, so the curves compare like
+          with like. Shading starts at 33 heavy atoms, vanilla's best size; the axis is cut at 50, keeping
+          98.4% of all 15,561 molecules.</figcaption>
+      </figure>
+
+      <div class="table-wrap">
+        <table class="results">
+          <thead>
+            <tr class="grp">
+              <th class="col-method stub">Heavy atoms</th>
+              <th colspan="2">VoxBind &sigma;=0.9 (vanilla)</th>
+              <th colspan="2">Ours &middot; v1</th>
+              <th>&Delta; Vina Dock</th>
+            </tr>
+            <tr class="sub">
+              <th class="col-method"></th>
+              <th>n</th><th>mean [95% CI]</th>
+              <th>n</th><th>mean [95% CI]</th>
+              <th>ours &minus; vanilla</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td class="col-method">&lt;12</td>
+                <td class="metric"><span class="val">942</span></td><td class="metric"><span class="val">&minus;4.60</span> <span class="sd">[&minus;4.71, &minus;4.44]</span></td>
+                <td class="metric"><span class="val">943</span></td><td class="metric"><span class="val">&minus;4.59</span> <span class="sd">[&minus;4.66, &minus;4.53]</span></td>
+                <td class="metric"><span class="val">+0.01</span></td></tr>
+            <tr><td class="col-method">12&ndash;15</td>
+                <td class="metric"><span class="val">764</span></td><td class="metric"><span class="val">&minus;5.91</span> <span class="sd">[&minus;5.97, &minus;5.85]</span></td>
+                <td class="metric"><span class="val">757</span></td><td class="metric"><span class="val">&minus;6.14</span> <span class="sd">[&minus;6.21, &minus;6.05]</span></td>
+                <td class="metric best"><span class="val">&minus;0.23</span></td></tr>
+            <tr><td class="col-method">16&ndash;19</td>
+                <td class="metric"><span class="val">848</span></td><td class="metric"><span class="val">&minus;7.13</span> <span class="sd">[&minus;7.21, &minus;7.05]</span></td>
+                <td class="metric"><span class="val">687</span></td><td class="metric"><span class="val">&minus;6.99</span> <span class="sd">[&minus;7.11, &minus;6.82]</span></td>
+                <td class="metric worst"><span class="val">+0.14</span></td></tr>
+            <tr><td class="col-method">20&ndash;23</td>
+                <td class="metric"><span class="val">1,125</span></td><td class="metric"><span class="val">&minus;7.68</span> <span class="sd">[&minus;7.83, &minus;7.49]</span></td>
+                <td class="metric"><span class="val">933</span></td><td class="metric"><span class="val">&minus;8.01</span> <span class="sd">[&minus;8.11, &minus;7.90]</span></td>
+                <td class="metric best"><span class="val">&minus;0.32</span></td></tr>
+            <tr><td class="col-method">24&ndash;27</td>
+                <td class="metric"><span class="val">1,322</span></td><td class="metric"><span class="val">&minus;8.67</span> <span class="sd">[&minus;8.76, &minus;8.59]</span></td>
+                <td class="metric"><span class="val">1,201</span></td><td class="metric"><span class="val">&minus;8.84</span> <span class="sd">[&minus;8.94, &minus;8.73]</span></td>
+                <td class="metric best"><span class="val">&minus;0.17</span></td></tr>
+            <tr><td class="col-method">28&ndash;31</td>
+                <td class="metric"><span class="val">1,221</span></td><td class="metric"><span class="val">&minus;9.23</span> <span class="sd">[&minus;9.36, &minus;9.08]</span></td>
+                <td class="metric"><span class="val">1,248</span></td><td class="metric"><span class="val">&minus;9.58</span> <span class="sd">[&minus;9.70, &minus;9.44]</span></td>
+                <td class="metric best"><span class="val">&minus;0.35</span></td></tr>
+            <tr><td class="col-method">32&ndash;35</td>
+                <td class="metric"><span class="val">729</span></td><td class="metric"><span class="val">&minus;9.68</span> <span class="sd">[&minus;9.83, &minus;9.52]</span></td>
+                <td class="metric"><span class="val">914</span></td><td class="metric"><span class="val">&minus;9.95</span> <span class="sd">[&minus;10.14, &minus;9.72]</span></td>
+                <td class="metric best"><span class="val">&minus;0.28</span></td></tr>
+            <tr class="grp-top"><td class="col-method">36&ndash;39</td>
+                <td class="metric"><span class="val">375</span></td><td class="metric"><span class="val">&minus;9.24</span> <span class="sd">[&minus;9.44, &minus;9.02]</span></td>
+                <td class="metric"><span class="val">510</span></td><td class="metric"><span class="val">&minus;10.10</span> <span class="sd">[&minus;10.30, &minus;9.90]</span></td>
+                <td class="metric best"><span class="val">&minus;0.87</span></td></tr>
+            <tr><td class="col-method">40+</td>
+                <td class="metric"><span class="val">461</span></td><td class="metric"><span class="val">&minus;9.09</span> <span class="sd">[&minus;9.31, &minus;8.89]</span></td>
+                <td class="metric"><span class="val">581</span></td><td class="metric"><span class="val">&minus;10.24</span> <span class="sd">[&minus;10.51, &minus;9.91]</span></td>
+                <td class="metric best"><span class="val">&minus;1.15</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="note">95% CIs are 2,000-resample molecule bootstraps (seed 260827). Green marks a bin where
+        Ours&nbsp;v1 is ahead, red where it is behind.</p>
+    </section>
+
+    <section class="block">
+      <h3 class="subsection-head"><span class="sub-lab">4.2</span>What the bins say</h3>
+
+      <div class="callout">
+        <span class="k">The gain is not a size artefact</span>
+        Ours&nbsp;v1 is ahead in <b>7 of 9 size bins</b>, and the overall &minus;0.41 sits in the middle of the
+        per-bin spread. Controlling for size a second way agrees: ligand efficiency (Vina Dock per heavy atom) is
+        &minus;0.354 for v1 against vanilla's &minus;0.344, better on 47 of 78 pockets, <i>p</i> =
+        2.6&times;10<sup>&minus;3</sup>. The smallest bin (&lt;12 atoms) is a dead heat (+0.01) — there is
+        little for a conditioning signal to act on at that size, which is the expected null.
+      </div>
+
+      <div class="callout">
+        <span class="k">More atoms does not simply mean a better score</span>
+        Below 30 heavy atoms the two curves lie on top of each other — the per-bin gaps of &minus;0.2 to
+        &minus;0.35 are that difference spread thin. The <b>large end</b> is where they separate. Vanilla
+        improves with size only to 33 atoms (&minus;9.86) and then <b>degrades</b>: &minus;9.24 at 36,
+        &minus;8.61 at 40. Ours&nbsp;v1 stays flat near &minus;10. Aggregated, the intervals do not overlap —
+        vanilla &minus;9.68 [&minus;9.84, &minus;9.51] at 32&ndash;35 &rarr; &minus;9.16 [&minus;9.31,
+        &minus;9.01] at 36+, against v1's &minus;9.95 &rarr; &minus;10.18 — so the decline is real, not noise.
+        The gap reaches &minus;0.87 at 36&ndash;39 and &minus;1.15 at 40+, roughly three times the mid-range
+        bins. v1 is less "better at large ligands" than <b>not worse</b> at them.
+      </div>
+
+      <div class="callout">
+        <span class="k">Reading</span>
+        Vanilla can draw large molecules but places them worse as they grow; the density-conditioned model keeps
+        placing them well. It also draws more of them — <b>14.0%</b> of its molecules carry 36+ heavy atoms
+        against vanilla's <b>10.7%</b>. So the practical claim is not "bigger is better" but that density
+        conditioning makes the <b>large end usable</b>, which is the end that matters for occupying a real pocket.
+      </div>
+
+      <div class="callout">
+        <span class="k">Vanilla turns where its training data thins out</span>
+        Reading heavy-atom counts off 8,000 of the 100k CrossDocked training ligands: median 24, <b>90th
+        percentile 34</b>. Vanilla's minimum sits at 33 — right at the edge of what it saw. Past that both
+        models are extrapolating beyond 90% of their training distribution.
+        <div class="table-wrap" style="margin-top:14px">
+          <table class="results">
+            <thead><tr><th class="col-method">Population</th><th>n</th><th>median</th><th>p90</th>
+              <th>&ge;33 atoms</th><th>&ge;36 atoms</th><th>&ge;40 atoms</th></tr></thead>
+            <tbody>
+              <tr><td class="col-method">CrossDocked training ligands</td><td>8,000</td><td>24</td><td>34</td>
+                  <td>14.3%</td><td>7.6%</td><td>4.0%</td></tr>
+              <tr><td class="col-method">Test reference ligands</td><td>78</td><td>22</td><td>37</td>
+                  <td>17.9%</td><td>11.5%</td><td>6.4%</td></tr>
+              <tr class="grp-top"><td class="col-method">VoxBind &sigma;=0.9 generated</td><td>7,787</td><td>24</td><td>36</td>
+                  <td>17.1%</td><td>10.7%</td><td>5.9%</td></tr>
+              <tr><td class="col-method">Ours &middot; v1 generated</td><td>7,774</td><td>25</td><td>38</td>
+                  <td><b>22.5%</b></td><td><b>14.0%</b></td><td>7.5%</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="note" style="margin-bottom:0">8,000 sampled from <code>split_by_name.pt</code> train
+          (seed 260827), RDKit sanitisation off so nothing is dropped for valence reasons; all 8,000 read.</p>
+      </div>
+
+      <div class="callout">
+        <span class="k">…but that does not explain why Ours v1 does not turn</span>
+        The training-scarcity story is the obvious first explanation, and it fails on the last row.
+        Ours&nbsp;v1 pushes <b>further</b> out of distribution — 22.5% of its molecules carry 33+ heavy atoms
+        against the training set's 14.3% — and holds &minus;10 there while vanilla falls to &minus;8.6. Same
+        data, same architecture; the density channel is the only difference. Whether the conditioning is what
+        buys that out-of-distribution robustness is <b>untested</b>.
+      </div>
+
       <ul class="criteria">
-        <li><b>Base model:</b> <span class="placeholder">to fill</span></li>
-        <li><b>Fine-tune scope:</b> <span class="placeholder">frozen / partial / end-to-end</span></li>
-        <li><b>MCP data:</b> <span class="placeholder">targets, split, density availability</span></li>
+        <li><b>Discriminating experiment:</b> the apo variant — same architecture, ligand density masked out.
+          If it turns at 33 like vanilla, the density channel carries the robustness; if it holds like v1, the
+          architecture does. That run exists at ep350 and only needs the size-binned analysis re-run on it.</li>
+        <li><b>Also not yet tested:</b> whether vanilla's large molecules are a different chemotype rather than
+          simply misplaced. Splitting the 33+ region by pocket volume would separate "wrong molecule" from
+          "wrong placement".</li>
+        <li><b>Caveat:</b> Vina Dock re-searches the pose, so this measures the <em>molecule</em>, not the
+          generated geometry. Section&nbsp;3's strain numbers say Ours&nbsp;v1 pays for its contact with
+          1.3&times; vanilla's strain — the size advantage here does not carry over to pose quality.</li>
+        <li><b>Protocol:</b> 78 pockets (79 with ligand X-ray density, minus <code>target_71</code>, whose
+          truncated crop fails receptor preparation) &middot; ~100 molecules per pocket &middot; Vina
+          exhaustiveness 16 &middot; <code>pocket10</code> crop. Full tables in
+          <code>results_drug_design.html</code>.</li>
+      </ul>
+    </section>
+  </section>
+
+  <!-- 5 ─────────────────────────────────────────────────────────── -->
+  <section class="doc-section" id="mcp">
+    <h2 class="section-head"><span class="sec-num">5</span>MCP fine-tuning results</h2>
+    <p class="section-intro">The receptor-ED ControlNet fine-tune of the macrocyclic-peptide generator, re-scored at
+      <b>8.21M</b> samples against the same run at 3.17M and against the density-free vanilla model. Same 10 held-out
+      MCP targets and the same sampling budget as the 08-20 comparison, so the three arms are directly comparable.
+      <span class="pill done">measured</span></p>
+
+    <div class="summary-grid">
+      <div class="summary-card primary">
+        <div class="label">2.6&times; more fine-tuning bought</div>
+        <div class="value">nothing</div>
+        <div class="note">Yield still half of vanilla; binding unchanged once size is controlled.</div>
+      </div>
+      <div class="summary-card">
+        <div class="label">What actually moved</div>
+        <div class="value">45 &rarr; 35</div>
+        <div class="note">Median heavy atoms. 65% of molecules now under 40 (was 29%).</div>
+      </div>
+      <div class="summary-card">
+        <div class="label">Vina Dock, median</div>
+        <div class="value">&minus;8.38</div>
+        <div class="note">vs &minus;8.15 at 3.17M and &minus;9.34 vanilla. The 0.23 gain is size, not binding.</div>
+      </div>
+    </div>
+
+    <div class="callout">
+      <span class="k">Bottom line</span>
+      The fine-tune did not get better at binding — it got smaller. QED&nbsp;0.19&nbsp;&rarr;&nbsp;0.37,
+      SA&nbsp;0.48&nbsp;&rarr;&nbsp;0.55 and ligand efficiency 0.182&nbsp;&rarr;&nbsp;0.239 all move in the flattering
+      direction, and all three are what happens automatically when a 45-heavy-atom peptide becomes a 35-heavy-atom one.
+      Bin by size and the gain disappears: vanilla wins every bin, and the two fine-tune checkpoints trade places.
+      <em>This is §4's confound appearing again, in a different model family.</em>
+    </div>
+
+    <section class="block">
+      <h3 class="subsection-head"><span class="sub-lab">5.1</span>Setup</h3>
+      <ul class="criteria">
+        <li><b>Base model:</b> FuncBind MCP <code>fb_unified</code>, density-free, 87.2M samples seen — the
+          &ldquo;vanilla&rdquo; arm, unchanged since 08-20.</li>
+        <li><b>Fine-tune scope:</b> receptor-ED ControlNet with zero-init zero-convs on top of that base, encoder trunk
+          frozen. Two checkpoints of one resume chain: <code>_r3</code> at 3.17M and <code>_r10</code> at
+          <b>8,206,956</b> samples. Checkpoints are ranked by <code>acc_iter</code>, never by epoch — every resume
+          restarts the epoch counter, so <code>_r10</code> reads epoch&nbsp;17 while being the furthest along.</li>
+        <li><b>MCP data:</b> the holo-density MCP set; 10 held-out test targets —
+          1bm2 &middot; 1bxo &middot; 1jd2 &middot; 1kmh &middot; 1w0e &middot; 2bdx &middot; 2gpl &middot; 3dv5 &middot;
+          3e7a &middot; 3egh.</li>
+        <li><b>Sampling:</b> 25 samples per receptor, 256 chains, 1 attempt, seed&nbsp;1 — identical for all three arms.
+          Vanilla was not re-sampled: same checkpoint, same settings, same seed, so the 08-20 samples are the baseline.</li>
+        <li><b>Docking:</b> the whole deposited receptor (<code>&lt;pdb&gt;-protein.pdb</code>), box derived from the
+          crystal cyclic peptide (<code>&lt;pdb&gt;-CP.sdf</code>), Vina exhaustiveness&nbsp;16.</li>
       </ul>
     </section>
 
     <section class="block">
-      <h3 class="subsection-head"><span class="sub-lab">4.2</span>Results</h3>
+      <h3 class="subsection-head"><span class="sub-lab">5.2</span>Yield</h3>
+      <p class="table-sub">Molecules returned per target out of a 25-molecule quota, on an identical budget. The
+        shortfall the 08-20 run found is still there at 8.21M: 106 molecules against vanilla's 213, and only two
+        targets filled. It is not uniform — 1bxo and 1jd2 improved, 2bdx collapsed, and 3dv5 produced its first
+        molecule from any model.</p>
       <div class="table-wrap">
         <table class="results">
-          <thead><tr><th class="col-method">Run</th><th>What changed</th><th>Metric</th><th>Value</th><th>Δ vs base</th><th>Status</th></tr></thead>
+          <thead><tr>
+            <th class="col-method">Target</th><th>PDB</th>
+            <th>vanilla</th><th>fine-tune 3.17M</th><th>fine-tune 8.21M</th><th>&Delta; 8.21M &minus; 3.17M</th>
+          </tr></thead>
           <tbody>
-            <tr><td class="col-method placeholder">Run</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td class="placeholder">—</td><td><span class="pill todo">todo</span></td></tr>
+            <tr><td class="col-method">target_00</td><td>1bm2</td><td>25</td><td>25</td><td>25</td><td>0</td></tr>
+            <tr><td class="col-method">target_01</td><td>1bxo</td><td>25</td><td>9</td><td>13</td><td>+4</td></tr>
+            <tr><td class="col-method">target_02</td><td>1jd2</td><td>25</td><td>2</td><td>6</td><td>+4</td></tr>
+            <tr><td class="col-method">target_03</td><td>1kmh</td><td>25</td><td>3</td><td>1</td><td>&minus;2</td></tr>
+            <tr><td class="col-method">target_04</td><td>1w0e</td><td>14</td><td>25</td><td>25</td><td>0</td></tr>
+            <tr><td class="col-method">target_05</td><td>2bdx</td><td>25</td><td>25</td><td>10</td><td>&minus;15</td></tr>
+            <tr><td class="col-method">target_06</td><td>2gpl</td><td>25</td><td>17</td><td>14</td><td>&minus;3</td></tr>
+            <tr><td class="col-method">target_07</td><td>3dv5</td><td>0</td><td>0</td><td>1</td><td>+1</td></tr>
+            <tr><td class="col-method">target_08</td><td>3e7a</td><td>24</td><td>7</td><td>6</td><td>&minus;1</td></tr>
+            <tr><td class="col-method">target_09</td><td>3egh</td><td>25</td><td>5</td><td>5</td><td>0</td></tr>
+            <tr><td class="col-method"><b>Total</b></td><td>—</td><td><b>213</b></td><td><b>118</b></td><td><b>106</b></td><td><b>&minus;12</b></td></tr>
+            <tr><td class="col-method">Targets at full quota</td><td>—</td><td>7 / 10</td><td>3 / 10</td><td>2 / 10</td><td>&minus;1</td></tr>
           </tbody>
         </table>
       </div>
+    </section>
+
+    <section class="block">
+      <h3 class="subsection-head"><span class="sub-lab">5.3</span>Chemistry and docking</h3>
+      <p class="table-sub">Size, QED, SA, Vina and ligand efficiency are pooled over all molecules, so a target that
+        returned one molecule does not weigh as much as one that returned 25; validity, uniqueness, diversity and high
+        affinity are per-target means, which is how the docking driver reports them. Cyclization and validity hold at 100% on every arm — the structural
+        contract of MCP generation is intact; what changed is size. QED and SA are calibrated on small drug-like
+        molecules, so a 35-heavy-atom peptide scores better than a 46-heavy-atom one by construction; read them as size
+        proxies here, not as drug-likeness.</p>
+      <div class="table-wrap">
+        <table class="results">
+          <thead><tr>
+            <th class="col-method">Metric</th><th>vanilla</th><th>fine-tune 3.17M</th><th>fine-tune 8.21M</th>
+          </tr></thead>
+          <tbody>
+            <tr><td class="col-method">Molecules</td><td>213</td><td>118</td><td>106</td></tr>
+            <tr><td class="col-method">Validity / cyclization</td><td>1.000 / 100%</td><td>1.000 / 100%</td><td>1.000 / 100%</td></tr>
+            <tr><td class="col-method">Uniqueness</td><td>0.982</td><td>0.982</td><td>0.984</td></tr>
+            <tr><td class="col-method">Diversity</td><td>0.475</td><td>0.468</td><td>0.454</td></tr>
+            <tr><td class="col-method">Heavy atoms, mean / median</td><td>47.9 / 46</td><td>47.7 / 45</td><td><b>36.8 / 35</b></td></tr>
+            <tr><td class="col-method">Under 40 heavy atoms</td><td>32%</td><td>29%</td><td><b>65%</b></td></tr>
+            <tr><td class="col-method">Residues per molecule</td><td>6.6</td><td>6.8</td><td>5.9</td></tr>
+            <tr><td class="col-method">QED</td><td>0.200</td><td>0.211</td><td>0.346</td></tr>
+            <tr><td class="col-method">SA</td><td>0.490</td><td>0.501</td><td>0.555</td></tr>
+            <tr><td class="col-method">Vina Dock, median</td><td><b>&minus;9.34</b></td><td>&minus;8.15</td><td>&minus;8.38</td></tr>
+            <tr><td class="col-method">Vina Dock, mean</td><td><b>&minus;9.44</b></td><td>&minus;7.77</td><td>&minus;8.54</td></tr>
+            <tr><td class="col-method">Ligand efficiency, median</td><td>0.194</td><td>0.182</td><td>0.239</td></tr>
+            <tr><td class="col-method">High affinity (vs crystal peptide)</td><td><b>0.420</b></td><td>0.256</td><td>0.314</td></tr>
+            <tr><td class="col-method">Best of the three, per target</td><td><b>7 / 9</b></td><td>0 / 9</td><td>2 / 9</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="table-sub">Ligand efficiency is <code>&minus;Dock / heavy atoms</code>, and it rewards small molecules by
+        construction — the 8.21M arm leading it is the same fact as its size drop, not an independent result. Docking
+        statistics use the 9 targets every arm produced molecules for; 3dv5 is excluded because only the 8.21M arm has
+        anything there.</p>
+    </section>
+
+    <section class="block">
+      <h3 class="subsection-head"><span class="sub-lab">5.4</span>Inside a size bin, the gain is gone</h3>
+
+      <figure>
+        <img src="mcp_finetune_size.png" alt="Median Vina Dock per heavy-atom bin for the three arms, with the molecule count each arm puts in each bin below">
+        <figcaption><b>Figure&nbsp;2 &middot; Vina Dock by peptide size, 9 held-out MCP targets.</b>
+          <i>Top:</i> median Vina Dock inside each heavy-atom bin, drawn only where an arm has at least 5 molecules in
+          that bin — which is why the 8.21M line stops at 40–49 (it puts 4 and 2 molecules in the last two bins).
+          Inside a bin all three arms draw the same-sized peptides, so a surviving gap is a binding difference and not
+          a size one. <i>Bottom:</i> how many molecules each arm puts in each bin — median size 46 (vanilla),
+          45 (3.17M), 35 (8.21M). The top panel is trustworthy only where the bottom panel has bars.</figcaption>
+      </figure>
+
+      <div class="table-wrap">
+        <table class="results">
+          <thead>
+            <tr class="grp">
+              <th class="col-method stub">Heavy atoms</th>
+              <th colspan="2">vanilla</th>
+              <th colspan="2">fine-tune 3.17M</th>
+              <th colspan="2">fine-tune 8.21M</th>
+            </tr>
+            <tr>
+              <th class="col-method"></th>
+              <th>n</th><th>Dock median</th>
+              <th>n</th><th>Dock median</th>
+              <th>n</th><th>Dock median</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td class="col-method">20–29</td><td>7</td><td><b>&minus;8.97</b></td><td>5</td><td>&minus;7.80</td><td>21</td><td>&minus;8.46</td></tr>
+            <tr><td class="col-method">30–39</td><td>62</td><td><b>&minus;10.05</b></td><td>29</td><td>&minus;8.86</td><td>47</td><td>&minus;8.64</td></tr>
+            <tr><td class="col-method">40–49</td><td>62</td><td><b>&minus;8.72</b></td><td>56</td><td>&minus;7.75</td><td>31</td><td>&minus;7.69</td></tr>
+            <tr><td class="col-method">50–59</td><td>42</td><td><b>&minus;9.21</b></td><td>13</td><td>&minus;8.50</td><td>4</td><td>—</td></tr>
+            <tr><td class="col-method">60+</td><td>39</td><td><b>&minus;9.19</b></td><td>10</td><td>&minus;8.36</td><td>2</td><td>—</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="table-sub">Vanilla is best in every bin by roughly 1&nbsp;kcal/mol, and the two fine-tune checkpoints are
+        within noise of each other — 8.21M is ahead at 20–29, behind at 30–39 and 40–49. The pooled 0.23&nbsp;kcal/mol
+        that 8.21M appears to gain over 3.17M is a mix effect: it moved molecules into bins that happen to score better,
+        not molecules that bind better.</p>
+    </section>
+
+    <section class="block">
+      <h3 class="subsection-head"><span class="sub-lab">5.5</span>Caveats</h3>
+      <ul class="criteria">
+        <li><b>One attempt, one seed.</b> <code>n_attempts=1</code> against the paper configuration's 10, so a failed
+          attempt is unrecoverable and absolute yields are low for every arm. The budget is identical across arms, so
+          the comparison holds, but read the yields as relative.</li>
+        <li><b>Thin per-target counts.</b> The fine-tune arms return 1–25 molecules per target, so per-target numbers are
+          noisy; 1kmh and 3dv5 rest on a single molecule at 8.21M.</li>
+        <li><b>Next question, not answered here:</b> whether the size collapse is something the fine-tuning objective
+          rewards, and whether raising <code>n_attempts</code> closes the yield gap.</li>
+      </ul>
     </section>
   </section>
 

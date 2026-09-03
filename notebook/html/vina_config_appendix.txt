@@ -1,0 +1,148 @@
+================================================================================
+VINA CONFIGURATION — appendix text (final) + provenance + pinned env
+작성 2026-08-25 · 대상: de-novo 92/79-pocket 표 (notebook/html/260827/)
+================================================================================
+
+--------------------------------------------------------------------------------
+[1] 논문용 LaTeX
+--------------------------------------------------------------------------------
+
+For all VINA-based evaluations, we use AutoDock Vina 1.2 \citep{eberhardt2021autodock}
+through its Python bindings, on an identical configuration as follows:
+
+\begin{itemize}
+    \item \texttt{version}: 1.2.2
+    \item \texttt{sf\_name} (scoring function): \texttt{vina} (the default Vina 1.2
+          scoring function; neither \texttt{vinardo} nor \texttt{ad4})
+    \item \texttt{exhaustiveness}: 16
+    \item \texttt{n\_poses} (\texttt{num\_modes}): 1
+    \item \texttt{energy\_range}: 3.0 kcal/mol (Vina default; inactive in practice, as
+          only the top-ranked pose is retained)
+    \item \texttt{min\_rmsd}: 1.0 \AA{} (Vina default)
+    \item \texttt{max\_evals}: 0 (Vina's built-in heuristic)
+    \item \texttt{seed}: 0 (Vina draws a random seed for every run)
+    \item \texttt{cpu}: 1 thread per Vina instance, with 20 instances run concurrently
+    \item \texttt{center}: the centroid of the axis-aligned bounding box of the ligand
+          under evaluation, $(\mathbf{x}_{\max}+\mathbf{x}_{\min})/2$; the box therefore
+          follows the generated pose for sampled molecules and the crystal pose for the
+          reference ligand
+    \item \texttt{box\_size}: ligand-adaptive,
+          $(\mathbf{x}_{\max}-\mathbf{x}_{\min})+5$\,\AA{} along each axis; across the
+          9{,}195 molecules generated for the 92 test pockets this yields a mean box of
+          $12.1\times12.0\times11.8$\,\AA$^3$ (median $11.8\times11.5\times11.3$\,\AA$^3$;
+          5th--95th percentile of the per-axis edge length 7.5--18.3\,\AA)
+    \item \texttt{receptor}: the CrossDocked 10\,\AA{} pocket crop
+          (\texttt{*\_pocket10.pdb}), held rigid
+    \item \texttt{receptor preparation}: \texttt{pdb2pqr30 --ff=AMBER} (v3.6.1; standard
+          protonation states at pH 7.0, no PROPKA titration), followed by AutoDockTools
+          \texttt{prepare\_receptor4.py} with its defaults (Gasteiger charges, non-polar
+          hydrogens merged, lone pairs / waters / non-standard residues removed, no
+          structural repairs)
+    \item \texttt{ligand preparation}: RDKit \texttt{AddHs(addCoords=True)}, which
+          preserves the generated 3D coordinates (no re-embedding and no conformer
+          regeneration), followed by Meeko \texttt{MoleculePreparation()} with its
+          defaults (\texttt{merge\_hydrogens=True}, \texttt{hydrate=False}, rigid
+          macrocycles, rigid amide bonds); rotatable bonds are detected automatically
+    \item \texttt{Vina Score} mode: \texttt{Vina.score()} — a single-point evaluation of
+          the generated pose exactly as produced by the model, with no search and no
+          relaxation
+    \item \texttt{Vina Min} mode: \texttt{Vina.optimize()} with \texttt{max\_steps}=0 —
+          local energy minimization initialized from the generated pose, relaxing the
+          ligand degrees of freedom against the rigid receptor
+    \item \texttt{Vina Dock} mode: \texttt{Vina.dock(exhaustiveness=16, n\_poses=1)} —
+          a full Monte-Carlo global search within the box, i.e. the molecule is re-docked
+          from scratch, and the affinity of the top-ranked pose is reported
+\end{itemize}
+
+The reference ligand of each pocket is processed through the identical three-mode
+protocol; the High-Affinity percentage is the fraction of generated molecules whose Vina
+Dock score is at least as low as that of the corresponding reference ligand.
+
+--------------------------------------------------------------------------------
+[2] 본문에 그대로 쓰면 안 되는 것
+--------------------------------------------------------------------------------
+  - box는 고정 크기가 아니라 리간드마다 달라짐 → "xxx × xxx × xxx" 단일 수치 불가.
+    위처럼 규칙 + 실측 통계로 기술함.
+  - energy_range는 우리가 지정한 값이 아니라 Vina.energies()의 기본값이며,
+    n_poses=1이라 실제 필터링은 일어나지 않음.
+  - seed 고정 안 함 → bitwise 재현성 없음.
+  - 큰 리간드에서 Vina가 "Search space volume is greater than 27000 Angstrom^3" 경고를
+    냄. 설정상 정상 동작이며 결과는 유효.
+
+--------------------------------------------------------------------------------
+[3] 표에 들어간 숫자의 출처 — 전부 vina 1.2.2
+--------------------------------------------------------------------------------
+  런                        | 소스 JSON                                          | 버전
+  --------------------------|----------------------------------------------------|------
+  Ours — receptor-ED fusion | voxbind/exps/samples_reference_receptor_ed_ep350/   | 1.2.2
+  (n=92, n_mol=9195)        |   eval_docking_results.json                         |
+  VoxBind σ0.9 (vanilla)    | voxbind/exps/exp_sig0.9+prefetch_factor16_wjs.      | 1.2.2
+  (n=79, n_mol=7888)        |   n_targets0/samples/full_eval_ep923/               |
+                            |   eval_docking_results.json                         |
+  TargetDiff (n=92, 8446)   | /home1/irteam/base_drug/eval/targetdiff/            | 1.2.2
+                            |   eval_docking_results.json                         |
+
+근거:
+  1) 수용체 준비 로그 버전 스탬프 — target_XX/*_pocket10.log 첫 줄.
+     voxdock=pdb2pqr 3.6.1(vina 1.2.2), repro-env=pdb2pqr 3.7.1(vina 1.2.7).
+     위 세 런은 각각 92/92, 92/92, 100/100 전부 v3.6.1.
+     voxbind/exps + notebook 전체 976개 로그 중 v3.7.1은 50개뿐이고 [4]의 별도 트랙 소속.
+  2) 드라이버 바이트코드 — voxbind/exps/frozenenc_probes/__pycache__/ 에
+     run_docking_eval{,_parallel}.cpython-38.pyc 만 존재, cpython-311.pyc 없음.
+     voxdock=py3.8, repro-env=py3.11 → 도킹 드라이버는 repro-env에서 import된 적 없음.
+  3) 요약값 일치 — dock_chain.log 말미
+     (-5.0148 / -6.2544 / -7.3757 / HA 0.5605)가 260827/denovo_92_vina.json "Ours"와
+     정확히 일치. 79-pocket도 ep923 JSON과 정확히 일치(-5.0955 / -6.6510 / -7.8318 / 0.6289).
+  4) 실행 파라미터 — dock_chain.log 1행:
+     "parallel docking: 92 targets | workers=20 | vina cpu=1 exh=16"
+
+--------------------------------------------------------------------------------
+[4] 1.2.7이 쓰인 곳 (표에는 미반영)
+--------------------------------------------------------------------------------
+2026-08-16 02:09 ~ 08-23, notebook/webapp/metrics.py 파이프라인이 같은 92-타깃 디렉토리
+위에서 별도로 돌면서 /home1/irteam/funcbind/.repro-env (py3.11 / vina 1.2.7 /
+pdb2pqr 3.7.1)를 사용.
+  흔적  : target_XX/.vina_cache/*.log 의 "PDB2PQR v3.7.1" 50건,
+          notebook/webapp/__pycache__/metrics.cpython-311.pyc (2026-08-16 02:08)
+  산출물: target_XX/metrics.json — 260827 빌더들이 읽지 않음 → 표/그림 미반영
+  PoseCheck strain/clash는 Vina를 쓰지 않으므로 이 버전 차이와 무관.
+배경: 7월말 컨테이너 재시작으로 voxdock env가 소실되어 임시로 repro-env를 썼고,
+2026-08-01 rebuild_voxdock_env.sh로 voxdock(1.2.2) 복구. 표의 도킹은 전부 복구 이후 실행분.
+
+--------------------------------------------------------------------------------
+[5] 평가 환경 고정 (1.2.2) + data-vol1 보관 — 2026-08-25 적용
+--------------------------------------------------------------------------------
+아카이브 (검증 완료: zstd -t 통과, 41,942 entries, 970,168,320 B 원본,
+          vina-1.2.2.dist-info 포함):
+  /home1/irteam/data-vol1/seonghyun/prj-sbdd/Voxbind/env-backups/
+    voxdock-env-vina1.2.2.tar.zst        (225,717,598 B, 2026-08-25 17:02)
+    voxdock-vina1.2.2.manifest.txt       (python 3.8.16 / vina 1.2.2 / meeko 0.1.dev3 /
+                                          pdb2pqr 3.6.1 / propka 3.5.0 / numpy 1.24.3 /
+                                          scipy 1.10.1 / AutoDockTools-py3 aee55d5 + 전체 freeze)
+  ※ 기존 voxdock-env.tar.zst(2026-08-01)는 덮어쓰지 않고 그대로 둠.
+
+복원:
+  BK=/home1/irteam/data-vol1/seonghyun/prj-sbdd/Voxbind/env-backups
+  zstd -dc $BK/voxdock-env-vina1.2.2.tar.zst | tar -C /opt/conda/envs -xf -
+
+갱신:
+  tar -C /opt/conda/envs -cf - voxdock | zstd -T8 -6 -o $BK/voxdock-env-vina1.2.2.tar.zst -f
+
+버전 가드 (신규):
+  voxbind/scripts/63_dock_after_sampling.sh 가 실행 전 $PY의 vina 버전을 검사하고
+  1.2.2가 아니면 즉시 종료. (VINA_REQ 로 override 가능하나 하지 말 것.)
+    $ SAMPLE_DIR=... PY=/home1/irteam/funcbind/.repro-env/bin/python bash scripts/63_dock_after_sampling.sh
+    [63_dock] WRONG VINA: ... has vina=1.2.7, need 1.2.2   (exit 1)  ← 동작 확인함
+  voxbind/scripts/rebuild_voxdock_env.sh 헤더에도 1.2.2 핀/복원/갱신 절차 기재.
+
+--------------------------------------------------------------------------------
+[6] 코드 출처
+--------------------------------------------------------------------------------
+  드라이버 : voxbind/exps/frozenenc_probes/run_docking_eval{,_parallel}.py  (EXH=16)
+  도킹 코어: /home1/irteam/TargetDIff/utils/evaluation/docking_vina.py
+             VinaDockingTask.__init__ : center / size_factor=1.0 / buffer=5.0
+             VinaDockingTask.run      : PrepLig(meeko) + PrepProt(pdb2pqr + ADT)
+             VinaDock.dock            : sf_name='vina', seed=0, n_poses=1
+  런처     : voxbind/scripts/63_dock_after_sampling.sh
+             (PY 기본값 = /opt/conda/envs/voxdock/bin/python → vina 1.2.2)
+  env 재생 : voxbind/scripts/rebuild_voxdock_env.sh (vina==1.2.2 핀)

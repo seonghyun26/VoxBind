@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Macrocyclic Peptide Generation — FuncBind</title>
+<style>
+  :root {
+    --ink:#1c2433; --ink-soft:#5b6678; --ink-faint:#7a8699;
+    --line:#e3e7ee; --line-strong:#aeb6c4; --bg:#f5f6f8; --card:#fff;
+    --accent:#2f6f4f; --accent-bg:#eaf5ee; --blue:#38559b; --blue-bg:#e7eefb;
+    --warn:#9a6112; --warn-bg:#fcf3e0;
+    --shadow:0 1px 2px rgba(20,30,50,.04), 0 8px 24px rgba(20,30,50,.05);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    font-size:16px;line-height:1.55;-webkit-font-smoothing:antialiased}
+  .page{max-width:1240px;margin:0 auto;padding:48px 24px 96px}
+  header.doc{border-bottom:2px solid var(--ink);padding-bottom:20px;margin-bottom:36px}
+  .eyebrow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px;
+    color:var(--ink-soft);font-size:13px;letter-spacing:.11em;text-transform:uppercase}
+  .status{display:inline-flex;align-items:center;gap:7px;padding:3px 10px;border-radius:999px;
+    background:var(--warn-bg);color:#7a4c0d;font-size:11px;font-weight:720;letter-spacing:.07em}
+  .status::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--warn)}
+  header.doc h1{margin:0;font-size:clamp(28px,4vw,40px);line-height:1.13;font-weight:680;letter-spacing:-.025em}
+  header.doc .lead{max-width:940px;margin:13px 0 0;color:var(--ink-soft);font-size:15px;line-height:1.65}
+  .doc-section{margin-bottom:46px}
+  h2{font-size:20px;font-weight:680;margin:0 0 10px;padding-bottom:8px;border-bottom:1px solid var(--line-strong)}
+  h2 .sec-num{display:inline-block;min-width:26px;height:26px;line-height:26px;text-align:center;
+    background:var(--blue);color:#fff;border-radius:6px;font-size:13px;margin-right:10px;font-weight:700}
+  h3{font-size:15px;font-weight:680;margin:24px 0 8px}
+  p{margin:10px 0}
+  .block{margin:20px 0}
+  .table-title{font-weight:700;font-size:14.5px;margin:0 0 8px}
+  .caption-list{margin:6px 0 12px;padding-left:20px;color:var(--ink-soft);font-size:13.5px}
+  .caption-list li{margin:4px 0}
+  .table-wrap{overflow-x:auto;background:var(--card);border:1px solid var(--line);
+    border-radius:10px;box-shadow:var(--shadow);padding:4px}
+  table.results{border-collapse:collapse;width:100%;font-size:13.5px}
+  table.results th,table.results td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+  table.results th:first-child,table.results td:first-child{text-align:left;white-space:normal;min-width:190px}
+  table.results thead th{background:#eef1f6;font-size:11.5px;letter-spacing:.04em;
+    text-transform:uppercase;color:var(--ink-soft);font-weight:700;text-align:center}
+  table.results tbody tr:last-child td{border-bottom:none}
+  tr.ours td{background:#fff6f2}
+  tr.ref td{color:var(--ink-soft);font-style:italic}
+  tr.tba td{color:var(--ink-faint)}
+  .best{font-weight:750;color:#1d5a3a}
+  .tba{display:inline-block;padding:1px 7px;border-radius:4px;background:#eef1f6;
+    color:var(--ink-faint);font-size:11.5px;letter-spacing:.03em}
+  .sub{display:block;font-weight:400;font-size:11.5px;color:var(--ink-faint)}
+  figure{margin:16px 0}
+  figure img{width:100%;height:auto;display:block;border:1px solid var(--line);border-radius:8px;background:#fff}
+  figcaption{margin-top:8px;color:var(--ink-soft);font-size:13px}
+  .callout{border-left:3px solid var(--blue);background:var(--blue-bg);padding:12px 16px;
+    border-radius:0 8px 8px 0;margin:16px 0;font-size:14.5px}
+  .callout.warn{border-left-color:var(--warn);background:var(--warn-bg)}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px;
+    background:#eef1f6;padding:1.5px 5px;border-radius:4px}
+  .meta{color:var(--ink-faint);font-size:13px}
+  footer{margin-top:48px;padding-top:18px;border-top:1px solid var(--line-strong);color:var(--ink-faint);font-size:13px}
+</style>
+</head>
+<body>
+<div class="page">
+
+<header class="doc">
+  <div class="eyebrow">
+    <span>FuncBind · macrocyclic peptides</span>
+    <span class="status">pilot budget · full run pending</span>
+  </div>
+  <h1>Macrocyclic peptide generation — receptor-ED conditioning</h1>
+  <p class="lead">
+    Does conditioning on the receptor's deposited electron density help generation on a second modality?
+    This is the same question the CrossDocked work asks, moved to <strong>macrocyclic peptides</strong>:
+    FuncBind's MCP arm, vanilla against a receptor-ED ControlNet fine-tune, on the held-out MCP test split.
+  </p>
+  <div class="callout warn" style="margin-top:18px">
+    <strong>Not comparable to the CrossDocked tables in <code>results_drug_design.html</code>.</strong>
+    These ligands are 45&ndash;55 heavy atoms against ~24 there, the targets are a different split, and
+    QED/SA are calibrated on small-molecule drugs &mdash; a 50-atom cyclic peptide scores low on them by
+    construction, not by failure. Read the two documents side by side, never as one table.
+  </div>
+</header>
+
+<div class="doc-section">
+  <h2><span class="sec-num">1</span>Vina evaluation and sample quality</h2>
+  
+  <div class="block">
+    <p class="table-title">Table 1 &nbsp;&middot;&nbsp; FuncBind MCP &mdash; vanilla vs receptor-ED fine-tune</p>
+    <ul class="caption-list">
+      <li><b>Pilot run:</b> 10 MCP targets, 25 samples/receptor, 256 chains, 1 attempt &mdash; a reduced budget
+          chosen to fit a few hours, not the paper's 756 chains &times; 10 attempts. Both models had the identical
+          budget, so the comparison is fair even though the absolute yields are low.</li>
+      <li>The fine-tune is the receptor-ED ControlNet arm, selected by <code>acc_iter</code> (17 epochs on top of
+          the 680-epoch base &mdash; about 3.6% of the base model's sample count).</li>
+    </ul>
+    <div class="table-wrap">
+      <table class="results">
+        <thead><tr>
+          <th>Model</th>
+          <th>Molecules<span class="sub">of 250 requested</span></th>
+          <th>Vina Dock<span class="sub">avg / med &darr;</span></th>
+          <th>High aff.<span class="sub">% &uarr;</span></th>
+          <th>Diversity</th><th>QED</th><th>SA</th>
+          <th>Cyclization</th>
+          <th>PoseCheck</th>
+        </tr></thead>
+        <tbody>
+          <tr>
+            <td>FuncBind vanilla<span class="sub">fb_unified · 680 ep</span></td>
+            <td>213</td><td>&minus;9.55 / &minus;9.34</td><td class="best">42.0</td>
+            <td>0.475</td><td>0.200</td><td>0.489</td><td>100%</td>
+            <td><span class="tba">TBA</span></td>
+          </tr>
+          <tr class="ours">
+            <td>FuncBind + receptor-ED<span class="sub">ControlNet fine-tune · _r3</span></td>
+            <td>118</td><td>&minus;7.90 / &minus;8.16</td><td>25.6</td>
+            <td>0.468</td><td>0.193</td><td>0.477</td><td>100%</td>
+            <td><span class="tba">TBA</span></td>
+          </tr>
+          <tr class="ref">
+            <td>Reference cyclic peptide<span class="sub">crystal</span></td>
+            <td>9</td><td>&minus;9.58 / &mdash;</td><td>&mdash;</td>
+            <td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td>
+          </tr>
+          <tr class="tba">
+            <td>Full-budget run<span class="sub">paper setting, 10 attempts</span></td>
+            <td colspan="7" style="text-align:center"><span class="tba">TBA</span></td><td>&mdash;</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="meta">
+      One of the ten targets (<code>3dv5</code>) produced nothing from either model and is excluded, so
+      averages are over 9 targets. PoseCheck for macrocycles has not been run &mdash; the protein-preparation
+      step is the same, but nothing in this project has validated PoseCheck's strain calculation on
+      50-atom cyclic peptides, so those cells stay empty rather than being filled with unvalidated numbers.
+    </p>
+  </div>
+
+  <div class="callout">
+    <strong>On this budget the fine-tune loses on both axes.</strong> It produced 118 molecules against
+    vanilla's 213 from an identical budget &mdash; filling the 25-molecule quota on 3 of 10 targets versus 7 &mdash;
+    and its Vina Dock is 1.65&nbsp;kcal/mol worse. An earlier partial read at 21&ndash;28 molecules had the two
+    tied; that was a small-sample artefact and the full run reversed it, which is the reason the partial
+    numbers are not quoted here.
+  </div>
+</div>
+
+<div class="doc-section">
+  <h2><span class="sec-num" style="background:#566072">A</span>Appendix — what is still missing</h2>
+  <ul class="caption-list">
+    <li><b>Full-budget run.</b> The pilot used 256 chains / 1 attempt against the paper's 756 chains /
+        10 attempts, so absolute yields here are far below what the method can produce. Both models shared
+        the budget exactly, which is what makes the comparison usable despite that.</li>
+    <li><b>PoseCheck.</b> Protein preparation is identical to the small-molecule path, but nothing in this
+        project has checked that PoseCheck's UFF strain calculation behaves sensibly on 50-atom cyclic
+        peptides. Those cells stay empty rather than carrying unvalidated numbers.</li>
+    <li><b>Rigid-fragment consistency.</b> Peptide backbones are almost entirely rotatable bonds, so the
+        rigid fragments the metric relies on are mostly single residues &mdash; whether the measure means
+        the same thing here as it does for fused-ring small molecules is an open question, not a given.</li>
+  </ul>
+</div>
+
+<footer>
+  FuncBind MCP test split · 10 targets · 25 samples/receptor · 256 chains · 1 attempt ·
+  Vina exhaustiveness 16 · generated 2026-08-23
+</footer>
+
+</div>
+</body>
+</html>
