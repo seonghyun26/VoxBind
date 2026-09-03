@@ -1,0 +1,258 @@
+{
+ "bins": [
+  "\u226415",
+  "16\u201320",
+  "21\u201325",
+  "26\u201330",
+  ">30"
+ ],
+ "edges": [
+  0,
+  16,
+  21,
+  26,
+  31,
+  "inf"
+ ],
+ "n_pockets": 79,
+ "source": "prj-denovo/baselines, 79 electron-density pockets x 100 ligands",
+ "methods": {
+  "AR": [
+   {
+    "n": 3677,
+    "strain_median": 144.6,
+    "strain_q25": 66.5,
+    "strain_q75": 330.0,
+    "clash_mean": 3.88,
+    "clash_median": 3.0
+   },
+   {
+    "n": 1607,
+    "strain_median": 408.6,
+    "strain_q25": 199.2,
+    "strain_q75": 1140.0,
+    "clash_mean": 5.16,
+    "clash_median": 3.0
+   },
+   {
+    "n": 1287,
+    "strain_median": 705.8,
+    "strain_q25": 343.2,
+    "strain_q75": 1692.5,
+    "clash_mean": 6.31,
+    "clash_median": 5.0
+   },
+   {
+    "n": 737,
+    "strain_median": 1025.6,
+    "strain_q25": 503.3,
+    "strain_q75": 2133.2,
+    "clash_mean": 7.79,
+    "clash_median": 6.0
+   },
+   {
+    "n": 346,
+    "strain_median": 1869.9,
+    "strain_q25": 1065.6,
+    "strain_q75": 3174.5,
+    "clash_mean": 7.04,
+    "clash_median": 6.0
+   }
+  ],
+  "Pocket2Mol": [
+   {
+    "n": 3939,
+    "strain_median": 17.6,
+    "strain_q25": 7.7,
+    "strain_q75": 37.5,
+    "clash_mean": 4.46,
+    "clash_median": 3.0
+   },
+   {
+    "n": 1194,
+    "strain_median": 61.0,
+    "strain_q25": 32.1,
+    "strain_q75": 110.6,
+    "clash_mean": 7.06,
+    "clash_median": 6.0
+   },
+   {
+    "n": 731,
+    "strain_median": 92.8,
+    "strain_q25": 50.2,
+    "strain_q75": 168.1,
+    "clash_mean": 7.28,
+    "clash_median": 6.0
+   },
+   {
+    "n": 827,
+    "strain_median": 141.0,
+    "strain_q25": 85.6,
+    "strain_q75": 235.1,
+    "clash_mean": 10.67,
+    "clash_median": 8.0
+   },
+   {
+    "n": 1081,
+    "strain_median": 225.4,
+    "strain_q25": 142.7,
+    "strain_q75": 416.8,
+    "clash_mean": 15.03,
+    "clash_median": 13.0
+   }
+  ],
+  "DiffSBDD": [
+   {
+    "n": 2674,
+    "strain_median": 77.8,
+    "strain_q25": 28.1,
+    "strain_q75": 227.3,
+    "clash_mean": 5.68,
+    "clash_median": 3.0
+   },
+   {
+    "n": 1448,
+    "strain_median": 268.8,
+    "strain_q25": 122.5,
+    "strain_q75": 601.7,
+    "clash_mean": 11.36,
+    "clash_median": 6.0
+   },
+   {
+    "n": 1462,
+    "strain_median": 434.4,
+    "strain_q25": 218.5,
+    "strain_q75": 1091.2,
+    "clash_mean": 16.7,
+    "clash_median": 8.0
+   },
+   {
+    "n": 1105,
+    "strain_median": 637.2,
+    "strain_q25": 325.7,
+    "strain_q75": 1529.6,
+    "clash_mean": 18.37,
+    "clash_median": 12.0
+   },
+   {
+    "n": 1031,
+    "strain_median": 1137.4,
+    "strain_q25": 591.6,
+    "strain_q75": 2237.2,
+    "clash_mean": 28.48,
+    "clash_median": 19.0
+   }
+  ],
+  "DecompDiff": [
+   {
+    "n": 2302,
+    "strain_median": 27.3,
+    "strain_q25": 10.0,
+    "strain_q75": 81.5,
+    "clash_mean": 4.17,
+    "clash_median": 3.0
+   },
+   {
+    "n": 1042,
+    "strain_median": 155.2,
+    "strain_q25": 57.8,
+    "strain_q75": 356.7,
+    "clash_mean": 8.7,
+    "clash_median": 6.0
+   },
+   {
+    "n": 806,
+    "strain_median": 238.4,
+    "strain_q25": 103.1,
+    "strain_q75": 534.3,
+    "clash_mean": 8.8,
+    "clash_median": 7.0
+   },
+   {
+    "n": 981,
+    "strain_median": 308.1,
+    "strain_q25": 163.5,
+    "strain_q75": 580.6,
+    "clash_mean": 12.75,
+    "clash_median": 10.0
+   },
+   {
+    "n": 1168,
+    "strain_median": 617.1,
+    "strain_q25": 295.7,
+    "strain_q75": 1613.6,
+    "clash_mean": 13.34,
+    "clash_median": 11.5
+   }
+  ],
+  "FuncBind": [
+   {
+    "n": 3164,
+    "strain_median": 43.1,
+    "strain_q25": 15.1,
+    "strain_q75": 127.6,
+    "clash_mean": 4.13,
+    "clash_median": 3.0
+   },
+   {
+    "n": 1386,
+    "strain_median": 166.6,
+    "strain_q25": 74.2,
+    "strain_q75": 627.6,
+    "clash_mean": 4.51,
+    "clash_median": 4.0
+   },
+   {
+    "n": 1553,
+    "strain_median": 396.3,
+    "strain_q25": 159.6,
+    "strain_q75": 4519.7,
+    "clash_mean": 7.68,
+    "clash_median": 6.0
+   },
+   {
+    "n": 1126,
+    "strain_median": 1854.9,
+    "strain_q25": 281.3,
+    "strain_q75": 157224.5,
+    "clash_mean": 10.96,
+    "clash_median": 9.0
+   },
+   {
+    "n": 666,
+    "strain_median": 1250.3,
+    "strain_q25": 380.7,
+    "strain_q75": 4341.9,
+    "clash_mean": 7.03,
+    "clash_median": 7.0
+   }
+  ],
+  "Reference ligand": [
+   {
+    "n": 24,
+    "strain_median": 8.9,
+    "clash_mean": 5.17
+   },
+   {
+    "n": 12,
+    "strain_median": 34.1,
+    "clash_mean": 5.83
+   },
+   {
+    "n": 10,
+    "strain_median": 24.1,
+    "clash_mean": 5.2
+   },
+   {
+    "n": 13,
+    "strain_median": 50.8,
+    "clash_mean": 9.46
+   },
+   {
+    "n": 19,
+    "strain_median": 52.8,
+    "clash_mean": 9.9
+   }
+  ]
+ }
+}
