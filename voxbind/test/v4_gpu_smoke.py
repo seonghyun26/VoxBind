@@ -75,12 +75,34 @@ def main() -> int:
     den = torch.randn(B, 1, G, G, G, device="cuda")
 
     model.eval()
+    # The zero-init claim is about the RESIDUAL, so assert it directly: token_proj's last
+    # layer is zeros → its output must be exactly 0, and `x + 0` leaves the denoiser input
+    # untouched. This part IS bit-exact and is the real invariant.
     with torch.no_grad():
-        d = (model(lig[:2], poc[:2], density=den[:2])
-             - model(lig[:2], poc[:2], density=None)).abs().max().item()
-    print(f"[v4-smoke] zero-init identity: max|with - without| = {d:.3e}")
-    if d != 0.0:
-        print("[v4-smoke] FAIL: v4 is not identity at init")
+        enc_in = model._density_encoder_input(poc[:2], den[:2])
+        tok = model._density_token_grid(enc_in)
+        parts = [model.ligand_encoder(lig[:2]) + model.pocket_encoder(poc[:2]), tok]
+        if model.density_token_offsets:
+            parts.append(model._patch_offsets.to(tok.dtype).expand(2, -1, -1, -1, -1))
+        resid = model.token_proj(torch.cat(parts, dim=1)).abs().max().item()
+    print(f"[v4-smoke] zero-init residual: max|token_proj(...)| = {resid:.3e}")
+    if resid != 0.0:
+        print("[v4-smoke] FAIL: v4 residual is not zero at init")
+        return 1
+
+    # End-to-end it can only be checked against the box's own noise floor: the UNet3D's
+    # cuDNN conv kernels are not bitwise reproducible (allow_tf32 + non-deterministic
+    # algo selection), so two IDENTICAL calls already differ by ~4e-4 at 64³. Comparing
+    # with-vs-without density against a hard 0.0 therefore fails on a correct model —
+    # measure the run-to-run spread first and require the density delta to sit inside it.
+    with torch.no_grad():
+        a = model(lig[:2], poc[:2], density=den[:2])
+        floor = (a - model(lig[:2], poc[:2], density=den[:2])).abs().max().item()
+        d = (a - model(lig[:2], poc[:2], density=None)).abs().max().item()
+    print(f"[v4-smoke] end-to-end: max|with - without| = {d:.3e} "
+          f"(nondeterminism floor = {floor:.3e})")
+    if d > max(floor * 4.0, 1e-5):
+        print("[v4-smoke] FAIL: density changes the output beyond the noise floor at init")
         return 1
 
     model.train()

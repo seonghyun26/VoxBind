@@ -30,6 +30,18 @@ ROOT=/home/shpark/prj-denovo/Voxbind
 PY="$HOME/miniforge3/envs/voxbind/bin/python"
 cd "$ROOT/voxbind" || exit 1
 
+# XRAY_CROPS — REQUIRED for a density-conditioned checkpoint (with_density=true).
+# sample.py does `cfg = OmegaConf.merge(cfg_model, cfg)`, i.e. the SAMPLE-time config
+# wins over the checkpoint's. config_sample.yaml defaults to `dset: crossdocked`, so a
+# density model silently loses dset_name=crossdocked_xray, the batch arrives with no
+# "xray_density" key, and sample.py's `if with_density and density is None: skipped`
+# drops EVERY pocket — a run that exits 0 having written nothing. Setting this points
+# the sampling loader back at the x-ray dataset and the v5 crops.
+#   XRAY_CROPS=dataset/data/pretrain/xray_crops_aligned_v5
+# EXPECT_TARGETS — density conditioning samples only pockets that HAVE a map (79 of the
+# 100 test pockets for v5), so the final count check must expect 79, not 100.
+XRAY_CROPS="${XRAY_CROPS:-}"
+
 : "${EXP:?set EXP (experiment dir name under exps/)}"
 OUT="${OUT:-samples_test100}"
 SAMPLES="${SAMPLES:-10}"       # wjs.n_samples_per_pocket (shipped default)
@@ -37,6 +49,20 @@ SPLIT="${SPLIT:-test}"
 N_POCKETS="${N_POCKETS:-100}"  # test split size
 NTARGETS="${NTARGETS:-100}"    # shipped default; safe with sharding, see above
 GPUS="${GPUS:-0,1,2,3,4,5,6,7}"
+EXPECT_TARGETS="${EXPECT_TARGETS:-$N_POCKETS}"
+
+XRAY_ARGS=()
+if [ -n "$XRAY_CROPS" ]; then
+    [ -d "$XRAY_CROPS/$SPLIT" ] || { echo "[72_sample] MISSING $XRAY_CROPS/$SPLIT"; exit 1; }
+    XRAY_ARGS=(
+        "dset=crossdocked_xray"
+        "dset.crops_dir=$XRAY_CROPS"
+        "dset.normalize=false"
+        "dset.use_xray=true"
+        "dset.pocket_radius=-1"
+        "dset.ligand_radius=0.5"
+    )
+fi
 
 CKPT="$ROOT/voxbind/exps/$EXP"
 SAVE="$CKPT/samples/$OUT"
@@ -75,6 +101,7 @@ for i in "${!GPU_LIST[@]}"; do
             wjs.n_targets=$NTARGETS \
             wjs.start=$lo \
             wjs.end=$hi \
+            ${XRAY_ARGS[*]:-} \
             hydra.run.dir='$D' > '$D/run.log' 2>&1
         echo \$? > '$D/exit_code'
     " </dev/null >"$D/launch.log" 2>&1 &
@@ -94,7 +121,7 @@ for f in "$SAVE"/_run_gpu*/exit_code; do
     rc=$(cat "$f"); [ "$rc" -ne 0 ] && { echo "[72_sample] FAILED: $f rc=$rc"; fail=1; }
 done
 n_targets_done=$(ls -d "$SAVE"/target_* 2>/dev/null | wc -l)
-echo "[72_sample] chunks finished; target dirs = $n_targets_done / $N_POCKETS"
+echo "[72_sample] chunks finished; target dirs = $n_targets_done / $EXPECT_TARGETS"
 [ "$fail" -ne 0 ] && exit 1
-[ "$n_targets_done" -ne "$N_POCKETS" ] && { echo "[72_sample] WARNING: expected $N_POCKETS target dirs"; exit 1; }
+[ "$n_targets_done" -ne "$EXPECT_TARGETS" ] && { echo "[72_sample] WARNING: expected $EXPECT_TARGETS target dirs"; exit 1; }
 echo "[72_sample] done -> $SAVE"

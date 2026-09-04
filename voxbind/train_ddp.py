@@ -307,10 +307,13 @@ def main(cfg: DictConfig) -> None:
             _missing, _unexpected = model.load_state_dict(_sd, strict=False)
             # everything absent from a vanilla checkpoint MUST be density-branch;
             # anything else means the architectures don't actually match.
-            _stray = [k for k in _missing
-                      if not k.startswith(("density_encoder.", "density_proj.", "context_proj."))]
-            _stray_unexpected = [k for k in _unexpected
-                                 if not k.startswith(("density_encoder.", "density_proj.", "context_proj."))]
+            # token_trunk/token_proj are fusion='v4' (frozen-encoder patch tokens fused per
+            # voxel); like density_proj they are absent from every vanilla checkpoint and
+            # token_proj is zero-init, so step 0 still reproduces the warm-start source.
+            _density_branch = ("density_encoder.", "density_proj.", "context_proj.",
+                               "token_trunk.", "token_proj.")
+            _stray = [k for k in _missing if not k.startswith(_density_branch)]
+            _stray_unexpected = [k for k in _unexpected if not k.startswith(_density_branch)]
             if _stray_unexpected or _stray:
                 raise RuntimeError(
                     f"warm start from {pretrained_path} is not architecture-compatible: "

@@ -261,6 +261,22 @@ class VoxBind(torch.nn.Module):
             self.density_n_in = n_dens_in
             # Path B: full-voxel conditioning with the ligand masked.
             self.density_full_voxel = (n_dens_in == n_channels_ligand + n_channels_pocket + 2)
+            # COORDS-ONLY encoder (model_zoo C_v2: input_mode=atomblob, with_gradmag=false,
+            # n_in=11, groups [7,4]). Same atom-blob voxel layout as full-voxel minus the
+            # rho / ||grad rho|| channels, so it is the matched control that isolates what the
+            # DENSITY channels contribute while holding the fusion path and the frozen
+            # encoder's capacity fixed. Without this branch `_density_encoder_input` returns
+            # the bare 1-channel map and the channel-group patch embed dies with
+            # "split_with_sizes expects split_sizes to sum exactly to 1 ... got [7, 4]".
+            self.density_coords_only = (n_dens_in == n_channels_ligand + n_channels_pocket)
+            # Both build the [lig, poc, ...] atom-blob stack, so everything keyed off "the
+            # frozen encoder consumes atom-blob voxels" must test this, not full_voxel alone.
+            self.density_atomblob_in = self.density_full_voxel or self.density_coords_only
+            if self.density_coords_only and density_encoder_type != "vit":
+                raise ValueError(
+                    "density_vit_n_in_channels=n_lig+n_poc (coords-only conditioning) "
+                    f"requires density_encoder_type='vit', got {density_encoder_type!r}"
+                )
             if self.density_full_voxel and density_encoder_type != "vit":
                 raise ValueError(
                     "density_vit_n_in_channels=13 (full-voxel conditioning) requires "
@@ -396,7 +412,7 @@ class VoxBind(torch.nn.Module):
             n_tok_groups = 1
             if density_vit_patch_embed_mode == "channel_group" and density_vit_channel_groups:
                 n_tok_groups = len(density_vit_channel_groups)
-                if self.density_drop_ligand_tokens and self.density_full_voxel:
+                if self.density_drop_ligand_tokens and self.density_atomblob_in:
                     n_tok_groups -= 1          # the ligand group is all zeros -> constant keys
             self.density_token_groups = int(n_tok_groups)
             self.density_token_c = int(density_token_c)
@@ -606,7 +622,7 @@ class VoxBind(torch.nn.Module):
                 strength=self.density_attenuate_strength,
             )
             density = attenuate_density(density, alpha, self.density_attenuate_noise_sigma)
-        if not self.density_full_voxel:
+        if not self.density_atomblob_in:
             return density
         # density: (B, 1, G, G, G) — the v5 (arcsinh+z) pocket density crop.
         B, _, G, _, _ = density.shape
@@ -620,6 +636,11 @@ class VoxBind(torch.nn.Module):
             lig0 = enc_ligand.to(density.dtype)
         else:
             lig0 = density.new_zeros(B, self.n_channels_ligand, G, G, G)
+        # Coords-only encoder: it was pretrained on [lig, poc] alone, so the density and
+        # gradmag channels must NOT be appended — the experimental map reaches this arm
+        # only through what the pocket atoms already encode, which is exactly the point.
+        if self.density_coords_only:
+            return torch.cat([lig0, pocket], dim=1)                    # (B, n_lig+n_poc, G,G,G)
         gradmag = per_sample_zscore(gradient_magnitude3d(density))     # (B, 1, G, G, G)
         if self.density_mask_ligand and dens_mask is not None:
             keep = 1.0 - dens_mask                                     # 0 inside ligand region
@@ -663,7 +684,7 @@ class VoxBind(torch.nn.Module):
         tok = self._encode_density(enc_in, tokens_only=True)          # (B, nG·N, D)
         g_p = self.density_encoder.g_p
         n_patch = g_p ** 3
-        if (self.density_drop_ligand_tokens and self.density_full_voxel
+        if (self.density_drop_ligand_tokens and self.density_atomblob_in
                 and tok.shape[1] > n_patch):
             tok = tok[:, n_patch:]            # groups are token-major, ligand group first
         if tok.shape[1] != self.density_token_groups * n_patch:
@@ -770,7 +791,7 @@ class VoxBind(torch.nn.Module):
                 # channel_group tokenisation a full 1/nG of the keys carry no information --
                 # attending to them is pure cost. Tokens are (B, nG*N, D) with the groups in
                 # channel order [lig, poc, dens+gradmag], so the first N are the ligand's.
-                if self.density_drop_ligand_tokens and self.density_full_voxel:
+                if self.density_drop_ligand_tokens and self.density_atomblob_in:
                     n_per_group = self.density_encoder.g_p ** 3
                     if dens_ctx.shape[1] > n_per_group:
                         dens_ctx = dens_ctx[:, n_per_group:]
