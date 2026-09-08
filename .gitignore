@@ -50,3 +50,11 @@ notebook/html/relay_push.py
 notebook/html/gpu.html
 notebook/html/gpu.json
 notebook/html/nodes/
+
+# results/ artifact bundle (reports, samples, metrics, docker) — Dropbox-backed
+# (박성현/VoxBind/results), NOT git. Only the sync scripts + README travel via git
+# so a fresh checkout can bootstrap the pull. Mirrors voxbind/model_zoo.
+/results/*
+!/results/dropbox_push.sh
+!/results/dropbox_pull.sh
+!/results/README.md

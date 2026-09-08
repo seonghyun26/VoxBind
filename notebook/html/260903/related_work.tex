@@ -1,0 +1,51 @@
+% related_work.tex — Expanded ICLR related work.
+
+\section{Related Work}
+\label{sec:related_works}
+
+\textbf{Experimental electron-density maps.}
+X-ray crystallography records diffraction intensities, from which observed
+structure-factor amplitudes $F_o$ are derived. A standard
+maximum-likelihood-weighted map is reconstructed using coefficients
+$(2mF_o-DF_c)e^{\mathrm{i}\phi_c}$, where $F_c$ and $\phi_c$ are obtained from
+the fitted model. Here, $m$ is the phase figure of merit and $D$ accounts for
+model error, reducing bias from uncertain phases and imperfect models
+\citep{read1986improved}. Although partly model-dependent, the map retains
+observed amplitudes and can contain weak evidence for low-occupancy or
+alternative conformations absent from a single fitted structure
+\citep{lang2010automated}. Experimental maps have supported ligand
+identification, local model assessment, and direct affinity learning
+\citep{kowiel2019automatic,miyaguchi2021machine,suriana2025beyond}. Learning a
+reusable representation from such maps and transferring it across
+protein--ligand tasks remains less explored.
+
+\textbf{Binding-affinity regression.}
+Binding-affinity regression predicts the interaction strength of a
+protein--ligand complex. Sequence-based approaches use ligand SMILES and
+protein sequences without explicit three-dimensional geometry
+\citep{ozturk2018deepdta,huang2021moltrans,shenoy2026nesso1}. Structure-based
+approaches instead encode complexes with voxel CNNs, graph neural networks, or
+equivariant architectures
+\citep{stepniewska2018development,kong2026hbgsa,kong2023generalist}.
+Self-supervised methods further pre-train pocket or complex representations
+using denoising and interaction objectives
+\citep{jin2023dsmbind,feng2024protein,gao2024self}. Most closely,
+\citet{suriana2025beyond} directly compares experimental-density and atom-based
+voxel inputs. We instead study large-scale joint pre-training and frozen
+transfer under both leakage and similarity controls.
+
+\textbf{Structure-based drug design.}
+Structure-based drug design uses target structures to identify or optimize
+ligands \citep{blundell1996structure,anderson2003process}; here, we focus on
+pocket-conditioned three-dimensional generation. Autoregressive models place
+ligand atoms or fragments sequentially \citep{luo20213d,peng2022pocket2mol},
+whereas diffusion models jointly denoise atom types and coordinates
+\citep{guan20233d-5e4,schneuing2024structure}. Voxel models instead generate
+continuous atom-density grids through denoising
+\citep{pinheiro20233d-81b,pinheiro2024structure}. DecompDiff also evaluates
+decomposed priors obtained from either a reference ligand or target subpockets
+\citep{guan2024decompdiff}. Density-guided methods have used experimental pocket
+maps to generate ligand density or ligand-density representations during
+molecular construction \citep{wang2022pocket,li2025electron}. In contrast, we
+pre-train a joint coordinate--experimental-density encoder and reuse its spatial
+features for reference-assisted voxel generation.

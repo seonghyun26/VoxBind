@@ -1,0 +1,24 @@
+% abstract.tex — ICLR-length abstract.
+
+\begin{abstract}
+Protein machine learning largely relies on amino-acid sequences and fitted
+atomic coordinates, leaving the experimental evidence behind crystallographic
+models largely unused. For an X-ray structure, coordinates are refined against
+an electron-density map, which can retain evidence for alternative
+conformations and local atomic support that is not explicit in a single fitted
+model. We ask whether this experimental signal can provide a transferable
+representation for protein--ligand modeling. We introduce \ours{}, a
+coordinate-and-density voxel encoder pre-trained by masked reconstruction on
+more than 100K curated crystallographic protein--ligand instances. The encoder
+jointly represents ligand and pocket atoms, experimental $2mF_o-DF_c$ density,
+and its gradient magnitude. We freeze the encoder and transfer its pooled or
+spatial features to binding-affinity regression and reference-assisted
+structure-based drug design. We evaluate affinity under complex-level leakage
+controls, protein-sequence-similarity constraints, and an exact-PDB-held-out
+CASF-2016 subset. For molecular generation, we assess docking, molecular
+quality, reference-ligand similarity, pose geometry, and representative binding
+modes. \ours{} achieves competitive affinity prediction and improves VoxBind's
+docking scores while maintaining low reference-ligand similarity. These results
+support experimental density as a transferable representation for
+protein--ligand modeling.
+\end{abstract}

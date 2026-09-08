@@ -229,6 +229,7 @@ def _channel_layout(
     gradmag_reconstruct: bool = True,
     density_input: bool = True,
     mask_as_channel: bool = False,
+    gradmag_without_density: bool = False,
 ) -> dict:
     """Single source of truth for the multi-channel input / reconstruction layout.
 
@@ -279,8 +280,21 @@ def _channel_layout(
         "density", "atomblob_density", "atomblob_merged_density", "roleblob_density",
         "pocket_density", "ligand_density",
     )
+    # CG mode: gradmag WITHOUT a density channel. gradmag is still derived from density during
+    # data loading (density is read, ‖∇ρ‖ computed), but the density channel itself is NOT part of
+    # the encoder input OR the target — only its gradient is. Layout: [ …atoms…, gradmag ] (no
+    # density). Assembled by input_mode=atomblob + with_gradmag (see train_density.py: x_clean =
+    # [atoms] then append gradmag → [atoms, gradmag]). Opt-in; default off keeps the old assert.
+    if gradmag_without_density:
+        if has_density:
+            raise ValueError(
+                f"gradmag_without_density=True expects an atom-only input_mode "
+                f"(gradmag is appended to atoms, no density channel); got {input_mode!r}"
+            )
+        if not with_gradmag:
+            raise ValueError("gradmag_without_density=True requires with_gradmag=True")
     n_density = 1 if has_density else 0
-    if with_gradmag and not has_density:
+    if with_gradmag and not has_density and not gradmag_without_density:
         raise ValueError(
             f"with_gradmag=True requires a density-bearing input_mode "
             f"(density / *_density); got input_mode={input_mode!r}"
@@ -290,7 +304,8 @@ def _channel_layout(
     # interleaved per source: [ …atoms…, dens0, grad0, dens1, grad1 ]. n_density / n_gradmag
     # stay PER-SOURCE (=1); the multi-source width scales by n_src. n_src=1 → identical to
     # the single-2Fo-Fc layout (all prior runs unaffected).
-    n_src = N_DENSITY_SRC if has_density else 0
+    # CG (gradmag_without_density): 1 source contributing a gradmag-only pair (n_density=0).
+    n_src = N_DENSITY_SRC if has_density else (1 if gradmag_without_density else 0)
     per_src = n_density + n_gradmag                   # channels contributed per source
     n_full = n_atom + n_src * per_src                 # full assembled width (= target width source)
     # Reconstruction / loss-target width: gradmag dropped (per source) only when input-only.

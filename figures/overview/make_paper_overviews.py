@@ -80,7 +80,8 @@ def badge(ax, x, y, label, fc, ec, tc, w=86):
     text(ax, x + w / 2, y + 13, label, 11, tc, "bold")
 
 
-def module(ax, x, y, w, h, title, subtitle, fc, ec, status=None, title_size=17):
+def module(ax, x, y, w, h, title, subtitle, fc, ec, status=None, title_size=17,
+           subtitle_size=14):
     box(ax, x, y, w, h, fc, ec, 1.7, 17)
     if status == "frozen":
         badge(ax, x + 10, y + 9, "FROZEN", "#F3F6F8", "#CAD3DC", MUTED, 78)
@@ -91,7 +92,7 @@ def module(ax, x, y, w, h, title, subtitle, fc, ec, status=None, title_size=17):
     else:
         ty = y + 35
     text(ax, x + w / 2, ty, title, title_size, ec, "bold")
-    text(ax, x + w / 2, y + h - 28, subtitle, 14, MUTED)
+    text(ax, x + w / 2, y + h - 28, subtitle, subtitle_size, MUTED)
 
 
 def stack(ax, x, y, w, h, groups, title, font=13):
@@ -439,18 +440,16 @@ def voxbind_adapter():
 
 
 def single_cdg_encoder():
-    """Overview of the earlier single-encoder C+D+G pipeline."""
-    fig, ax = canvas(2000, 930)
-    text(ax, 1000, 42, "Single-encoder CDG pipeline", 31, INK, "bold")
-    text(ax, 1000, 78,
+    """Single-encoder C+D+G pre-training scheme."""
+    fig, ax = canvas(1320, 930)
+    text(ax, 660, 42, "Single-encoder CDG pre-training", 31, INK, "bold")
+    text(ax, 660, 78,
          "Pocket coordinates, ligand coordinates, and experimental electron density are learned jointly in one spatial encoder",
          16, MUTED)
 
     section(ax, 55, 132, "a", "Aligned input data", 390)
     section(ax, 500, 132, "b", "Joint CDG pre-training", 760)
-    section(ax, 1310, 132, "c", "High-level VoxBind fusion", 630)
     ax.plot([475, 475], [120, 872], color=LINE, lw=1.0)
-    ax.plot([1285, 1285], [120, 872], color=LINE, lw=1.0)
 
     # (a) Make all three modalities explicit in the raw aligned data.
     cdg_data_scene(ax, 90, 202, 340, 245)
@@ -473,105 +472,183 @@ def single_cdg_encoder():
     text(ax, 249, 817, "7 + 4 + 2 = 13 channels", 14, MUTED)
     text(ax, 249, 868, "C: coordinates · D: density · G: density gradient", 13, MUTED)
 
-    # (b) Standard MAE read: clean target → masked input → encoder → reconstruction
-    # head → reconstructed modalities → loss only on the masked voxels.
-    ax.plot([386, 455, 455, 520], [802, 802, 432, 432], color=INK, lw=2.1, zorder=5)
-    arrow(ax, 520, 432, 532, 432, INK)
-    stack(ax, 538, 310, 132, 244,
-          [("Ligand $V_L$\n7 ch", LIGAND_BG, 7),
-           ("Pocket $V_P$\n4 ch", POCKET_BG, 4),
-           ("ρ", DENS_BG, 1),
-           ("|∇ρ|", "#EAF4E6", 1)],
-          "Clean target x · 13 ch", 11)
-    arrow(ax, 676, 432, 710, 432, INK)
-    mask_icon(ax, 716, 387, 90)
-    text(ax, 761, 501, "75% masked", 13, MUTED)
-    arrow(ax, 812, 432, 850, 432, INK)
+    # (b) Minimal, strictly aligned MAE pipeline.
+    ax.plot([386, 455, 455, 515], [802, 802, 410, 410], color=INK, lw=2.1, zorder=5)
+    arrow(ax, 515, 410, 530, 410, INK)
 
-    box(ax, 856, 302, 224, 260, MODEL_BG, MODEL, 1.8, 20)
-    badge(ax, 876, 322, "ONE ENCODER", MODEL, MODEL, "white", 108)
-    text(ax, 968, 382, "CDG ChannelViT", 17, MODEL, "bold")
-    text(ax, 968, 418, "masked multimodal input", 14, MUTED)
-    badge(ax, 874, 458, "LIGAND C", LIGAND_BG, LIGAND, LIGAND, 88)
-    badge(ax, 968, 458, "POCKET C", POCKET_BG, POCKET, POCKET, 88)
-    badge(ax, 1062, 458, "D+G", DENS_BG, DENS, DENS, 60)
-    text(ax, 968, 526, "joint 3D representation", 12, MODEL, "bold")
+    stack(ax, 536, 306, 120, 208,
+          [(r"$V_L$ · 7", LIGAND_BG, 7),
+           (r"$V_P$ · 4", POCKET_BG, 4),
+           (r"$\rho,|\nabla\rho|$ · 2", DENS_BG, 2)],
+          r"Clean CDG $x$", 11)
+    arrow(ax, 662, 410, 691, 410, INK)
 
-    arrow(ax, 1086, 432, 1120, 432, MODEL)
-    grid_icon(ax, 1126, 392, 72, 72, MODEL)
-    text(ax, 1168, 495, "joint\ncontext", 13, MODEL, "bold", linespacing=1.05)
+    mask_icon(ax, 697, 370, 80)
+    text(ax, 737, 475, "75% mask", 12, MUTED)
+    arrow(ax, 783, 410, 812, 410, INK)
 
-    arrow(ax, 1168, 510, 1130, 612, MODEL, 2.0, .08)
-    box(ax, 976, 616, 210, 76, "white", MODEL, 1.5, 16)
-    text(ax, 1081, 642, "Reconstruction head", 14, MODEL, "bold")
-    text(ax, 1081, 672, "predict 13 channels", 13, MUTED)
-    arrow(ax, 970, 654, 932, 654, MODEL)
+    box(ax, 818, 326, 158, 168, MODEL_BG, MODEL, 1.7, 18)
+    badge(ax, 835, 340, "ENCODER", MODEL, MODEL, "white", 78)
+    text(ax, 897, 400, "CDG", 20, MODEL, "bold")
+    text(ax, 897, 430, "ChannelViT", 15, MODEL, "bold")
+    text(ax, 897, 470, "joint context", 12, MUTED)
+    arrow(ax, 982, 410, 1004, 410, MODEL)
 
-    stack(ax, 780, 590, 146, 146,
+    box(ax, 1010, 354, 140, 112, "white", MODEL, 1.5, 16)
+    text(ax, 1080, 393, "Reconstruction", 11, MODEL, "bold")
+    text(ax, 1080, 416, "head", 14, MODEL, "bold")
+    text(ax, 1080, 447, "13 ch", 12, MUTED)
+    arrow(ax, 1156, 410, 1170, 410, MODEL)
+
+    stack(ax, 1176, 306, 104, 208,
           [(r"$\hat V_L$ · 7", LIGAND_BG, 7),
            (r"$\hat V_P$ · 4", POCKET_BG, 4),
            (r"$\hat\rho,|\nabla\hat\rho|$ · 2", DENS_BG, 2)],
-          r"Reconstructed $\hat{x}$", 11)
-    arrow(ax, 774, 663, 738, 663, MUTED)
-    box(ax, 552, 616, 180, 96, "#FFF9F1", TRAIN, 1.5, 16)
-    text(ax, 642, 641, "Masked-only loss", 14, TRAIN, "bold")
-    text(ax, 642, 665, r"$\mathcal{L}_{MAE}(\hat{x},x)$", 14, TRAIN, "bold")
-    text(ax, 642, 695, "clean target · masked voxels only", 10, MUTED)
-    arrow(ax, 604, 560, 610, 610, TRAIN, 1.5, -.1, "--")
+          r"Recon. $\hat{x}$", 10)
 
-    box(ax, 610, 792, 584, 70, "#F4F7FA", LINE, 1.2, 16)
-    text(ax, 902, 816, "One encoder reconstructs ligand, pocket, and ED together", 15, INK, "bold")
-    text(ax, 902, 844, "The learned context preserves their shared 3D geometry", 13, MUTED)
+    # Both clean x and reconstructed x-hat point to the same masked-only objective.
+    arrow(ax, 596, 520, 806, 634, TRAIN, 1.6, -.08, "--")
+    arrow(ax, 1228, 520, 1018, 634, TRAIN, 1.6, .08)
+    box(ax, 792, 640, 240, 92, TRAIN_BG, TRAIN, 1.5, 16)
+    text(ax, 912, 666, "Masked-only MAE", 14, TRAIN, "bold")
+    text(ax, 912, 693, r"$\mathcal{L}(\hat{x},x)$", 16, INK, "bold")
+    text(ax, 912, 716, "loss on hidden voxels", 11, MUTED)
 
-    # (c) High-level fusion test with two clearly separated input streams.
-    box(ax, 1320, 210, 660, 652, BG, LINE, 1.4, 20)
-    badge(ax, 1340, 228, "FUSION TEST", TRAIN_BG, TRAIN, TRAIN, 106)
+    box(ax, 648, 792, 528, 62, "#F4F7FA", LINE, 1.2, 15)
+    text(ax, 912, 816, "Reconstruct ligand, pocket, and ED in the same aligned frame", 14, INK, "bold")
+    text(ax, 912, 840, "single encoder · single reconstruction target", 12, MUTED)
 
-    text(ax, 1350, 285, "Original VoxBind stream", 17, INK, "bold", ha="left")
-    box(ax, 1350, 312, 190, 112, "white", LINE, 1.4, 16)
-    box(ax, 1364, 328, 162, 36, LIGAND_BG, LIGAND, 1.0, 10)
-    text(ax, 1445, 346, r"Noisy ligand $y$", 11, LIGAND, "bold")
-    box(ax, 1364, 374, 162, 36, POCKET_BG, POCKET, 1.0, 10)
-    text(ax, 1445, 392, r"Pocket $V_P$", 11, POCKET, "bold")
-    arrow(ax, 1546, 368, 1578, 368, MODEL)
-    box(ax, 1584, 318, 166, 100, MODEL_BG, MODEL, 1.4, 16)
-    text(ax, 1667, 350, "VoxBind encoder", 14, MODEL, "bold")
-    text(ax, 1667, 382, "baseline features", 13, MUTED)
+    save(fig, "single_cdg_pretraining_scheme")
 
-    text(ax, 1350, 492, "Pretrained CDG condition stream", 17, INK, "bold", ha="left")
-    box(ax, 1350, 520, 190, 146, "white", LINE, 1.4, 16)
-    box(ax, 1364, 536, 162, 32, "#F5F2F3", LINE, 1.0, 9)
-    text(ax, 1445, 552, r"Ligand $V_L=0$", 11, MUTED, "bold")
-    box(ax, 1364, 578, 162, 32, POCKET_BG, POCKET, 1.0, 9)
-    text(ax, 1445, 594, r"Pocket $V_P$", 11, POCKET, "bold")
-    box(ax, 1364, 620, 162, 32, DENS_BG, DENS, 1.0, 9)
-    text(ax, 1445, 636, r"$\rho$ + $|\nabla\rho|$", 11, DENS, "bold")
-    arrow(ax, 1546, 593, 1578, 593, POCKET)
-    box(ax, 1584, 540, 166, 106, POCKET_BG, POCKET, 1.4, 16)
-    badge(ax, 1596, 550, "FROZEN", "#F3F6F8", LINE, MUTED, 68)
-    text(ax, 1667, 590, "CDG encoder", 15, MODEL, "bold")
-    text(ax, 1667, 620, "spatial context", 13, MUTED)
 
-    arrow(ax, 1756, 368, 1810, 464, MODEL, 2.0, -.08)
-    arrow(ax, 1756, 593, 1810, 510, POCKET, 2.0, .08)
-    box(ax, 1814, 428, 116, 124, TRAIN_BG, TRAIN, 1.7, 17, "--")
-    text(ax, 1872, 466, "Feature", 16, TRAIN, "bold")
-    text(ax, 1872, 493, "fusion", 18, TRAIN, "bold")
-    text(ax, 1872, 527, "under test", 12, MUTED)
-    arrow(ax, 1872, 558, 1872, 616, INK)
-    box(ax, 1774, 622, 196, 76, MODEL_BG, MODEL, 1.5, 16)
-    text(ax, 1872, 648, "VoxBind denoiser", 14, MODEL, "bold")
-    text(ax, 1872, 678, "conditioned generation", 12, MUTED)
-    arrow(ax, 1872, 704, 1872, 758, OUTCOL)
-    box(ax, 1758, 764, 228, 66, OUT_BG, OUTCOL, 1.5, 16)
-    text(ax, 1872, 787, "Denoised ligand", 16, OUTCOL, "bold")
-    text(ax, 1872, 812, "→ walk–jump sampling", 13, MUTED)
+def single_cdg_downstream_tasks():
+    """Frozen-encoder probing and VoxBind conditioning with task-specific heads."""
+    fig, ax = canvas(1900, 930)
+    text(ax, 950, 42, "Downstream tasks with a frozen CDG encoder", 31, INK, "bold")
+    text(ax, 950, 78,
+         "Pretrained encoders remain frozen; only the task-specific probe or fusion interface is optimized",
+         16, MUTED)
 
-    save(fig, "single_cdg_encoder_overview")
+    section(ax, 55, 132, "a", "Binding-affinity probing", 840)
+    section(ax, 995, 132, "b", "VoxBind conditioning", 850)
+    ax.plot([950, 950], [120, 872], color=LINE, lw=1.0)
+
+    # (a) Frozen CDG features followed by a lightweight affinity probe.
+    stack(ax, 75, 238, 126, 188,
+          [(r"$V_L$ · 7", LIGAND_BG, 7),
+           (r"$V_P$ · 4", POCKET_BG, 4),
+           (r"$\rho,|\nabla\rho|$ · 2", DENS_BG, 2)],
+          "CDG input", 11)
+    arrow(ax, 207, 332, 249, 332, INK)
+
+    module(ax, 255, 250, 184, 164, "CDG encoder", "joint spatial context",
+           MODEL_BG, MODEL, "frozen", 16, 12)
+    arrow(ax, 445, 332, 489, 332, MODEL)
+
+    box(ax, 495, 276, 126, 112, "white", MODEL, 1.5, 16)
+    text(ax, 558, 311, "Global mean", 14, MODEL, "bold")
+    text(ax, 558, 337, "pooling", 14, MODEL, "bold")
+    text(ax, 558, 369, r"$z_{\mathrm{CDG}}$", 13, MUTED)
+    arrow(ax, 627, 332, 669, 332, MODEL)
+
+    module(ax, 675, 250, 190, 164, "MLP probe", "binding-affinity head",
+           TRAIN_BG, TRAIN, "trainable", 17, 12)
+    arrow(ax, 770, 420, 770, 464, TRAIN)
+    box(ax, 665, 470, 210, 68, OUT_BG, OUTCOL, 1.5, 16)
+    text(ax, 770, 493, r"Predicted affinity $\hat{pK}$", 15, OUTCOL, "bold")
+    text(ax, 770, 520, "one value per complex", 11, MUTED)
+
+    box(ax, 75, 470, 220, 68, "white", LINE, 1.4, 16)
+    text(ax, 185, 493, r"Experimental affinity $pK$", 15, INK, "bold")
+    text(ax, 185, 520, "ground-truth label", 11, MUTED)
+
+    # Both values are compared by complementary regression objectives.
+    ax.plot([185, 185, 475], [544, 570, 570], color=MUTED, lw=1.8, zorder=5)
+    ax.plot([770, 770, 475], [544, 570, 570], color=OUTCOL, lw=1.8, zorder=5)
+    arrow(ax, 475, 570, 475, 608, TRAIN, 1.8)
+    text(ax, 475, 589, "compare", 11, MUTED, "bold")
+
+    box(ax, 80, 620, 245, 112, "white", TRAIN, 1.4, 16)
+    text(ax, 202, 650, "MSE loss", 15, TRAIN, "bold")
+    text(ax, 202, 685, r"$\mathcal{L}_{\mathrm{MSE}}=\mathrm{mean}[(\hat{pK}-pK)^2]$",
+         13, INK, "bold")
+    text(ax, 202, 713, "absolute prediction error", 11, MUTED)
+
+    box(ax, 350, 620, 285, 112, "white", TRAIN, 1.4, 16)
+    text(ax, 492, 650, "Correlation loss", 15, TRAIN, "bold")
+    text(ax, 492, 685, r"$\mathcal{L}_{\mathrm{corr}}=1-r_{\mathrm{Pearson}}(\hat{pK},pK)$",
+         13, INK, "bold")
+    text(ax, 492, 713, "preserves relative affinity ranking", 11, MUTED)
+
+    arrow(ax, 641, 676, 681, 676, TRAIN)
+    box(ax, 687, 620, 198, 112, TRAIN_BG, TRAIN, 1.7, 16)
+    text(ax, 786, 650, "Probe objective", 15, TRAIN, "bold")
+    text(ax, 786, 684,
+         r"$\mathcal{L}_{\mathrm{probe}}=\mathcal{L}_{\mathrm{MSE}}+\lambda\mathcal{L}_{\mathrm{corr}}$",
+         13, INK, "bold")
+    text(ax, 786, 713, "probe only receives gradients", 11, MUTED)
+
+    box(ax, 175, 784, 610, 58, "#F4F7FA", LINE, 1.2, 15)
+    text(ax, 480, 813, "Frozen CDG encoder → fixed features during affinity training", 14, INK, "bold")
+
+    # (b) High-level fusion test with two explicit, frozen encoder streams.
+    box(ax, 990, 190, 865, 670, BG, LINE, 1.4, 20)
+
+    text(ax, 1015, 226, "Original VoxBind stream", 17, INK, "bold", ha="left")
+    box(ax, 1015, 250, 190, 132, "white", LINE, 1.4, 16)
+    box(ax, 1029, 268, 162, 38, LIGAND_BG, LIGAND, 1.0, 10)
+    text(ax, 1110, 287, r"Noisy ligand $y$", 11, LIGAND, "bold")
+    box(ax, 1029, 322, 162, 38, POCKET_BG, POCKET, 1.0, 10)
+    text(ax, 1110, 341, r"Pocket $V_P$", 11, POCKET, "bold")
+    arrow(ax, 1211, 316, 1253, 316, MODEL)
+    module(ax, 1259, 250, 190, 132, "VoxBind encoder", "baseline features",
+           MODEL_BG, MODEL, "frozen", 15, 12)
+    arrow(ax, 1455, 316, 1500, 316, MODEL)
+    box(ax, 1506, 274, 142, 84, "white", MODEL, 1.4, 14)
+    text(ax, 1577, 304, "VoxBind", 13, MODEL, "bold")
+    text(ax, 1577, 332, "feature stream", 12, MUTED)
+
+    text(ax, 1015, 448, "Pretrained CDG condition stream", 17, INK, "bold", ha="left")
+    box(ax, 1015, 474, 190, 158, "white", LINE, 1.4, 16)
+    box(ax, 1029, 488, 162, 30, "#F5F2F3", LINE, 1.0, 8)
+    text(ax, 1110, 503, r"Ligand $V_L=0$", 10, MUTED, "bold")
+    box(ax, 1029, 530, 162, 30, POCKET_BG, POCKET, 1.0, 8)
+    text(ax, 1110, 545, r"Pocket $V_P$", 10, POCKET, "bold")
+    box(ax, 1029, 572, 162, 42, DENS_BG, DENS, 1.0, 8)
+    text(ax, 1110, 593, r"ED $\rho$ + $|\nabla\rho|$", 10, DENS, "bold")
+    arrow(ax, 1211, 553, 1253, 553, POCKET)
+    module(ax, 1259, 487, 190, 132, "CDG encoder", "spatial context",
+           POCKET_BG, MODEL, "frozen", 16, 12)
+    arrow(ax, 1455, 553, 1500, 553, POCKET)
+    box(ax, 1506, 511, 142, 84, "white", POCKET, 1.4, 14)
+    text(ax, 1577, 541, "CDG", 13, POCKET, "bold")
+    text(ax, 1577, 569, "feature stream", 12, MUTED)
+
+    arrow(ax, 1654, 316, 1703, 413, MODEL, 2.0, -.08)
+    arrow(ax, 1654, 553, 1703, 479, POCKET, 2.0, .08)
+    box(ax, 1696, 400, 118, 116, TRAIN_BG, TRAIN, 1.7, 17, "--")
+    text(ax, 1755, 434, "Feature", 16, TRAIN, "bold")
+    text(ax, 1755, 462, "fusion", 18, TRAIN, "bold")
+    text(ax, 1755, 493, "under test", 11, MUTED)
+
+    arrow(ax, 1755, 522, 1755, 590, TRAIN)
+    box(ax, 1662, 596, 186, 82, MODEL_BG, MODEL, 1.5, 16)
+    text(ax, 1755, 623, "VoxBind denoiser", 13, MODEL, "bold")
+    text(ax, 1755, 653, "conditioned generation", 11, MUTED)
+    arrow(ax, 1755, 684, 1755, 740, OUTCOL)
+    box(ax, 1657, 746, 196, 70, OUT_BG, OUTCOL, 1.5, 16)
+    text(ax, 1755, 770, "Denoised ligand", 15, OUTCOL, "bold")
+    text(ax, 1755, 798, "→ walk–jump sampling", 11, MUTED)
+
+    text(ax, 1422, 824, "Both encoders are frozen; fusion is evaluated at the feature level.",
+         13, MUTED, "bold")
+
+    save(fig, "single_cdg_downstream_tasks")
 
 
 if __name__ == "__main__":
     pretraining()
     voxbind_adapter()
     single_cdg_encoder()
+    single_cdg_downstream_tasks()
     print(f"Wrote paper overview figures to {OUT}")

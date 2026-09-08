@@ -1,0 +1,70 @@
+PROMPT — Pre-training overview figure (fig_training_overview)
+============================================================
+Goal: a single wide, left-to-right schematic ("Figure 1a: Method overview" style,
+as in BioEmu-CV / TPS-DPS) that shows how we pre-train the density-aware voxel
+encoder with a masked-autoencoding objective, and how the frozen encoder transfers
+to affinity prediction. Clean, flat, publication-quality vector look (think
+matplotlib/TikZ, not 3D render). White background, thin arrows, muted scientific
+palette. Roughly 5 stages arranged horizontally with labeled arrows between them.
+
+STAGE 1 — Input complex.
+Left-most: a small cartoon of a protein--ligand complex (pocket as a light gray
+surface/ribbon, ligand as sticks in a distinct color) sitting inside a translucent
+cube that marks the 64^3 voxel crop centered on the pocket. Label: "protein--ligand
+complex". A short arrow "voxelize" points right.
+
+STAGE 2 — Multi-channel voxel grid (13 channels).
+Show the crop expanded into a stack of 3D grids, visually grouped into FOUR blocks
+with a small brace/label under each group:
+  - "ligand atoms (7)"  — 7 thin translucent voxel cubes, warm color.
+  - "pocket atoms (4)"  — 4 thin translucent voxel cubes, cool color.
+  - "electron density rho (1)" — 1 grid rendered as a smooth cloud/isosurface, teal.
+  - "gradient |grad rho| (1)"  — 1 grid rendered as an edge/shell pattern, purple.
+Caption under the whole stack: "x in R^{13 x 64^3}  =  [ atoms | density | gradient ]".
+Emphasize that density + gradient are the extra channels vs. a coords-only encoder
+(e.g. a small "+density" badge on the last two grids).
+
+STAGE 3 — Atom-biased 3D block masking.
+Take the 13-channel stack and show the SAME spatial mask applied across channels:
+partition into 8^3 blocks, ~60% masked (drawn as darkened/hollow cubes), the rest
+visible. Draw the masked blocks concentrated around the ligand/interface region (NOT
+uniformly), with a small heat overlay on atom density to convey "atom-biased: mask
+where the atoms are". Label: "mask 60% of 8^3 blocks (atom-biased)". Arrow "mask" ->.
+
+STAGE 4 — ChannelViT encoder + reconstruction head (the MAE core).
+Center-piece. Visible (unmasked) voxel patches flow into a box labeled
+"channel-grouped 3D ViT (ChannelViT) f_theta  (~45M, patch 8^3, dim 512, depth 12)".
+Key detail: show the FOUR channel groups (ligand atoms / pocket atoms / density /
+gradient) tokenized SEPARATELY -> four parallel token streams (color-coded per group)
+that merge into one joint self-attention stack, conveying per-group tokens + cross-group
+attention rather than a single fused patch embedding. From the encoder,
+a thin "lightweight per-patch head h_psi" box outputs a reconstructed 13-channel grid
+"x_hat". Place the reconstruction directly above/below the ORIGINAL clean grid
+"x (target)" so the reader sees prediction vs. target only at masked voxels.
+Draw a dashed "EMA (0.999)" copy of the encoder beside f_theta with a small arrow,
+tagged "exported weights".
+
+STAGE 5 — Loss.
+Between x_hat and x, a small callout box with the objective:
+"L = masked-voxel MSE,  weighted:  inv-freq per atom-type (clip 30x),
+ atom-on voxels 10x,  density/gradient 0.1x". Arrow labels "reconstruct masked voxels".
+
+TRANSFER (bottom strip, visually separated by a light divider + label "Downstream tasks").
+Show the SAME encoder box, now tagged "f_theta (EMA, pre-trained)", feeding TWO parallel
+downstream branches. Draw both branches stacked and smaller than the pre-training row so they
+read as applications, not the training, and make clear both reuse the SAME pre-trained weights
+with the density + gradient channels still present at the input.
+  (1) Binding affinity — put a snowflake "frozen" icon on the encoder; its patch tokens ->
+      "mean-pool" -> a single feature vector -> a tiny MLP "probe" -> output "binding affinity (pK)".
+  (2) Drug design — the encoder conditions a pocket-conditioned voxel generative model, labeled
+      "VoxBind (de novo generation)"; show a pocket grid -> encoder -> generator -> a generated
+      ligand placed in the pocket. Label the connecting arrow "condition".
+
+STYLE / LABELS.
+- Flow strictly left-to-right for pre-training; transfer as a secondary row underneath.
+- Color-code the four channel groups consistently everywhere they appear (ligand=warm,
+  pocket=cool, density=teal, gradient=purple).
+- Use math labels x, x_hat, f_theta, h_psi, rho, |grad rho|, M, r=0.6.
+- Minimal text; rely on the two-row layout (PRE-TRAIN top, TRANSFER bottom) to tell the
+  story. No photorealism, no drop shadows; thin strokes, generous whitespace.
+- Aspect ratio ~ 16:6 (wide banner) so it fits a two-column figure spanning the page top.

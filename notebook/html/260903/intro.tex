@@ -1,0 +1,62 @@
+% intro.tex — Expanded ICLR introduction.
+
+\section{Introduction}
+\label{sec:intro}
+
+Modern protein machine learning typically represents proteins as amino-acid
+sequences or atomic coordinates. Large protein language models such as ESM and
+ESM-2 learn evolutionary and functional patterns directly from sequence
+\citep{rives2021biological,lin2023evolutionary}. Structure predictors such as
+AlphaFold and ESMFold infer accurate atomic models from sequence
+\citep{jumper2021highly,lin2023evolutionary,abramson2024accurate}. Together,
+these representations support protein function prediction, binding-affinity
+estimation, and structure-based drug design
+\citep{radivojac2013large,ozturk2018deepdta,pinheiro2024structure}.
+
+Coordinates, however, do not preserve all experimental evidence behind a
+crystallographic structure. An X-ray structure is a model refined against a
+diffraction-derived electron-density map \citep{adams2011phenix}. A single
+coordinate set may omit weak evidence for alternative conformations
+\citep{lang2010automated,lang2014protein}. The map also indicates how strongly
+individual atoms and molecular fragments are supported by the data
+\citep{meyder2017estimating}. Coordinate-only inputs therefore lose direct
+access to this experimental evidence.
+
+This evidence may be especially relevant at protein--ligand interfaces, where
+small structural changes alter intermolecular contacts. Electron-density
+analysis has revealed unmodeled ligand conformations and alternative binding
+modes \citep{van2018qfit}. Prior work has also used experimental density for
+ligand identification, affinity prediction, and molecular generation
+\citep{kowiel2019automatic,suriana2025beyond,wang2022pocket}. These approaches
+integrate density into task-specific pipelines. Whether a shared,
+density-pre-trained representation can transfer across distinct
+protein--ligand tasks remains unclear.
+
+We introduce \ours{}, a coordinate-and-density encoder for protein--ligand
+complexes. As illustrated in \cref{fig:method-overview}, it places ligand atoms,
+pocket atoms, experimental density, and its gradient magnitude on a common
+voxel grid. We curate more than 100K crystallographic protein--ligand instances
+from PLINDER \citep{durairaj2024plinder}. We then pre-train a Channel-ViT through
+masked reconstruction \citep{bao2023channel-24a,he2022masked}. At transfer time,
+the frozen encoder provides either pooled complex embeddings or spatial
+features.
+
+We test whether these representations support both prediction and generation.
+Binding-affinity regression examines whether pooled features capture
+interaction strength. Reference-assisted molecular generation examines whether
+spatial features improve ligand construction within a target pocket. We
+evaluate affinity under complex-level leakage and protein-sequence-similarity
+constraints, including an exact-PDB-held-out CASF-2016 subset. For generation,
+we examine docking, molecular quality, reference-ligand similarity, pose
+geometry, and qualitative binding modes.
+
+To summarize, our contributions are as follows:
+\begin{itemize}
+    \item We introduce \ours{} and a large-scale curation pipeline for joint
+    pre-training on fitted coordinates and experimental electron-density maps.
+    \item We demonstrate the utility of the frozen representation for
+    binding-affinity regression under complex-level leakage and
+    protein-sequence-similarity controls.
+    \item We transfer the same encoder to molecular generation and evaluate
+    docking, molecular quality, reference similarity, and pose geometry.
+\end{itemize}

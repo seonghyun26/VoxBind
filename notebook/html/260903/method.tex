@@ -1,0 +1,94 @@
+% method.tex — High-level ICLR method; implementation details belong in Appendix B.2.
+
+\section{Method}
+\label{sec:method}
+
+As illustrated in \cref{fig:method-overview}, \ours{} learns a joint
+representation of fitted coordinates and experimental electron density. We
+voxelize each crystallographic protein--ligand instance into aligned atomic and
+density channels, and pre-train a Channel-ViT by reconstructing masked spatial
+regions. The frozen encoder is then transferred through a pooled probe for
+affinity regression or a spatial conditioning module for molecular generation.
+
+\input{NeuripsW2026-AI4DD/resource/figure/method-overview}
+
+\subsection{Complex Representation}
+
+\textbf{Experimental density data.}
+We curate X-ray protein--ligand instances from PLINDER
+\citep{durairaj2024plinder} and retrieve the experimental $2mF_o-DF_c$ map
+associated with each parent PDB entry. We retain valid, noncovalently bound
+ligands that are fully resolved, contain 6--50 heavy atoms, and have a ligand
+real-space correlation coefficient (RSCC) of at least $0.8$. We exclude all PDB
+entries used for downstream validation or testing, yielding more than 100K
+pre-training instances. The complete curation and normalization procedures are
+given in \cref{appx:data-detail}.
+
+\textbf{Complex voxel representation.}
+We construct a binding-site grid centered at the ligand centroid, following
+\citet{pinheiro2024structure}. The grid contains $G^3$ voxels with $G=64$ and
+$0.25$\,\AA{} spacing, covering a $16$\,\AA{} cube. Each complex is represented
+as follows:
+\begin{equation}
+\mathbf{x}=[\mathbf{a};\rho;\lVert\nabla\rho\rVert]
+\in\mathbb{R}^{G^3\times13},
+\qquad
+a_{v,c}=1-\prod_{i\in\mathcal{A}_c}(1-g_{v,i}),
+\qquad
+g_{v,i}=\exp\!\left(
+-\frac{\lVert\mathbf r_v-\mathbf r_i\rVert_2^2}{(0.93R_i)^2}
+\right).
+\label{eq:complex-voxel}
+\end{equation}
+Here, $\mathbf a$ contains seven ligand (C, O, N, S, F, Cl, P) and four pocket
+(C, O, N, S) atom-type channels. The set $\mathcal A_c$ contains atoms assigned
+to channel $c$, and $a_{v,c}$ combines their Gaussian occupancies at voxel $v$.
+The vectors $\mathbf r_v$ and $\mathbf r_i$ denote the voxel-center and atom
+positions, respectively, and $R_i$ is the element-specific van der Waals radius
+of atom $i$. We resample the crystallographic map onto the same grid by
+trilinear interpolation and compute its gradient magnitude on the resampled
+grid \citep{suriana2025beyond}. Further voxelization and normalization details
+are provided in \cref{appx:method-detail}.
+
+\subsection{Density-Aware Masked Pre-training}
+
+We divide the grid into non-overlapping blocks of $P^3$ voxels, with $P=8$, and
+embed the ligand, pocket, and density channel groups using a Channel-ViT
+\citep{bao2023channel-24a}. Following masked autoencoding
+\citep{he2022masked}, we mask $75\%$ of the spatial blocks, biasing selection
+toward atom-containing regions, and apply the same spatial mask to every
+channel. The encoder $f_\theta$ and a lightweight reconstruction head $h_\psi$
+predict all channels at the masked voxels:
+\begin{equation}
+\widehat{\mathbf x}=h_\psi\!\left(f_\theta(\widetilde{\mathbf x})\right),
+\qquad
+\mathcal L(\theta,\psi)=
+\frac{1}{|\mathcal M|C}
+\sum_{v\in\mathcal M}\sum_{c=1}^{C}
+w_c\,\omega_{v,c}
+\left(\widehat{x}_{v,c}-x_{v,c}\right)^2.
+\label{eq:masked-pretraining}
+\end{equation}
+Here, $\widetilde{\mathbf x}$ is the masked input, $\mathcal M$ denotes the
+masked voxels, and $C=13$ is the number of channels. The channel weight $w_c$
+balances different occupancy frequencies, while $\omega_{v,c}$ gives additional
+weight to occupied voxels in sparse atomic channels. Architecture, weighting,
+augmentation, and optimization details are provided in
+\cref{appx:method-detail}.
+
+\subsection{Downstream Transfer}
+
+\textbf{Binding-affinity regression.}
+We pass the unmasked 13-channel complex grid through the frozen encoder and
+mean-pool its final tokens. A two-layer MLP maps the pooled representation to
+binding affinity. Only the probe is trained, so the task directly evaluates the
+transferred representation.
+
+\textbf{Reference-assisted molecular generation.}
+We augment VoxBind with the frozen encoder's spatial features
+\citep{pinheiro2024structure}. \ours{} processes the reference ligand, protein
+pocket, and experimental map, producing one feature for each spatial block. We
+broadcast each feature to its component voxels and fuse it with VoxBind through
+a trainable, zero-initialized residual projection \citep{zhang2023adding}.
+\ours{} remains frozen, while the projection and generative model are trained;
+the remaining denoising architecture and sampling procedure follow VoxBind.

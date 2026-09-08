@@ -1,88 +1,119 @@
-# VoxBind: Structure-based drug design by denoising voxel grids
+# VoxBind — Electron-density voxel features for structure-based drug design
 
-This repository contain the implementation of the paper [Structure-based drug design by denoising voxel grids](https://arxiv.org/abs/2405.03961v1):
+This repository grew out of [VoxBind](https://arxiv.org/abs/2405.03961) (a
+pocket-conditional voxel-diffusion generative model) into a broader study of
+**electron-density voxel representations** for structure-based drug design (SBDD).
+The central question: does adding real X-ray **electron density** — on top of the
+usual atom coordinates — give a protein-pocket encoder a better view of binding?
+
+We voxelize each pocket–ligand complex into three channel groups and pretrain a
+3D-ViT encoder with masked autoencoding (MAE), then evaluate it across three tasks.
+
+- **C** — atom **c**oordinates (atom-type "blob" channels)
+- **D** — electron **d**ensity (from experimental maps / MTZ → gemmi FFT)
+- **G** — density **g**radient magnitude
+
+The headline encoder is **`CDG-v2`** (C+D+G channels, ChannelViT, MAE-pretrained
+on a PLINDER ligand-matched density corpus). "Ours" in the reports refers to it.
+
+## Three tasks
+
+| Task | Question | Where |
+|---|---|---|
+| **1 · Affinity** | Do density features improve binding-affinity prediction (frozen-encoder probe / fine-tune)? | `results/task1-affinity/`, `results/reports/results.html` |
+| **2 · Drug design** | Does density-conditioning improve *de novo* ligand generation (VoxBind + density)? | `results/task2-drugdesign/`, `results/reports/results_drug_design.html` |
+| **3 · Macrocycles** | Density-conditioned generation for macrocyclic peptides (FuncBind, pilot) | `results/task3-mcp/`, `results/reports/results_mcp.html` |
+
+Canonical affinity benchmark: **`lp_edrscc_v2`** — LP-PDBBind ∩ electron-density-available
+∩ (ligand & pocket RSCC ≥ 0.8), Kd/Ki only, 3850 / 817 / 1320 split (see `voxbind/splits/`).
+Task 1 compares our encoders against ~20 baselines (ProFSA, GET, DSMBind, AEV-PLIG,
+HBGSA, CheapNet, BindNet, IPDiff/IPNet, GeoSSL, Nesso, Boltz-2, DeepDTA, MolTrans, …).
+
+## Repository layout
 
 ```
-@inproceedings{pinheiro2024voxbind,
-  title={Structure-based drug design by denoising voxel grids},
-  author={Pinheiro, Pedro O and Jamasb, Arian and Mahmood, Omar and Sresht, Vishnu and Saremi, Saeed}
-  booktitle={ICML},
-  year={2024}
-}
+voxbind/            main code
+├── train.py                  original VoxBind denoiser training (DDP)
+├── train_density.py          density-encoder MAE pretraining (mae / denoise / chamae methods)
+├── sample.py / sample_from_file.py   walk-jump ligand sampling
+├── models/                   density_vit, density_cha_mae, voxbind, unet3d, urepa, …
+├── configs/                  Hydra configs (dset/model/mae/experiment groups)
+├── dataset/                  voxelization + density/gradmag/PLINDER build pipeline
+├── test/                     probes, CASF eval, cliff analysis, benchmarks
+├── splits/                   frozen, hash-verified train/val/test manifests
+├── model_zoo/                pretrained encoders (CDG_v2, C_v2, champion, …; Dropbox-backed)
+└── scripts/                  parameterized launchers (pretrain / downstream / sample / watch)
+
+base/               self-contained external baselines (one folder per model; see base/README.md)
+results/            per-task metrics + rendered HTML reports (Dropbox-backed; see results/README.md)
+notebook/           analysis notebooks + HTML reports (notebook/html/, YYMMDD_ prefixed)
+examples/           sample pockets (8UWP, 6AU3) for sample_from_file.py
+figures/            paper figures
 ```
-VoxBind is a protein pocket-conditional generative model operating on voxelized molecules. Given a protein pocket, VoxBind generate binding ligands following the (conditional) "walk-jump sampling" approach: (i) sample smoothed molecules with Langevin MCMC and (ii) estimate clean molecule with a voxel denoiser.
 
-![](figures/wjs_example.png)
+Large artifacts (model weights, raw voxel data, per-sample eval) live outside git
+and sync to Dropbox — `voxbind/model_zoo/`, `results/`, and per-baseline outputs
+each carry `dropbox_push.sh` / `dropbox_pull.sh`.
 
+## Quickstart
 
-## Workflow
-We assume the user have anaconda (or, preferably mamba) installed and has access to GPU.
-
-### 1. Install the environment
+### 1. Environment
 ```bash
 mamba env create -f env.yaml
 conda activate voxbind
 pip install -e .
 ```
 
-### 2. Prepare Crossdocked data
-
-- Download ` split_by_name.pt` and `crossdocked_pocket10.tar.gz` from this [link](https://drive.google.com/drive/folders/1CzwxmTpjbrt83z_wBzcQncq84OVDPurM) (provided by TargetDiff authors, see their [README](https://github.com/guanjq/targetdiff)), place in `dataset/data/` and decompress with `tar xvzf crossdocked_pocket10.tar.gz`.
-- Run the following command
+### 2. Data
+The original CrossDocked pipeline for the generative task:
 ```bash
- cd voxbind/dataset; python preprocess_crossdocked.py
+cd voxbind/dataset && python preprocess_crossdocked.py     # produces train_data.pt / test_data.pt
 ```
-This will take a couple of hours to be done. The script will generate the following files in `dataset/data/` folder:
-- `train_data.pt`: contains the train/val splits
-- `test_data.pt`: contains the test split
+The density/affinity pipeline (electron-density crops, gradmag, PLINDER corpus)
+is built by the numbered `dataset/00*_*.py` stages — see `voxbind/dataset/build/`
+and the notes in `voxbind/EXPERIMENTS.md` / `notebook/html/experiments.html`.
 
-
-### 3. Train VoxBind
-To train a voxbind model with noise level 0.9, run:
+### 3. Pretrain a density encoder (MAE)
 ```bash
+cd voxbind
+CUDA_VISIBLE_DEVICES=0,1,2,3 python train_density.py \
+  --config-name config_train_atomblob_density_gradmag_channelvit_mae_40m_plinder_otf_mask050
+# or use scripts/03_pretrain.sh / scripts/pretrain.sh with CLI + Hydra passthrough
+```
+
+### 4. Evaluate on affinity (frozen-encoder probe)
+```bash
+cd voxbind
+python -m test.<probe>  # see scripts/04_probe.sh; results land in results/task1-affinity/
+```
+
+### 5. Generative sampling (original VoxBind)
+Train the denoiser and sample ligands for a pocket:
+```bash
+cd voxbind
 CUDA_VISIBLE_DEVICES=0,1,2,3 python train.py smooth_sigma=0.9
-```
-
-To train a voxbind model with noise level 1.0, run:
-```bash
-CUDA_VISIBLE_DEVICES=0,1,2,3 python train.py smooth_sigma=1.0
-```
-These scripts will save the results (logs and checkpoints) in `exps/exp_sig0.9` and `exps/exp_sig1.0`, respectively. See `configs/config_train.yaml` for other training options. Eg, use the flag `wandb=True` to log experiments on wandb.
-
-### 4. Sample with VoxBind on Crossdocked dataset
-To sample with a pretrained checkpoint, run, e.g.,
-```bash
 python sample.py pretrained_path=exps/exp_sig0.9 wjs.split=val wjs.n_samples_per_pocket=10 wjs.n_targets=100
-```
-
-This script will generate 10 samples for each of the 100 targets on the validation set using the checkpoint located in `exps/exp_sig0.9`. The generated molecules will be saved in `exps/exp_sig0.9/samples/`. See `configs/config_sample.yaml` for other sampling options.
-
-### 5. Sample with VoxBind from a provided protein pocket
-The script `sample_from_file.py` allows us to easily sample with VoxBind from a given protein pocket.
-
-As an example, we will show how to sample from the protein pockets [`8UWP`](https://www.rcsb.org/structure/8UWP) and [`6AU3`](https://www.rcsb.org/structure/6AU3), two of the targets proposed in [CACHE 6 challenge](https://cache-challenge.org/challenges/finding-ligands-targeting-the-triple-tudor-domain-of-setdb1). You can find the protein pdbs and the (co-crystallized) ligand sdfs in `examples/`. These files have been downloaded from PDB datasbase (note that we remove all the water and heteroatoms from the pdb file).
-
-To generate 20 ligands _de novo_ given the protein pocket 8UWP (the default) above, simply run:
-```bash
+# de novo from a provided pocket:
 python sample_from_file.py pretrained_path=exps/exp_sig0.9/ n_samples=20
 ```
-This script will save the generated ligands into a single sdf file located in `exps/exp_sig0.9/sample_from_file/8UWP/denovo/samples.sdf`. We also save the target pdb and the ground truth ligand on the sample folder. Below we show the 8UWP pocket, the ground-truth ligand and generated samples:
-<div style="text-align: center;">
-    <img src="figures/8uwp_denovo.gif" width="256">
-</div>
+See `configs/config_sample*.yaml` for all sampling options and `examples/` for the
+8UWP / 6AU3 demo pockets.
 
-See `config/config_sample_from_file.yaml` to see all the options for sampling from file.
-For example, if you want to sample from the pocket 6AU3 starting from crystalized ligand (ie, initialize the Langevin MCMC chain with the ligand provided on PDB), run:
-```bash
-python sample_from_file.py \
-    pretrained_path=exps/exp_sig0.9/ \
-    target_pdb=../examples/6AU3/6au3.pdb \
-    ligand_sdf=../examples/6AU3/6au3_B_BWM.sdf \
-    wjs.chain_init=ligand \
-    wjs.warmup=0 \
-    wjs.steps=100 \
-    wjs.max_steps=100
+## Upstream & citation
+
+The generative core (walk-jump sampling, voxel denoiser) is from VoxBind:
+
+```bibtex
+@inproceedings{pinheiro2024voxbind,
+  title     = {Structure-based drug design by denoising voxel grids},
+  author    = {Pinheiro, Pedro O and Jamasb, Arian and Mahmood, Omar and Sresht, Vishnu and Saremi, Saeed},
+  booktitle = {ICML},
+  year      = {2024}
+}
 ```
 
+External baselines under `base/` retain their own upstream licenses and READMEs.
+
 ## License
-This project is under the Apache license, version 2.0. See LICENSE for details.
+
+Apache License 2.0 — see `LICENSE.txt`.

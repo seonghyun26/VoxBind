@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""build_results.py — assemble notebook/html/results.html (results only, no analysis).
+"""build_results.py — assemble notebook/html/results.html (BINDING AFFINITY ONLY).
+
+results.html holds only the binding-affinity regression results. The de novo drug-design
+and macrocyclic-peptide results now live in their own pages — results_drug_design.html and
+results_mcp.html — and a nav bar at the top of each page links the three together.
 
 Section 1 — Binding-affinity regression: method-comparison table with a GROUPED-COLUMN
   layout over four split variants (lp_edrscc_v2, +CL1, +CL1+CL2, +CL1+CL2+CL3 — the
@@ -8,8 +12,10 @@ Section 1 — Binding-affinity regression: method-comparison table with a GROUPE
   cells show as "running". Reuses METHODS/colors from 260715/build_appendixB_bar.py for the
   v2 column + the v2 headline bar chart, and reads CheapNet per-split JSONs live.
   Adds HonestAffinity (arXiv 2606.03422 — leak-aware ESM-2 sequence baseline) as a new row.
-Section 2 — De novo drug design: Table 2 (+ heavy-atom count column) + the Vina PNG figure,
-  extracted verbatim from 260715_meeting.html.
+Appendices A/B/C — protein-sequence novelty (LP-PDBBind & CASF-2016), CASP16 blind affinity
+  (chymase), and the density-normalization recipe.
+
+(The shared <style> block is still lifted from 260715_meeting.html via extract_from_715.)
 
     python notebook/html/build_results.py
 """
@@ -165,10 +171,22 @@ def strip_repeated_table_units(table):
 sys.path.insert(0, os.path.join(HERE, "260715"))
 import build_appendixB_bar as bar                                 # noqa: E402  (METHODS, svg(), legend())
 import build_regression_baseline as reg                           # noqa: E402  (read_cheapnet())
-import build_denovo_vina_chart as denovo_chart                    # noqa: E402  (Matplotlib Figure 4)
 
 DOC715 = os.path.join(HERE, "260715", "260715_meeting.html")
-OUT = os.path.join(HERE, "results.html")
+# The published results bundle lives at VoxBind/results/ (gitignored, Dropbox-backed).
+# results.html is emitted into results/reports/ alongside the hand-authored sibling pages.
+OUT = os.path.abspath(os.path.join(HERE, "..", "..", "results", "reports", "results.html"))
+
+# Cross-page nav shared by the three sibling results pages. The de novo / macrocyclic pages
+# (results_drug_design.html, results_mcp.html) are hand-authored and carry the same markup with
+# their own link marked active. "Binding affinity" is the active tab here.
+PAGE_NAV = """\
+  <nav aria-label="VoxBind results sections" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 26px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+    <span style="color:#7a8699;font-size:11px;letter-spacing:.11em;text-transform:uppercase;margin-right:2px;">VoxBind results</span>
+    <a href="results.html" style="padding:6px 14px;border-radius:999px;text-decoration:none;font-size:13px;font-weight:650;background:#38559b;color:#fff;border:1px solid #38559b;">Binding affinity</a>
+    <a href="results_drug_design.html" style="padding:6px 14px;border-radius:999px;text-decoration:none;font-size:13px;font-weight:550;background:#eef1f6;color:#38559b;border:1px solid #dfe4ee;">De novo drug design</a>
+    <a href="results_mcp.html" style="padding:6px 14px;border-radius:999px;text-decoration:none;font-size:13px;font-weight:550;background:#eef1f6;color:#38559b;border:1px solid #dfe4ee;">Macrocyclic peptides</a>
+  </nav>"""
 
 # ── the four split variants (scheme, display label, test-N) ───────────────────
 SPLITS = [
@@ -1150,6 +1168,63 @@ def casf_1c_rows(cols=None, methods=None, loader=load_casf_1c):
                 mark = "best" if name in bold_set else ("second" if name == second else None)
                 tds.append(metric_cell(absmetric(name, metric, value), mark, divcls)
                            if value and value[0] is not None else tba_cell(divcls))
+        items.append((name, "".join(tds)))
+    return cat_merged_rows(items)
+
+
+# ── Clean-92 focused table: Pearson r / ρ / RMSE each with a DEDICATED 90% CI column ──────
+def _meanstd_cell(v, mark, divcls):
+    """mean ±std cell (no CI), with bold/underline."""
+    cls = "metric" + (f" {divcls}" if divcls else "") + (" best" if mark == "best" else (" second" if mark == "second" else ""))
+    if v is None or v[0] is None:
+        return f'<td class="{cls}"><span class="na">&mdash;</span></td>'
+    sd = v[1] if len(v) > 1 else None
+    sds = f' <span class="sd">±{sd:.3f}</span>' if sd else ""
+    return f'<td class="{cls}"><span class="val">{v[0]:.3f}</span>{sds}</td>'
+
+
+def _ci_only_cell(v):
+    """[lo, hi] cell — the dedicated 90% CI column."""
+    if v is None or len(v) < 4 or v[2] is None:
+        return '<td class="metric"><span class="na">&mdash;</span></td>'
+    return f'<td class="metric"><span class="sd">[{v[2]:.2f},&nbsp;{v[3]:.2f}]</span></td>'
+
+
+def casf_clean_ci_table_head():
+    return (
+        '<tr class="grp"><th class="col-modality" rowspan="2">Input</th>'
+        '<th class="col-method" rowspan="2">Method</th>'
+        '<th class="div-major" colspan="6">CASF-2016 clean held-out'
+        '<span class="nsub">N&nbsp;=&nbsp;92</span></th></tr>\n          '
+        '<tr class="sub">'
+        '<th class="div-major">Pearson&nbsp;<i>r</i></th><th>90%&nbsp;CI</th>'
+        '<th class="div-major">Spearman&nbsp;&rho;</th><th>90%&nbsp;CI</th>'
+        '<th class="div-major">RMSE&nbsp;&darr;</th><th>90%&nbsp;CI</th></tr>'
+    )
+
+
+def casf_clean_ci_rows():
+    """Clean-92 focused rows: each metric = (mean±std cell, dedicated 90% CI cell). All methods,
+    grouped by input tier; bold = tied with best, underline = runner-up (same rule as Table 1c)."""
+    order = sorted(LBA_METHODS, key=lambda n: cat_sort_key(n, LBA_METHODS.index(n)))
+    tie = casf_tie_bold(order, ["clean"], load_casf_ci)
+    items = []
+    for name in order:
+        d = load_casf_ci(name, "clean")
+        tds = [method_cell(name, show_leaked=True, pretrain_overlap=(name == "ProFSA"),
+                           dagger=(name in ABS_CORR), casf=True)]
+        for k, metric in enumerate(("r", "rho", "rmse")):
+            divcls = "div-major" if k == 0 else ""
+            value = d.get(metric) if d else None
+            if metric == "rmse" and name in CORR_ONLY:          # zero-shot energy → RMSE n/a
+                tds.append(NA_RMSE_CELL); tds.append(_ci_only_cell(None)); continue
+            av = absmetric(name, metric, value)
+            bold_set, second = tie.get(("clean", metric), (set(), None))
+            mark = "best" if name in bold_set else ("second" if name == second else None)
+            if av and av[0] is not None:
+                tds.append(_meanstd_cell(av, mark, divcls)); tds.append(_ci_only_cell(av))
+            else:
+                tds.append(tba_cell(divcls)); tds.append(_ci_only_cell(None))
         items.append((name, "".join(tds)))
     return cat_merged_rows(items)
 
@@ -2221,12 +2296,7 @@ def density_helps_section():
 
 
 def build():
-    css, table2, sub2, vina_img = extract_from_715()
-    table2 = add_atom_column(table2)
-    table2 = inject_decompdiff_repro(table2)
-    table2 = mark_voxbind_reproduced(table2)
-    table2 = strip_repeated_table_units(table2)
-    vina_img = denovo_chart.render(table2)
+    css = extract_from_715()[0]   # shared <style> block only; de novo Table/Figure moved to results_drug_design.html
     casf_similarity_chart = casf_similarity_bar_svg()       # Appendix A only
     casf_similarity_legend = casf_similarity_bar_legend()   # Appendix A only
     lp_tiers_chart = lp_all_tiers_svg()
@@ -2239,7 +2309,7 @@ def build():
     html = f"""<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>VoxBind — Results</title>
+<title>VoxBind — Binding affinity</title>
 {css}
 <style>
   /* three distinctly-coloured method tags */
@@ -2291,10 +2361,13 @@ def build():
 </style>
 </head><body><div class="page">
 
+{PAGE_NAV}
+
   <header class="doc">
     <div class="date">2026 · 07 · 16 — Results</div>
-    <h1>VoxBind &mdash; Results</h1>
-    <p class="lead">Binding-affinity regression and de novo drug design &mdash; headline tables and charts only.</p>
+    <h1>VoxBind &mdash; Binding-affinity regression</h1>
+    <p class="lead">Binding-affinity regression &mdash; headline tables and charts only.
+      De novo drug design and macrocyclic-peptide results have their own pages, linked above.</p>
     <p class="lead" style="margin-top:10px;padding:9px 13px;background:#fbf3df;border:1px solid #e8d69a;border-left:4px solid #b8860b;border-radius:7px;color:#5a4a10;">
       <b>Ours:</b> <code>v2_ep100_e25</code> (<code>260806_cdg_100m_v2_ep100_e25</code>) encoder + <b>mse+corr</b> probe head
       &mdash; the headline VoxBind result, shown as the <b>CDG v2</b> row (gold) in Tables&nbsp;1a/1b/1c.
@@ -2354,6 +2427,17 @@ def build():
     <h3 class="subsec-head"><span class="sn">1.1</span> LP-PDBBind</h3>
     <p class="subsec-intro">In-distribution PDBbind regression on the <code>lp_edrscc_v2</code> test set and its three nested
       no-leak cleaning tiers (+CL1/+CL2/+CL3). Every method is trained &amp; tested within each tier.</p>
+    <p class="subsec-intro" style="border-left:3px solid #b8860b;padding-left:10px;background:#faf7ef;">
+      <b>Probe head.</b> All VoxBind frozen-encoder rows (<b>C, C+D+G, CDG&nbsp;v2, CDG&nbsp;v3</b>) share one MLP
+      head: <code>feat&nbsp;&rarr;&nbsp;128&nbsp;&rarr;&nbsp;SiLU&nbsp;&rarr;&nbsp;Dropout(0.1)&nbsp;&rarr;&nbsp;1</code>,
+      MSE loss, 5 seeds, features mean-pooled &amp; standardized, early-stopped on val RMSE (Table&nbsp;1a/1b/1c
+      unified). A head-design sweep (activation &#123;ReLU, SiLU, GELU, Mish, Hardswish, ELU, gated&#125; &times;
+      width 32&#8211;1024 &times; depth 1&#8211;3, 8 seeds) found SiLU best but the whole smooth-activation /
+      small-head cluster ties within seed noise (&plusmn;0.01); the head is <i>not</i> the source of the ranking.
+      A head-matched control confirms this: re-probing the frozen baselines GeoSSL and ProFSA with this same
+      SiLU-128 head leaves GeoSSL weak (&#961;&nbsp;&asymp;&nbsp;0.47&#8211;0.61) and moves ProFSA by &lt;0.03
+      (its own head is slightly better on CL), so the unified head gives our rows no unfair edge. Baseline rows
+      otherwise use each method&rsquo;s own published head/architecture.</p>
 
     <section class="block">
       <p class="table-title">Figure 1 &nbsp;&middot;&nbsp; LP-PDBBind test metrics across CL cleaning tiers</p>
@@ -2485,36 +2569,30 @@ def build():
       </table></div>
     </section>
 
+    <section class="block">
+      <p class="table-title">Table 1d &nbsp;&middot;&nbsp; CASF-2016 clean held-out (N&nbsp;=&nbsp;92) &mdash; metrics with dedicated 90% CI columns</p>
+      <ul class="caption-list">
+        <li>The honest clean-92 cohort only (held out from both train and validation). Same values as the clean columns of
+            Table&nbsp;1c, but each metric (Pearson&nbsp;<i>r</i> / Spearman&nbsp;&rho; / RMSE) gets a <b>dedicated 90% CI
+            column</b> beside its 5-seed mean&nbsp;&plusmn;&nbsp;std &mdash; the paper-table layout
+            (LaTeX in <code>results2latex.ipynb</code>).</li>
+        <li><b>CI</b> = BCa test-set bootstrap (CASF-2016 &sect;2.4). <b>Bold</b> = tied with the best (error bar reaches
+            the best mean); <span style="text-decoration:underline;text-underline-offset:2px">underline</span> = runner-up.
+            Single deterministic models (zero-shot Nesso-1, DSMBind) show no &plusmn;std.</li>
+      </ul>
+      <div class="table-wrap"><table class="results">
+        <thead>
+          {casf_clean_ci_table_head()}
+        </thead>
+        <tbody>
+          {casf_clean_ci_rows()}
+        </tbody>
+      </table></div>
+    </section>
+
     {density_html}
 
     {abl_html}
-  </div>
-
-  <div class="doc-section">
-    <h2 class="section-head"><span class="sec-num">2</span> De novo drug design</h2>
-    <ul class="caption-list">
-      <li><b>Sets:</b> paper rows = 100 pockets; reproduced VoxBind = 79 density pockets; DecompDiff = 98/100 pockets.</li>
-      <li><b>ref-informed:</b> reference prior, 25 samples/pocket, Vina exhaustiveness 32; 2 oversized-molecule timeouts removed.</li>
-      <li><b>ref-free:</b> subpocket atom-count prior; no reference-ligand input.</li>
-      <li><b>Docking check:</b> reproduced reference ligands score &minus;7.44 vs paper &minus;7.26, supporting pipeline calibration.</li>
-      <li><b>High aff.:</b> fraction out-docking the reference; <b>Diversity:</b> 1 &minus; mean pairwise Tanimoto.</li>
-    </ul>
-
-    <section class="block">
-      <p class="table-title">Figure 4 &nbsp;&middot;&nbsp; Vina Score / Min / Dock &mdash; average &amp; median</p>
-      <div class="table-wrap" style="padding:16px">{vina_img}</div>
-      <ul class="caption-list"><li>AutoDock Vina, kcal/mol; source run: <code>260715</code>.</li></ul>
-    </section>
-
-    <section class="block">
-      <p class="table-title">Table 4 &nbsp;&middot;&nbsp; De novo generation &mdash; CrossDocked benchmark</p>
-      <ul class="caption-list">
-        <li>Avg/Med are aggregated over pockets, not individual molecules.</li>
-        <li><span class="tag repro">reproduced</span> DecompDiff rows are fully re-scored; unavailable VoxBind outputs remain &mdash;.</li>
-        <li>Prior-method values are from the VoxBind paper, Table&nbsp;1.</li>
-      </ul>
-      <div class="table-wrap">{table2}</div>
-    </section>
   </div>
 
   <div class="doc-section">
@@ -2637,6 +2715,7 @@ def build():
   </div>
 
 </div></body></html>"""
+    os.makedirs(os.path.dirname(OUT), exist_ok=True)
     open(OUT, "w", encoding="utf-8").write(html)
     print(f"wrote {OUT}  ({len(html)} bytes)")
     methods = all_methods()

@@ -837,17 +837,25 @@ def apply_octahedral(x: torch.Tensor, op) -> torch.Tensor:
 
 
 @torch.no_grad()
-def encode_pooled(encoder: DensityViT, x: torch.Tensor, tta_ops=None) -> torch.Tensor:
-    """(B, n_in, G,G,G) → (B, D) mean-pooled feature. tta_ops=None → single forward
+def encode_pooled(encoder: DensityViT, x: torch.Tensor, tta_ops=None, pool: str = "mean") -> torch.Tensor:
+    """(B, n_in, G,G,G) → (B, D) pooled feature. tta_ops=None → single forward
     (identical to the untouched path). Otherwise average the pooled feature over the
     given cube rotations (test-time rotation averaging ≈ a poor-man's rotation-invariant
     encoder; probes whether orientation-averaging helps novel-pose / novel-protein
-    generalization)."""
+    generalization).
+
+    pool='mean' (default) → mean-pool patch tokens (B, D), bit-identical to before.
+    pool='cls_concat' → ChA-MAE hybrid concat(mean-pool patches, CLS/memory tokens)
+    (B, (1+l)*D); requires the encoder to have n_memory_tokens>0."""
+    def _one(xx):
+        if pool == "cls_concat":
+            return encoder.forward_features_cls_concat(xx)
+        return encode_tokens(encoder, xx).mean(dim=1)
     if not tta_ops:
-        return encode_tokens(encoder, x).mean(dim=1)
+        return _one(x)
     acc = None
     for op in tta_ops:
-        p = encode_tokens(encoder, apply_octahedral(x, op)).mean(dim=1)
+        p = _one(apply_octahedral(x, op))
         acc = p if acc is None else acc + p
     return acc / len(tta_ops)
 
@@ -1144,7 +1152,7 @@ def run_features(args: argparse.Namespace) -> None:
         if x is None:
             continue
         x = x.to(args.device, non_blocking=on_cuda)                # (B, n_in, G, G, G)
-        feat_chunks.append(encode_pooled(encoder, x, tta_ops))      # (B, D), still on device
+        feat_chunks.append(encode_pooled(encoder, x, tta_ops, getattr(args, "pool", "mean")))  # (B,D) or (B,(1+l)D)
         ordered_pids.extend(batch_pids)
         pbar.set_postfix(saved=len(ordered_pids), err=n_err, refresh=False)
 
@@ -2813,6 +2821,11 @@ def build_parser() -> argparse.ArgumentParser:
                          "0/1 = off (single forward, bit-identical to the untouched path). Use "
                          "24 for the full octahedral group. Pair with --tag to keep the cache "
                          "separate, e.g. --tta_rot 24 --tag tta24.")
+    pf.add_argument("--pool", choices=["mean", "cls_concat"], default="mean",
+                    help="Feature readout. mean (default) = mean-pool patch tokens (B,D), "
+                         "bit-identical to the untouched path. cls_concat = ChA-MAE hybrid "
+                         "concat(mean-pool patches, CLS/memory token) (B,(1+l)D); requires the "
+                         "encoder to have n_memory_tokens>0 (e.g. the 260908_cls_100m_v2 run).")
     pf.set_defaults(func=run_features)
 
     pr = sub.add_parser(

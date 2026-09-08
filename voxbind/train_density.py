@@ -131,6 +131,25 @@ def nt_xent(z_a: torch.Tensor, z_b: torch.Tensor, temp: float) -> torch.Tensor:
     return F.cross_entropy(sim, targets)
 
 
+def koleo_loss(feat: torch.Tensor, eps: float = 1e-8) -> torch.Tensor:
+    """KoLeo differential-entropy regulariser (Sablayrolles'18; DINOv2's feature reg).
+
+    Pushes each pooled feature away from its nearest neighbour in the batch → spreads
+    representations uniformly over the sphere, fighting collapse and improving transfer
+    (the exact failure mode behind our CL3-ID30 novelty gap). NO new params, so DDP-safe;
+    added as an opt-in aux (mae.koleo_weight>0) on the mean-pooled patch feature — the same
+    vector the frozen affinity probe reads. Local in-batch neighbours only.
+    """
+    x = F.normalize(feat.float(), dim=-1, eps=eps)            # (B, D)
+    dots = x @ x.t()                                          # (B, B) cosine sims
+    dots.fill_diagonal_(-2.0)                                 # exclude self
+    nn_idx = dots.argmax(dim=1)                               # nearest neighbour per sample
+    # distance to NN, clamped WELL above 0 (near-duplicate features send -log(d)→+inf and
+    # blow up grad_norm — the 260831 koleo10 collapse; floor at 1e-2 tames it, DINOv2-style).
+    nn_dist = (x - x[nn_idx]).norm(dim=-1).clamp_min(1e-2)    # distance to it
+    return -torch.log(nn_dist).mean()                         # maximise min-distance
+
+
 
 
 
@@ -183,11 +202,15 @@ class MAEPrefetcher:
         gradmag_reconstruct: bool = True,
         gradmag_noise: bool = False,
         density_input: bool = True,
+        gradmag_without_density: bool = False,
         n_lig_ch: int = 7,
         n_poc_ch: int = 4,
         channel_groups: tuple = None,
         mask_channel_independent: bool = False,
         mask_group_ratios: tuple = None,
+        group_complete_ratio: float = 0.9,
+        group_complete_light_ratio: float = 0.15,
+        group_complete_family_weights=None,
     ):
         assert pretext_style in ("mae", "electra", "denoise")
         assert density_source in ("synthetic", "xray"), (
@@ -196,8 +219,8 @@ class MAEPrefetcher:
         assert input_mode in _VALID_INPUT_MODES, (
             f"input_mode={input_mode!r}; expected one of {_VALID_INPUT_MODES}"
         )
-        assert mask_strategy in ("uniform", "atom_biased", "cluster", "ligand", "interface", "interface_atom", "per_group"), (
-            f"mask_strategy={mask_strategy!r}; expected 'uniform', 'atom_biased', 'cluster', 'ligand', 'interface', 'interface_atom' or 'per_group'"
+        assert mask_strategy in ("uniform", "atom_biased", "cluster", "ligand", "interface", "interface_atom", "per_group", "group_complete"), (
+            f"mask_strategy={mask_strategy!r}; expected 'uniform', 'atom_biased', 'cluster', 'ligand', 'interface', 'interface_atom', 'per_group' or 'group_complete'"
         )
         for op in corruption_ops:
             if op not in _RULE_BASED_OPS:
@@ -273,9 +296,14 @@ class MAEPrefetcher:
         self.mask_channel_independent = bool(mask_channel_independent)
         self.mask_group_ratios = ([float(r) for r in mask_group_ratios]
                                   if mask_group_ratios is not None else None)
+        self.group_complete_ratio = float(group_complete_ratio)
+        self.group_complete_light_ratio = float(group_complete_light_ratio)
+        self.group_complete_family_weights = group_complete_family_weights
+        self.gradmag_without_density = bool(gradmag_without_density)
         self.layout = _channel_layout(
             input_mode, with_gradmag, gradmag_reconstruct, density_input=self.density_input,
             mask_as_channel=self.mask_as_channel,
+            gradmag_without_density=self.gradmag_without_density,
         )
         # 2 density sources → the dataset also emits the mFo-DFc (density, gradmag) pair,
         # appended as trailing channels in _step. False (single 2Fo-Fc) = unchanged path.
@@ -505,6 +533,42 @@ class MAEPrefetcher:
                         for g in self.channel_groups
                     ]
                     mask = torch.cat(parts, dim=1)     # (B, sum(groups)=C, G, G, G)
+                elif self.mask_strategy == "group_complete":
+                    # GROUP-COMPLETION masking (symmetric cross-FAMILY reconstruction). Each sample
+                    # picks ONE channel-group (ligand / pocket / density) and masks it HARD (ratio
+                    # `group_complete_ratio`, default 0.9) while the OTHER groups stay lightly masked
+                    # (base `ratio`, e.g. 0.15). The encoder must reconstruct the fully-hidden family
+                    # from the two visible ones — recover ligand from (pocket, density), pocket from
+                    # (ligand, density), or density from (ligand, pocket), cycled across the batch.
+                    # This targets the COMPLEMENTARY cross-group signal (which family relates to which
+                    # through binding) — NOT the redundant within-density-group (density≈gradmag) axis.
+                    # A stronger form of per_group; requires channel separation (ChannelViT groups).
+                    assert self.channel_groups is not None, \
+                        "group_complete masking needs model.channel_groups"
+                    assert self.apo_prob == 0.0 and not self.contrastive and not self.mask_as_channel, \
+                        "group_complete masking is incompatible with apo/contrastive/mask_as_channel"
+                    nG = len(self.channel_groups)
+                    hard = float(self.group_complete_ratio)            # ratio for the chosen (hidden) group
+                    light = float(self.group_complete_light_ratio)     # ratio for the visible groups
+                    # which group each sample fully-masks (0..nG-1). Uniform by default; if
+                    # group_complete_family_weights is set (e.g. [2,1,1] = ligand 2x) sample the
+                    # hidden family from that categorical → bias WHICH family gets reconstructed
+                    # (ligand-heavy targets ligand-novelty / CL3-ID30).
+                    if self.group_complete_family_weights is not None:
+                        w = torch.tensor(list(self.group_complete_family_weights),
+                                         device=device, dtype=torch.float)   # (nG,)
+                        assert w.numel() == nG, "group_complete_family_weights len must == nG"
+                        pick = torch.multinomial(w, B, replacement=True, generator=self.generator)
+                    else:
+                        pick = torch.randint(nG, (B,), device=device, generator=self.generator)  # (B,)
+                    parts = []
+                    for gi, g in enumerate(self.channel_groups):
+                        mh = make_block_mask(B, G, self.block_size, hard, device)   # (B,1,G³)
+                        ml = make_block_mask(B, G, self.block_size, light, device)  # (B,1,G³)
+                        sel = (pick == gi).view(B, 1, 1, 1, 1)                       # (B,1,1,1,1) bool
+                        mg = torch.where(sel, mh, ml)                               # (B,1,G³)
+                        parts.append(mg.expand(-1, g, -1, -1, -1))
+                    mask = torch.cat(parts, dim=1)     # (B, C, G, G, G)
                 else:
                     mask = make_block_mask(B, G, self.block_size, ratio, device)
                 # mask: (B, 1, G, G, G) broadcast across channels, OR (B, C, G, G, G)
@@ -652,6 +716,7 @@ def compute_losses(
     atom_pos_thresh: float = 0.05,
     with_gradmag: bool = False,
     gradmag_reconstruct: bool = True,
+    gradmag_without_density: bool = False,
 ):
     """Returns a dict of named losses.
 
@@ -705,7 +770,8 @@ def compute_losses(
         diff_sq = (out_pretext - target) ** 2 * m
 
         # ── atom_pos_weight: up-weight error² at atom-on voxels in atom channels.
-        lay = _channel_layout(input_mode, with_gradmag, gradmag_reconstruct)
+        lay = _channel_layout(input_mode, with_gradmag, gradmag_reconstruct,
+                              gradmag_without_density=gradmag_without_density)
         n_atom = lay["n_atom"]                                # leading atom channels
         if atom_pos_weight > 1.0 and n_atom > 0:
             # Mask of atom-on positions for the leading atom channels.
@@ -816,7 +882,8 @@ def val_epoch(cfg, model, val_cache, device, ch_weight=None) -> dict:
     density_input = bool(cfg.mae.get("density_input", True))
     mask_as_channel = bool(cfg.mae.get("mask_as_channel", False))
     layout = _channel_layout(input_mode, with_gradmag, gradmag_reconstruct,
-                             density_input=density_input, mask_as_channel=mask_as_channel)
+                             density_input=density_input, mask_as_channel=mask_as_channel,
+                             gradmag_without_density=bool(cfg.mae.get("gradmag_without_density", False)))
     need_density = input_mode in (
         "density", "atomblob_density", "atomblob_merged_density",
         "roleblob_density", "pocket_density", "ligand_density",
@@ -1004,6 +1071,7 @@ def val_epoch(cfg, model, val_cache, device, ch_weight=None) -> dict:
                 atom_pos_thresh=float(cfg.mae.get("atom_pos_thresh", 0.05)),
                 with_gradmag=with_gradmag,
                 gradmag_reconstruct=gradmag_reconstruct,
+                gradmag_without_density=bool(cfg.mae.get("gradmag_without_density", False)),
             )
             L_pretext_sum += losses[pretext_key].item()
             L_str_sum += losses["L_str"].item()
@@ -1047,6 +1115,7 @@ def train_epoch(cfg, prefetcher, model, optimizer, model_ema, device, global_ste
     gradmag_reconstruct = bool(cfg.mae.get("gradmag_reconstruct", True))
     layout = _channel_layout(input_mode, with_gradmag, gradmag_reconstruct,
                              density_input=bool(cfg.mae.get("density_input", True)),
+                             gradmag_without_density=bool(cfg.mae.get("gradmag_without_density", False)),
                              mask_as_channel=bool(cfg.mae.get("mask_as_channel", False)))
     if pretext_style == "electra":
         pretext_key = "L_rtd"
@@ -1064,10 +1133,13 @@ def train_epoch(cfg, prefetcher, model, optimizer, model_ema, device, global_ste
     d2v_on = lambda_d2v > 0.0 and pretext_style == "mae"
     if d2v_on:
         model_ema.module.eval()                 # teacher = EMA; eval so DropPath/dropout are off
+    # KoLeo feature regulariser (opt-in): spread pooled features to fight collapse / boost transfer.
+    lambda_koleo = float(cfg.mae.get("koleo_weight", 0.0))
+    koleo_on = lambda_koleo > 0.0 and pretext_style == "mae" and not contrastive_on and not d2v_on
 
     L_pretext_sum, L_str_sum, grad_norm_sum, n_batches = 0.0, 0.0, 0.0, 0
     L_dens_atom_sum, L_dens_density_sum, L_dens_gradmag_sum, L_con_sum = 0.0, 0.0, 0.0, 0.0
-    L_d2v_sum = 0.0
+    L_d2v_sum, L_koleo_sum = 0.0, 0.0
     accum_steps = max(1, int(cfg.get("accum_steps", 1)))
     grad_clip = float(cfg.mae.get("grad_clip", 0.0))
     optimizer.zero_grad(set_to_none=True)
@@ -1092,6 +1164,8 @@ def train_epoch(cfg, prefetcher, model, optimizer, model_ema, device, global_ste
                     out_pretext, a_hat, z_a, z_b = model(x_in, x_in_b)
                 elif d2v_on:
                     out_pretext, a_hat, d2v_pred = model(x_in, return_d2v=True)
+                elif koleo_on:
+                    out_pretext, a_hat, pooled = model(x_in, return_pooled=True)
                 else:
                     out_pretext, a_hat = model(x_in)
             out_pretext = out_pretext.float()        # loss math in fp32 (bf16 under autocast)
@@ -1109,6 +1183,7 @@ def train_epoch(cfg, prefetcher, model, optimizer, model_ema, device, global_ste
                 atom_pos_thresh=float(cfg.mae.get("atom_pos_thresh", 0.05)),
                 with_gradmag=with_gradmag,
                 gradmag_reconstruct=gradmag_reconstruct,
+                gradmag_without_density=bool(cfg.mae.get("gradmag_without_density", False)),
             )
             L_pretext = losses[pretext_key]
             L_str = losses["L_str"]
@@ -1117,6 +1192,10 @@ def train_epoch(cfg, prefetcher, model, optimizer, model_ema, device, global_ste
                 L_con = nt_xent(z_a.float(), z_b.float(), con_temp)
                 loss = loss + lambda_con * L_con
                 L_con_sum += L_con.item()
+            if koleo_on:
+                L_koleo = koleo_loss(pooled)
+                loss = loss + lambda_koleo * L_koleo
+                L_koleo_sum += L_koleo.item()
             if d2v_on:
                 with torch.no_grad():
                     target = _unwrap(model_ema.module).data2vec_target(x_clean)   # (B, N, D)
@@ -1170,6 +1249,8 @@ def train_epoch(cfg, prefetcher, model, optimizer, model_ema, device, global_ste
         metrics["L_con"] = L_con_sum / n_b
     if d2v_on:
         metrics["L_d2v"] = L_d2v_sum / n_b
+    if koleo_on:
+        metrics["L_koleo"] = L_koleo_sum / n_b
     return metrics, global_step
 
 
@@ -1435,6 +1516,7 @@ def _build_vit(cfg: DictConfig, device, layout: dict, is_main: bool):
         radius_embed=radius_embed,
         drop_path=float(cfg.model.get("drop_path", 0.0)),
         data2vec=(float(cfg.mae.get("data2vec_weight", 0.0)) > 0.0),
+        n_memory_tokens=int(cfg.model.get("n_memory_tokens", 0)),
     ).to(device)
     if is_main:
         n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -1543,6 +1625,7 @@ def run(cfg: DictConfig, method: str) -> None:
     gradmag_channel_weight = float(cfg.mae.get("gradmag_channel_weight", 1.0))
     layout = _channel_layout(input_mode, with_gradmag, gradmag_reconstruct,
                              density_input=bool(cfg.mae.get("density_input", True)),
+                             gradmag_without_density=bool(cfg.mae.get("gradmag_without_density", False)),
                              mask_as_channel=bool(cfg.mae.get("mask_as_channel", False)))
     torch.manual_seed(cfg.seed)
     torch.cuda.manual_seed(cfg.seed)
@@ -1913,6 +1996,7 @@ def run(cfg: DictConfig, method: str) -> None:
             gradmag_reconstruct=gradmag_reconstruct,
             gradmag_noise=gradmag_noise,
             density_input=bool(cfg.mae.get("density_input", True)),
+            gradmag_without_density=bool(cfg.mae.get("gradmag_without_density", False)),
             n_lig_ch=int(cfg.model.get("n_channels_ligand", 7)),
             n_poc_ch=int(cfg.model.get("n_channels_pocket", 4)),
             channel_groups=(tuple(int(c) for c in cfg.model.channel_groups)
@@ -1920,6 +2004,9 @@ def run(cfg: DictConfig, method: str) -> None:
             mask_channel_independent=bool(cfg.mae.get("mask_channel_independent", False)),
             mask_group_ratios=(list(cfg.mae.get("mask_group_ratios", None))
                                if cfg.mae.get("mask_group_ratios", None) else None),
+            group_complete_ratio=float(cfg.mae.get("group_complete_ratio", 0.9)),
+            group_complete_light_ratio=float(cfg.mae.get("group_complete_light_ratio", 0.15)),
+            group_complete_family_weights=cfg.mae.get("group_complete_family_weights", None),
         )
         train_metrics, global_step = spec.train_epoch(
             cfg, prefetcher, model_train, optimizer, model_ema, device, global_step,

@@ -47,10 +47,15 @@ HP = dict(hidden=128, dropout=0.1, lr=1e-3, wd=1e-4, epochs=200, patience=30, bs
 class MLP(nn.Module):
     def __init__(self, d, h, p):
         super().__init__()
+        # Unified probe head (260828): SiLU-128 single-hidden (d→h→1), matching the
+        # canonical 01c MLP2 that Table 1a already uses. Replaces the old tapered
+        # ReLU (d→h→h//2→1). Head-design sweep (test/probe_head_6set.py, CDG v2,
+        # 8 seeds) found SiLU beats ReLU/GELU on 6/6 cohorts (small but consistent)
+        # and width 64-256 / depth 1-2 all tie within seed noise; switching casf-
+        # machinery to this head unifies Table 1b/1c with Table 1a's head.
         self.net = nn.Sequential(
-            nn.Linear(d, h), nn.ReLU(), nn.Dropout(p),
-            nn.Linear(h, h // 2), nn.ReLU(), nn.Dropout(p),
-            nn.Linear(h // 2, 1),
+            nn.Linear(d, h), nn.SiLU(), nn.Dropout(p),
+            nn.Linear(h, 1),
         )
 
     def forward(self, x):

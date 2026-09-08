@@ -1,0 +1,176 @@
+% Expanded front matter for the current Density4Drug draft.
+% Style target: short claim-led paragraphs and compact sentences, following
+% the four reference papers supplied for the 260910 writing pass.
+% Citation keys follow the existing 260903 drafts and must be synchronized
+% with the BibTeX database used by the current manuscript.
+
+% =============================================================================
+% ABSTRACT
+% =============================================================================
+
+\begin{abstract}
+Protein machine learning depends on representations that can transfer across
+tasks. Most current representations use amino-acid sequences or fitted atomic
+coordinates. They omit the experimental evidence used to determine many of
+those coordinates. Electron-density maps can retain local support and
+conformational evidence that a single fitted model does not expose. We ask
+whether this signal can provide a reusable representation for protein--ligand
+modeling. We introduce \ours{}, a
+coordinate-and-density voxel encoder pre-trained by masked reconstruction on
+more than 100K curated protein--ligand instances. \ours{} jointly encodes ligand
+atoms, pocket atoms, experimental $2mF_o-DF_c$ density, and its gradient
+magnitude. We transfer frozen pooled or spatial features to binding-affinity
+regression and reference-assisted molecular generation. On
+leakage-controlled affinity benchmarks, \ours{} improves over a matched
+coordinate-only encoder and obtains the strongest point estimates on a clean
+92-complex CASF-2016 subset. When fused with VoxBind, it improves mean Vina Dock
+by $0.51$~kcal/mol and raises the high-affinity rate by $6.4$ percentage points.
+Mean ECFP4 similarity to the reference ligand does not increase, although
+PoseCheck reveals a remaining trade-off in generated-pose quality. These
+results support experimental density as a transferable complement to fitted
+coordinates.
+\end{abstract}
+
+% =============================================================================
+% INTRODUCTION
+% =============================================================================
+
+\section{Introduction}
+\label{sec:intro}
+
+Reusable representations are central to modern protein machine learning.
+Protein language models learn evolutionary and functional patterns from
+amino-acid sequences \citep{rives2021biological,lin2023evolutionary}.
+Structure predictors instead recover accurate atomic models from sequence
+\citep{jumper2021highly,abramson2024accurate}. These representations now support
+function prediction, molecular docking, affinity estimation, and drug design
+\citep{radivojac2013large,ozturk2018deepdta,pinheiro2024structure}. Their success
+also makes the information retained by the input representation increasingly
+important.
+
+Fitted coordinates are an incomplete record of crystallographic evidence. In
+X-ray crystallography, an atomic model is refined against a diffraction-derived
+electron-density map \citep{adams2011phenix}. The final coordinates provide one
+concise interpretation of that map, but they do not retain its full local
+signal. Weak density can indicate alternative conformations, while local map
+support varies across atoms and molecular fragments
+\citep{lang2010automated,lang2014protein,meyder2017estimating}. Such information
+is especially relevant near a ligand, where small geometric changes can alter
+intermolecular contacts.
+
+Experimental density has already shown value in several protein--ligand tasks.
+Prior work uses it for ligand recognition, local model assessment, affinity
+prediction, and molecular generation
+\citep{kowiel2019automatic,miyaguchi2021machine,suriana2025beyond,wang2022pocket}.
+These studies establish that the map contains useful task-level information.
+They do not yet show whether density-pre-trained representations can support
+distinct predictive and generative tasks. This leaves representation transfer,
+rather than access to density itself, as the central question.
+
+We introduce \ours{}, a transferable coordinate-and-density encoder for
+protein--ligand complexes. Each complex is represented on a common voxel grid
+using ligand atoms, pocket atoms, experimental density, and density-gradient
+magnitude. We curate more than 100K crystallographic instances from PLINDER and
+pre-train a Channel-ViT by masked reconstruction
+\citep{durairaj2024plinder,bao2023channel-24a,he2022masked}. The objective asks
+the model to recover missing atomic and density regions from their shared
+context. At transfer time, the pretrained encoder remains frozen and only
+lightweight task-specific modules are learned.
+
+We evaluate \ours{} in two complementary transfer settings. Binding-affinity
+regression tests whether pooled features capture interaction strength. We use
+complex-level leakage controls, sequence-similarity filters, and an exact-PDB
+held-out CASF-2016 subset. Reference-assisted molecular generation tests whether
+spatial features improve ligand construction inside a target pocket. We assess
+docking, molecular properties, reference-ligand similarity, and pose geometry
+so that a better interaction score is not mistaken for uniformly better
+molecules.
+
+The experiments show that experimental density provides useful information
+beyond a matched coordinate-only representation. \ours{} improves affinity
+prediction across the main LP-PDBBind evaluations and achieves the strongest
+point estimates on the clean CASF-2016 subset. Its spatial features also improve
+VoxBind's Vina scores without increasing mean ECFP4 similarity to the reference
+ligand. At the same time, PoseCheck identifies a remaining gap in generated-pose
+quality relative to VoxBind. This trade-off locates both the value of the density
+signal and an important target for future transfer methods.
+
+Our contributions are summarized as follows:
+\begin{itemize}
+    \item We introduce \ours{} and a large-scale curation pipeline for joint
+    representation learning from fitted coordinates and experimental
+    electron-density maps.
+    \item We evaluate the frozen representation for binding-affinity regression
+    under complex-level leakage controls, protein-sequence-similarity filters,
+    and a clean CASF-2016 held-out set.
+    \item We transfer frozen spatial features to reference-assisted molecular
+    generation and evaluate predicted interactions, molecular quality,
+    reference similarity, and pose geometry.
+\end{itemize}
+
+% =============================================================================
+% RELATED WORK
+% =============================================================================
+
+\section{Related Work}
+\label{sec:related_works}
+
+\textbf{Experimental electron-density maps.}
+An electron-density map retains experimental information that is not explicit
+in a fitted coordinate set. A standard maximum-likelihood-weighted map combines
+observed amplitudes with fitted-model terms using coefficients
+$(2mF_o-DF_c)e^{\mathrm{i}\phi_c}$ \citep{read1986improved}. Although the map
+remains partly model-dependent, its observed amplitudes can reveal weak or
+heterogeneous local structure
+\citep{lang2010automated,lang2014protein}. Map-based methods have been developed
+for ligand identification and local structure assessment
+\citep{kowiel2019automatic,miyaguchi2021machine}. We use the map as a source of
+pre-training supervision and as part of a reusable complex representation.
+
+\textbf{Protein--ligand representation learning.}
+Protein--ligand models differ in both their input resolution and their training
+objective. Sequence methods operate on protein residues and ligand strings,
+whereas structure methods encode atoms, coordinates, distances, or voxel grids.
+Recent self-supervised approaches pre-train complex or pocket encoders through
+geometric denoising, masked modeling, or cross-molecular interaction prediction
+\citep{jin2023dsmbind,feng2024protein,gao2024self}. These methods show that
+unlabeled structures can provide transferable interaction features. \ours{}
+extends this direction by aligning coordinate channels with experimental density
+during pre-training.
+
+\textbf{Voxel and masked representation learning.}
+Voxel grids provide a shared spatial frame for molecular signals with different
+physical meanings. They have supported both affinity prediction and generative
+modeling, but their cost grows quickly with spatial resolution
+\citep{stepniewska2018development,pinheiro2024structure}. Masked autoencoding
+reduces this redundancy by learning to reconstruct missing regions from visible
+context \citep{he2022masked}. Channel-aware Transformers further preserve the
+identity of distinct input groups while allowing information exchange between
+them \citep{bao2023channel-24a}. These properties make masked, channel-aware
+voxel modeling a natural basis for combining atoms with experimental maps.
+
+\textbf{Binding-affinity regression.}
+Binding-affinity regression tests whether a representation captures the
+strength of a protein--ligand interaction. Sequence-based models use protein
+sequences and ligand SMILES without explicit three-dimensional geometry
+\citep{ozturk2018deepdta,huang2021moltrans,shenoy2026nesso1}. Structure-based
+models instead use voxel CNNs, molecular graphs, or equivariant networks
+\citep{stepniewska2018development,kong2026hbgsa,kong2023generalist}. Evaluation
+is sensitive to overlap between training and test complexes, which motivates
+leak-aware splits and similarity-stratified analyses
+\citep{li2026leak,wei2026honestaffinity}. Most closely related,
+\citet{suriana2025beyond} compares atom-based and experimental-density voxel
+inputs; we focus on large-scale pre-training and frozen transfer under these
+controls.
+
+\textbf{Structure-based drug design.}
+Pocket-conditioned generators construct molecules directly within a target
+binding site. Autoregressive methods place atoms or fragments sequentially
+\citep{luo20213d,peng2022pocket2mol}, while diffusion models jointly denoise
+atom types and coordinates \citep{guan20233d-5e4,schneuing2024structure}.
+Voxel-based models instead generate continuous atom-density grids
+\citep{pinheiro20233d-81b,pinheiro2024structure}. Reference information can be
+introduced through decomposed ligand priors or experimental density
+\citep{guan2024decompdiff,wang2022pocket,li2025electron}. We differ by
+transferring frozen spatial features learned from coordinates and experimental
+density into an existing voxel generator.

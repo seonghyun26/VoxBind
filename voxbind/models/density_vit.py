@@ -619,6 +619,20 @@ class DensityViT(nn.Module):
         z = self.run_trunk(z, prepend_memory=True)
         return z[:, : self.n_memory_tokens]
 
+    def forward_features_cls_concat(self, density: torch.Tensor) -> torch.Tensor:
+        """ChA-MAE hybrid CLS+patch fusion readout: ONE trunk pass → concat of the
+        mean-pooled patch tokens and the flattened memory/CLS tokens. (B, (1+l)*D).
+        Complements forward_features (patches only) / forward_features_memory (CLS only).
+        Grad-capable (no @no_grad) so an end-to-end fine-tune could backprop through it."""
+        if self.memory_tokens is None:
+            raise ValueError("forward_features_cls_concat requires n_memory_tokens>0 "
+                             "(this encoder has none)")
+        z = self._tokenize(density)
+        z = self.run_trunk(z, prepend_memory=True)                   # (B, l+T, D) post-norm
+        cls = z[:, : self.n_memory_tokens].reshape(z.shape[0], -1)   # (B, l*D)
+        patch = z[:, self.n_memory_tokens:].mean(dim=1)              # (B, D)
+        return torch.cat([patch, cls], dim=-1)                       # (B, (1+l)*D)
+
     @torch.no_grad()
     def group_attention(self, density: torch.Tensor):
         """channel_group only — the ChannelViT payoff. Returns per-layer:
@@ -713,6 +727,7 @@ class DensityViTMAE(nn.Module):
         radius_embed: Optional[dict] = None,  # opt-in learnable radius→k atom embedding (RadiusAtomEmbed kwargs)
         drop_path: float = 0.0,            # stochastic depth max rate (ramped over depth) → forwarded to encoder
         data2vec: bool = False,            # opt-in: build the data2vec latent-prediction predictor head
+        n_memory_tokens: int = 0,          # opt-in register/memory tokens (ViT-needs-registers) → forwarded to encoder
     ):
         super().__init__()
         assert pretext_style in ("mae", "electra"), (
@@ -781,6 +796,7 @@ class DensityViTMAE(nn.Module):
             channel_group_dropout=channel_group_dropout,
             radius_embed=radius_embed,
             drop_path=drop_path,
+            n_memory_tokens=n_memory_tokens,
         )
 
         if pretext_style == "mae":
@@ -933,12 +949,15 @@ class DensityViTMAE(nn.Module):
         return F.layer_norm(z, (z.shape[-1],))
 
     def forward(self, density: torch.Tensor, density_b: Optional[torch.Tensor] = None,
-                return_d2v: bool = False):
+                return_d2v: bool = False, return_pooled: bool = False):
         """Returns (out_pretext, out_structure). When `density_b` is given (a second masked
         view) AND a projector exists, ALSO returns contrastive projections (z_a, z_b). When
         `return_d2v`, ALSO returns the data2vec student prediction (B, N, D) from the predictor
-        on the pooled tokens. All extra heads run inside this one forward so DDP sees every param."""
-        want_tok = (density_b is not None) or return_d2v
+        on the pooled tokens. When `return_pooled` (feature-regulariser path, e.g. KoLeo/SIGReg),
+        ALSO returns the mean-pooled patch feature (B, D) — the SAME vector the frozen probe uses
+        — so a regulariser can shape it in-place. All extra heads run inside this one forward so
+        DDP sees every param."""
+        want_tok = (density_b is not None) or return_d2v or return_pooled
         want_con = density_b is not None
         enc = self.encoder(density, return_tokens=want_tok)
         z, tokens_a = enc if want_tok else (enc, None)
@@ -971,6 +990,9 @@ class DensityViTMAE(nn.Module):
             z_a = self._project(tokens_a)                          # view-a (free, MAE pass)
             z_b = self._project(self.encoder.forward_features(density_b))  # view-b (+1 pass)
             return out_pretext, out_structure, z_a, z_b
+        if return_pooled:
+            pooled = self.encoder._pool_groups(tokens_a).mean(dim=1)  # (B, D) — probe's rep
+            return out_pretext, out_structure, pooled
         return out_pretext, out_structure
 
 
