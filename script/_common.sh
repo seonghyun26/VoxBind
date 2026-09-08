@@ -43,12 +43,18 @@ export GPUS="${GPUS:-${CUDA_VISIBLE_DEVICES:-0}}"
 export NPROC="$(awk -F, '{print NF}' <<< "$GPUS")"
 
 # --------------------------------------------------------------------------
-# Prepared-copy data source (see 01_download_data.sh).
-#   DATA_RCLONE_REMOTE   rclone path to the prepared VoxBind data+weights folder
-#   DATA_HTTP_URL        alternative: a single .tar / .tar.zst bundle over HTTP(S)
-# Fill ONE of these in (or export it) before running 01_download_data.sh.
+# Prepared-copy data source (see 01_download_data.sh). This is the SPML lab
+# Dropbox base (same namespace as voxbind/model_zoo/dropbox_pull.sh). Under it:
+#   model_zoo/   ALL pretrained weights (confirmed on Dropbox):
+#                  CDG_v2/                      frozen density encoder
+#                  voxbind_sig0.9_crossdocked/  base-denoiser warm start (~1.25 GB)
+#                  C_v2 / CD_v2 / CG_v2 / champion / …
+#   data/        prepared dataset (crops, tensors). NOT on Dropbox yet — upload it
+#                here to have 01 pull it, or fetch raw CrossDocked publicly (01 guides).
+# Requires an rclone remote named `dropbox` (see repo dropbox-sync.md). Set
+# DATA_HTTP_URL instead to pull a single tar bundle over HTTP(S).
 # --------------------------------------------------------------------------
-export DATA_RCLONE_REMOTE="${DATA_RCLONE_REMOTE:-dropbox:/박성현/VoxBind/share}"
+export DATA_RCLONE_REMOTE="${DATA_RCLONE_REMOTE:-dropbox:/박성현/VoxBind}"
 export DATA_HTTP_URL="${DATA_HTTP_URL:-}"   # e.g. https://.../voxbind_share.tar.zst
 
 # --------------------------------------------------------------------------

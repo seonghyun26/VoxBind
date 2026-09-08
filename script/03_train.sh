@@ -69,11 +69,20 @@ train_base() {
 # --------------------------------------------------------------------------
 train_fusion() {
     local exp="${EXP_NAME:-$FUSION_EXP}" epochs="${NUM_EPOCHS:-100}"
-    local warm="${WARM_START:-$CODE_ROOT/exps/$BASE_EXP/checkpoint.pth.tar}"
+    # Warm start: prefer the base denoiser pulled from Dropbox (model_zoo), else a
+    # locally trained base exp. Override with WARM_START.
+    local warm="${WARM_START:-}"
+    if [ -z "$warm" ]; then
+        if [ -f "$CODE_ROOT/model_zoo/voxbind_sig0.9_crossdocked/checkpoint.pth.tar" ]; then
+            warm="$CODE_ROOT/model_zoo/voxbind_sig0.9_crossdocked/checkpoint.pth.tar"
+        else
+            warm="$CODE_ROOT/exps/$BASE_EXP/checkpoint.pth.tar"
+        fi
+    fi
 
     [ -f "$ENCODER" ]        || die "frozen encoder not found: $ENCODER (rerun 01_download_data.sh)"
     [ -d "$CROPS_DIR/train" ] || die "density crops not found: $CROPS_DIR/train (rerun 01/02)"
-    [ -f "$warm" ] || die "base warm-start checkpoint not found: $warm — run 'MODE=base bash script/03_train.sh' first (or set WARM_START)"
+    [ -f "$warm" ] || die "base warm-start not found: $warm — pull it via 01_download_data.sh (model_zoo/voxbind_sig0.9_crossdocked) or run 'MODE=base bash script/03_train.sh' first (or set WARM_START)"
 
     # Encoder geometry MUST be read from the encoder's own cfg.yaml — model_zoo
     # entries are not interchangeable at fixed dims (channel layout differs by family).

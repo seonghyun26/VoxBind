@@ -32,14 +32,17 @@ Every knob is overridable from the environment — no script edits needed.
   automatically via `torchrun`; set `GPUS=0,1,2,3` to pick devices.
 - **Disk**: ~150–250 GB (CrossDocked + density crops + weights + samples).
 - **Conda**: Miniforge / Mamba / Micromamba on `PATH` (native install only).
-- **Data link**: the prepared-copy source. Set **one** of these in `_common.sh`
-  (or export before step 1):
-  - `DATA_RCLONE_REMOTE` — an rclone remote path (Dropbox/Drive), **or**
-  - `DATA_HTTP_URL` — a single `.tar` / `.tar.gz` / `.tar.zst` bundle URL.
+- **Data link**: the prepared-copy source, preset in `_common.sh`:
+  - `DATA_RCLONE_REMOTE="dropbox:/박성현/VoxBind"` — the SPML lab Dropbox base.
+    Its `model_zoo/` holds all pretrained weights (encoder **and** the base-denoiser
+    warm start). Requires an rclone remote named `dropbox` (see `dropbox-sync.md`).
+  - `DATA_HTTP_URL` — alternative: a single `.tar` / `.tar.gz` / `.tar.zst` bundle.
 
-> ⚠️ The placeholder `DATA_RCLONE_REMOTE` in `_common.sh` points at the lab
-> Dropbox folder. **Replace it with the real share link** (or set `DATA_HTTP_URL`)
-> before running `01`.
+> ℹ️ Only **weights** are on Dropbox today. The **dataset** (CrossDocked pockets +
+> density crops) is not — `01` pulls the weights and then points you at the public
+> CrossDocked release for the raw data (run `02` to preprocess). To skip that,
+> upload a prepared `data/` folder to `dropbox:/박성현/VoxBind/data` and `01` will
+> pull it automatically.
 
 ---
 
@@ -98,19 +101,28 @@ Idempotent (skips what exists). `FORCE=1 … voxdock` rebuilds one env.
 - `moleval` — PoseCheck **1.3.1** + PoseBusters + ProLIF (python 3.10)
 
 ### `01_download_data.sh` — prepared copy
-Pulls the already-preprocessed data + weights so nothing is rebuilt from raw
-maps. Sources: rclone remote (`DATA_RCLONE_REMOTE`) or one tar bundle
-(`DATA_HTTP_URL`). Incremental — safe to re-run. It verifies the key artifacts
-land in place. Expected layout under `voxbind/dataset/data/`:
+Pulls weights from Dropbox and, if a `data/` folder is hosted there, the dataset
+too. Incremental — safe to re-run. Verifies the key artifacts landed. What comes
+from where:
 
 ```
-crossdocked_pocket10/                      raw CrossDocked pockets + ligands
-split_by_name.pt                           CrossDocked split
-data_train.pt / data_test.pt               preprocessed tensors
-pretrain/xray_crops_aligned_v5/{train,test}/…  + {train,test}_available.npy
-voxbind/model_zoo/CDG_v2/                   frozen density encoder (+ cfg.yaml)
-<sibling>/targetdiff/data/test_set/         full receptors (docking/pose eval)
+FROM DROPBOX (model_zoo/, confirmed present):
+  voxbind/model_zoo/CDG_v2/                       frozen density encoder (+ cfg.yaml)
+  voxbind/model_zoo/voxbind_sig0.9_crossdocked/   base-denoiser warm start (~1.25 GB)
+  voxbind/model_zoo/{C_v2,CD_v2,CG_v2,champion,…} other encoders (optional)
+
+DATASET (upload to dropbox:/박성현/VoxBind/data, or fetch public + run 02):
+  dataset/data/crossdocked_pocket10/              raw pockets + ligands
+  dataset/data/split_by_name.pt                   CrossDocked split
+  dataset/data/data_train.pt / data_test.pt       preprocessed tensors (02 builds)
+  dataset/data/pretrain/xray_crops_aligned_v5/…   density crops + *_available.npy
+
+EVAL (optional mirror, or from TargetDiff's release):
+  <sibling>/targetdiff/data/test_set/             full receptors (docking/pose)
 ```
+
+Because the base warm start ships in `model_zoo/`, you do **not** need to train
+the base denoiser — `03_train.sh` picks it up automatically.
 
 ### `02_preprocess_data.sh` — tensors + crops
 With the prepared copy this is mostly a **verify** step. If `data_{train,test}.pt`
@@ -121,9 +133,10 @@ you are *not* using the prepared crops).
 ### `03_train.sh` — training (GPU)
 `MODE` selects the piece:
 - `fusion` *(default)* — density-conditioned model: base warm start + **frozen
-  CDG_v2** encoder, token fusion. Needs a base checkpoint (see `base`) and the
-  CDG_v2 encoder from step 1.
-- `base` — vanilla VoxBind denoiser from scratch (the warm-start weights).
+  CDG_v2** encoder, token fusion. Uses the base warm start and CDG_v2 encoder
+  pulled into `model_zoo/` in step 1 — **no base training required**.
+- `base` — vanilla VoxBind denoiser from scratch (only if you want to retrain the
+  warm-start weights yourself instead of using the shipped one).
 - `all` — `base` then `fusion`.
 - `encoder` — *(advanced)* re-pretrain the CDG_v2 encoder via MAE; needs the
   PLINDER density corpus. Most users skip this — CDG_v2 ships in step 1.

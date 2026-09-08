@@ -32,16 +32,39 @@ source "$SCRIPT_DIR/_common.sh"
 
 mkdir -p "$DATA_ROOT" "$CODE_ROOT/model_zoo"
 
+CROSSDOCKED_URL="https://drive.google.com/drive/folders/1CzwxmTpjbrt83z_wBzcQncq84OVDPurM"
+
 pull_rclone() {
     export PATH="$HOME/.local/bin:$PATH"
     command -v rclone >/dev/null 2>&1 || die "rclone not on PATH — install per dropbox-sync.md, or use DATA_HTTP_URL"
     local remote="$DATA_RCLONE_REMOTE"
     [ -n "$remote" ] || die "DATA_RCLONE_REMOTE is empty — set it in _common.sh or the environment"
-    log "rclone copy from: $remote"
-    # The prepared folder mirrors the repo layout under two roots: data/ and model_zoo/.
-    # Copy each to its destination; --ignore-existing keeps re-runs incremental.
-    rclone copy "$remote/data/"       "$DATA_ROOT/"            --transfers 4 --checkers 8 --progress "$@"
-    rclone copy "$remote/model_zoo/"  "$CODE_ROOT/model_zoo/"  --transfers 4 --checkers 8 --progress "$@"
+    rclone listremotes 2>/dev/null | grep -qx "dropbox:" \
+        || die "rclone remote 'dropbox' not configured — see dropbox-sync.md (copy ~/.config/rclone/rclone.conf from the source server)"
+
+    # 1) Weights — confirmed on Dropbox under model_zoo/. Excludes the git-carried
+    #    metadata files so they never clobber what arrives via git. Incremental.
+    log "rclone copy weights:  $remote/model_zoo/  ->  $CODE_ROOT/model_zoo/"
+    rclone copy "$remote/model_zoo/" "$CODE_ROOT/model_zoo/" \
+        --exclude "*.sh" --exclude "*.html" --exclude "*.md" --exclude ".gitignore" \
+        --exclude "model_zoo_bundle.tar*" \
+        --transfers 4 --checkers 8 --progress "$@"
+
+    # 2) Dataset — only if a data/ folder has been uploaded to the same remote.
+    if rclone lsd "$remote/data" >/dev/null 2>&1; then
+        log "rclone copy dataset:  $remote/data/  ->  $DATA_ROOT/"
+        rclone copy "$remote/data/" "$DATA_ROOT/" --transfers 4 --checkers 8 --progress "$@"
+    else
+        log "NOTE: no prepared dataset at $remote/data — only weights were pulled."
+        log "      Get the CrossDocked raw data from the public release:"
+        log "        $CROSSDOCKED_URL"
+        log "      Download split_by_name.pt + crossdocked_pocket10.tar.gz into"
+        log "        $DATA_ROOT/   (untar the tarball there), then run 02_preprocess_data.sh."
+        log "      Density crops (xray_crops_aligned_v5) must also be provided; if you"
+        log "      have them, upload to $remote/data/ and re-run this script."
+    fi
+
+    # 3) Optional: TargetDiff full receptors, if mirrored on the remote.
     if rclone lsd "$remote/targetdiff_test_set" >/dev/null 2>&1; then
         mkdir -p "$FULL_RECEPTOR_ROOT"
         rclone copy "$remote/targetdiff_test_set/" "$FULL_RECEPTOR_ROOT/" --transfers 4 --checkers 8 --progress "$@"
@@ -80,6 +103,7 @@ check "split_by_name.pt"                           "CrossDocked split           
 check "pretrain/xray_crops_aligned_v5/train"       "density crops (train)          (dataset/data/pretrain/xray_crops_aligned_v5/train/)"
 check "pretrain/xray_crops_aligned_v5/train_available.npy" "density availability mask (…/train_available.npy)"
 check "model_zoo/CDG_v2/checkpoint_e0025.pth.tar"  "CDG_v2 frozen encoder          (voxbind/model_zoo/CDG_v2/)"
+check "model_zoo/voxbind_sig0.9_crossdocked/checkpoint.pth.tar" "base-denoiser warm start (voxbind/model_zoo/voxbind_sig0.9_crossdocked/)"
 [ -d "$FULL_RECEPTOR_ROOT" ] && echo "  OK   TargetDiff full receptors ($FULL_RECEPTOR_ROOT)" || echo "  MISS TargetDiff full receptors ($FULL_RECEPTOR_ROOT) — needed for docking/pose eval only"
 
 echo
