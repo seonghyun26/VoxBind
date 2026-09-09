@@ -1,27 +1,33 @@
-# voxbind environment — lock files
+# VoxBind environment — lock files
 
-Exact, reproducible pin of the working `voxbind` conda env on the source server.
-This single env runs **most of the pipeline and evaluation**: the GPU train/sample
-stack **and** AutoDock **Vina docking** + chemical/geometry metrics. (Only
-PoseCheck/PoseBusters *pose-quality* eval lives in a separate `moleval` env.)
+Exact, reproducible pins of the working conda envs. Two envs are locked, because
+the paper's docking build (vina 1.2.2, py3.8) cannot share the py3.10 pipeline env:
 
-Two layers, applied in order — the conda layer, then the pip layer:
+| Env | Python | Runs | Conda lock | Pip lock |
+|-----|--------|------|-----------|----------|
+| `voxbind` | 3.10 | GPU train/sample + chem/geometry eval + **vina 1.2.7** | `voxbind.conda-linux-64.lock` (245) | `voxbind.pip.lock.txt` (~109) |
+| `voxdock` | 3.8 | **paper-faithful Vina 1.2.2 docking** | `voxdock.conda-linux-64.lock` (129) | `voxdock.pip.lock.txt` (12) |
 
-| File | What |
-|------|------|
-| `voxbind.conda-linux-64.lock` | 245 conda packages, byte-exact URLs+md5 (`conda list --explicit`). **linux-64 only.** |
-| `voxbind.pip.lock.txt` | 109 pip packages (torch, vina, meeko, pdb2pqr, AutoDockTools, …). |
+Each env = a conda layer (byte-exact URLs+md5, **linux-64 only**) applied first,
+then a pip layer. PoseCheck/PoseBusters *pose* eval lives in a third `moleval`
+env (not locked here — build with `bash script/00_setup_env.sh moleval`).
 
 ## Rebuild
 
 ```bash
+# voxbind (pipeline + chem eval + docking @ 1.2.7)
 conda create -n voxbind --file env/voxbind.conda-linux-64.lock
 conda run -n voxbind pip install -r env/voxbind.pip.lock.txt
 conda run -n voxbind pip install -e .          # from the repo root
+
+# voxdock (paper-faithful docking @ vina 1.2.2)
+conda create -n voxdock --file env/voxdock.conda-linux-64.lock
+conda run -n voxdock pip install -r env/voxdock.pip.lock.txt
 ```
 
-`script/00_setup_env.sh` and `script/Dockerfile` use these automatically when
-present (falling back to `env.yaml` otherwise).
+`script/00_setup_env.sh` and `env/Dockerfile` use these automatically when present
+(falling back to `env.yaml` otherwise). `05_evaluate.sh` runs docking under
+`voxdock` (vina 1.2.2) by default.
 
 ## Notes
 
