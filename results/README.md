@@ -4,8 +4,9 @@ Per-method evaluation results for the three VoxBind tasks, plus the rendered
 report pages and the Docker/conda environment to run them.
 
 This folder is **git-ignored** and backed up to Dropbox instead (same mechanism
-as `voxbind/model_zoo/`). Only `dropbox_push.sh`, `dropbox_pull.sh`, and this
-`README.md` travel via git so a fresh checkout can bootstrap the pull.
+as `voxbind/model_zoo/`). Only `dropbox_push.sh`, `dropbox_pull.sh`,
+`dropbox_pull_baselines.sh` and this `README.md` travel via git so a fresh
+checkout can bootstrap the pull.
 
 ## Layout
 
@@ -17,7 +18,8 @@ results/
 │                       _shared/  = cross-method analysis artifacts (not a method)
 ├── reports/            results.html · results_drug_design.html · results_mcp.html
 ├── docker/             Dockerfile · env.yaml · env.minimal.yaml
-├── dropbox_push.sh · dropbox_pull.sh · README.md   (git-tracked)
+├── dropbox_push.sh · dropbox_pull.sh · dropbox_pull_baselines.sh · README.md
+                                                          (all git-tracked)
 ```
 
 Each **method** folder holds a `metrics.json` (always) plus its artifacts:
@@ -79,3 +81,29 @@ bash results/dropbox_pull.sh        # Dropbox -> local
 
 Prereq: an rclone remote named `dropbox` with `root_namespace_id = 12221840097`
 (see `notebook/html/dropbox-sync.md`). `rclone copy` is incremental and resumable.
+
+### Sample-only pulls — `dropbox_pull_baselines.sh`
+
+The full `dropbox_pull.sh` is 3.8 GiB, and 3.47 GiB of that is one folder:
+`DecompDiff/samples/outputs_*/`, the raw generator dump. The molecules every
+analysis actually reads are the 12.7 MiB of `samples/meta/*.pt` beside it. So for
+"just give me the baselines' samples" there is a narrow pull:
+
+```bash
+bash results/dropbox_pull_baselines.sh                   # the 5 CrossDocked baselines, ~68 MiB
+bash results/dropbox_pull_baselines.sh AR DiffSBDD GET   # any number of methods, any task
+bash results/dropbox_pull_baselines.sh -l                # list the methods on the remote
+bash results/dropbox_pull_baselines.sh -n DecompDiff     # dry run
+bash results/dropbox_pull_baselines.sh -a --task task3-mcp --with-shared
+```
+
+Per method it takes `samples/**` + `metrics.json` + `SOURCE.txt`, and skips
+`run/` (cfg, hydra, train logs), `representations/` (task1 cached features) and —
+unless `--with-raw` — `samples/outputs_*/`. Method names resolve across all three
+tasks, so pass a bare name; `--task` disambiguates when one exists in two tasks.
+It prints a per-method size table before transferring anything.
+
+Note the filters use `--filter`, not `--include`/`--exclude`: rclone parses those
+two in an **indeterminate order** (it warns about it), and the `outputs_*`
+exclusion loses to the `samples/**` inclusion often enough that the "small" pull
+silently becomes the 3.5 GiB one. `--filter` rules apply strictly in order.

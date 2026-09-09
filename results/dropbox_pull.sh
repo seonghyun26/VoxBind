@@ -23,6 +23,7 @@ DEST="${RESULTS_DEST:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
 EXCLUDES=(
   --exclude "/dropbox_push.sh"
   --exclude "/dropbox_pull.sh"
+  --exclude "/dropbox_pull_baselines.sh"
   --exclude "/README.md"
   --exclude ".gitignore"
 )
@@ -38,4 +39,4 @@ rclone copy "$SRC/" "$DEST/" "${EXCLUDES[@]}" --transfers 4 --checkers 8 --progr
 echo
 echo ">> done. verify integrity (hash compare) with:"
 echo "   rclone check \"$DEST/\" \"$SRC/\" \\"
-echo "     --exclude /dropbox_push.sh --exclude /dropbox_pull.sh --exclude /README.md --exclude .gitignore"
+echo "     --exclude /dropbox_push.sh --exclude /dropbox_pull.sh --exclude /dropbox_pull_baselines.sh --exclude /README.md --exclude .gitignore"

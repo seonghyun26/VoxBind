@@ -6,11 +6,12 @@ PoseBusters dock-mode validity. The two split by metric and share `../pose_commo
 method), which is everything a disagreement between them would silently corrupt. **Each
 folder carries the code that draws its own figures.**
 
-## The four builders
+## The five builders
 
 | builder | draws | runs here? |
 |---|---|---|
 | `build_posecheck_per_atom.py` | strain and clashes against ligand SIZE, three local arms | yes |
+| `build_strain_per_rotbond.py` | strain against ROTATABLE BONDS, the same three arms | yes |
 | `build_posecheck_all_by_atom_range.py` | all eight methods, binned: ECDF + violin | yes |
 | `build_posecheck_baselines_by_atom_range.py` | the five published baselines alone → `_baselines_only/` | no — needs `prj-denovo/baselines` |
 | `export_posecheck_json.py` | `posecheck_<Method>.json`, the five baselines per molecule | no — same |
@@ -65,6 +66,111 @@ affinity are separate axes.
 One thing only the clash **mean** figure shows: above ~28 heavy atoms the crystal reference
 ligands clash more than VoxBind and Ours v1 do (~10 against 6–8). Crystal poses are not a
 ceiling on this metric.
+
+## Torsion-resolved (`build_strain_per_rotbond.py`)
+
+The VoxBind paper's Fig. 13 form: the same strain, the same three arms and the same 79
+pockets as the section above, against the number of **rotatable bonds** instead of ligand
+size. Nothing else changes — same loader, same statistics, same furniture, same colours —
+so a point here and a point there are the same molecules grouped two ways.
+
+| file | what |
+|---|---|
+| `strain_box_per_rotbond_{core,all}.*` | the **distribution** at each count, as boxes — **the figure to read** |
+| `strain_per_rotbond_median_{core,all}.*` | the medians alone, as a line |
+| `strain_per_rotbond_mean_{core,all}.*` | the same line, **mean** — kept so that claim can be checked |
+| `strain_per_rotbond.{json,csv}` | the curves plus the `n` behind every point |
+
+```bash
+python build_strain_per_rotbond.py                # everything (default)
+python build_strain_per_rotbond.py --kind box     # only the boxes
+python build_strain_per_rotbond.py --kind line    # only the median and mean lines
+python build_strain_per_rotbond.py --stat median  # lines: only the median one
+```
+
+The exports always carry both statistics regardless of `--stat`.
+
+**The boxes are the primary figure and the lines are kept beside them.** A median line says
+where an arm sits; it cannot say whether two arms a factor of 1.5 apart are actually
+separated, and on a metric whose distribution spans four decades *inside a single bond
+count* that is the question. The boxes answer it — and they show something the lines
+cannot: **the arms' inter-quartile ranges overlap almost completely at every count**, so the
+median ordering below is a shift of a wide distribution, not a separation of two narrow
+ones. The lines stay because they are what a reader compares against the per-atom figure
+above, and because the mean only exists there.
+
+Three things decide whether the boxes are readable at all, and all three are in the builder:
+
+* **Whiskers are the 5th and 95th percentiles and fliers are not drawn.** 4–7 % of
+  molecules relax to 1e4–1e13, so Tukey whiskers with fliers would put single points nine
+  decades above the boxes and squash every box in the figure into a line. The percentile is
+  named on the y axis; the tail it leaves out is reported as `strain_gt_1e4`.
+* **Strain is floored at 1e-2 before boxing**, the value `strain_clash_ecdf_pair` already
+  floors it to. A rigid ligand can relax to ~0, and on a log axis a single 1e-11 at 0
+  rotatable bonds pulled the panel down through fifteen decades and flattened every box in
+  it. Values are *clipped, not dropped*, so the whisker rests on the floor and no count
+  changes.
+* **No mean marker.** `showmeans` was tried and cannot work: within one arm and one bond
+  count the mean sits at 1e4–1e11 while the box sits near 1e2, so every marker lands far
+  above its own box and drags the axis with it. The mean has its own line figure, where
+  being unreadable at least reads as the finding it is.
+
+**Why this axis is worth having.** Strain is conformational — the energy a pose carries
+because its torsions are not where the force field would put them — so the number of
+torsions a molecule *has* is the more direct explanatory variable and heavy-atom count is
+its proxy. They are not interchangeable: a fused polycyclic and a long-chain ligand of
+equal size have very different torsional freedom. Here the curves come out visibly
+**smoother** than the per-atom ones, which is the point — strain tracks torsion count more
+tightly than it tracks size.
+
+Strain median at 0 / 4 / 8 / 12 rotatable bonds:
+
+| arm | 0 | 4 | 8 | 12 | molecules scored | strain > 1e4 |
+|---|---|---|---|---|---|---|
+| TargetDiff | 77.0 | 384.5 | 800.9 | 1983.5 | 7,232 | 6.28 % |
+| VoxBind | 11.6 | 57.0 | 154.3 | 301.5 | 7,854 | 4.34 % |
+| VoxBind + Ours | 12.9 | 81.1 | 270.8 | 304.5 | 7,826 | 6.56 % |
+| *Reference ligand* | *12.9* | *24.1* | *56.2* | *—* | *79* | *0.00 %* |
+
+"molecules scored" is `n_scored` in the JSON — molecules whose UFF relaxation converged, so
+it is the sibling section's `n_strain` and not its `n_molecules`. The two exports agree on
+it exactly (7,232 / 7,854 / 7,826 / 79), which is the cheapest check that both builders are
+reading the same molecules.
+
+Same ordering as the size-resolved view, and the same reading. Over 0–9 bonds, the range
+the crystal ligands cover, **VoxBind runs 0.9–3.6× the reference and Ours v1 1.0–4.8×,
+while TargetDiff runs 6.0–19.4×**. Both VoxBind arms sit *at* crystal-ligand strain at 0
+rotatable bonds (0.9× and 1.0×), where there is no torsional freedom left to get wrong, and
+separate from it as torsions are added — the whole gap is in the torsions, which is the
+argument for this axis over the size one.
+
+Between the two VoxBind arms, Ours v1 is 23–76 % above vanilla at every count from 1 to 8
+bonds, then within ±20 % of it from 9 to 13 with no consistent sign. **Do not read the 14-bond point**: it rests on 29
+molecules for Ours against 56 for vanilla, the thinnest pair on the axis, and it is the
+only place the curves diverge sharply.
+
+**Rotatable bonds are counted from the SMILES `metrics.json` already records**, with
+RDKit's default (strict) `CalcNumRotatableBonds` — amides, terminal bonds and ring bonds
+excluded. It is a topological descriptor, so reading it off the recorded SMILES rather than
+the pose gives the same integer with no risk of a sample-to-SDF index slip. No SMILES in
+the three local arms failed to parse.
+
+**The crystal reference window is ±1 here, not `pose_common`'s ±4.** One ligand per pocket
+is too thin for a per-count curve — that is why it is windowed at all — but rotatable-bond
+counts run 0–14 where ligand sizes run 5–45, so ±4 would span two thirds of the axis and
+flatten the reference into a near-constant line. ±1 pools 12–29 ligands per point, and the
+line **stops at 9** where the window falls under `MIN_REF` rather than being extended into
+an invented value. Same narrowing, for the same reason, as `../fig-consistency`. In the
+exports the reference's `n` is that window's pool, not the exact-count one.
+
+**The mean panel is not clipped, where the per-atom one is.** That figure clips to 1e6
+because its curves have a bulk below it and only a few thin heavy-atom counts spike out.
+This axis has no such bulk: 15 bond counts pool 500–1,100 molecules each, so nearly every
+point catches one of the conformers that relax to 1e8–1e13, and the same clip left the
+curve as disconnected fragments with most of it off-panel. Drawn whole it spans nine
+decades, sits 6–9 decades above the crystal ligands and carries no ordering at all — which
+is the honest picture of what a mean does to this metric, and is itself the argument for
+the median. The tail driving it is in the table above and in the JSON as `strain_gt_1e4`.
 
 ## All eight methods, binned (`build_posecheck_all_by_atom_range.py`)
 

@@ -108,10 +108,6 @@ FUNC = "/home1/irteam/funcbind/artifacts/reproduction/crossdocked/paper_run"
 METHODS = {
     "TargetDiff": f"{BASE}/eval/targetdiff",
     "FuncBind": [f"{FUNC}/gpu{i}/samples" for i in range(4)],
-    # "AR":         "<blackwell>/…/ar",       # see PENDING below
-    # "Pocket2Mol": "<blackwell>/…/pocket2mol",
-    # "DiffSBDD":   "<blackwell>/…/diffsbdd",
-    # "DecompDiff": "<blackwell>/…/decompdiff",
     "VoxBind\\textsubscript{\\scriptsize $\\sigma$=0.9}": f"{E}/_vanilla_ep923/samples/full_eval_ep923",
     "VoxBind\\textsubscript{\\scriptsize $\\sigma$=1.0}": f"{E}/exp_sig1.0_350ep/samples/full_eval_ep349",
     # Same run the de novo Vina table calls "Ours · v1"; the label matches so the two
@@ -130,6 +126,29 @@ PLAIN = {
     "VoxBind\\textsubscript{\\scriptsize $\\sigma$=1.0}": "VoxBind σ=1.0",
     "Ours\\textsubscript{\\scriptsize v1}": "Ours v1",
 }
+# AR / Pocket2Mol / DiffSBDD / DecompDiff arrive in a different shape. Their molecules are
+# not target_*/samples.sdf trees but TargetDiff-style meta bundles -- one list per test
+# pocket of {mol, smiles, ligand_filename, pred_pos} -- staged in the git-ignored results/
+# bundle by results/dropbox_pull_baselines.sh. A bundle comes in up to three parts: the
+# first 50 molecules per pocket, _part2 with the rest, and _gap with any re-run fill.
+#
+# Their molecule counts over the 79 shared pockets reproduce the aggregates the Blackwell
+# box reported to the digit (7655 / 7772 / 7720 / 6427), which is what says these are the
+# same molecules that run measured rather than a different sample of them.
+RESULTS = f"{REPO}/results/task2-drugdesign"
+META_METHODS = {
+    "AR":         f"{RESULTS}/AR/samples/meta/AR",
+    "Pocket2Mol": f"{RESULTS}/Pocket2Mol/samples/meta/Pocket2Mol",
+    "DiffSBDD":   f"{RESULTS}/DiffSBDD/samples/meta/DiffSBDD",
+    "DecompDiff": f"{RESULTS}/DecompDiff/samples/meta/DecompDiff_ref_prior",
+}
+META_PARTS = ("", "_part2", "_gap")
+
+# A meta bundle carries no reference ligand, so it borrows one per pocket from a run whose
+# target dirs cover the whole test set. The vanilla run has all 100; the table's 79 are a
+# subset of those.
+REF_ROOT = f"{E}/_vanilla_ep923/samples/full_eval_ep923"
+
 HTML_LABEL = {
     "VoxBind\\textsubscript{\\scriptsize $\\sigma$=0.9}": 'VoxBind<sub class="sc">σ=0.9</sub>',
     "VoxBind\\textsubscript{\\scriptsize $\\sigma$=1.0}": 'VoxBind<sub class="sc">σ=1.0</sub>',
@@ -139,7 +158,7 @@ HTML_LABEL = {
 # MEASURED ON THE OTHER BOX. AR / Pocket2Mol / DiffSBDD / DecompDiff were sampled on the
 # Blackwell (sm_120) machine and their molecules are not here, so these are the numbers
 # that run reported back (2026-09-05) rather than anything this file computes. The request
-# that produced them is 260903/blackwell_similarity_request.md.
+# that produced them is blackwell_similarity_request.md, beside this script.
 #
 # WHAT TIES THEM TO OUR POCKET SET: only aggregates came back, so the intersection cannot
 # be re-derived here -- but the molecule counts can be checked, and they match exactly.
@@ -177,7 +196,8 @@ def table_rows(summary):
     rows in their own block, so a number this script measured is never silently stacked
     with one that was reported to us.
     """
-    merged = {**summary, **{k: dict(v) for k, v in REMOTE.items()}}
+    # measured here wins: REMOTE only fills in a method this run could not compute.
+    merged = {**{k: dict(v) for k, v in REMOTE.items()}, **summary}
     by_plain = {PLAIN.get(k, k): k for k in merged}
     out = {by_plain[name]: merged[by_plain[name]] for name in ROW_ORDER if name in by_plain}
     for key, vals in merged.items():        # anything ROW_ORDER does not name, kept at the end
@@ -397,6 +417,45 @@ def shape_tanimoto(mol, ref) -> float | None:
 
 
 # ── per-method computation ────────────────────────────────────────────────────
+def pocket_record(ref_mol, mols, fp_keys, want_3d: bool, want_novelty: bool):
+    """One pocket's row. Shared by the samples.sdf path and the meta-bundle path, so a
+    baseline is scored by exactly the same code as our own runs."""
+    rec = {"n_mols": len(mols)}
+
+    for fk in fp_keys:
+        _, build, sim = FPS[fk]
+        try:
+            ref_fp = build(ref_mol)
+        except Exception:
+            continue
+        sims = []
+        for m in mols:
+            try:
+                sims.append(float(sim(build(m), ref_fp)))
+            except Exception:
+                pass
+        if sims:
+            for stat in ALL_STATS:
+                rec[f"{fk}_{stat}"] = STAT_FN[stat](sims)
+
+    if want_novelty:
+        # Carried, not computed: the nearest-neighbour search runs in a pool later.
+        rec["_smiles"] = [Chem.MolToSmiles(m) for m in mols]
+        rec["_scaffolds"] = [bm_scaffold(m) for m in mols]
+        rec["_fps"] = [_MORGAN.GetFingerprint(m) for m in mols]
+
+    ref_scaf = bm_scaffold(ref_mol)
+    if ref_scaf is not None:
+        rec["scaffold_match"] = sum(1 for m in mols if bm_scaffold(m) == ref_scaf) / len(mols)
+
+    if want_3d:
+        shapes = [s for s in (shape_tanimoto(m, ref_mol) for m in mols) if s is not None]
+        if shapes:
+            for stat in ALL_STATS:
+                rec[f"shape3d_{stat}"] = STAT_FN[stat](shapes)
+    return rec
+
+
 def method_values(roots, fp_keys, want_3d: bool, from_metrics: bool, want_novelty=False):
     """{pocket_key: {...}} over every target dir under every root of one method."""
     out = {}
@@ -413,45 +472,73 @@ def method_values(roots, fp_keys, want_3d: bool, from_metrics: bool, want_novelt
             if loaded is None:
                 continue
             ref_mol, mols = loaded
-            rec = {"n_mols": len(mols), "target": t, "root": root}
-
-            for fk in fp_keys:
-                _, build, sim = FPS[fk]
-                try:
-                    ref_fp = build(ref_mol)
-                except Exception:
-                    continue
-                sims = []
-                for m in mols:
-                    try:
-                        sims.append(float(sim(build(m), ref_fp)))
-                    except Exception:
-                        pass
-                if sims:
-                    for stat in ALL_STATS:
-                        rec[f"{fk}_{stat}"] = STAT_FN[stat](sims)
-
-            if want_novelty:
-                # Carried, not computed: the nearest-neighbour search runs in a pool later.
-                rec["_smiles"] = [Chem.MolToSmiles(m) for m in mols]
-                rec["_scaffolds"] = [bm_scaffold(m) for m in mols]
-                rec["_fps"] = [_MORGAN.GetFingerprint(m) for m in mols]
-
-            ref_scaf = bm_scaffold(ref_mol)
-            if ref_scaf is not None:
-                rec["scaffold_match"] = sum(1 for m in mols if bm_scaffold(m) == ref_scaf) / len(mols)
-
-            if want_3d:
-                shapes = [s for s in (shape_tanimoto(m, ref_mol) for m in mols) if s is not None]
-                if shapes:
-                    for stat in ALL_STATS:
-                        rec[f"shape3d_{stat}"] = STAT_FN[stat](shapes)
+            rec = pocket_record(ref_mol, mols, fp_keys, want_3d, want_novelty)
+            rec["target"], rec["root"] = t, root
 
             if key in out:
                 print(f"      warning: pocket {key} seen twice ({out[key]['root']} and {root});"
                       " keeping the first")
                 continue
             out[key] = rec
+    return out
+
+
+def reference_index(root=REF_ROOT):
+    """{pocket_key: crystal ligand} from a run whose target dirs cover the test set.
+
+    The meta bundles carry only generated molecules, so the reference every
+    similarity is measured against comes from here -- the same *_lig_*.sdf file
+    load_from_sdf() picks for our own runs, so the two paths compare against the
+    identical molecule and never quietly diverge.
+    """
+    refs = {}
+    for t in sorted(d for d in os.listdir(root) if d.startswith("target_")):
+        tdir = os.path.join(root, t)
+        if not os.path.isdir(tdir):
+            continue
+        key = pocket_key(tdir)
+        loaded = load_from_sdf(tdir) if key else None
+        if loaded is not None:
+            refs[key] = loaded[0]
+    return refs
+
+
+def load_meta(stem):
+    """{pocket_key: [mols]} merged over a meta bundle's parts.
+
+    A molecule that will not sanitise is dropped, the same silent drop
+    Chem.SDMolSupplier(sanitize=True) makes on the samples.sdf path.
+    """
+    import torch
+    per = {}
+    for suffix in META_PARTS:
+        path = f"{stem}{suffix}.pt"
+        if not os.path.exists(path):
+            continue
+        for pocket in torch.load(path, weights_only=False):
+            for entry in pocket:
+                mol = entry.get("mol")
+                if mol is None:
+                    continue
+                try:
+                    Chem.SanitizeMol(mol)
+                except Exception:
+                    continue
+                key = os.path.basename(entry["ligand_filename"])[: -len(".sdf")] + "_pocket10"
+                per.setdefault(key, []).append(mol)
+    return per
+
+
+def method_values_meta(stem, fp_keys, want_3d: bool, want_novelty, refs):
+    """{pocket_key: {...}} for a method that ships as a meta bundle."""
+    out = {}
+    for key, mols in load_meta(stem).items():
+        ref_mol = refs.get(key)
+        if ref_mol is None or not mols:
+            continue
+        rec = pocket_record(ref_mol, mols, fp_keys, want_3d, want_novelty)
+        rec["target"], rec["root"] = key, os.path.dirname(stem)
+        out[key] = rec
     return out
 
 
@@ -669,13 +756,14 @@ def main():
         sys.exit("--with-3d needs conformers, which metrics.json does not carry")
 
     fp_keys = HEADLINE_FPS + (APPENDIX_FPS if args.full else [])
-    wanted = METHODS
+    wanted, wanted_meta = METHODS, META_METHODS
     if args.methods:
         sel = set(args.methods)
         wanted = {k: v for k, v in METHODS.items() if k in sel or PLAIN.get(k) in sel}
-        if not wanted:
-            sys.exit(f"no METHODS matched {args.methods}; known: "
-                     + ", ".join(PLAIN.get(k, k) for k in METHODS))
+        wanted_meta = {k: v for k, v in META_METHODS.items() if k in sel}
+        if not wanted and not wanted_meta:
+            sys.exit(f"no methods matched {args.methods}; known: "
+                     + ", ".join([PLAIN.get(k, k) for k in METHODS] + list(META_METHODS)))
 
     per_method = {}
     for label, roots in wanted.items():
@@ -691,6 +779,27 @@ def main():
                                           args.novelty)
         print(f"      {len(per_method[label])} pockets, "
               f"{sum(r['n_mols'] for r in per_method[label].values())} molecules")
+
+    if wanted_meta:
+        # These four ship as meta bundles and borrow their reference ligand per pocket, so
+        # the index is built once and shared. A bundle that has not been pulled is skipped
+        # with a pointer at the script that pulls it -- results/ is git-ignored.
+        refs = None
+        for label, stem in wanted_meta.items():
+            parts = [f"{stem}{suf}.pt" for suf in META_PARTS]
+            live = [f for f in parts if os.path.exists(f)]
+            if not live:
+                print(f"  skip {label}: no meta bundle at {stem}*.pt "
+                      "(pull it with results/dropbox_pull_baselines.sh)")
+                continue
+            if refs is None:
+                refs = reference_index()
+                print(f"  reference ligands <- {REF_ROOT} ({len(refs)} pockets)")
+            print(f"  {label} <- " + ", ".join(os.path.basename(f) for f in live))
+            per_method[label] = method_values_meta(stem, fp_keys, args.with_3d,
+                                                   args.novelty, refs)
+            print(f"      {len(per_method[label])} pockets, "
+                  f"{sum(r['n_mols'] for r in per_method[label].values())} molecules")
 
     if not per_method:
         sys.exit("no methods produced any pockets")
@@ -744,7 +853,7 @@ def main():
             plain = PLAIN.get(label, label)
             w.writerow([plain, vals["n_pockets"], vals["n_mols"]]
                        + [vals.get(f) for f, _, _ in cols]
-                       + ["blackwell" if label in REMOTE else "this machine"])
+                       + ["this machine" if label in summary else "blackwell"])
 
     # The table writers also carry the rows measured on the other box; above, the json
     # and csv keep those separate from what this run computed.

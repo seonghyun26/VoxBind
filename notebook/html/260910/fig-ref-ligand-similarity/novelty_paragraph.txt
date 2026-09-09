@@ -1,0 +1,146 @@
+================================================================================
+NOVELTY / SNN — 논문 본문 문단 + 인용 문헌
+작성 2026-09-09 · 그림: similarity_novelty.{png,svg,pdf}
+숫자 출처: reference_similarity.csv (build_reference_similarity.py --novelty)
+================================================================================
+
+--------------------------------------------------------------------------------
+[1] 본문 문단 (LaTeX)
+--------------------------------------------------------------------------------
+\label{fig:result-drug-novelty} 를 novelty 그림에 답니다. 레퍼런스 리간드 유사도
+(ECFP4 / scaffold match) 표를 따로 싣는다면 그건 별도 문단입니다 — 이 문단은 학습셋
+상대 지표만 이야기합니다.
+
+\textbf{Novelty.} Since \ours{} also receives reference-ligand
+information, as in DecompDiff \citep{guan2024decompdiff}, we check that generation does
+not simply replay the molecules the model was shown. Against the CrossDocked training
+split \citep{francoeur2020three} we report novelty at two levels -- the fraction of
+generated molecules whose canonical SMILES, respectively whose Bemis--Murcko scaffold
+\citep{bemis1996properties}, never appears in training, as in MOSES
+\citep{polykovskiy2020molecular} and GuacaMol \citep{brown2019guacamol} -- together with
+the nearest-neighbour similarity (SNN) of MOSES, the mean Tanimoto similarity of a
+generated molecule to the closest training molecule. We measure SNN against the training
+split rather than the held-out set MOSES scores it on, so that a \emph{low} value means
+distance from everything the model was shown \citep{walters2020assessing}.
+\Cref{fig:result-drug-novelty} shows that no method here reproduces its training set:
+molecule-level novelty spans 93.8--99.1\% and SNN 0.280--0.350 over all nine. \ours{}
+sits at the more novel end of that band on all three measures (98.9\%, 84.8\% and 0.301),
+and is more novel than the density-free VoxBind\textsubscript{\scriptsize $\sigma$=0.9}
+it is built on by every one of them (97.2\%, 80.6\% and 0.350). Conditioning on
+experimental density therefore supplies pocket information that yields favorable
+predicted interactions, rather than a template the model copies.
+
+--------------------------------------------------------------------------------
+[2] 측정값 — 79개 공통 포켓, 포켓별 평균 후 macro-average
+--------------------------------------------------------------------------------
+  method           Novelty   Scaf. nov.      SNN
+  -------------------------------------------------
+  AR                99.13%       79.37%    0.297
+  Pocket2Mol        96.52%       69.82%    0.349
+  DiffSBDD          98.56%       79.64%    0.286
+  DecompDiff        96.89%       76.26%    0.334
+  TargetDiff        98.01%       82.27%    0.280
+  FuncBind          93.80%       70.67%    0.339
+  VoxBind σ=0.9     97.16%       80.57%    0.350
+  VoxBind σ=1.0     98.57%       78.21%    0.314
+  Ours v1           98.85%       84.83%    0.301
+
+  9개 방법 전부 이 박스에서 계산했습니다 (2026-09-09). AR / Pocket2Mol / DiffSBDD /
+  DecompDiff 의 분자는 Blackwell 이 아니라 results/task2-drugdesign/<method>/samples/meta
+  의 TargetDiff-식 meta 번들에서 옵니다 (results/dropbox_pull_baselines.sh 로 받음).
+  교차검증: 이 네 방법의 79-포켓 분자 수가 7655 / 7772 / 7720 / 6427 로 Blackwell 이
+  보고한 값과 정확히 일치하고, ECFP4 평균/중앙값/scaffold match 도 보고된 소수점까지
+  재현됩니다 (0.100/0.096/1.04%, 0.097/0.092/1.12%, 0.089/0.085/0.55%,
+  0.152/0.137/2.17%). 같은 분자를 같은 포켓에서 재고 있다는 뜻입니다.
+
+  본문은 일부러 순위를 주장하지 않습니다. 이 지표들의 목적은 "베끼지 않았다"는 sanity
+  check 이지 벤치마크 경쟁이 아니고, 순위는 지문/split 을 조금만 바꿔도 뒤집히는 폭
+  안에 있습니다 (9개 방법 전부 novelty 93.8-99.1%, SNN 0.280-0.350 의 좁은 띠 안).
+  대신 두 가지만 말합니다 — Ours 는 그 띠의 novel 쪽 절반에 있고 (novelty 2/9,
+  scaffold novelty 1/9, SNN 4/9), density 없는 자기 베이스보다 세 지표 모두 낫습니다
+  (98.85 vs 97.16 · 84.83 vs 80.57 · 0.301 vs 0.350).
+
+  참고로 각 지표 1위는 AR (novelty 99.13%), Ours (scaffold novelty 84.83%),
+  TargetDiff (SNN 0.280) 로 갈립니다. "가장 novel 하다"는 어느 방법도 못 씁니다.
+
+  구현: Novelty 는 canonical SMILES 완전일치, Scaffold novelty 는 Bemis-Murcko canonical
+  scaffold 완전일치 (고리 없는 분자는 분모에서 제외), SNN 은 Morgan/ECFP4 radius 2,
+  2048-bit folded Tanimoto 의 학습셋 최근접값 평균입니다. 지문 종류는 본문에서 뺐으므로
+  캡션이나 부록 어딘가에 이 한 줄은 남아야 합니다.
+
+--------------------------------------------------------------------------------
+[3] 인용 문헌 — 이 문단이 쓰는 것만
+--------------------------------------------------------------------------------
+어느 논문이 어느 지표인지:
+  Novelty (SMILES)   MOSES + GuacaMol — 둘 다 "학습셋에 없는 분자의 비율"로 같은 정의.
+  Scaffold novelty   같은 것을 Bemis-Murcko scaffold 수준에서. MOSES 의 Scaff 는 이것과
+                     다른 지표(생성/레퍼런스 scaffold 분포의 cosine)이므로, scaffold
+                     novelty 는 novelty 정의 + Bemis & Murcko 조합으로 인용합니다.
+  SNN                MOSES 만. GuacaMol 의 distribution-learning 지표 5개는 validity,
+                     uniqueness, novelty, KL divergence, FCD 로 SNN 이 없습니다.
+                     본문에서 SNN 을 GuacaMol 에 함께 걸면 틀립니다.
+
+@article{polykovskiy2020molecular,
+  title   = {{Molecular Sets ({MOSES}): A Benchmarking Platform for Molecular Generation Models}},
+  author  = {Polykovskiy, Daniil and Zhebrak, Alexander and Sanchez-Lengeling, Benjamin
+             and Golovanov, Sergey and Tatanov, Oktai and Belyaev, Stanislav and
+             Kurbanov, Rauf and Artamonov, Aleksey and Aladinskiy, Vladimir and
+             Veselov, Mark and Kadurin, Artur and Johansson, Simon and Chen, Hongming
+             and Nikolenko, Sergey and Aspuru-Guzik, Al{\'a}n and Zhavoronkov, Alex},
+  journal = {Frontiers in Pharmacology},
+  volume  = {11}, pages = {565644}, year = {2020},
+  doi     = {10.3389/fphar.2020.565644}}
+
+@article{brown2019guacamol,
+  title   = {{GuacaMol}: Benchmarking Models for de Novo Molecular Design},
+  author  = {Brown, Nathan and Fiscato, Marco and Segler, Marwin H. S. and Vaucher, Alain C.},
+  journal = {Journal of Chemical Information and Modeling},
+  volume  = {59}, number = {3}, pages = {1096--1108}, year = {2019},
+  doi     = {10.1021/acs.jcim.8b00839}}
+
+@article{walters2020assessing,
+  title   = {Assessing the impact of generative {AI} on medicinal chemistry},
+  author  = {Walters, W. Patrick and Murcko, Mark},
+  journal = {Nature Biotechnology},
+  volume  = {38}, number = {2}, pages = {143--145}, year = {2020},
+  doi     = {10.1038/s41587-020-0418-2}}
+
+@article{bemis1996properties,
+  title   = {The Properties of Known Drugs. 1. Molecular Frameworks},
+  author  = {Bemis, Guy W. and Murcko, Mark A.},
+  journal = {Journal of Medicinal Chemistry},
+  volume  = {39}, number = {15}, pages = {2887--2893}, year = {1996},
+  doi     = {10.1021/jm9602928}}
+
+@article{francoeur2020three,
+  title   = {Three-Dimensional Convolutional Neural Networks and a Cross-Docked Data Set
+             for Structure-Based Drug Design},
+  author  = {Francoeur, Paul G. and Masuda, Tomohide and Sunseri, Jocelyn and Jia, Andrew
+             and Iovanisci, Richard B. and Snyder, Ian and Koes, David R.},
+  journal = {Journal of Chemical Information and Modeling},
+  volume  = {60}, number = {9}, pages = {4200--4215}, year = {2020},
+  doi     = {10.1021/acs.jcim.0c00411}}
+
+guan2024decompdiff (DecompDiff) 는 이미 쓰고 계신 키입니다. francoeur2020three 와
+bemis1996properties 도 bib 에 이미 있으면 그대로 재사용하세요.
+
+--------------------------------------------------------------------------------
+[4] 리뷰어가 물고 늘어질 두 가지
+--------------------------------------------------------------------------------
+(a) SNN 의 방향이 MOSES 와 반대입니다.
+    MOSES 의 SNN 정의는 "average similarity of generated molecules to the nearest
+    molecule from the TEST set" 이고 "높을수록 좋다"(생성 분포가 레퍼런스 분포에
+    가깝다)로 읽습니다. 우리는 TRAIN set 상대로 재고 "낮을수록 좋다"(암기가 아니다)로
+    읽습니다. 정의는 같고 기준 집합과 해석 방향이 뒤집힌 것이라, 본문의
+    "against the training split rather than a held-out set, so that a low value means
+    distance from everything the model was shown" 한 줄은 빼면 안 됩니다. 빼면 MOSES 를
+    인용하면서 반대로 읽는 셈이 됩니다. Walters & Murcko 의 "학습셋에서 가장 유사한
+    분자를 함께 보고하라"가 이 용법의 근거라 같이 인용했습니다.
+
+(b) Novelty 의 분모가 작습니다.
+    CrossDocked split_by_name.pt 의 학습쌍은 100,000 개지만 고유 분자는 8,765 개,
+    고유 scaffold 는 4,926 개뿐입니다. 98.85% 는 "8,765 개 중 어느
+    것과도 다르다"는 뜻이고, ZINC 250k 상대의 같은 숫자와 동일한 강도의 주장이
+    아닙니다. 지면이 허락하면 캡션에 이 한 줄을 넣는 편이 안전합니다.
+
+================================================================================

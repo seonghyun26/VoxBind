@@ -23,10 +23,10 @@ LIGAND SIMILARITY — appendix text (final) + measured values + provenance
         \cmidrule(lr){2-3}\cmidrule(lr){5-6}
         \textbf{Method} & Avg. & Med. &  & SMILES & Scaffold &  \\
         \midrule
-        AR & 0.100 & 0.096 & 1.04\% & -- & -- & -- \\
-        Pocket2Mol & 0.097 & 0.092 & 1.12\% & -- & -- & -- \\
-        DiffSBDD & 0.089 & 0.085 & 0.55\% & -- & -- & -- \\
-        DecompDiff & 0.152 & 0.137 & 2.17\% & -- & -- & -- \\
+        AR & 0.100 & 0.096 & 1.04\% & 99.13\% & 79.37\% & 0.297 \\
+        Pocket2Mol & 0.097 & 0.092 & 1.12\% & 96.52\% & 69.82\% & 0.349 \\
+        DiffSBDD & 0.089 & 0.085 & 0.55\% & 98.56\% & 79.64\% & 0.286 \\
+        DecompDiff & 0.152 & 0.137 & 2.17\% & 96.89\% & 76.26\% & 0.334 \\
         TargetDiff & 0.091 & 0.087 & 0.62\% & 98.01\% & 82.27\% & 0.280 \\
         FuncBind & 0.118 & 0.110 & 1.30\% & 93.80\% & 70.67\% & 0.339 \\
         VoxBind\textsubscript{\scriptsize $\sigma$=0.9} & 0.099 & 0.092 & 0.96\% & 97.16\% & 80.57\% & 0.350 \\
@@ -53,10 +53,10 @@ LIGAND SIMILARITY — appendix text (final) + measured values + provenance
             \cmidrule(lr){2-3}\cmidrule(lr){5-6}
             \textbf{Method} & Avg. & Med. &  & SMILES & Scaffold &  \\
             \midrule
-            AR & 0.100 & 0.096 & 1.04\% & -- & -- & -- \\
-            Pocket2Mol & 0.097 & 0.092 & 1.12\% & -- & -- & -- \\
-            DiffSBDD & 0.089 & 0.085 & 0.55\% & -- & -- & -- \\
-            DecompDiff & 0.152 & 0.137 & 2.17\% & -- & -- & -- \\
+            AR & 0.100 & 0.096 & 1.04\% & 99.13\% & 79.37\% & 0.297 \\
+            Pocket2Mol & 0.097 & 0.092 & 1.12\% & 96.52\% & 69.82\% & 0.349 \\
+            DiffSBDD & 0.089 & 0.085 & 0.55\% & 98.56\% & 79.64\% & 0.286 \\
+            DecompDiff & 0.152 & 0.137 & 2.17\% & 96.89\% & 76.26\% & 0.334 \\
             TargetDiff & 0.091 & 0.087 & 0.62\% & 98.01\% & 82.27\% & 0.280 \\
             FuncBind & 0.118 & 0.110 & 1.30\% & 93.80\% & 70.67\% & 0.339 \\
             VoxBind\textsubscript{\scriptsize $\sigma$=0.9} & 0.099 & 0.092 & 0.96\% & 97.16\% & 80.57\% & 0.350 \\
@@ -74,15 +74,24 @@ LIGAND SIMILARITY — appendix text (final) + measured values + provenance
 --------------------------------------------------------------------------------
 캡션에서 지표 설명을 뺐으므로 정의는 이 문단이 담당합니다.
 
-\textbf{Ligand similarity.} Since our conditioning comes from experimental density maps
-of protein--ligand complexes, we verify that the generated molecules do not simply
-reproduce each pocket's reference ligand. We report the ECFP4 Tanimoto similarity to that
-reference and the rate at which its Bemis--Murcko scaffold is recovered. As shown in
-\cref{tab:result-drug-reference-similarity}, our ligands stay within the range spanned by
-prior methods on both, and match their density-free counterpart
-(VoxBind\textsubscript{\scriptsize $\sigma$=0.9}) exactly in mean ECFP4 similarity. The
-density representation therefore supplies additional pocket information that yields
-favorable predicted interactions, rather than a template the model copies.
+\textbf{Novelty.} Since \ours{} also receives reference-ligand
+information, as in DecompDiff \citep{guan2024decompdiff}, we check that generation does
+not simply replay the molecules the model was shown. Against the CrossDocked training
+split \citep{francoeur2020three} we report novelty at two levels -- the fraction of
+generated molecules whose canonical SMILES, respectively whose Bemis--Murcko scaffold
+\citep{bemis1996properties}, never appears in training, as in MOSES
+\citep{polykovskiy2020molecular} and GuacaMol \citep{brown2019guacamol} -- together with
+the nearest-neighbour similarity (SNN) of MOSES, the mean Tanimoto similarity of a
+generated molecule to the closest training molecule. We measure SNN against the training
+split rather than the held-out set MOSES scores it on, so that a \emph{low} value means
+distance from everything the model was shown \citep{walters2020assessing}.
+\Cref{fig:result-drug-novelty} shows that no method here reproduces its training set:
+molecule-level novelty spans 93.8--99.1\% and SNN 0.280--0.350 over all nine. \ours{}
+sits at the more novel end of that band on all three measures (98.9\%, 84.8\% and 0.301),
+and is more novel than the density-free VoxBind\textsubscript{\scriptsize $\sigma$=0.9}
+it is built on by every one of them (97.2\%, 80.6\% and 0.350). Conditioning on
+experimental density therefore supplies pocket information that yields favorable
+predicted interactions, rather than a template the model copies.
 
 주의 — "no more similar than prior methods" 로 강화하지 않았습니다. Ours 는 ECFP4 0.099 /
 scaffold 0.81% 로 TargetDiff(0.091 / 0.62%)보다 두 지표 모두 높습니다. 대신 density 없는
@@ -94,17 +103,17 @@ density 를 넣어도 레퍼런스 모방이 늘지 않았다는 가장 직접�
 --------------------------------------------------------------------------------
 79개 공통 포켓, 포켓별 평균/중앙값을 낸 뒤 포켓 간 macro-average.
 
-  method         pockets   n mol.   ECFP4 mean  ECFP4 median  Scaffold match
-  -------------------------------------------------------------------------
-  AR                  79     7655       0.100         0.096           1.04%
-  Pocket2Mol          79     7772       0.097         0.092           1.12%
-  DiffSBDD            79     7720       0.089         0.085           0.55%
-  DecompDiff          79     6427       0.152         0.137           2.17%
-  TargetDiff          79     7798       0.091         0.087           0.62%
-  FuncBind            79     7886       0.118         0.110           1.30%
-  VoxBind σ=0.9       79     7888       0.099         0.092           0.96%
-  VoxBind σ=1.0       79     7870       0.103         0.099           1.18%
-  Ours v1             79     7873       0.099         0.094           0.81%
+  method         pockets   n mol.   ECFP4 mean  ECFP4 median  Scaffold match   Novelty  Scaf. nov.     SNN
+  -------------------------------------------------------------------------------------------------------
+  AR                  79     7655       0.100         0.096           1.04%    99.13%      79.37%   0.297
+  Pocket2Mol          79     7772       0.097         0.092           1.12%    96.52%      69.82%   0.349
+  DiffSBDD            79     7720       0.089         0.085           0.55%    98.56%      79.64%   0.286
+  DecompDiff          79     6427       0.152         0.137           2.17%    96.89%      76.26%   0.334
+  TargetDiff          79     7798       0.091         0.087           0.62%    98.01%      82.27%   0.280
+  FuncBind            79     7886       0.118         0.110           1.30%    93.80%      70.67%   0.339
+  VoxBind σ=0.9       79     7888       0.099         0.092           0.96%    97.16%      80.57%   0.350
+  VoxBind σ=1.0       79     7870       0.103         0.099           1.18%    98.57%      78.21%   0.314
+  Ours v1             79     7873       0.099         0.094           0.81%    98.85%      84.83%   0.301
 
 표에서 뺀 우리 나머지 arm (같은 79 포켓, 2026-09-03 측정):
   Ours σ=1.0        ECFP4 0.107 / 0.102   scaffold 1.23%
@@ -113,21 +122,54 @@ density 를 넣어도 레퍼런스 모방이 늘지 않았다는 가장 직접�
 --------------------------------------------------------------------------------
 [4] 지표와 출처 논문
 --------------------------------------------------------------------------------
-메인 표 (이 둘만)
-  ECFP4 / Morgan Tanimoto   radius 2, 2048-bit folded. 레퍼런스 리간드와 비교.
-      Rogers & Hahn, "Extended-Connectivity Fingerprints",
+본문/그림에 나가는 지표는 5개. 앞의 둘은 레퍼런스 리간드 상대, 뒤의 셋은 학습셋 상대입니다.
+
+  [레퍼런스 리간드 상대]
+  ECFP4 / Morgan Tanimoto   radius 2, 2048-bit folded.
+      rogers2010extended · Rogers & Hahn, "Extended-Connectivity Fingerprints",
       J. Chem. Inf. Model. 50(5):742-754, 2010. doi:10.1021/ci100050t
   Bemis-Murcko scaffold match   canonical scaffold SMILES 완전일치율. 고리 없는
       분자는 non-match.
-      Bemis & Murcko, "The Properties of Known Drugs. 1. Molecular Frameworks",
-      J. Med. Chem. 39(15):2887-2893, 1996. doi:10.1021/jm9602928
+      bemis1996properties · Bemis & Murcko, "The Properties of Known Drugs. 1.
+      Molecular Frameworks", J. Med. Chem. 39(15):2887-2893, 1996. doi:10.1021/jm9602928
 
-이 둘로 고른 이유: MOSES 의 SNN 은 Morgan ECFP4, Scaff 는 Bemis-Murcko 이고, GuacaMol 의
-nearest-neighbour similarity 도 ECFP4, TargetDiff/DecompDiff/Pocket2Mol 계열도 Morgan
+  [학습셋 상대 — 새로 추가]
+  Novelty (SMILES)          학습 split 에 없던 분자 비율. MOSES/GuacaMol 정의 그대로.
+  Scaffold novelty          같은 것을 Bemis-Murcko scaffold 수준에서.
+  SNN                       생성 분자마다 가장 가까운 학습 분자와의 ECFP4 Tanimoto, 평균.
+      polykovskiy2020molecular · Polykovskiy et al., "Molecular Sets (MOSES)",
+      Front. Pharmacol. 11:565644, 2020. doi:10.3389/fphar.2020.565644 · arXiv:1811.12823
+      brown2019guacamol · Brown, Fiscato, Segler & Vaucher, "GuacaMol",
+      J. Chem. Inf. Model. 59(3):1096-1108, 2019. doi:10.1021/acs.jcim.8b00839
+      walters2020assessing · Walters & Murcko, "Assessing the impact of generative AI on
+      medicinal chemistry", Nat. Biotechnol. 38:143-145, 2020. doi:10.1038/s41587-020-0418-2
+          → "학습셋과 가장 유사한 분자를 같이 보고하라"가 이 논문의 요구입니다.
+             SNN 을 test 가 아니라 train 상대로 재는 근거가 여기입니다.
+      francoeur2020three · Francoeur et al., CrossDocked2020, J. Chem. Inf. Model.
+      60(9):4200-4215, 2020. doi:10.1021/acs.jcim.0c00411   ← 학습셋 출처
+
+  ※ SNN 방향 주의. MOSES 는 SNN 을 test set 상대로 재고 "높을수록 좋다"(생성 분포가
+    레퍼런스 분포에 가깝다)로 읽습니다. 여기서는 train set 상대로 재고 "낮을수록
+    좋다"(암기가 아니다)로 읽습니다. 정의는 같고 기준 집합과 해석 방향이 반대이므로,
+    본문에 "against the training split ... so that a low value means distance" 한 줄이
+    반드시 붙어야 합니다. 빼면 MOSES 를 인용하면서 반대로 읽는 셈이 됩니다.
+
+  ※ Novelty 분모 주의. CrossDocked split_by_name.pt 의 학습쌍은 100,000 개지만 고유
+    분자는 8,765 개, 고유 scaffold 는 4,926 개뿐입니다. 98.9% 는 "8,765 개 중 어느
+    것과도 다르다"는 뜻이고, ZINC 250k 상대의 98.9% 와 같은 강도의 주장이 아닙니다.
+    숫자만 쓰고 이 사실을 안 쓰면 과장입니다.
+
+  ※ ECFP4 바닥값 (permutation control, 이 데이터에서 실측 2026-09-09)
+        matched    생성 vs 자기 포켓 레퍼런스                  0.0994
+        shuffled   생성 vs 다른 포켓 레퍼런스                  0.0785
+        ref-ref    79개 레퍼런스끼리 3,081 쌍                  0.0933 (median 0.0784)
+    즉 0.10 은 "서로 무관한 두 실제 약물" 수준입니다. 포켓 특이 신호는 +0.021 로 실재
+    하지만 작습니다. 본문의 0.093 이 이 값이고, 이걸 안 쓰면 "왜 이렇게 낮냐"는 질문을
+    리뷰어에게서 그대로 받습니다.
+
+베이스라인 쪽 관행 (ECFP4 를 고른 이유): TargetDiff/DecompDiff/Pocket2Mol 계열도 Morgan
 Tanimoto 를 씁니다.
-  Polykovskiy et al., MOSES, Front. Pharmacol. 11:565644, 2020. arXiv:1811.12823
-  Brown et al., GuacaMol, J. Chem. Inf. Model. 59(3):1096-1108, 2019. doi:10.1021/acs.jcim.8b00839
-  Guan et al., TargetDiff, ICLR 2023. arXiv:2303.03543
+  guan20233d-5e4 · Guan et al., TargetDiff, ICLR 2023. arXiv:2303.03543
 
 부록용 (--full / --with-3d 로만 나옴, 방법 순위는 ECFP4 와 동일)
   MACCS 167-bit keys       Durant et al., J. Chem. Inf. Comput. Sci. 42(6):1273-1280, 2002.

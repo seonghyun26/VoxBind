@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""build_vina_per_atom.py — Vina Dock against ligand size, in the 260903 3-line style.
+"""build_vina_per_atom.py — Vina Dock against ligand size, in the fig-vina-3line style.
 
     vina_dock_per_atom_v1_mean.{png,svg,pdf}    vina_dock_per_atom_v1_median.{png,svg,pdf}
     vina_dock_per_atom_v2_mean.{png,svg,pdf}    vina_dock_per_atom_v2_median.{png,svg,pdf}

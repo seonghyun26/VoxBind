@@ -111,10 +111,18 @@ def use_style():
 
 # ── load ─────────────────────────────────────────────────────────────────────────
 def rows_of(target_dir, reference=False):
-    """One record per molecule: heavy atoms, PoseCheck strain and clashes, PoseBusters
-    validity and the checks it failed. `s=None` means the UFF relaxation did not converge
-    -- kept as None rather than 0, because dropping a value is not the same as scoring
-    it."""
+    """One record per molecule: heavy atoms, PoseCheck strain and clashes, its interaction
+    fingerprint, PoseBusters validity and the checks it failed. `s=None` means the UFF
+    relaxation did not converge -- kept as None rather than 0, because dropping a value is
+    not the same as scoring it.
+
+    `ifp` IS THE POSECHECK FINGERPRINT, NOT `m["interactions"]`. A molecule record carries
+    two things under that name and they are unrelated: `m["interactions"]` is the docking
+    side's contact/clash geometry, while `m["posecheck"]["interactions"]` is the ProLIF
+    fingerprint -- {"Hydrophobic": 4, "VdWContact": 12, ...}. Only the second one is here.
+    A TYPE THE MOLECULE DOES NOT MAKE IS ABSENT FROM THE DICT, NOT ZERO IN IT, so read it
+    with .get(type, 0) and never with len() or a sum over its keys.
+    """
     path = os.path.join(target_dir, "metrics.json")
     if not os.path.exists(path):
         return []
@@ -132,8 +140,10 @@ def rows_of(target_dir, reference=False):
         s = pc.get("strain")
         out.append({
             "n": int(m["n_atoms"]),
+            "smi": m.get("smiles"),
             "s": float(s) if isinstance(s, (int, float)) and np.isfinite(s) else None,
             "c": float(pc["clashes"]) if pc.get("clashes") is not None else None,
+            "ifp": pc["interactions"] if isinstance(pc.get("interactions"), dict) else None,
             "v": pb["valid"] if isinstance(pb.get("valid"), bool) else None,
             "f": sorted(k for k, ok in (pb.get("checks") or {}).items() if ok is False),
         })
@@ -158,11 +168,15 @@ def variants():
 
 
 # ── statistics ───────────────────────────────────────────────────────────────────
-def by_size(rows, field):
+def by_size(rows, field, key="n"):
+    """{x: [values]}, where x is the row's `key` -- heavy atoms by default. `key` exists so
+    a builder can resolve the same metric against another per-molecule integer (rotatable
+    bonds, in build_strain_per_rotbond.py) through the same statistics and the same
+    x_range/model_curve/reference_curve below, rather than forking them."""
     out = collections.defaultdict(list)
     for r in rows:
-        if r[field] is not None:
-            out[r["n"]].append(r[field])
+        if r[field] is not None and r.get(key) is not None:
+            out[r[key]].append(r[field])
     return out
 
 

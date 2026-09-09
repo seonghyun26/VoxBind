@@ -1,0 +1,161 @@
+arm,mw_bin_lo,mw_bin_hi,n,pct
+TargetDiff,0,20,0,0.0
+TargetDiff,20,40,0,0.0
+TargetDiff,40,60,0,0.0
+TargetDiff,60,80,28,0.384
+TargetDiff,80,100,126,1.729
+TargetDiff,100,120,260,3.568
+TargetDiff,120,140,277,3.801
+TargetDiff,140,160,361,4.954
+TargetDiff,160,180,475,6.518
+TargetDiff,180,200,299,4.103
+TargetDiff,200,220,244,3.348
+TargetDiff,220,240,210,2.882
+TargetDiff,240,260,281,3.856
+TargetDiff,260,280,331,4.542
+TargetDiff,280,300,400,5.489
+TargetDiff,300,320,408,5.599
+TargetDiff,320,340,405,5.558
+TargetDiff,340,360,358,4.913
+TargetDiff,360,380,441,6.052
+TargetDiff,380,400,443,6.079
+TargetDiff,400,420,376,5.16
+TargetDiff,420,440,358,4.913
+TargetDiff,440,460,288,3.952
+TargetDiff,460,480,204,2.8
+TargetDiff,480,500,178,2.443
+TargetDiff,500,520,139,1.908
+TargetDiff,520,540,66,0.906
+TargetDiff,540,560,44,0.604
+TargetDiff,560,580,55,0.755
+TargetDiff,580,600,70,0.961
+TargetDiff,600,620,54,0.741
+TargetDiff,620,640,44,0.604
+TargetDiff,640,660,20,0.274
+TargetDiff,660,680,7,0.096
+TargetDiff,680,700,4,0.055
+TargetDiff,700,720,6,0.082
+TargetDiff,720,740,1,0.014
+TargetDiff,740,760,1,0.014
+TargetDiff,760,780,2,0.027
+TargetDiff,780,800,5,0.069
+VoxBind,0,20,0,0.0
+VoxBind,20,40,2,0.025
+VoxBind,40,60,7,0.089
+VoxBind,60,80,34,0.431
+VoxBind,80,100,63,0.799
+VoxBind,100,120,134,1.699
+VoxBind,120,140,295,3.74
+VoxBind,140,160,321,4.069
+VoxBind,160,180,386,4.894
+VoxBind,180,200,308,3.905
+VoxBind,200,220,265,3.36
+VoxBind,220,240,281,3.562
+VoxBind,240,260,334,4.234
+VoxBind,260,280,329,4.171
+VoxBind,280,300,421,5.337
+VoxBind,300,320,374,4.741
+VoxBind,320,340,476,6.034
+VoxBind,340,360,492,6.237
+VoxBind,360,380,494,6.263
+VoxBind,380,400,497,6.301
+VoxBind,400,420,454,5.756
+VoxBind,420,440,433,5.489
+VoxBind,440,460,299,3.791
+VoxBind,460,480,219,2.776
+VoxBind,480,500,187,2.371
+VoxBind,500,520,144,1.826
+VoxBind,520,540,107,1.356
+VoxBind,540,560,80,1.014
+VoxBind,560,580,76,0.963
+VoxBind,580,600,56,0.71
+VoxBind,600,620,54,0.685
+VoxBind,620,640,35,0.444
+VoxBind,640,660,25,0.317
+VoxBind,660,680,26,0.33
+VoxBind,680,700,19,0.241
+VoxBind,700,720,22,0.279
+VoxBind,720,740,15,0.19
+VoxBind,740,760,17,0.216
+VoxBind,760,780,20,0.254
+VoxBind,780,800,14,0.177
+VoxBind + Ours,0,20,0,0.0
+VoxBind + Ours,20,40,1,0.013
+VoxBind + Ours,40,60,9,0.114
+VoxBind + Ours,60,80,55,0.699
+VoxBind + Ours,80,100,82,1.042
+VoxBind + Ours,100,120,171,2.172
+VoxBind + Ours,120,140,233,2.959
+VoxBind + Ours,140,160,295,3.747
+VoxBind + Ours,160,180,364,4.623
+VoxBind + Ours,180,200,275,3.493
+VoxBind + Ours,200,220,243,3.086
+VoxBind + Ours,220,240,271,3.442
+VoxBind + Ours,240,260,265,3.366
+VoxBind + Ours,260,280,287,3.645
+VoxBind + Ours,280,300,274,3.48
+VoxBind + Ours,300,320,322,4.09
+VoxBind + Ours,320,340,418,5.309
+VoxBind + Ours,340,360,495,6.287
+VoxBind + Ours,360,380,464,5.894
+VoxBind + Ours,380,400,470,5.97
+VoxBind + Ours,400,420,468,5.944
+VoxBind + Ours,420,440,431,5.474
+VoxBind + Ours,440,460,402,5.106
+VoxBind + Ours,460,480,313,3.976
+VoxBind + Ours,480,500,248,3.15
+VoxBind + Ours,500,520,213,2.705
+VoxBind + Ours,520,540,162,2.058
+VoxBind + Ours,540,560,131,1.664
+VoxBind + Ours,560,580,106,1.346
+VoxBind + Ours,580,600,85,1.08
+VoxBind + Ours,600,620,69,0.876
+VoxBind + Ours,620,640,56,0.711
+VoxBind + Ours,640,660,30,0.381
+VoxBind + Ours,660,680,34,0.432
+VoxBind + Ours,680,700,24,0.305
+VoxBind + Ours,700,720,27,0.343
+VoxBind + Ours,720,740,21,0.267
+VoxBind + Ours,740,760,15,0.191
+VoxBind + Ours,760,780,9,0.114
+VoxBind + Ours,780,800,12,0.152
+Reference ligand,0,20,0,0.0
+Reference ligand,20,40,0,0.0
+Reference ligand,40,60,0,0.0
+Reference ligand,60,80,0,0.0
+Reference ligand,80,100,2,2.532
+Reference ligand,100,120,4,5.063
+Reference ligand,120,140,3,3.797
+Reference ligand,140,160,1,1.266
+Reference ligand,160,180,5,6.329
+Reference ligand,180,200,5,6.329
+Reference ligand,200,220,4,5.063
+Reference ligand,220,240,4,5.063
+Reference ligand,240,260,4,5.063
+Reference ligand,260,280,1,1.266
+Reference ligand,280,300,5,6.329
+Reference ligand,300,320,1,1.266
+Reference ligand,320,340,3,3.797
+Reference ligand,340,360,4,5.063
+Reference ligand,360,380,2,2.532
+Reference ligand,380,400,2,2.532
+Reference ligand,400,420,4,5.063
+Reference ligand,420,440,3,3.797
+Reference ligand,440,460,3,3.797
+Reference ligand,460,480,2,2.532
+Reference ligand,480,500,3,3.797
+Reference ligand,500,520,5,6.329
+Reference ligand,520,540,2,2.532
+Reference ligand,540,560,3,3.797
+Reference ligand,560,580,1,1.266
+Reference ligand,580,600,0,0.0
+Reference ligand,600,620,0,0.0
+Reference ligand,620,640,0,0.0
+Reference ligand,640,660,0,0.0
+Reference ligand,660,680,1,1.266
+Reference ligand,680,700,0,0.0
+Reference ligand,700,720,1,1.266
+Reference ligand,720,740,0,0.0
+Reference ligand,740,760,0,0.0
+Reference ligand,760,780,0,0.0
+Reference ligand,780,800,0,0.0

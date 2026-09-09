@@ -21,6 +21,7 @@ DEST="dropbox:/박성현/VoxBind/results"
 EXCLUDES=(
   --exclude "/dropbox_push.sh"
   --exclude "/dropbox_pull.sh"
+  --exclude "/dropbox_pull_baselines.sh"
   --exclude "/README.md"
   --exclude ".gitignore"
 )
@@ -40,7 +41,7 @@ rclone listremotes 2>/dev/null | grep -qx "dropbox:" \
 echo ">> source : $HERE/"
 echo ">> dest   : $DEST/"
 echo ">> top-level content to upload (dropbox_*.sh/README.md carried by git, skipped):"
-( cd "$HERE" && ls -1p | grep -vE '^(dropbox_push\.sh|dropbox_pull\.sh|README\.md)$' ) | sed 's/^/     /' || true
+( cd "$HERE" && ls -1p | grep -vE '^(dropbox_push\.sh|dropbox_pull\.sh|dropbox_pull_baselines\.sh|README\.md)$' ) | sed 's/^/     /' || true
 echo
 echo ">> dry-run preview (what would actually transfer vs. what's already on Dropbox):"
 rclone copy "$HERE/" "$DEST/" "${EXCLUDES[@]}" --dry-run "${ARGS[@]}"
@@ -56,4 +57,4 @@ rclone copy "$HERE/" "$DEST/" "${EXCLUDES[@]}" --transfers 4 --checkers 8 --prog
 echo
 echo ">> done. verify integrity (hash compare) with:"
 echo "   rclone check \"$HERE/\" \"$DEST/\" \\"
-echo "     --exclude /dropbox_push.sh --exclude /dropbox_pull.sh --exclude /README.md --exclude .gitignore"
+echo "     --exclude /dropbox_push.sh --exclude /dropbox_pull.sh --exclude /dropbox_pull_baselines.sh --exclude /README.md --exclude .gitignore"

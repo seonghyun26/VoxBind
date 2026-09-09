@@ -330,9 +330,11 @@ def variant_novelty(rows):
     "a new skeleton". Right is SNN, one value per method, as a stem from zero.
 
     DIRECTION IS NOT SHARED between the panels: on the left more is newer, on the right
-    LESS is -- SNN is how close the nearest training molecule got. The four methods
-    sampled on the other box have no per-molecule SMILES here, so their rows carry a dash
-    rather than a zero.
+    LESS is -- SNN is how close the nearest training molecule got. That reverse is the one
+    thing a reader can get backwards from the marks alone, so each axis name carries the
+    arrow for its own good direction. A method whose CSV row has no novelty (none, since
+    the four remote baselines were re-measured here on 2026-09-09) draws an italic note
+    rather than a zero, which would read as "memorised everything".
 
     Both axes start at zero. Novelty spanning 71-99% would separate far better on a 70-100
     axis, but these are rates and a cropped rate axis turns a 14-point spread into an
@@ -362,8 +364,9 @@ def variant_novelty(rows):
 
     bare_pct = FuncFormatter(lambda v, _: f"{100 * v:.0f}")
     for axis, name, step, fmt in (
-            (ax, "Novelty vs. training set (%)", 0.25, bare_pct),
-            (ax2, "SNN to training set", 0.1, FormatStrFormatter("%.1f"))):
+            # the arrow in the name is the direction of BETTER, the usual convention
+            (ax, "Novelty vs. training set (%) \u2191", 0.25, bare_pct),
+            (ax2, "SNN to training set \u2193", 0.1, FormatStrFormatter("%.1f"))):
         spines_and_ticks(axis)
         axis.set_xlabel(name, fontsize=15, labelpad=9)
         axis.grid(True, axis="x", color=GRID, lw=GRID_LW, ls=GRID_DASH)

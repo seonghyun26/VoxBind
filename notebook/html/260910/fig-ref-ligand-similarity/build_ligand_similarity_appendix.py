@@ -1,4 +1,9 @@
-"""build_ligand_similarity_appendix.py — assemble ligand_similarity_appendix.txt.
+"""build_ligand_similarity_appendix.py — assemble the two paste-ready text files.
+
+    ligand_similarity_appendix.txt   everything: table, paragraph, all measured values,
+                                     every metric's source paper, reproduction notes
+    novelty_paragraph.txt            just the novelty/SNN paragraph and the bib entries
+                                     it cites, for pasting straight into the manuscript
 
 The paper table, the body paragraph, the measured numbers, the citations and the
 reproduction notes in one paste-ready text file, in the same shape as this folder's
@@ -36,24 +41,37 @@ def pct(v):
 
 
 width = max(len(r["method"]) for r in rows)
-lines = ["  " + "method".ljust(width) + "  pockets   n mol.   ECFP4 mean  ECFP4 median  Scaffold match",
-         "  " + "-" * (width + 60)]
+lines = ["  " + "method".ljust(width)
+         + "  pockets   n mol.   ECFP4 mean  ECFP4 median  Scaffold match"
+         + "   Novelty  Scaf. nov.     SNN",
+         "  " + "-" * (width + 90)]
 for r in rows:
     lines.append("  " + r["method"].ljust(width)
                  + f'  {r["n_pockets"]:>7}  {r["n_mols"]:>7}'
                  + f'  {f3(r["ecfp4_mean"]):>10}  {f3(r["ecfp4_median"]):>12}'
-                 + f'  {pct(r["scaffold_match"]):>14}')
+                 + f'  {pct(r["scaffold_match"]):>14}'
+                 + f'  {pct(r["novelty"]):>8}  {pct(r["scaffold_novelty"]):>10}'
+                 + f'  {f3(r["snn"]):>6}')
 measured = "\n".join(lines)
 
-PARAGRAPH = r"""\textbf{Ligand similarity.} Since our conditioning comes from experimental density maps
-of protein--ligand complexes, we verify that the generated molecules do not simply
-reproduce each pocket's reference ligand. We report the ECFP4 Tanimoto similarity to that
-reference and the rate at which its Bemis--Murcko scaffold is recovered. As shown in
-\cref{tab:result-drug-reference-similarity}, our ligands stay within the range spanned by
-prior methods on both, and match their density-free counterpart
-(VoxBind\textsubscript{\scriptsize $\sigma$=0.9}) exactly in mean ECFP4 similarity. The
-density representation therefore supplies additional pocket information that yields
-favorable predicted interactions, rather than a template the model copies."""
+PARAGRAPH = r"""\textbf{Novelty.} Since \ours{} also receives reference-ligand
+information, as in DecompDiff \citep{guan2024decompdiff}, we check that generation does
+not simply replay the molecules the model was shown. Against the CrossDocked training
+split \citep{francoeur2020three} we report novelty at two levels -- the fraction of
+generated molecules whose canonical SMILES, respectively whose Bemis--Murcko scaffold
+\citep{bemis1996properties}, never appears in training, as in MOSES
+\citep{polykovskiy2020molecular} and GuacaMol \citep{brown2019guacamol} -- together with
+the nearest-neighbour similarity (SNN) of MOSES, the mean Tanimoto similarity of a
+generated molecule to the closest training molecule. We measure SNN against the training
+split rather than the held-out set MOSES scores it on, so that a \emph{low} value means
+distance from everything the model was shown \citep{walters2020assessing}.
+\Cref{fig:result-drug-novelty} shows that no method here reproduces its training set:
+molecule-level novelty spans 93.8--99.1\% and SNN 0.280--0.350 over all nine. \ours{}
+sits at the more novel end of that band on all three measures (98.9\%, 84.8\% and 0.301),
+and is more novel than the density-free VoxBind\textsubscript{\scriptsize $\sigma$=0.9}
+it is built on by every one of them (97.2\%, 80.6\% and 0.350). Conditioning on
+experimental density therefore supplies pocket information that yields favorable
+predicted interactions, rather than a template the model copies."""
 
 BAR, SUB = "=" * 80, "-" * 80
 
@@ -102,21 +120,54 @@ density 를 넣어도 레퍼런스 모방이 늘지 않았다는 가장 직접�
 {SUB}
 [4] 지표와 출처 논문
 {SUB}
-메인 표 (이 둘만)
-  ECFP4 / Morgan Tanimoto   radius 2, 2048-bit folded. 레퍼런스 리간드와 비교.
-      Rogers & Hahn, "Extended-Connectivity Fingerprints",
+본문/그림에 나가는 지표는 5개. 앞의 둘은 레퍼런스 리간드 상대, 뒤의 셋은 학습셋 상대입니다.
+
+  [레퍼런스 리간드 상대]
+  ECFP4 / Morgan Tanimoto   radius 2, 2048-bit folded.
+      rogers2010extended · Rogers & Hahn, "Extended-Connectivity Fingerprints",
       J. Chem. Inf. Model. 50(5):742-754, 2010. doi:10.1021/ci100050t
   Bemis-Murcko scaffold match   canonical scaffold SMILES 완전일치율. 고리 없는
       분자는 non-match.
-      Bemis & Murcko, "The Properties of Known Drugs. 1. Molecular Frameworks",
-      J. Med. Chem. 39(15):2887-2893, 1996. doi:10.1021/jm9602928
+      bemis1996properties · Bemis & Murcko, "The Properties of Known Drugs. 1.
+      Molecular Frameworks", J. Med. Chem. 39(15):2887-2893, 1996. doi:10.1021/jm9602928
 
-이 둘로 고른 이유: MOSES 의 SNN 은 Morgan ECFP4, Scaff 는 Bemis-Murcko 이고, GuacaMol 의
-nearest-neighbour similarity 도 ECFP4, TargetDiff/DecompDiff/Pocket2Mol 계열도 Morgan
+  [학습셋 상대 — 새로 추가]
+  Novelty (SMILES)          학습 split 에 없던 분자 비율. MOSES/GuacaMol 정의 그대로.
+  Scaffold novelty          같은 것을 Bemis-Murcko scaffold 수준에서.
+  SNN                       생성 분자마다 가장 가까운 학습 분자와의 ECFP4 Tanimoto, 평균.
+      polykovskiy2020molecular · Polykovskiy et al., "Molecular Sets (MOSES)",
+      Front. Pharmacol. 11:565644, 2020. doi:10.3389/fphar.2020.565644 · arXiv:1811.12823
+      brown2019guacamol · Brown, Fiscato, Segler & Vaucher, "GuacaMol",
+      J. Chem. Inf. Model. 59(3):1096-1108, 2019. doi:10.1021/acs.jcim.8b00839
+      walters2020assessing · Walters & Murcko, "Assessing the impact of generative AI on
+      medicinal chemistry", Nat. Biotechnol. 38:143-145, 2020. doi:10.1038/s41587-020-0418-2
+          → "학습셋과 가장 유사한 분자를 같이 보고하라"가 이 논문의 요구입니다.
+             SNN 을 test 가 아니라 train 상대로 재는 근거가 여기입니다.
+      francoeur2020three · Francoeur et al., CrossDocked2020, J. Chem. Inf. Model.
+      60(9):4200-4215, 2020. doi:10.1021/acs.jcim.0c00411   ← 학습셋 출처
+
+  ※ SNN 방향 주의. MOSES 는 SNN 을 test set 상대로 재고 "높을수록 좋다"(생성 분포가
+    레퍼런스 분포에 가깝다)로 읽습니다. 여기서는 train set 상대로 재고 "낮을수록
+    좋다"(암기가 아니다)로 읽습니다. 정의는 같고 기준 집합과 해석 방향이 반대이므로,
+    본문에 "against the training split ... so that a low value means distance" 한 줄이
+    반드시 붙어야 합니다. 빼면 MOSES 를 인용하면서 반대로 읽는 셈이 됩니다.
+
+  ※ Novelty 분모 주의. CrossDocked split_by_name.pt 의 학습쌍은 100,000 개지만 고유
+    분자는 8,765 개, 고유 scaffold 는 4,926 개뿐입니다. 98.9% 는 "8,765 개 중 어느
+    것과도 다르다"는 뜻이고, ZINC 250k 상대의 98.9% 와 같은 강도의 주장이 아닙니다.
+    숫자만 쓰고 이 사실을 안 쓰면 과장입니다.
+
+  ※ ECFP4 바닥값 (permutation control, 이 데이터에서 실측 2026-09-09)
+        matched    생성 vs 자기 포켓 레퍼런스                  0.0994
+        shuffled   생성 vs 다른 포켓 레퍼런스                  0.0785
+        ref-ref    79개 레퍼런스끼리 3,081 쌍                  0.0933 (median 0.0784)
+    즉 0.10 은 "서로 무관한 두 실제 약물" 수준입니다. 포켓 특이 신호는 +0.021 로 실재
+    하지만 작습니다. 본문의 0.093 이 이 값이고, 이걸 안 쓰면 "왜 이렇게 낮냐"는 질문을
+    리뷰어에게서 그대로 받습니다.
+
+베이스라인 쪽 관행 (ECFP4 를 고른 이유): TargetDiff/DecompDiff/Pocket2Mol 계열도 Morgan
 Tanimoto 를 씁니다.
-  Polykovskiy et al., MOSES, Front. Pharmacol. 11:565644, 2020. arXiv:1811.12823
-  Brown et al., GuacaMol, J. Chem. Inf. Model. 59(3):1096-1108, 2019. doi:10.1021/acs.jcim.8b00839
-  Guan et al., TargetDiff, ICLR 2023. arXiv:2303.03543
+  guan20233d-5e4 · Guan et al., TargetDiff, ICLR 2023. arXiv:2303.03543
 
 부록용 (--full / --with-3d 로만 나옴, 방법 순위는 ECFP4 와 동일)
   MACCS 167-bit keys       Durant et al., J. Chem. Inf. Comput. Sci. 42(6):1273-1280, 2002.
@@ -183,3 +234,142 @@ scaffold 는 항상 일치해서 정보가 없습니다.
 with open(OUT, "w", encoding="utf-8") as fh:
     fh.write(txt)
 print(f"wrote {OUT} ({len(txt.splitlines())} lines)")
+
+
+# ── the short companion: the paragraph and only the references it cites ───────
+# Same PARAGRAPH object as [2] above, so the two files can never disagree, and the
+# measured numbers below are read from the CSV rather than retyped.
+by_method = {r["method"]: r for r in rows}
+OURS_ROW = by_method["Ours v1"]
+measured_novelty = "\n".join(
+    "  " + r["method"].ljust(width)
+    + f'  {pct(r["novelty"]):>9}  {pct(r["scaffold_novelty"]):>11}  {f3(r["snn"]):>7}'
+    for r in rows)
+
+note = rf"""{BAR}
+NOVELTY / SNN — 논문 본문 문단 + 인용 문헌
+작성 {date.today().isoformat()} · 그림: similarity_novelty.{{png,svg,pdf}}
+숫자 출처: reference_similarity.csv (build_reference_similarity.py --novelty)
+{BAR}
+
+{SUB}
+[1] 본문 문단 (LaTeX)
+{SUB}
+\label{{fig:result-drug-novelty}} 를 novelty 그림에 답니다. 레퍼런스 리간드 유사도
+(ECFP4 / scaffold match) 표를 따로 싣는다면 그건 별도 문단입니다 — 이 문단은 학습셋
+상대 지표만 이야기합니다.
+
+{PARAGRAPH}
+
+{SUB}
+[2] 측정값 — 79개 공통 포켓, 포켓별 평균 후 macro-average
+{SUB}
+  {"method".ljust(width)}    Novelty   Scaf. nov.      SNN
+  {"-" * (width + 36)}
+{measured_novelty}
+
+  9개 방법 전부 이 박스에서 계산했습니다 (2026-09-09). AR / Pocket2Mol / DiffSBDD /
+  DecompDiff 의 분자는 Blackwell 이 아니라 results/task2-drugdesign/<method>/samples/meta
+  의 TargetDiff-식 meta 번들에서 옵니다 (results/dropbox_pull_baselines.sh 로 받음).
+  교차검증: 이 네 방법의 79-포켓 분자 수가 7655 / 7772 / 7720 / 6427 로 Blackwell 이
+  보고한 값과 정확히 일치하고, ECFP4 평균/중앙값/scaffold match 도 보고된 소수점까지
+  재현됩니다 (0.100/0.096/1.04%, 0.097/0.092/1.12%, 0.089/0.085/0.55%,
+  0.152/0.137/2.17%). 같은 분자를 같은 포켓에서 재고 있다는 뜻입니다.
+
+  본문은 일부러 순위를 주장하지 않습니다. 이 지표들의 목적은 "베끼지 않았다"는 sanity
+  check 이지 벤치마크 경쟁이 아니고, 순위는 지문/split 을 조금만 바꿔도 뒤집히는 폭
+  안에 있습니다 (9개 방법 전부 novelty 93.8-99.1%, SNN 0.280-0.350 의 좁은 띠 안).
+  대신 두 가지만 말합니다 — Ours 는 그 띠의 novel 쪽 절반에 있고 (novelty 2/9,
+  scaffold novelty 1/9, SNN 4/9), density 없는 자기 베이스보다 세 지표 모두 낫습니다
+  (98.85 vs 97.16 · 84.83 vs 80.57 · 0.301 vs 0.350).
+
+  참고로 각 지표 1위는 AR (novelty 99.13%), Ours (scaffold novelty 84.83%),
+  TargetDiff (SNN 0.280) 로 갈립니다. "가장 novel 하다"는 어느 방법도 못 씁니다.
+
+  구현: Novelty 는 canonical SMILES 완전일치, Scaffold novelty 는 Bemis-Murcko canonical
+  scaffold 완전일치 (고리 없는 분자는 분모에서 제외), SNN 은 Morgan/ECFP4 radius 2,
+  2048-bit folded Tanimoto 의 학습셋 최근접값 평균입니다. 지문 종류는 본문에서 뺐으므로
+  캡션이나 부록 어딘가에 이 한 줄은 남아야 합니다.
+
+{SUB}
+[3] 인용 문헌 — 이 문단이 쓰는 것만
+{SUB}
+어느 논문이 어느 지표인지:
+  Novelty (SMILES)   MOSES + GuacaMol — 둘 다 "학습셋에 없는 분자의 비율"로 같은 정의.
+  Scaffold novelty   같은 것을 Bemis-Murcko scaffold 수준에서. MOSES 의 Scaff 는 이것과
+                     다른 지표(생성/레퍼런스 scaffold 분포의 cosine)이므로, scaffold
+                     novelty 는 novelty 정의 + Bemis & Murcko 조합으로 인용합니다.
+  SNN                MOSES 만. GuacaMol 의 distribution-learning 지표 5개는 validity,
+                     uniqueness, novelty, KL divergence, FCD 로 SNN 이 없습니다.
+                     본문에서 SNN 을 GuacaMol 에 함께 걸면 틀립니다.
+
+@article{{polykovskiy2020molecular,
+  title   = {{{{Molecular Sets ({{MOSES}}): A Benchmarking Platform for Molecular Generation Models}}}},
+  author  = {{Polykovskiy, Daniil and Zhebrak, Alexander and Sanchez-Lengeling, Benjamin
+             and Golovanov, Sergey and Tatanov, Oktai and Belyaev, Stanislav and
+             Kurbanov, Rauf and Artamonov, Aleksey and Aladinskiy, Vladimir and
+             Veselov, Mark and Kadurin, Artur and Johansson, Simon and Chen, Hongming
+             and Nikolenko, Sergey and Aspuru-Guzik, Al{{\'a}}n and Zhavoronkov, Alex}},
+  journal = {{Frontiers in Pharmacology}},
+  volume  = {{11}}, pages = {{565644}}, year = {{2020}},
+  doi     = {{10.3389/fphar.2020.565644}}}}
+
+@article{{brown2019guacamol,
+  title   = {{{{GuacaMol}}: Benchmarking Models for de Novo Molecular Design}},
+  author  = {{Brown, Nathan and Fiscato, Marco and Segler, Marwin H. S. and Vaucher, Alain C.}},
+  journal = {{Journal of Chemical Information and Modeling}},
+  volume  = {{59}}, number = {{3}}, pages = {{1096--1108}}, year = {{2019}},
+  doi     = {{10.1021/acs.jcim.8b00839}}}}
+
+@article{{walters2020assessing,
+  title   = {{Assessing the impact of generative {{AI}} on medicinal chemistry}},
+  author  = {{Walters, W. Patrick and Murcko, Mark}},
+  journal = {{Nature Biotechnology}},
+  volume  = {{38}}, number = {{2}}, pages = {{143--145}}, year = {{2020}},
+  doi     = {{10.1038/s41587-020-0418-2}}}}
+
+@article{{bemis1996properties,
+  title   = {{The Properties of Known Drugs. 1. Molecular Frameworks}},
+  author  = {{Bemis, Guy W. and Murcko, Mark A.}},
+  journal = {{Journal of Medicinal Chemistry}},
+  volume  = {{39}}, number = {{15}}, pages = {{2887--2893}}, year = {{1996}},
+  doi     = {{10.1021/jm9602928}}}}
+
+@article{{francoeur2020three,
+  title   = {{Three-Dimensional Convolutional Neural Networks and a Cross-Docked Data Set
+             for Structure-Based Drug Design}},
+  author  = {{Francoeur, Paul G. and Masuda, Tomohide and Sunseri, Jocelyn and Jia, Andrew
+             and Iovanisci, Richard B. and Snyder, Ian and Koes, David R.}},
+  journal = {{Journal of Chemical Information and Modeling}},
+  volume  = {{60}}, number = {{9}}, pages = {{4200--4215}}, year = {{2020}},
+  doi     = {{10.1021/acs.jcim.0c00411}}}}
+
+guan2024decompdiff (DecompDiff) 는 이미 쓰고 계신 키입니다. francoeur2020three 와
+bemis1996properties 도 bib 에 이미 있으면 그대로 재사용하세요.
+
+{SUB}
+[4] 리뷰어가 물고 늘어질 두 가지
+{SUB}
+(a) SNN 의 방향이 MOSES 와 반대입니다.
+    MOSES 의 SNN 정의는 "average similarity of generated molecules to the nearest
+    molecule from the TEST set" 이고 "높을수록 좋다"(생성 분포가 레퍼런스 분포에
+    가깝다)로 읽습니다. 우리는 TRAIN set 상대로 재고 "낮을수록 좋다"(암기가 아니다)로
+    읽습니다. 정의는 같고 기준 집합과 해석 방향이 뒤집힌 것이라, 본문의
+    "against the training split rather than a held-out set, so that a low value means
+    distance from everything the model was shown" 한 줄은 빼면 안 됩니다. 빼면 MOSES 를
+    인용하면서 반대로 읽는 셈이 됩니다. Walters & Murcko 의 "학습셋에서 가장 유사한
+    분자를 함께 보고하라"가 이 용법의 근거라 같이 인용했습니다.
+
+(b) Novelty 의 분모가 작습니다.
+    CrossDocked split_by_name.pt 의 학습쌍은 100,000 개지만 고유 분자는 8,765 개,
+    고유 scaffold 는 4,926 개뿐입니다. {pct(OURS_ROW["novelty"])} 는 "8,765 개 중 어느
+    것과도 다르다"는 뜻이고, ZINC 250k 상대의 같은 숫자와 동일한 강도의 주장이
+    아닙니다. 지면이 허락하면 캡션에 이 한 줄을 넣는 편이 안전합니다.
+
+{BAR}
+"""
+
+NOTE = os.path.join(HERE, "novelty_paragraph.txt")
+with open(NOTE, "w", encoding="utf-8") as fh:
+    fh.write(note)
+print(f"wrote {NOTE} ({len(note.splitlines())} lines)")

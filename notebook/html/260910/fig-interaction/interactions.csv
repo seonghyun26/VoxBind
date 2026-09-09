@@ -1,0 +1,21 @@
+arm,type,mean,median,q25,q75,share_nonzero_pct,n_scored
+TargetDiff,VdWContact,9.243,9.0,6.0,12.0,99.99,7287
+TargetDiff,Hydrophobic,1.525,1.0,0.0,2.0,66.3,7287
+TargetDiff,HBAcceptor,1.483,1.0,0.0,2.0,72.17,7287
+TargetDiff,HBDonor,0.702,1.0,0.0,1.0,50.14,7287
+TargetDiff,All interactions,12.953,13.0,9.0,16.0,99.99,7287
+VoxBind,VdWContact,8.248,8.0,6.0,10.0,99.96,7887
+VoxBind,Hydrophobic,2.101,2.0,1.0,3.0,78.55,7887
+VoxBind,HBAcceptor,0.949,1.0,0.0,1.0,53.11,7887
+VoxBind,HBDonor,0.491,0.0,0.0,1.0,38.04,7887
+VoxBind,All interactions,11.789,11.0,8.0,15.0,99.97,7887
+VoxBind + Ours,VdWContact,8.924,9.0,6.0,11.0,99.99,7873
+VoxBind + Ours,Hydrophobic,2.237,2.0,1.0,3.0,77.71,7873
+VoxBind + Ours,HBAcceptor,1.081,1.0,0.0,2.0,57.79,7873
+VoxBind + Ours,HBDonor,0.539,0.0,0.0,1.0,40.14,7873
+VoxBind + Ours,All interactions,12.781,12.0,9.0,16.0,100.0,7873
+Reference ligand,VdWContact,8.405,8.0,6.0,10.0,100.0,79
+Reference ligand,Hydrophobic,1.57,0.0,0.0,2.0,49.37,79
+Reference ligand,HBAcceptor,1.962,1.0,0.5,2.5,74.68,79
+Reference ligand,HBDonor,0.924,1.0,0.0,1.5,55.7,79
+Reference ligand,All interactions,12.861,12.0,8.0,17.0,100.0,79
