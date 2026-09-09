@@ -45,3 +45,8 @@ conda-lock lock -f env/voxbind.environment.yml -p linux-64 --lockfile env/voxbin
   the `-p` list when re-locking (some CUDA/vina deps are linux-only).
 - The input `environment.yml` files are curated *functional* specs (pipeline +
   eval), not a byte-copy of the live env's jupyter/streamlit cruft.
+- **Explicit locks are also kept** as a byte-exact alternative (no conda-lock
+  tool needed): `voxbind.conda-linux-64.lock` + `voxbind.pip.lock.txt` and the
+  voxdock pair. Install with `conda create -n <env> --file <env>.conda-linux-64.lock`
+  then `pip install -r <env>.pip.lock.txt`. (These capture the full live env,
+  jupyter cruft included; note voxbind's explicit pip lock pins vina 1.2.7.)
