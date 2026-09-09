@@ -3,22 +3,22 @@
 
     pb_valid_per_atom.{png,svg,pdf}     validity against ligand size, + the size mix
     pb_check_failures.{png,svg,pdf}     which checks fail, per method
-    strain_per_atom.{png,svg,pdf}       strain mean and median against ligand size
-    clash_per_atom.{png,svg,pdf}        clashes mean and median against ligand size
+    strain_per_atom_{mean,median}.*     strain against ligand size, a figure per statistic
+    clash_per_atom_{mean,median}.*      clashes against ligand size, a figure per statistic
     strain_clash_ecdf_pair.{png,svg,pdf} the two PoseCheck distributions, pooled
     pose_summary.json                   coverage + pooled numbers (p79 and all_pockets)
     pose_by_atom_range.{json,csv}       the per-bin numbers
     pose_check_failures.json            per-check failure counts and rates
     pose_per_molecule_<arm>.json        per-molecule export, for merging elsewhere
 
-WHAT IS NEW. 260903 reported PoseCheck for three arms. PoseBusters had only ever run on
-33/79 of Ours v1 and 53/100 of vanilla, and never on TargetDiff or Ours v2;
+WHAT IS NEW. 260903 reported PoseCheck for these three arms. PoseBusters had only ever run
+on 33/79 of Ours v1 and 53/100 of vanilla, and never on TargetDiff;
 `voxbind/scripts/85_fill_pose_eval_4runs.sh` finished it on 2026-09-09, so this is the
-first build where all four arms carry BOTH metrics on every pocket, plus the per-check
+first build where every arm carries BOTH metrics on every pocket, plus the per-check
 breakdown that says why a validity rate is what it is.
 
 THE POCKET SET IS THE 79, NOT EACH ARM'S OWN COVERAGE. TargetDiff and vanilla hold 100
-pockets and Ours v2 holds 92, but Ours v1 only sampled the 79 with usable deposited
+pockets, but Ours v1 only sampled the 79 with usable deposited
 electron density (`frozenenc_probes/p79_targets.json`), and all four cover those. Every
 figure is therefore like-for-like; each arm's own full-coverage number is in
 pose_summary.json under "all_pockets" and is NOT comparable across arms. target_71 is in:
@@ -70,8 +70,24 @@ ARMS = [
     ("TargetDiff",     "targetdiff", "/home1/irteam/base_drug/eval/targetdiff"),
     ("VoxBind",        "vanilla",    f"{E}/_vanilla_ep923/samples/full_eval_ep923"),
     ("VoxBind + Ours", "ours_v1",    f"{E}/voxbind_frozenenc_atomblob7_v2p1_sig0.9/samples/full_eval_ep350"),
-    ("Ours v2",        "ours_v2",    f"{E}/samples_reference_receptor_ed_ep350"),
 ]
+# Ours v2 (exps/samples_reference_receptor_ed_ep350, 92 pockets) was dropped from this
+# section on 2026-09-09. It is still evaluated -- PoseCheck and PoseBusters are complete on
+# it and 85_fill_pose_eval_4runs.sh still fills it -- but it is not one of the arms this
+# section reports, so it is not plotted and not exported here. Re-adding it is one line.
+# TWO VARIANTS OF EVERY FIGURE. `_core` is the comparison this section is actually making
+# -- VoxBind against VoxBind + Ours, with the crystal ligand as the benchmark: the same
+# three series the Vina 3-line figures carry. `_all` adds every baseline the figure has
+# data for. The split is not a subset chosen after seeing the numbers -- it is the one the
+# Vina figures already make -- and both variants are always written.
+#
+# ACTIVE is what the FIGURES draw and is rebound per variant in main(). The DATA EXPORTS
+# and the run-log table always cover ARMS, so dropping an arm from a figure never silently
+# drops it from the numbers.
+CORE = ("vanilla", "ours_v1")
+ACTIVE = ARMS
+VARIANT = "all"
+
 REF_LABEL = "Reference ligand"
 REF_COLOR = color(REF_LABEL)
 REF_ROOT = ARMS[2][2]        # any arm carries the same crystal ligand per pocket
@@ -280,7 +296,7 @@ def arm_handles(include_ref=True):
     h = [Line2D([], [], color=REF_COLOR, lw=REF_LW, ls=DASH, label=REF_LABEL)] \
         if include_ref else []
     return h + [Line2D([], [], color=color(lab), lw=MODEL_LW, ls="-", label=lab)
-                for lab, _, _ in ARMS]
+                for lab, _, _ in ACTIVE]
 
 
 def fit(fig, **kw):
@@ -305,9 +321,11 @@ def fit(fig, **kw):
 
 
 def save(fig, stem):
-    """PNG to look at, SVG and PDF to place -- both vector, both with live text."""
+    """PNG to look at, SVG and PDF to place -- both vector, both with live text. The
+    variant is part of the filename, never only of the content: two figures that differ
+    in which arms they draw must not be able to sit in a folder under one name."""
     for ext in ("png", "svg", "pdf"):
-        fig.savefig(os.path.join(HERE, f"{stem}.{ext}"), facecolor="white")
+        fig.savefig(os.path.join(HERE, f"{stem}_{VARIANT}.{ext}"), facecolor="white")
     plt.close(fig)
 
 
@@ -315,7 +333,7 @@ def size_distribution(ax, xs, per_arm, ref_per):
     """The bottom strip: where each set puts its molecules, as a share of its own -- which
     is what makes the panel above it trustworthy or not, and is itself the finding, since
     the arms differ in the sizes they generate as much as in per-size pose quality."""
-    for lab, key, _ in ARMS:
+    for lab, key, _ in ACTIVE:
         col = color(lab)
         pct, _ = share(per_arm[key], xs)
         ax.step(xs, pct, where="mid", color=col, lw=DIST_LW, zorder=3)
@@ -327,7 +345,7 @@ def size_distribution(ax, xs, per_arm, ref_per):
 
 # ── figure 1: PoseBusters validity per heavy-atom count ──────────────────────────
 def fig_pb_per_atom():
-    per = {key: by_size(P79_ROWS[key], "v") for _, key, _ in ARMS}
+    per = {key: by_size(P79_ROWS[key], "v") for _, key, _ in ACTIVE}
     ref_per = by_size(REFROWS, "v")
     xs = [a for a in sorted(set.intersection(*(set(p) for p in per.values())))
           if all(len(per[k][a]) >= MIN_N for k in per)]
@@ -340,7 +358,7 @@ def fig_pb_per_atom():
 
     y = reference_curve(ref_per, xs, lambda v: 100 * float(np.mean(v)))
     top.plot(xs, y, color=REF_COLOR, lw=REF_LW, ls=DASH, zorder=4)
-    for lab, key, _ in ARMS:
+    for lab, key, _ in ACTIVE:
         col = color(lab)
         top.plot(xs, model_curve(per[key], xs, lambda v: 100 * float(np.mean(v)),
                                  win=VALID_WIN),
@@ -380,7 +398,7 @@ def fig_check_failures():
     ax.set_facecolor("white")
     ys = np.arange(len(names))[::-1]
     h = 0.19
-    for i, (lab, key, _) in enumerate(ARMS):
+    for i, (lab, key, _) in enumerate(ACTIVE):
         col = color(lab)
         ax.barh(ys + (i - (len(ARMS) - 1) / 2) * h,
                 [fails[key]["rates"].get(k, 0) for k in names],
@@ -396,7 +414,7 @@ def fig_check_failures():
     handles = [Line2D([], [], color=REF_COLOR, lw=0, marker="|", ms=13,
                       mew=REF_LW + 0.4, label=REF_LABEL)] + \
               [Patch(facecolor=color(lab), edgecolor=color(lab), label=lab)
-               for lab, _, _ in ARMS]
+               for lab, _, _ in ACTIVE]
     legend(ax, handles, loc="lower right")
     fit(fig, pad=0.5)
     save(fig, "pb_check_failures")
@@ -433,59 +451,57 @@ STATS = (("mean", lambda v: float(np.mean(v))),
 STRAIN_CLIP = 1e6
 
 
-def per_atom_stats(field, xs, name, unit, *, log, clip=None, stem, legend_loc="upper left"):
-    """Mean panel, median panel, size strip -- the fig-vina-per-atom mould, split by
-    statistic. The strip is what makes the panels above it trustworthy: a curve drawn over
-    sizes an arm barely generates is not a comparison."""
-    per = {key: by_size(P79_ROWS[key], field) for _, key, _ in ARMS}
+def per_atom_stat(field, xs, name, unit, stat, f, *, log, clip=None, stem,
+                  legend_loc="upper left"):
+    """One statistic, one panel, one file -- the 3-line figures' own answer to a pair of
+    statistics: `vina_dock_3line_mean` and `_median` are separate figures and which one you
+    are looking at is carried by the filename and by the y-axis name. Strain needs that
+    more than Vina did: its mean and median sit three to four decades apart, so overlaid,
+    the mean's spikes cross the whole panel and bury the medians."""
+    per = {key: by_size(P79_ROWS[key], field) for _, key, _ in ACTIVE}
     ref_per = by_size(REFROWS, field)
-    fig, (mean_ax, med_ax, bot) = plt.subplots(
-        3, 1, figsize=(FIG_W, STACK_H + 2.15), dpi=220, sharex=True,
-        gridspec_kw={"height_ratios": (2.0, 2.0, 1.05)})
+    fig, ax = plt.subplots(figsize=(FIG_W, 2.77 * TALL), dpi=220)
     fig.patch.set_facecolor("white")
-    for ax in (mean_ax, med_ax, bot):
-        ax.set_facecolor("white")
+    ax.set_facecolor("white")
 
     dropped = []
-    for ax, (stat, f) in zip((mean_ax, med_ax), STATS):
-        ax.plot(xs, reference_curve(ref_per, xs, f), color=REF_COLOR, lw=REF_LW, ls=DASH,
-                zorder=4, dash_capstyle="round")
-        for lab, key, _ in ARMS:
-            y = model_curve(per[key], xs, f)
-            if clip and stat == "mean":
-                over = [(a, v) for a, v in zip(xs, y) if v is not None and v > clip]
-                if over:
-                    dropped.append((lab, over))
-            ax.plot(xs, y, color=color(lab), lw=MODEL_LW, zorder=5,
-                    solid_capstyle="round")
-        if log:
-            ax.set_yscale("log")
-        furniture(ax, ylabel=f"{name} {stat}{unit}", xlim=(xs[0] - 0.6, xs[-1] + 0.6))
+    ax.plot(xs, reference_curve(ref_per, xs, f), color=REF_COLOR, lw=REF_LW, ls=DASH,
+            zorder=4, dash_capstyle="round")
+    for lab, key, _ in ACTIVE:
+        y = model_curve(per[key], xs, f)
+        if clip:
+            over = [(a, v) for a, v in zip(xs, y) if v is not None and v > clip]
+            if over:
+                dropped.append((lab, over))
+        ax.plot(xs, y, color=color(lab), lw=MODEL_LW, zorder=5, solid_capstyle="round")
+    if log:
+        ax.set_yscale("log")
+    else:
+        ax.set_ylim(bottom=0)
     if clip:
-        mean_ax.set_ylim(top=clip)
-    if not log:
-        for ax in (mean_ax, med_ax):
-            ax.set_ylim(bottom=0)
-    legend(med_ax, arm_handles(), loc=legend_loc, fontsize=11.5)
-
-    size_distribution(bot, xs, per, ref_per)
-    furniture(bot, ylabel="% of ligands", xlabel="Number of heavy atoms in ligand",
+        ax.set_ylim(top=clip)
+    furniture(ax, ylabel=f"{name} {stat}{unit}",
+              xlabel="Number of heavy atoms in ligand",
               xlim=(xs[0] - 0.6, xs[-1] + 0.6))
-    fig.align_ylabels((mean_ax, med_ax, bot))
-    fit(fig, pad=0.5, h_pad=H_PAD)
+    legend(ax, arm_handles(), loc=legend_loc, fontsize=11.5)
+    fit(fig, pad=0.5)
     save(fig, stem)
     return dropped
 
 
 def fig_strain_per_atom(xs):
-    return per_atom_stats("s", xs, "Strain", "\n(kcal mol⁻¹)", log=True,
-                          clip=STRAIN_CLIP, stem="strain_per_atom",
-                          legend_loc="upper left")
+    dropped = per_atom_stat("s", xs, "Strain", "\n(kcal mol⁻¹)", *STATS[0], log=True,
+                            clip=STRAIN_CLIP, stem="strain_per_atom_mean",
+                            legend_loc="lower right")
+    per_atom_stat("s", xs, "Strain", "\n(kcal mol⁻¹)", *STATS[1], log=True,
+                  stem="strain_per_atom_median", legend_loc="upper left")
+    return dropped
 
 
 def fig_clash_per_atom(xs):
-    per_atom_stats("c", xs, "Clashes", "", log=False, stem="clash_per_atom",
-                   legend_loc="upper left")
+    for stat, f in STATS:
+        per_atom_stat("c", xs, "Clashes", "", stat, f, log=False,
+                      stem=f"clash_per_atom_{stat}", legend_loc="upper left")
 
 
 # ── figure 5: the two PoseCheck distributions, pooled ────────────────────────────
@@ -501,7 +517,7 @@ def fig_ecdf_pair():
         ax.set_facecolor("white")
 
     def ecdf(ax, field, clip):
-        for lab, key, _ in ARMS:
+        for lab, key, _ in ACTIVE:
             v = np.array([r[field] for r in P79_ROWS[key] if r[field] is not None])
             x = np.sort(np.clip(v, clip, None))
             ax.plot(x, np.arange(1, len(x) + 1) / len(x), color=color(lab),
@@ -607,16 +623,22 @@ def exports(fails):
 
 
 def main():
+    global ACTIVE, VARIANT
     plt.rcParams.update(RC)
-    xs = fig_pb_per_atom()
-    fails = fig_check_failures()
-    dropped = fig_strain_per_atom(xs)
-    fig_clash_per_atom(xs)
-    fig_ecdf_pair()
+    ranges = {}
+    for VARIANT, ACTIVE in (("core", [a for a in ARMS if a[1] in CORE]), ("all", ARMS)):
+        xs = fig_pb_per_atom()
+        fails = fig_check_failures()
+        dropped = fig_strain_per_atom(xs)
+        fig_clash_per_atom(xs)
+        fig_ecdf_pair()
+        ranges[VARIANT] = (xs, dropped)
+    ACTIVE = ARMS
     summary, by_bin = exports(fails)
 
-    print(f"79-pocket set · {len(P79)} pockets · per-atom x range {xs[0]}-{xs[-1]} "
-          f"(counts where every arm has >={MIN_N} molecules)\n")
+    print(f"79-pocket set · {len(P79)} pockets · "
+          + " · ".join(f"{v} x {r[0][0]}-{r[0][-1]}" for v, r in ranges.items())
+          + f" (counts where every drawn arm has >={MIN_N} molecules)\n")
     print(f"{'arm':16s} {'atoms':>6s} {'clash med':>10s} {'strain med':>11s} "
           f"{'PB-valid':>9s} {'size-std':>9s} {'mols':>7s}")
     for lab, key, _ in ARMS:
@@ -635,12 +657,13 @@ def main():
             for b in by_bin["arms"][lab]))
     # Named, not hidden: strain_per_atom clips its y axis to the bulk, so say which points
     # that leaves off the panel and how far above they went.
+    dropped = ranges["all"][1]
     if dropped:
-        print(f"\nstrain_per_atom: mean above the {STRAIN_CLIP:.0e} clip, drawn off-panel "
+        print(f"\nstrain_per_atom_mean_all: above the {STRAIN_CLIP:.0e} clip, off-panel "
               f"(a failed UFF relaxation at a thin count moves that count's mean):")
         for lab, over in dropped:
             pts = ", ".join(f"{a} atoms {v:.2g}" for a, v in over)
-            print(f"  {lab:16s} {len(over):2d} of {len(xs)}: {pts}")
+            print(f"  {lab:16s} {len(over):2d} of {len(ranges['all'][0])}: {pts}")
     print(f"\nwrote {HERE}")
 
 

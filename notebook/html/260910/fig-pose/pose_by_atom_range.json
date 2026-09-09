@@ -28,7 +28,7 @@
     "clash_median": 4.0,
     "n_posebusters": 2085,
     "pb_valid_rate": 0.8508,
-    "pb_valid_rate_size_standardized": 0.8431
+    "pb_valid_rate_size_standardized": 0.8452
    },
    {
     "n_molecules": 1005,
@@ -41,7 +41,7 @@
     "clash_median": 7.0,
     "n_posebusters": 1003,
     "pb_valid_rate": 0.661,
-    "pb_valid_rate_size_standardized": 0.6627
+    "pb_valid_rate_size_standardized": 0.6621
    },
    {
     "n_molecules": 1455,
@@ -54,7 +54,7 @@
     "clash_median": 8.0,
     "n_posebusters": 1448,
     "pb_valid_rate": 0.5856,
-    "pb_valid_rate_size_standardized": 0.5833
+    "pb_valid_rate_size_standardized": 0.5827
    },
    {
     "n_molecules": 1336,
@@ -67,7 +67,7 @@
     "clash_median": 10.0,
     "n_posebusters": 1323,
     "pb_valid_rate": 0.4649,
-    "pb_valid_rate_size_standardized": 0.466
+    "pb_valid_rate_size_standardized": 0.4656
    },
    {
     "n_molecules": 1406,
@@ -80,7 +80,7 @@
     "clash_median": 14.0,
     "n_posebusters": 1388,
     "pb_valid_rate": 0.3696,
-    "pb_valid_rate_size_standardized": 0.3768
+    "pb_valid_rate_size_standardized": 0.3759
    }
   ],
   "VoxBind": [
@@ -95,7 +95,7 @@
     "clash_median": 3.0,
     "n_posebusters": 1788,
     "pb_valid_rate": 0.8496,
-    "pb_valid_rate_size_standardized": 0.852
+    "pb_valid_rate_size_standardized": 0.8521
    },
    {
     "n_molecules": 1121,
@@ -121,7 +121,7 @@
     "clash_median": 4.0,
     "n_posebusters": 1531,
     "pb_valid_rate": 0.6884,
-    "pb_valid_rate_size_standardized": 0.6889
+    "pb_valid_rate_size_standardized": 0.6882
    },
    {
     "n_molecules": 1586,
@@ -134,7 +134,7 @@
     "clash_median": 5.0,
     "n_posebusters": 1586,
     "pb_valid_rate": 0.6217,
-    "pb_valid_rate_size_standardized": 0.6227
+    "pb_valid_rate_size_standardized": 0.6226
    },
    {
     "n_molecules": 1862,
@@ -147,7 +147,7 @@
     "clash_median": 6.0,
     "n_posebusters": 1862,
     "pb_valid_rate": 0.565,
-    "pb_valid_rate_size_standardized": 0.5739
+    "pb_valid_rate_size_standardized": 0.5735
    }
   ],
   "VoxBind + Ours": [
@@ -162,7 +162,7 @@
     "clash_median": 4.0,
     "n_posebusters": 1704,
     "pb_valid_rate": 0.8322,
-    "pb_valid_rate_size_standardized": 0.8318
+    "pb_valid_rate_size_standardized": 0.833
    },
    {
     "n_molecules": 942,
@@ -175,7 +175,7 @@
     "clash_median": 4.0,
     "n_posebusters": 942,
     "pb_valid_rate": 0.7633,
-    "pb_valid_rate_size_standardized": 0.7637
+    "pb_valid_rate_size_standardized": 0.764
    },
    {
     "n_molecules": 1330,
@@ -188,7 +188,7 @@
     "clash_median": 5.0,
     "n_posebusters": 1330,
     "pb_valid_rate": 0.6774,
-    "pb_valid_rate_size_standardized": 0.6805
+    "pb_valid_rate_size_standardized": 0.6804
    },
    {
     "n_molecules": 1601,
@@ -201,7 +201,7 @@
     "clash_median": 6.0,
     "n_posebusters": 1601,
     "pb_valid_rate": 0.6159,
-    "pb_valid_rate_size_standardized": 0.6175
+    "pb_valid_rate_size_standardized": 0.6178
    },
    {
     "n_molecules": 2296,
@@ -214,74 +214,7 @@
     "clash_median": 7.0,
     "n_posebusters": 2296,
     "pb_valid_rate": 0.561,
-    "pb_valid_rate_size_standardized": 0.5671
-   }
-  ],
-  "Ours v2": [
-   {
-    "n_molecules": 2401,
-    "atoms_mean": 11.11,
-    "n_strain": 2401,
-    "strain_median": 59.1,
-    "strain_q25": 28.4,
-    "strain_q75": 139.9,
-    "clash_mean": 5.06,
-    "clash_median": 4.0,
-    "n_posebusters": 2401,
-    "pb_valid_rate": 0.8101,
-    "pb_valid_rate_size_standardized": 0.8104
-   },
-   {
-    "n_molecules": 1281,
-    "atoms_mean": 18.11,
-    "n_strain": 1278,
-    "strain_median": 162.4,
-    "strain_q25": 87.5,
-    "strain_q75": 433.9,
-    "clash_mean": 5.84,
-    "clash_median": 5.0,
-    "n_posebusters": 1281,
-    "pb_valid_rate": 0.7291,
-    "pb_valid_rate_size_standardized": 0.7295
-   },
-   {
-    "n_molecules": 1601,
-    "atoms_mean": 23.02,
-    "n_strain": 1596,
-    "strain_median": 247.9,
-    "strain_q25": 134.2,
-    "strain_q75": 914.4,
-    "clash_mean": 7.7,
-    "clash_median": 7.0,
-    "n_posebusters": 1601,
-    "pb_valid_rate": 0.644,
-    "pb_valid_rate_size_standardized": 0.6432
-   },
-   {
-    "n_molecules": 1282,
-    "atoms_mean": 27.84,
-    "n_strain": 1272,
-    "strain_median": 304.3,
-    "strain_q25": 174.9,
-    "strain_q75": 754.2,
-    "clash_mean": 8.64,
-    "clash_median": 7.0,
-    "n_posebusters": 1282,
-    "pb_valid_rate": 0.5608,
-    "pb_valid_rate_size_standardized": 0.5569
-   },
-   {
-    "n_molecules": 1331,
-    "atoms_mean": 36.49,
-    "n_strain": 1324,
-    "strain_median": 505.6,
-    "strain_q25": 286.3,
-    "strain_q75": 1354.6,
-    "clash_mean": 10.45,
-    "clash_median": 9.0,
-    "n_posebusters": 1331,
-    "pb_valid_rate": 0.4681,
-    "pb_valid_rate_size_standardized": 0.4728
+    "pb_valid_rate_size_standardized": 0.5665
    }
   ],
   "Reference ligand": [

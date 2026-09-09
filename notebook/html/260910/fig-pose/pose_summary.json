@@ -103,7 +103,7 @@
     "clash_median": 8.0,
     "n_posebusters": 7247,
     "pb_valid_rate": 0.6089,
-    "pb_valid_rate_size_standardized": 0.5973
+    "pb_valid_rate_size_standardized": 0.5881
    },
    "all_pockets": {
     "n_molecules": 9206,
@@ -116,7 +116,7 @@
     "clash_median": 8.0,
     "n_posebusters": 9166,
     "pb_valid_rate": 0.6006,
-    "pb_valid_rate_size_standardized": 0.5958
+    "pb_valid_rate_size_standardized": 0.5866
    }
   },
   "VoxBind": {
@@ -135,7 +135,7 @@
     "clash_median": 4.0,
     "n_posebusters": 7888,
     "pb_valid_rate": 0.693,
-    "pb_valid_rate_size_standardized": 0.704
+    "pb_valid_rate_size_standardized": 0.6979
    },
    "all_pockets": {
     "n_molecules": 9988,
@@ -148,7 +148,7 @@
     "clash_median": 4.0,
     "n_posebusters": 9988,
     "pb_valid_rate": 0.6908,
-    "pb_valid_rate_size_standardized": 0.7003
+    "pb_valid_rate_size_standardized": 0.6944
    }
   },
   "VoxBind + Ours": {
@@ -167,7 +167,7 @@
     "clash_median": 5.0,
     "n_posebusters": 7873,
     "pb_valid_rate": 0.6747,
-    "pb_valid_rate_size_standardized": 0.6949
+    "pb_valid_rate_size_standardized": 0.6895
    },
    "all_pockets": {
     "n_molecules": 7873,
@@ -180,39 +180,7 @@
     "clash_median": 5.0,
     "n_posebusters": 7873,
     "pb_valid_rate": 0.6747,
-    "pb_valid_rate_size_standardized": 0.6949
-   }
-  },
-  "Ours v2": {
-   "root": "/home1/irteam/VoxBind/voxbind/exps/samples_reference_receptor_ed_ep350",
-   "key": "ours_v2",
-   "pockets_all": 92,
-   "pockets_p79": 79,
-   "p79": {
-    "n_molecules": 7896,
-    "atoms_mean": 21.65,
-    "n_strain": 7871,
-    "strain_median": 202.4,
-    "strain_q25": 83.7,
-    "strain_q75": 591.8,
-    "clash_mean": 7.21,
-    "clash_median": 6.0,
-    "n_posebusters": 7896,
-    "pb_valid_rate": 0.6651,
-    "pb_valid_rate_size_standardized": 0.6464
-   },
-   "all_pockets": {
-    "n_molecules": 9195,
-    "atoms_mean": 21.71,
-    "n_strain": 9165,
-    "strain_median": 211.1,
-    "strain_q25": 87.1,
-    "strain_q75": 645.1,
-    "clash_mean": 7.35,
-    "clash_median": 6.0,
-    "n_posebusters": 9195,
-    "pb_valid_rate": 0.6519,
-    "pb_valid_rate_size_standardized": 0.6342
+    "pb_valid_rate_size_standardized": 0.6895
    }
   }
  },

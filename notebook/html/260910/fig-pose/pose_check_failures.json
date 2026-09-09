@@ -69,27 +69,6 @@
     "minimum_distance_to_protein": 1.6385113679664676,
     "volume_overlap_with_protein": 0.08891146957957577
    }
-  },
-  "Ours v2": {
-   "n_mols": 7896,
-   "counts": {
-    "non-aromatic_ring_non-flatness": 1617,
-    "bond_angles": 592,
-    "minimum_distance_to_protein": 164,
-    "bond_lengths": 492,
-    "internal_energy": 205,
-    "internal_steric_clash": 380,
-    "volume_overlap_with_protein": 19
-   },
-   "rates": {
-    "non-aromatic_ring_non-flatness": 20.47872340425532,
-    "bond_angles": 7.497467071935157,
-    "minimum_distance_to_protein": 2.077001013171226,
-    "bond_lengths": 6.231003039513678,
-    "internal_energy": 2.5962512664640323,
-    "internal_steric_clash": 4.812563323201621,
-    "volume_overlap_with_protein": 0.24062816616008106
-   }
   }
  },
  "reference_ligand": {
