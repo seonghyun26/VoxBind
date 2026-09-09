@@ -39,13 +39,36 @@ _maybe_drop() {  # remove env if FORCE set
     fi
 }
 
+# Install an env from a conda-lock.yml (restores conda + pip in one shot).
+# Finds conda-lock on PATH, else a local `_condalock` helper env, else instructs.
+_install_from_condalock() {  # _install_from_condalock <env> <lockfile>
+    local env="$1" lock="$2" cl=""
+    if command -v conda-lock >/dev/null 2>&1; then
+        cl="conda-lock"
+    elif env_python _condalock >/dev/null 2>&1; then
+        cl="$CONDA_LAUNCHER run -n _condalock conda-lock"
+    else
+        die "conda-lock not found — install it first: pip install conda-lock   (or: $CONDA_LAUNCHER create -y -n _condalock -c conda-forge conda-lock)"
+    fi
+    local solver=--conda
+    case "$CONDA_LAUNCHER" in *micromamba) solver=--micromamba ;; *mamba) solver=--mamba ;; esac
+    # shellcheck disable=SC2086
+    $cl install $solver -n "$env" "$lock" || die "$env conda-lock install failed"
+}
+
 build_voxbind() {
     _maybe_drop voxbind
     if _env_exists voxbind; then log "env 'voxbind' already present — skipping (FORCE=1 to rebuild)"; return; fi
-    banner "building 'voxbind' (GPU pipeline) from env.yaml"
-    "$CONDA_LAUNCHER" env create -y -n voxbind -f "$REPO_ROOT/env.yaml" \
-        || "$CONDA_LAUNCHER" create -y -n voxbind -f "$REPO_ROOT/env.yaml" \
-        || die "voxbind env create failed"
+    local lock="$REPO_ROOT/env/voxbind.conda-lock.yml"
+    if [ -f "$lock" ]; then
+        banner "building 'voxbind' from conda-lock.yml (py3.10, vina 1.2.7)"
+        _install_from_condalock voxbind "$lock"
+    else
+        banner "building 'voxbind' from env.yaml (no conda-lock.yml found — looser pin)"
+        "$CONDA_LAUNCHER" env create -y -n voxbind -f "$REPO_ROOT/env.yaml" \
+            || "$CONDA_LAUNCHER" create -y -n voxbind -f "$REPO_ROOT/env.yaml" \
+            || die "voxbind env create failed"
+    fi
     log "installing VoxBind (editable) into 'voxbind'"
     ( cd "$REPO_ROOT" && conda_run voxbind pip install --no-cache-dir -e . ) || die "pip install -e . failed"
     log "voxbind ready"
@@ -54,18 +77,23 @@ build_voxbind() {
 build_voxdock() {
     _maybe_drop voxdock
     if _env_exists voxdock; then log "env 'voxdock' already present — skipping"; return; fi
-    banner "building 'voxdock' (Vina 1.2.2 docking stack, python 3.8)"
-    # Binaries only (no C compiler assumed). Pins mirror TargetDiff/environment.yaml;
-    # meeko 0.1.dev3 keeps the OBMol API docking_vina.py depends on. vina==1.2.2 is
-    # the exact build every reported VoxBind affinity uses.
-    "$CONDA_LAUNCHER" create -y -n voxdock -c conda-forge \
-        python=3.8.16 numpy=1.24.3 scipy=1.10.1 rdkit=2022.03.2 openbabel=3.1.1 \
-        pdb2pqr easydict pip || die "voxdock conda create failed"
-    conda_run voxdock pip install --no-cache-dir \
-        vina==1.2.2 meeko==0.1.dev3 pdb2pqr==3.6.1 propka==3.5.0 \
-        mmcif-pdbx==2.0.1 docutils==0.17.1 \
-        "git+https://github.com/Valdes-Tresanco-MS/AutoDockTools_py3.git@aee55d50d5bdcfdbcd80220499df8cde2a8f4b2a" \
-        || die "voxdock pip install failed"
+    local lock="$REPO_ROOT/env/voxdock.conda-lock.yml"
+    if [ -f "$lock" ]; then
+        banner "building 'voxdock' from conda-lock.yml (py3.8, vina 1.2.2)"
+        _install_from_condalock voxdock "$lock"
+    else
+        banner "building 'voxdock' from recipe (Vina 1.2.2 docking stack, python 3.8)"
+        # meeko 0.1.dev3 keeps the OBMol API docking_vina.py depends on. vina==1.2.2 is
+        # the exact build every reported VoxBind affinity uses (no py3.10 wheel → py3.8).
+        "$CONDA_LAUNCHER" create -y -n voxdock -c conda-forge \
+            python=3.8.16 numpy=1.24.3 scipy=1.10.1 rdkit=2022.03.2 openbabel=3.1.1 \
+            easydict pip || die "voxdock conda create failed"
+        conda_run voxdock pip install --no-cache-dir \
+            vina==1.2.2 meeko==0.1.dev3 pdb2pqr==3.6.1 propka==3.5.0 \
+            mmcif-pdbx==2.0.1 docutils==0.17.1 \
+            "git+https://github.com/Valdes-Tresanco-MS/AutoDockTools_py3.git@aee55d50d5bdcfdbcd80220499df8cde2a8f4b2a" \
+            || die "voxdock pip install failed"
+    fi
     log "voxdock ready"
 }
 

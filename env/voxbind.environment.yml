@@ -17,10 +17,14 @@ dependencies:
   - scipy
   - pandas
   - scikit-image
+  - matplotlib-base
+  - seaborn
+  - plotly
+  - python-kaleido
+  - tqdm
   - rdkit=2024.03.6
   - openbabel=3.1.1
   - gemmi
-  - matplotlib-base
   - wandb
   - pip
   - pip:

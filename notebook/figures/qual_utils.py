@@ -64,12 +64,32 @@ def fig1_style(path):
 
 def method_specs(repo, baseline):
     exps = repo / "voxbind/exps"
+    vanilla = exps / "_vanilla_ep923/samples/full_eval_ep923"
+    if not vanilla.is_dir():
+        bundled_vanilla = repo / "results/task2-drugdesign/VoxBind-base-ep350/samples"
+        if bundled_vanilla.is_dir():
+            vanilla = bundled_vanilla
     ours = exps / "voxbind_frozenenc_atomblob7_v2p1_sig0.9/samples/full_eval_ep350"
+    ours_layout = "eval"
+    ours_extra = {}
     if not ours.is_dir():
         ours = repo / "voxbind/model_zoo/generated_samples/ours_v1_frozenenc_atomblob7_v2p1_sig0.9_ep350/samples"
+    if not ours.is_dir():
+        bundled_ours = repo / "results/task2-drugdesign/VoxBind-Ours/samples"
+        if bundled_ours.is_dir():
+            ours = bundled_ours
+            ours_extra["energy_file"] = ours / "eval_docking_results_full79.json"
+    if not ours.is_dir():
+        mcp_results = repo / "results/task3-mcp/Ours-receptorED/samples"
+        if mcp_results.is_dir():
+            ours = mcp_results
+            ours_layout = "mcp_results"
+            ours_extra["reference_root"] = (
+                repo / "voxbind/dataset/data/pdbbind/structures/pbpp-2020"
+            )
     return {
-        "VoxBind": dict(root=exps / "_vanilla_ep923/samples/full_eval_ep923", layout="eval"),
-        "VoxBind + Ours": dict(root=ours, layout="eval"),
+        "VoxBind": dict(root=vanilla, layout="eval"),
+        "VoxBind + Ours": dict(root=ours, layout=ours_layout, **ours_extra),
         "TargetDiff": dict(root=baseline / "eval/targetdiff", layout="eval"),
         "FuncBind": dict(root=repo.parent / "funcbind/artifacts/reproduction/crossdocked/paper_run", layout="eval_shards"),
         "AR": dict(root=baseline / "samples/ar", layout="sweep"),
@@ -106,6 +126,18 @@ class Catalog:
                                  if f.stat().st_size]
                         if files:
                             found[f"target_{int(p.name[3:]):02d}"] = files
+            elif spec["layout"] == "mcp_results":
+                # Exported MCP bundles use mcpp_<pdb>_<run>/pooled_<n>.sdf.
+                for run in sorted(root.glob("mcpp_*"), key=natural_key):
+                    match = re.match(r"mcpp_([A-Za-z0-9]{4})(?:_|$)", run.name)
+                    files = [p for p in sorted(run.glob("pooled_*.sdf"), key=natural_key)
+                             if p.stat().st_size]
+                    if not match or not files:
+                        continue
+                    target = match.group(1).lower()
+                    if target in found:
+                        raise ValueError(f"Duplicate MCP result target: {method}, {target}")
+                    found[target] = [files[-1]]
             else:
                 raise ValueError(f"Unknown layout: {spec['layout']}")
             self.files[method] = found
@@ -272,6 +304,14 @@ class Catalog:
         return {r["target"]: r for r in document.get("per_target", [])}
 
     def reference_paths(self, method, target):
+        spec = self.specs[method]
+        if spec["layout"] == "mcp_results":
+            folder = Path(spec["reference_root"]) / target.lower()
+            ligand = folder / f"{target.lower()}_ligand.sdf"
+            pocket = folder / f"{target.lower()}_pocket.pdb"
+            if not ligand.is_file() or not pocket.is_file():
+                raise ValueError(f"Missing MCP reference ligand or pocket in {folder}")
+            return ligand, pocket
         folder = self.files[method][target][0].parent
         ligands = [p for p in sorted(folder.glob("*.sdf")) if p.name != "samples.sdf"]
         pockets = sorted(folder.glob("*_pocket10.pdb"))
@@ -313,7 +353,7 @@ class Catalog:
                     if (xyz.shape != other_xyz.shape or not np.array_equal(elements, other_elements)
                             or not np.allclose(xyz, other_xyz, atol=0.02)):
                         raise ValueError(f"Reference coordinate mismatch: {target}, {method}")
-            else:
+            elif self.specs[method]["layout"] == "sweep":
                 info = self.files[method][target][0].parent.parent / "pocket_info.txt"
                 if info.exists() and canonical not in info.read_text():
                     raise ValueError(f"Pocket identity mismatch: {info}")

@@ -39,9 +39,17 @@ USER $MAMBA_USER
 
 WORKDIR /workspace/VoxBind
 
-# --- env 1: voxbind (GPU pipeline). Solve first so it caches across code edits. ---
+# --- env 1: voxbind (GPU pipeline + Vina docking). Build from the lock (vina 1.2.2)
+#     when present, else env.yaml. Copy just the specs first so this heavy layer
+#     caches across code edits. This env alone runs docking + chem/geometry eval. ---
+COPY --chown=$MAMBA_USER:$MAMBA_USER env/ /tmp/env/
 COPY --chown=$MAMBA_USER:$MAMBA_USER env.yaml /tmp/env.yaml
-RUN micromamba env create -y -f /tmp/env.yaml \
+RUN if [ -f /tmp/env/voxbind.conda-linux-64.lock ]; then \
+        micromamba create -y -n voxbind --file /tmp/env/voxbind.conda-linux-64.lock && \
+        micromamba run -n voxbind pip install --no-cache-dir -r /tmp/env/voxbind.pip.lock.txt ; \
+    else \
+        micromamba env create -y -f /tmp/env.yaml ; \
+    fi \
  && micromamba clean --all --yes
 
 # --- env 2: voxdock (Vina 1.2.2 docking stack; pins are load-bearing) ---
