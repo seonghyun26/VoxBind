@@ -92,7 +92,7 @@ fails bond angles (22.5 %) and runs into the protein (10.0 %) instead. **Fixing 
 geometry is the single highest-value target for our arms**; it is worth roughly 20 points
 of validity on its own.
 
-## PoseCheck says the same thing, at every size (`posecheck_per_atom`)
+## PoseCheck says the same thing, at every size (`strain_per_atom`, `clash_per_atom`)
 
 Strain and clashes split the four arms into the same two pairs, and the split holds at
 every ligand size rather than appearing only in the pooled number. At 20 heavy atoms the
@@ -106,6 +106,20 @@ That is the same ordering PoseBusters gives, arrived at from a different measure
 is the main reason to trust either. Note it is *not* the Vina ordering — Ours v1 wins on
 affinity — so pose quality and affinity are separate axes here, and Ours v2 is the arm that
 loses on both.
+
+**Mean and median get a panel each, and the pair is itself the argument for reporting the
+median.** In the strain mean panel all four arms are tangled between 1e3 and 1e6 with no
+order at all; in the median panel below it they separate into two clean, monotone pairs.
+6.6 % of molecules fail UFF relaxation and land between 1e4 and 1e13, and one of those at a
+thin heavy-atom count moves that count's mean by four decades — the run log names the
+19 (arm, size) points whose mean runs off the top of the clipped panel. Clashes have no such
+problem: their mean and median sit within a factor of two and tell the same story twice.
+
+One thing only the clash mean panel shows: above ~28 heavy atoms the **crystal reference
+ligands clash more than VoxBind and Ours v1 do** (~10 against 6–8). Crystal poses are not a
+ceiling on this metric, which is the same point the PoseBusters
+`minimum distance to protein` row makes — our arms fail it less often than the crystal
+ligands do.
 
 ## Files
 
@@ -121,7 +135,8 @@ every figure of the section.
 | `build_pose_figures.py` | builds everything below, from the runs' `metrics.json` |
 | `pb_valid_per_atom.{png,svg,pdf}` | **headline** — validity against ligand size, with each arm's size distribution underneath |
 | `pb_check_failures.{png,svg,pdf}` | per-check failure rate, all sizes pooled |
-| `posecheck_per_atom.{png,svg,pdf}` | strain and clash medians against ligand size |
+| `strain_per_atom.{png,svg,pdf}` | strain **mean** and **median** against ligand size, a panel each, + the size mix |
+| `clash_per_atom.{png,svg,pdf}` | clashes mean and median against ligand size, + the size mix |
 | `strain_clash_ecdf_pair.{png,svg,pdf}` | the two PoseCheck distributions, pooled, on one shared y |
 | `pose_summary.json` | coverage + pooled numbers, `p79` and `all_pockets` |
 | `pose_by_atom_range.{json,csv}` | the per-bin numbers behind the figures |

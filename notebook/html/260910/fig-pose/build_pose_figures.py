@@ -3,7 +3,8 @@
 
     pb_valid_per_atom.{png,svg,pdf}     validity against ligand size, + the size mix
     pb_check_failures.{png,svg,pdf}     which checks fail, per method
-    posecheck_per_atom.{png,svg,pdf}    strain and clashes against ligand size
+    strain_per_atom.{png,svg,pdf}       strain mean and median against ligand size
+    clash_per_atom.{png,svg,pdf}        clashes mean and median against ligand size
     strain_clash_ecdf_pair.{png,svg,pdf} the two PoseCheck distributions, pooled
     pose_summary.json                   coverage + pooled numbers (p79 and all_pockets)
     pose_by_atom_range.{json,csv}       the per-bin numbers
@@ -34,13 +35,9 @@ re-weighted by one common size distribution.
 
 STYLE. 260903/build_vina_3line.py and 260910/fig-vina-per-atom: no panel titles, warm
 near-black furniture (#514F52), left+bottom spines only, dotted mid-grey rules, live text
-in the SVG and TrueType in the PDF. Colour is the identity of the arm. The house pair --
-VoxBind sand #F5B27E, VoxBind + Ours periwinkle #8291E8, reference grey #9aa0a6 -- is kept
-exactly, so an arm reads the same here as it does in the Vina figures. The two arms that
-house palette has no entry for take a hue each rather than a shade of an existing one:
-TargetDiff a muted teal, because it is not a VoxBind model and should not read as a shade
-of one, and Ours v2 a light periwinkle, because it IS the same family as Ours v1 and
-should read as one.
+in the SVG and TrueType in the PDF. Colour is the identity of the METHOD and is decided in
+../method_colors.py, shared with ../fig-posecheck, so a method reads the same in every
+figure of the section; nothing here hard-codes a hex.
 
     /opt/conda/envs/voxbind/bin/python notebook/html/260910/fig-pose/build_pose_figures.py
 """
@@ -406,49 +403,92 @@ def fig_check_failures():
     return fails
 
 
-# ── figure 3: PoseCheck strain and clashes per heavy-atom count ──────────────────
-def fig_posecheck_per_atom(xs):
-    s_per = {key: by_size(P79_ROWS[key], "s") for _, key, _ in ARMS}
-    c_per = {key: by_size(P79_ROWS[key], "c") for _, key, _ in ARMS}
-    s_ref, c_ref = by_size(REFROWS, "s"), by_size(REFROWS, "c")
-    med = lambda v: float(np.median(v))
+# ── figure 3+4: PoseCheck strain and clashes per heavy-atom count ────────────────
+# Same mould as fig-vina-per-atom: the statistic on top, each set's size distribution
+# underneath, because the distribution is what makes the panel above it trustworthy --
+# a curve drawn over sizes one arm barely generates is not a comparison.
+#
+# BOTH STATISTICS ARE DRAWN, and dash is what separates them (solid mean, dashed median),
+# following the convention fig-vina-per-atom states: colour is the SERIES and dash is the
+# STATISTIC, two independent channels, so they get one legend each rather than one legend
+# spelling out every combination. Mean and median answer different questions of the same
+# pool -- the mean is what a pooled table reports and moves with the tail, the median is
+# where the bulk of that size actually sits -- and drawn together they say whether a gap
+# is the whole distribution shifting or a tail dragging it. For strain the answer is
+# emphatically the tail: the two run three to four DECADES apart.
+STATS = (("mean", lambda v: float(np.mean(v))),
+         ("median", lambda v: float(np.median(v))))
+# Strain's mean is not a location statistic. 6.6% of molecules fail UFF relaxation and
+# land between 1e4 and 1e13, and one of those at a thin heavy-atom count moves that
+# count's mean by four decades. So mean and median get a PANEL EACH rather than two dashes
+# on one axis: they sit three to four decades apart, and overlaid, the mean's spikes cross
+# the whole panel and bury the medians -- which are tight, ordered and the thing actually
+# worth reading. Which statistic a panel shows is carried by its y label, exactly as the
+# 3-line figures carry it in their filename and y name. Clashes get the same two panels
+# for symmetry even though their two statistics sit within a factor of two.
+#
+# The mean panel is still clipped to the bulk, the 3-line figure's own answer (see its
+# `limits`): the panel keeps the range that carries information and the excluded points
+# are NAMED in the run log rather than squashing everything else into two decades.
+STRAIN_CLIP = 1e6
 
-    fig, (top, bot) = plt.subplots(
-        2, 1, figsize=(FIG_W, STACK_H), dpi=220, sharex=True,
-        gridspec_kw={"height_ratios": (1.0, 1.0)})
+
+def per_atom_stats(field, xs, name, unit, *, log, clip=None, stem, legend_loc="upper left"):
+    """Mean panel, median panel, size strip -- the fig-vina-per-atom mould, split by
+    statistic. The strip is what makes the panels above it trustworthy: a curve drawn over
+    sizes an arm barely generates is not a comparison."""
+    per = {key: by_size(P79_ROWS[key], field) for _, key, _ in ARMS}
+    ref_per = by_size(REFROWS, field)
+    fig, (mean_ax, med_ax, bot) = plt.subplots(
+        3, 1, figsize=(FIG_W, STACK_H + 2.15), dpi=220, sharex=True,
+        gridspec_kw={"height_ratios": (2.0, 2.0, 1.05)})
     fig.patch.set_facecolor("white")
-    for ax in (top, bot):
+    for ax in (mean_ax, med_ax, bot):
         ax.set_facecolor("white")
 
-    # Strain is heavy-tailed enough that its mean reports the UFF failure rate rather than
-    # the strain (vanilla: mean 2.26e8, median 62), so the median is the only honest
-    # central value here. Log y because the four arms span 30 to 600 kcal/mol.
-    top.plot(xs, reference_curve(s_ref, xs, med), color=REF_COLOR, lw=REF_LW, ls=DASH,
-             zorder=4)
-    for lab, key, _ in ARMS:
-        col = color(lab)
-        top.plot(xs, model_curve(s_per[key], xs, med), color=col, lw=MODEL_LW, zorder=5)
-    top.set_yscale("log")
-    furniture(top, ylabel="Strain median\n(kcal mol⁻¹)", xlim=(xs[0] - 0.6, xs[-1] + 0.6))
-    # The strain panel has no free corner: the curves climb left-to-right across it and
-    # the two steep ones cross whatever the upper left leaves. The clash panel below has a
-    # large empty upper left (no median is above 7 before x=20), so the figure's one key
-    # goes there and serves both panels.
+    dropped = []
+    for ax, (stat, f) in zip((mean_ax, med_ax), STATS):
+        ax.plot(xs, reference_curve(ref_per, xs, f), color=REF_COLOR, lw=REF_LW, ls=DASH,
+                zorder=4, dash_capstyle="round")
+        for lab, key, _ in ARMS:
+            y = model_curve(per[key], xs, f)
+            if clip and stat == "mean":
+                over = [(a, v) for a, v in zip(xs, y) if v is not None and v > clip]
+                if over:
+                    dropped.append((lab, over))
+            ax.plot(xs, y, color=color(lab), lw=MODEL_LW, zorder=5,
+                    solid_capstyle="round")
+        if log:
+            ax.set_yscale("log")
+        furniture(ax, ylabel=f"{name} {stat}{unit}", xlim=(xs[0] - 0.6, xs[-1] + 0.6))
+    if clip:
+        mean_ax.set_ylim(top=clip)
+    if not log:
+        for ax in (mean_ax, med_ax):
+            ax.set_ylim(bottom=0)
+    legend(med_ax, arm_handles(), loc=legend_loc, fontsize=11.5)
 
-    bot.plot(xs, reference_curve(c_ref, xs, med), color=REF_COLOR, lw=REF_LW, ls=DASH,
-             zorder=4)
-    for lab, key, _ in ARMS:
-        col = color(lab)
-        bot.plot(xs, model_curve(c_per[key], xs, med), color=col, lw=MODEL_LW, zorder=5)
-    furniture(bot, ylabel="Clash median", xlabel="Number of heavy atoms in ligand",
+    size_distribution(bot, xs, per, ref_per)
+    furniture(bot, ylabel="% of ligands", xlabel="Number of heavy atoms in ligand",
               xlim=(xs[0] - 0.6, xs[-1] + 0.6))
-    bot.set_ylim(bottom=0)
-    legend(bot, arm_handles(), loc="upper left", fontsize=11.5)
+    fig.align_ylabels((mean_ax, med_ax, bot))
     fit(fig, pad=0.5, h_pad=H_PAD)
-    save(fig, "posecheck_per_atom")
+    save(fig, stem)
+    return dropped
 
 
-# ── figure 4: the two PoseCheck distributions, pooled ────────────────────────────
+def fig_strain_per_atom(xs):
+    return per_atom_stats("s", xs, "Strain", "\n(kcal mol⁻¹)", log=True,
+                          clip=STRAIN_CLIP, stem="strain_per_atom",
+                          legend_loc="upper left")
+
+
+def fig_clash_per_atom(xs):
+    per_atom_stats("c", xs, "Clashes", "", log=False, stem="clash_per_atom",
+                   legend_loc="upper left")
+
+
+# ── figure 5: the two PoseCheck distributions, pooled ────────────────────────────
 def fig_ecdf_pair():
     """Two panels on one shared y, the 3-line pair layout. ECDFs rather than violins: the
     question is what share of a method's poses sit under a given strain or clash count,
@@ -570,7 +610,8 @@ def main():
     plt.rcParams.update(RC)
     xs = fig_pb_per_atom()
     fails = fig_check_failures()
-    fig_posecheck_per_atom(xs)
+    dropped = fig_strain_per_atom(xs)
+    fig_clash_per_atom(xs)
     fig_ecdf_pair()
     summary, by_bin = exports(fails)
 
@@ -592,6 +633,14 @@ def main():
         print(f"  {lab:16s} " + "  ".join(
             f"{100 * b['pb_valid_rate']:5.1f}%" if b["pb_valid_rate"] is not None else "    -"
             for b in by_bin["arms"][lab]))
+    # Named, not hidden: strain_per_atom clips its y axis to the bulk, so say which points
+    # that leaves off the panel and how far above they went.
+    if dropped:
+        print(f"\nstrain_per_atom: mean above the {STRAIN_CLIP:.0e} clip, drawn off-panel "
+              f"(a failed UFF relaxation at a thin count moves that count's mean):")
+        for lab, over in dropped:
+            pts = ", ".join(f"{a} atoms {v:.2g}" for a, v in over)
+            print(f"  {lab:16s} {len(over):2d} of {len(xs)}: {pts}")
     print(f"\nwrote {HERE}")
 
 
