@@ -1,0 +1,168 @@
+{
+ "bins": [
+  "≤15",
+  "16–20",
+  "21–25",
+  "26–30",
+  ">30"
+ ],
+ "edges": [
+  0,
+  16,
+  21,
+  26,
+  31,
+  "inf"
+ ],
+ "n_pockets": 79,
+ "arms": {
+  "TargetDiff": [
+   {
+    "n_molecules": 2085,
+    "atoms_mean": 10.77,
+    "n_posebusters": 2085,
+    "pb_valid_rate": 0.8508,
+    "pb_valid_rate_size_standardized": 0.8452
+   },
+   {
+    "n_molecules": 1005,
+    "atoms_mean": 18.32,
+    "n_posebusters": 1003,
+    "pb_valid_rate": 0.661,
+    "pb_valid_rate_size_standardized": 0.6621
+   },
+   {
+    "n_molecules": 1455,
+    "atoms_mean": 22.95,
+    "n_posebusters": 1448,
+    "pb_valid_rate": 0.5856,
+    "pb_valid_rate_size_standardized": 0.5827
+   },
+   {
+    "n_molecules": 1336,
+    "atoms_mean": 27.96,
+    "n_posebusters": 1323,
+    "pb_valid_rate": 0.4649,
+    "pb_valid_rate_size_standardized": 0.4656
+   },
+   {
+    "n_molecules": 1406,
+    "atoms_mean": 35.78,
+    "n_posebusters": 1388,
+    "pb_valid_rate": 0.3696,
+    "pb_valid_rate_size_standardized": 0.3759
+   }
+  ],
+  "VoxBind": [
+   {
+    "n_molecules": 1788,
+    "atoms_mean": 11.03,
+    "n_posebusters": 1788,
+    "pb_valid_rate": 0.8496,
+    "pb_valid_rate_size_standardized": 0.8521
+   },
+   {
+    "n_molecules": 1121,
+    "atoms_mean": 18.14,
+    "n_posebusters": 1121,
+    "pb_valid_rate": 0.7627,
+    "pb_valid_rate_size_standardized": 0.7633
+   },
+   {
+    "n_molecules": 1531,
+    "atoms_mean": 23.13,
+    "n_posebusters": 1531,
+    "pb_valid_rate": 0.6884,
+    "pb_valid_rate_size_standardized": 0.6882
+   },
+   {
+    "n_molecules": 1586,
+    "atoms_mean": 27.96,
+    "n_posebusters": 1586,
+    "pb_valid_rate": 0.6217,
+    "pb_valid_rate_size_standardized": 0.6226
+   },
+   {
+    "n_molecules": 1862,
+    "atoms_mean": 37.32,
+    "n_posebusters": 1862,
+    "pb_valid_rate": 0.565,
+    "pb_valid_rate_size_standardized": 0.5735
+   }
+  ],
+  "VoxBind + Ours": [
+   {
+    "n_molecules": 1704,
+    "atoms_mean": 10.84,
+    "n_posebusters": 1704,
+    "pb_valid_rate": 0.8322,
+    "pb_valid_rate_size_standardized": 0.833
+   },
+   {
+    "n_molecules": 942,
+    "atoms_mean": 18.1,
+    "n_posebusters": 942,
+    "pb_valid_rate": 0.7633,
+    "pb_valid_rate_size_standardized": 0.764
+   },
+   {
+    "n_molecules": 1330,
+    "atoms_mean": 23.24,
+    "n_posebusters": 1330,
+    "pb_valid_rate": 0.6774,
+    "pb_valid_rate_size_standardized": 0.6804
+   },
+   {
+    "n_molecules": 1601,
+    "atoms_mean": 28.01,
+    "n_posebusters": 1601,
+    "pb_valid_rate": 0.6159,
+    "pb_valid_rate_size_standardized": 0.6178
+   },
+   {
+    "n_molecules": 2296,
+    "atoms_mean": 37.01,
+    "n_posebusters": 2296,
+    "pb_valid_rate": 0.561,
+    "pb_valid_rate_size_standardized": 0.5665
+   }
+  ],
+  "Reference ligand": [
+   {
+    "n_molecules": 24,
+    "atoms_mean": 10.92,
+    "n_posebusters": 24,
+    "pb_valid_rate": 0.9583,
+    "pb_valid_rate_size_standardized": null
+   },
+   {
+    "n_molecules": 12,
+    "atoms_mean": 17.75,
+    "n_posebusters": 12,
+    "pb_valid_rate": 0.9167,
+    "pb_valid_rate_size_standardized": null
+   },
+   {
+    "n_molecules": 10,
+    "atoms_mean": 22.5,
+    "n_posebusters": 10,
+    "pb_valid_rate": 1.0,
+    "pb_valid_rate_size_standardized": null
+   },
+   {
+    "n_molecules": 13,
+    "atoms_mean": 27.31,
+    "n_posebusters": 13,
+    "pb_valid_rate": 1.0,
+    "pb_valid_rate_size_standardized": null
+   },
+   {
+    "n_molecules": 20,
+    "atoms_mean": 37.15,
+    "n_posebusters": 20,
+    "pb_valid_rate": 0.95,
+    "pb_valid_rate_size_standardized": null
+   }
+  ]
+ }
+}
