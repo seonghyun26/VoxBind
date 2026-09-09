@@ -25,12 +25,15 @@ present (falling back to `env.yaml` otherwise).
 
 ## Notes
 
-- **Vina is pinned to 1.2.2**, not the live env's 1.2.7. Every VoxBind paper
-  affinity comes from 1.2.2; `05_evaluate.sh` refuses any other build. `meeko
-  0.1.dev3` matches the 1.2.2 OBMol API.
-- **Docking runs *in* this env** (vina + meeko + pdb2pqr + AutoDockTools +
-  openbabel are all here). To run `05_evaluate.sh` entirely from this env +
-  the existing pose env, set `VOXDOCK_ENV=voxbind MOLEVAL_ENV=moleval`.
+- **Vina is 1.2.7 here, and that is forced by Python.** This env is py3.10 and
+  vina 1.2.2 ships **no py3.10 wheel** (only cp36–cp39 + sdist), so 1.2.2 cannot
+  be installed here without a source build. The **paper-faithful vina 1.2.2**
+  therefore needs a **separate Python 3.8 env** (`voxdock`, built by
+  `script/00_setup_env.sh voxdock`). Use this py3.10 env's 1.2.7 for convenience
+  docking; use `voxdock` (1.2.2) when the numbers must match the paper.
+- **Docking can run in this env** (vina 1.2.7 + meeko + pdb2pqr + AutoDockTools +
+  openbabel are all here). To run `05_evaluate.sh` from this env, set
+  `VOXDOCK_ENV=voxbind` (but note it will be scored with 1.2.7, not 1.2.2).
 - **torch/triton are pip wheels** (2.5.1 / 3.1.0), not the conda `pytorch-cuda`
   build. If the default PyPI wheel's CUDA runtime mismatches the coworker's
   driver, add `--extra-index-url https://download.pytorch.org/whl/cu121` (or the
@@ -40,4 +43,3 @@ present (falling back to `env.yaml` otherwise).
   `conda env create -f env.yaml`.
 - Pose stack (`moleval`) is intentionally *not* in this lock. Build it with
   `bash script/00_setup_env.sh moleval` if you need PoseCheck/PoseBusters.
-```

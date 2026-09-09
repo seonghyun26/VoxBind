@@ -1,3 +1,7 @@
+# Build context excludes. Paths are relative to the repo root (the build context).
+# Keep the image tiny: only source needed for `pip install -e .` should ship.
+# Data / weights / outputs are mounted at runtime, never baked in.
+
 # --- VCS / editor ---
 .git/
 .gitignore
@@ -14,30 +18,45 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ipynb_checkpoints/
+.ruff_cache/
+**/.ruff_cache/
 
 # --- envs ---
 .venv/
 venv/
 .env
 
-# --- Data / experiment outputs (mount at runtime) ---
-dataset/data/
+# --- Heavy data / weights / experiment outputs (correct NESTED paths) ---
+voxbind/dataset/data/
 voxbind/exps/
 voxbind/log/
-voxbind/notebooks/
+voxbind/logs/
+voxbind/wandb/
+voxbind/model_zoo/
+voxbind/notebook/
 notebook/
-
-# --- Heavy / unrelated artifacts ---
-multinodetraining.pdf
+results/
+base/
 figures/
-*.ckpt
+examples/
+
+# --- Large binary artifacts anywhere in the tree ---
 *.pt
+*.pth
+*.pth.tar
+*.ckpt
+*.tar
 *.tar.gz
+*.tar.zst
 *.zip
+*.ccp4
+*.mtz
+*.map
+*.h5
+*.hdf5
+*.npy
+*.npz
+multinodetraining.pdf
 
-# --- One-off shell scripts that don't belong in image ---
+# --- one-offs ---
 sync_to_svr7.sh
-
-# --- The Dockerfile itself doesn't need to be inside the build context copy ---
-Dockerfile
-.dockerignore

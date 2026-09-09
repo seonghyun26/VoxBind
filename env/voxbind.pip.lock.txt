@@ -2,10 +2,12 @@
 #   conda create -n voxbind --file env/voxbind.conda-linux-64.lock
 #   conda run -n voxbind pip install -r env/voxbind.pip.lock.txt
 #   conda run -n voxbind pip install -e .
-# vina PINNED to 1.2.2 (every VoxBind paper affinity uses 1.2.2; the live
-# env drifted to 1.2.7). meeko 0.1.dev3 matches the 1.2.2 OBMol API.
-# torch/triton are pip wheels here; add --extra-index-url
-#   https://download.pytorch.org/whl/cu121  if the default wheel mismatches your CUDA.
+#
+# vina is 1.2.7 here: this env is Python 3.10, and vina 1.2.2 ships NO
+# py3.10 wheel (only cp36-cp39). The paper-faithful vina 1.2.2 needs a
+# separate Python 3.8 env (see script/00_setup_env.sh 'voxdock'); it cannot
+# live in this env. torch/triton are pip wheels (add
+#   --extra-index-url https://download.pytorch.org/whl/cu121  if CUDA mismatches).
 #
 altair==6.1.0
 antlr4-python3-runtime==4.9.3
@@ -108,7 +110,7 @@ torch==2.5.1
 triton==3.1.0
 uri-template==1.3.0
 uvicorn==0.46.0
-vina==1.2.2
+vina==1.2.7
 watchdog==6.0.0
 webcolors==25.10.0
 webencodings==0.5.1
