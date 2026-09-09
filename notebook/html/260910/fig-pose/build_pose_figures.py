@@ -49,6 +49,7 @@ import csv
 import json
 import os
 import statistics as st
+import sys
 
 os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib-cache-voxbind")
 import matplotlib
@@ -62,14 +63,20 @@ from matplotlib.ticker import MultipleLocator
 HERE = os.path.dirname(os.path.abspath(__file__))
 E = "/home1/irteam/VoxBind/voxbind/exps"
 
-# label, key, run root, colour
+# Colour is the identity of the METHOD and is shared across every 260910 figure, so it
+# comes from ../method_colors.py rather than being redefined here.
+sys.path.insert(0, os.path.dirname(HERE))
+from method_colors import color                                       # noqa: E402
+
+# label, key, run root
 ARMS = [
-    ("TargetDiff",    "targetdiff", "/home1/irteam/base_drug/eval/targetdiff",                             "#5FA8A0"),
-    ("VoxBind",       "vanilla",    f"{E}/_vanilla_ep923/samples/full_eval_ep923",                          "#F5B27E"),
-    ("VoxBind + Ours", "ours_v1",   f"{E}/voxbind_frozenenc_atomblob7_v2p1_sig0.9/samples/full_eval_ep350", "#8291E8"),
-    ("Ours v2",       "ours_v2",    f"{E}/samples_reference_receptor_ed_ep350",                             "#AEB7EE"),
+    ("TargetDiff",     "targetdiff", "/home1/irteam/base_drug/eval/targetdiff"),
+    ("VoxBind",        "vanilla",    f"{E}/_vanilla_ep923/samples/full_eval_ep923"),
+    ("VoxBind + Ours", "ours_v1",    f"{E}/voxbind_frozenenc_atomblob7_v2p1_sig0.9/samples/full_eval_ep350"),
+    ("Ours v2",        "ours_v2",    f"{E}/samples_reference_receptor_ed_ep350"),
 ]
-REF_LABEL, REF_COLOR = "Reference ligand", "#9aa0a6"
+REF_LABEL = "Reference ligand"
+REF_COLOR = color(REF_LABEL)
 REF_ROOT = ARMS[2][2]        # any arm carries the same crystal ligand per pocket
 
 P79 = json.load(open(f"{E}/frozenenc_probes/p79_targets.json"))
@@ -151,7 +158,7 @@ def load(root):
     return {t: rows_of(os.path.join(root, t)) for t in names}
 
 
-DATA = {key: load(root) for _, key, root, _ in ARMS}
+DATA = {key: load(root) for _, key, root in ARMS}
 REF = {t: rows_of(os.path.join(REF_ROOT, t), reference=True) for t in P79}
 REFROWS = [r for t in P79 for r in REF[t]]
 
@@ -160,7 +167,7 @@ def pool(key, targets=P79):
     return [r for t in targets for r in DATA[key].get(t, [])]
 
 
-P79_ROWS = {key: pool(key) for _, key, _, _ in ARMS}
+P79_ROWS = {key: pool(key) for _, key, _ in ARMS}
 
 
 def by_size(rows, field):
@@ -275,8 +282,8 @@ def legend(ax, handles, loc="upper right", ncol=1, fontsize=12.5):
 def arm_handles(include_ref=True):
     h = [Line2D([], [], color=REF_COLOR, lw=REF_LW, ls=DASH, label=REF_LABEL)] \
         if include_ref else []
-    return h + [Line2D([], [], color=c, lw=MODEL_LW, ls="-", label=lab)
-                for lab, _, _, c in ARMS]
+    return h + [Line2D([], [], color=color(lab), lw=MODEL_LW, ls="-", label=lab)
+                for lab, _, _ in ARMS]
 
 
 def fit(fig, **kw):
@@ -311,7 +318,8 @@ def size_distribution(ax, xs, per_arm, ref_per):
     """The bottom strip: where each set puts its molecules, as a share of its own -- which
     is what makes the panel above it trustworthy or not, and is itself the finding, since
     the arms differ in the sizes they generate as much as in per-size pose quality."""
-    for (lab, key, _, col) in ARMS:
+    for lab, key, _ in ARMS:
+        col = color(lab)
         pct, _ = share(per_arm[key], xs)
         ax.step(xs, pct, where="mid", color=col, lw=DIST_LW, zorder=3)
         ax.fill_between(xs, pct, step="mid", color=col, alpha=DIST_FILL, lw=0, zorder=2)
@@ -322,7 +330,7 @@ def size_distribution(ax, xs, per_arm, ref_per):
 
 # ── figure 1: PoseBusters validity per heavy-atom count ──────────────────────────
 def fig_pb_per_atom():
-    per = {key: by_size(P79_ROWS[key], "v") for _, key, _, _ in ARMS}
+    per = {key: by_size(P79_ROWS[key], "v") for _, key, _ in ARMS}
     ref_per = by_size(REFROWS, "v")
     xs = [a for a in sorted(set.intersection(*(set(p) for p in per.values())))
           if all(len(per[k][a]) >= MIN_N for k in per)]
@@ -335,7 +343,8 @@ def fig_pb_per_atom():
 
     y = reference_curve(ref_per, xs, lambda v: 100 * float(np.mean(v)))
     top.plot(xs, y, color=REF_COLOR, lw=REF_LW, ls=DASH, zorder=4)
-    for lab, key, _, col in ARMS:
+    for lab, key, _ in ARMS:
+        col = color(lab)
         top.plot(xs, model_curve(per[key], xs, lambda v: 100 * float(np.mean(v)),
                                  win=VALID_WIN),
                  color=col, lw=MODEL_LW, zorder=5)
@@ -354,7 +363,7 @@ def fig_pb_per_atom():
 # ── figure 2: which checks fail ──────────────────────────────────────────────────
 def fig_check_failures():
     fails = {}
-    for lab, key, _, _ in ARMS:
+    for lab, key, _ in ARMS:
         rows = [r for r in P79_ROWS[key] if r["v"] is not None]
         cnt = collections.Counter(c for r in rows for c in r["f"])
         fails[key] = {"n_mols": len(rows), "counts": dict(cnt),
@@ -374,7 +383,8 @@ def fig_check_failures():
     ax.set_facecolor("white")
     ys = np.arange(len(names))[::-1]
     h = 0.19
-    for i, (lab, key, _, col) in enumerate(ARMS):
+    for i, (lab, key, _) in enumerate(ARMS):
+        col = color(lab)
         ax.barh(ys + (i - (len(ARMS) - 1) / 2) * h,
                 [fails[key]["rates"].get(k, 0) for k in names],
                 height=h, color=col, edgecolor=col, lw=0.8, zorder=3)
@@ -388,7 +398,8 @@ def fig_check_failures():
     ax.set_ylim(-0.6, len(names) - 0.4)
     handles = [Line2D([], [], color=REF_COLOR, lw=0, marker="|", ms=13,
                       mew=REF_LW + 0.4, label=REF_LABEL)] + \
-              [Patch(facecolor=c, edgecolor=c, label=lab) for lab, _, _, c in ARMS]
+              [Patch(facecolor=color(lab), edgecolor=color(lab), label=lab)
+               for lab, _, _ in ARMS]
     legend(ax, handles, loc="lower right")
     fit(fig, pad=0.5)
     save(fig, "pb_check_failures")
@@ -397,8 +408,8 @@ def fig_check_failures():
 
 # ── figure 3: PoseCheck strain and clashes per heavy-atom count ──────────────────
 def fig_posecheck_per_atom(xs):
-    s_per = {key: by_size(P79_ROWS[key], "s") for _, key, _, _ in ARMS}
-    c_per = {key: by_size(P79_ROWS[key], "c") for _, key, _, _ in ARMS}
+    s_per = {key: by_size(P79_ROWS[key], "s") for _, key, _ in ARMS}
+    c_per = {key: by_size(P79_ROWS[key], "c") for _, key, _ in ARMS}
     s_ref, c_ref = by_size(REFROWS, "s"), by_size(REFROWS, "c")
     med = lambda v: float(np.median(v))
 
@@ -414,7 +425,8 @@ def fig_posecheck_per_atom(xs):
     # central value here. Log y because the four arms span 30 to 600 kcal/mol.
     top.plot(xs, reference_curve(s_ref, xs, med), color=REF_COLOR, lw=REF_LW, ls=DASH,
              zorder=4)
-    for lab, key, _, col in ARMS:
+    for lab, key, _ in ARMS:
+        col = color(lab)
         top.plot(xs, model_curve(s_per[key], xs, med), color=col, lw=MODEL_LW, zorder=5)
     top.set_yscale("log")
     furniture(top, ylabel="Strain median\n(kcal mol⁻¹)", xlim=(xs[0] - 0.6, xs[-1] + 0.6))
@@ -425,7 +437,8 @@ def fig_posecheck_per_atom(xs):
 
     bot.plot(xs, reference_curve(c_ref, xs, med), color=REF_COLOR, lw=REF_LW, ls=DASH,
              zorder=4)
-    for lab, key, _, col in ARMS:
+    for lab, key, _ in ARMS:
+        col = color(lab)
         bot.plot(xs, model_curve(c_per[key], xs, med), color=col, lw=MODEL_LW, zorder=5)
     furniture(bot, ylabel="Clash median", xlabel="Number of heavy atoms in ligand",
               xlim=(xs[0] - 0.6, xs[-1] + 0.6))
@@ -448,10 +461,11 @@ def fig_ecdf_pair():
         ax.set_facecolor("white")
 
     def ecdf(ax, field, clip):
-        for lab, key, _, col in ARMS:
+        for lab, key, _ in ARMS:
             v = np.array([r[field] for r in P79_ROWS[key] if r[field] is not None])
             x = np.sort(np.clip(v, clip, None))
-            ax.plot(x, np.arange(1, len(x) + 1) / len(x), color=col, lw=MODEL_LW, zorder=5)
+            ax.plot(x, np.arange(1, len(x) + 1) / len(x), color=color(lab),
+                    lw=MODEL_LW, zorder=5)
         v = np.array([r[field] for r in REFROWS if r[field] is not None])
         x = np.sort(np.clip(v, clip, None))
         ax.plot(x, np.arange(1, len(x) + 1) / len(x), color=REF_COLOR, lw=REF_LW, ls=DASH,
@@ -503,7 +517,7 @@ def exports(fails):
                  "1.3.1 definition, not the VoxBind paper's."),
         "arms": {}, "reference_ligand": block(REFROWS),
     }
-    for lab, key, root, _ in ARMS:
+    for lab, key, root in ARMS:
         summary["arms"][lab] = {
             "root": root, "key": key,
             "pockets_all": len(DATA[key]),
@@ -515,7 +529,7 @@ def exports(fails):
               indent=1, ensure_ascii=False)
 
     by_bin = {"bins": LABELS, "edges": EDGES[:-1] + ["inf"], "n_pockets": len(P79), "arms": {}}
-    for lab, key, _, _ in ARMS:
+    for lab, key, _ in ARMS:
         by_bin["arms"][lab] = [block([r for r in P79_ROWS[key] if bin_of(r["n"]) == b])
                                for b in range(len(LABELS))]
     by_bin["arms"][REF_LABEL] = [block([r for r in REFROWS if bin_of(r["n"]) == b])
@@ -533,12 +547,12 @@ def exports(fails):
                 wr.writerow([arm, lab] + [r[c] for c in cols])
 
     json.dump({"n_pockets": len(P79),
-               "arms": {lab: fails[key] for lab, key, _, _ in ARMS},
+               "arms": {lab: fails[key] for lab, key, _ in ARMS},
                "reference_ligand": fails["reference"]},
               open(os.path.join(HERE, "pose_check_failures.json"), "w"),
               indent=1, ensure_ascii=False)
 
-    for lab, key, root, _ in ARMS:
+    for lab, key, root in ARMS:
         mols = [dict(r, t=t) for t in sorted(DATA[key]) for r in DATA[key][t]]
         json.dump({"arm": lab, "root": root, "n_pockets": len(DATA[key]),
                    "n_molecules": len(mols), "p79_targets": P79,
@@ -564,7 +578,7 @@ def main():
           f"(counts where every arm has >={MIN_N} molecules)\n")
     print(f"{'arm':16s} {'atoms':>6s} {'clash med':>10s} {'strain med':>11s} "
           f"{'PB-valid':>9s} {'size-std':>9s} {'mols':>7s}")
-    for lab, key, _, _ in ARMS:
+    for lab, key, _ in ARMS:
         r = summary["arms"][lab]["p79"]
         print(f"{lab:16s} {r['atoms_mean']:6.1f} {r['clash_median']:10.1f} "
               f"{r['strain_median']:11.1f} {100 * r['pb_valid_rate']:8.1f}% "
@@ -574,7 +588,7 @@ def main():
           f"{r['strain_median']:11.1f} {100 * r['pb_valid_rate']:8.1f}% "
           f"{'—':>9s} {r['n_molecules']:7d}")
     print(f"\nPB-valid by bin ({' · '.join(LABELS)}):")
-    for lab, key, _, _ in ARMS:
+    for lab, key, _ in ARMS:
         print(f"  {lab:16s} " + "  ".join(
             f"{100 * b['pb_valid_rate']:5.1f}%" if b["pb_valid_rate"] is not None else "    -"
             for b in by_bin["arms"][lab]))

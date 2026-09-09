@@ -111,8 +111,10 @@ loses on both.
 
 Figures follow the 260903 3-line house style (`../fig-vina-per-atom`): no panel titles,
 warm near-black furniture, dotted rules, live text in the SVG and TrueType in the PDF.
-Colour is the arm, and the house entries are kept exactly — VoxBind sand, VoxBind + Ours
-periwinkle, reference grey — so an arm reads the same here as in the Vina figures.
+Colour is the identity of the METHOD and comes from `../method_colors.py`, shared with
+`../fig-posecheck` — ours blue `#4363D8`, VoxBind sand `#F5B27E`, TargetDiff violet
+`#B58FDB`, Ours v2 the deep shade of ours, reference grey. So a method reads the same in
+every figure of the section.
 
 | file | what |
 |---|---|

@@ -70,6 +70,7 @@ import glob
 import json
 import os
 import statistics as st
+import sys
 
 os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib-cache-voxbind")
 import matplotlib
@@ -81,27 +82,35 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(os.path.dirname(HERE), "260910", "fig-posecheck")
 E = "/home1/irteam/VoxBind/voxbind/exps"
 
-# key -> (label, colour, linewidth, linestyle)
+# Colour is the identity of the METHOD and is shared with every other 260910 figure, so it
+# comes from ../260910/method_colors.py; only line weight and dash are decided here.
+sys.path.insert(0, os.path.join(os.path.dirname(HERE), "260910"))
+from method_colors import color                                       # noqa: E402
+
+# key -> (label, linewidth, linestyle). Dash is a second identity channel for the five
+# published baselines: they are drawn thin, five at a time, and colour alone is not enough
+# at that weight.
 BASELINES = [
-    ("AR",         "AR",         "#9b59b6", 1.6, "-"),
-    ("Pocket2Mol", "Pocket2Mol", "#e87ba4", 1.6, (0, (5, 2))),
-    ("DiffSBDD",   "DiffSBDD",   "#e34948", 1.6, (0, (1, 1.6))),
-    ("DecompDiff", "DecompDiff", "#34495e", 1.6, (0, (6, 2, 1, 2))),
-    ("FuncBind",   "FuncBind",   "#a9744f", 1.6, (0, (9, 3))),
+    ("AR",         "AR",         1.6, "-"),
+    ("Pocket2Mol", "Pocket2Mol", 1.6, (0, (5, 2))),
+    ("DiffSBDD",   "DiffSBDD",   1.6, (0, (1, 1.6))),
+    ("DecompDiff", "DecompDiff", 1.6, (0, (6, 2, 1, 2))),
+    ("FuncBind",   "FuncBind",   1.6, (0, (9, 3))),
 ]
-# Blue and green are the CDG chart's own pair (build_appendixB_bar.PALETTE[9] / [10],
-# "C" and "C+D+G"), so VoxBind and Ours keep the same key a reader already learned there:
-# blue = the model without our addition, green = with it. TargetDiff takes that palette's
-# orange (PALETTE[5]) and is dashed -- against the green it sits in the CVD 6-8 band, so it
-# needs the second channel.
+# OURS IS THE BLUE. VoxBind keeps its sand orange and DecompDiff takes the green Ours used
+# to carry, so "ours" is one colour across the Vina, PoseBusters and PoseCheck figures
+# rather than blue in one family of charts and green in another. TargetDiff is violet and
+# still dashed: it used to be orange, which put two BASELINES in the same hue family as
+# each other, and the dash costs nothing now that the collision is gone.
 LOCAL = [
-    ("TargetDiff",    f"{E}/frozenenc_probes/posecheck_full/targetdiff", "#f58231", 2.4, (0, (6, 2))),
-    ("VoxBind σ=0.9", f"{E}/frozenenc_probes/posecheck_full/vanilla",    "#4363d8", 3.0, "-"),
-    ("Ours · v1",     f"{E}/frozenenc_probes/posecheck_full/ours_v1",    "#3cb44b", 3.4, "-"),
+    ("TargetDiff",    f"{E}/frozenenc_probes/posecheck_full/targetdiff", 2.4, (0, (6, 2))),
+    ("VoxBind σ=0.9", f"{E}/frozenenc_probes/posecheck_full/vanilla",    3.0, "-"),
+    ("Ours · v1",     f"{E}/frozenenc_probes/posecheck_full/ours_v1",    3.4, "-"),
 ]
 # strain only -- see the module docstring
 REF_ROOT = f"{E}/voxbind_frozenenc_atomblob7_v2p1_sig0.9/samples/full_eval_ep350"
-REF_LABEL, REF_COLOR = "Reference ligand", "#4b5563"
+REF_LABEL = "Reference ligand"
+REF_COLOR = color(REF_LABEL)
 
 EDGES = [0, 16, 21, 26, 31, 10 ** 6]
 LABELS = ["≤15", "16–20", "21–25", "26–30", ">30", "all sizes"]
@@ -210,18 +219,18 @@ def main():
 
     # ── the data actually plotted, all on the shared pockets ──────────────────
     DATA, SERIES = {}, []
-    for key, label, colour, lw, ls in BASELINES:
+    for key, label, lw, ls in BASELINES:
         d79, _ = load_baseline(key, density79)
         dsh, _ = load_baseline(key, shared)
         DATA[label] = dsh
-        SERIES.append((label, colour, lw, ls))
+        SERIES.append((label, color(label), lw, ls))
         a, b = stats(d79[POOLED]), stats(dsh[POOLED])
         print(f"  {label:12s} 79 pockets n={a['n_clash']:5d} clash {a['clash_mean']:5.2f} "
               f"strain {a['strain_median']:7.1f}   ->  {len(shared)} pockets "
               f"n={b['n_clash']:5d} clash {b['clash_mean']:5.2f} strain {b['strain_median']:7.1f}")
-    for label, root, colour, lw, ls in LOCAL:
+    for label, root, lw, ls in LOCAL:
         DATA[label], _ = load_local(root, shared)
-        SERIES.append((label, colour, lw, ls))
+        SERIES.append((label, color(label), lw, ls))
     REF, _ = load_local(REF_ROOT, shared, reference=True)
 
     # ── figures ──────────────────────────────────────────────────────────────
