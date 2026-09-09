@@ -97,6 +97,68 @@ space saying only that PoseBusters ran it. The full counts are in
 `posebusters_check_failures.json`, and the `_core` figure re-ranks the rows by what its own
 two arms fail, so its order differs from `_all`.
 
+## SuCOS — the one check `gen` mode adds (`build_sucos.py`)
+
+PoseBusters' `gen` config is `dock` plus **SuCOS**: shape overlap × pharmacophore-feature
+overlap against a reference ligand, here each pocket's crystal ligand. 1.0 is a perfect
+superposition. It needs `mol_true`, which is why our `dock` run does not have it.
+
+**It is computed but deliberately NOT folded into `valid`.** Every other column asks *is
+this pose physically possible*; SuCOS asks *does it sit where the crystal ligand sits*. A
+de novo model is not trying to reproduce the crystal ligand, so a low SuCOS is a statement
+about novelty and pocket occupancy, not a broken molecule. Running `config="gen"` would
+merge the two silently — its chosen binary output is `sucos_within_threshold` at 0.4, which
+enters the all-must-pass `valid`. What that would cost, if the two were independent:
+
+| arm | dock `valid` | gen `valid` (upper bound) |
+|---|---|---|
+| TargetDiff | 60.9 % | 24.0 % |
+| VoxBind | 69.3 % | 15.6 % |
+| VoxBind + Ours | 67.5 % | 20.5 % |
+
+`build_sucos.py` therefore calls `check_sucos(..., sucos_threshold=0.4)` — exactly what
+`gen.yml` configures — and keeps the number separate. It also skips re-running the 20 dock
+checks for one extra column: SuCOS needs only the two molecules, ~1.4 s per pocket.
+
+| arm | mean | median | size-std mean | ≥ 0.4 |
+|---|---|---|---|---|
+| TargetDiff | 0.373 | 0.371 | 0.374 | 39.4 % |
+| VoxBind | 0.336 | 0.328 | 0.337 | 22.5 % |
+| VoxBind + Ours | 0.361 | 0.355 | 0.365 | 30.3 % |
+
+**Three things worth carrying:**
+
+1. **The ordering flips.** On validity, strain and clashes, TargetDiff is last; on SuCOS it
+   is first. The two are asking different questions, and this is the cleanest evidence for
+   that — a method can place molecules like the crystal ligand while building them badly.
+2. **SuCOS is the one metric here that is NOT size-confounded.** It is nearly flat in
+   heavy-atom count (~0.30–0.40 across the whole range), so standardizing barely moves it
+   (0.373 → 0.374 for TargetDiff). Everything else in this section needs the size caveat;
+   this does not.
+3. **Density conditioning raises overlap with the crystal ligand, consistently.** Paired
+   per pocket: Ours − VoxBind = **+0.026 mean SuCOS (95 % CI +0.019 … +0.032), higher in
+   63 of 79 pockets**. Against TargetDiff it is −0.011 (CI −0.024 … +0.003, higher in
+   31/79), i.e. not separable.
+
+**The caveat that decides what (3) means.** Our conditioning channel is the *experimental
+electron density of the holo crystal*, which contains the ligand's own density. So "closer
+to the crystal ligand" may be the model reading the answer rather than learning to place
+molecules well — the leakage question this project already carries elsewhere. The decisive
+control is the apo-conditioned arm
+(`exps/voxbind_frozenenc_atomblob7_cgd0p2_apo_sig0.9`): if the +0.026 survives with no
+ligand density in the map, it is real. **That arm has no samples on this box yet**, so the
+control has not been run and (3) should not be reported as a clean win until it has.
+
+| file | what |
+|---|---|
+| `sucos_ecdf_{core,all}.*` | distribution, with the 0.4 gen threshold marked |
+| `sucos_per_atom_{mean,median}_{core,all}.*` | SuCOS against ligand size |
+| `sucos_summary.json` | per-arm statistics, size-standardized values, paired tests |
+| `sucos_per_molecule_<arm>.json` | per-molecule values (cache; `CACHE=0` to recompute) |
+
+`build_sucos.py` runs in the **`moleval`** env (posebusters lives there), unlike
+`build_posebusters_figures.py` which runs in `voxbind`.
+
 ## Files
 
 Figures follow the 260903 3-line house style (`../fig-vina-per-atom`): no panel titles,

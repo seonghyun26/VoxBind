@@ -1,0 +1,65 @@
+{
+ "built": "2026-09-09",
+ "metric": "SuCOS vs the pocket's crystal ligand",
+ "threshold": 0.4,
+ "source": "posebusters gen.yml's sucos module",
+ "note": "NOT folded into PoseBusters `valid`: it measures overlap with the crystal ligand, not whether the pose is physically possible.",
+ "pocket_set": {
+  "name": "p79",
+  "n": 79
+ },
+ "arms": {
+  "TargetDiff": {
+   "n_molecules": 7287,
+   "sucos_mean": 0.3733,
+   "sucos_median": 0.3715,
+   "sucos_q25": 0.2998,
+   "sucos_q75": 0.4422,
+   "sucos_mean_size_standardized": 0.374,
+   "sucos_median_size_standardized": 0.3703,
+   "within_threshold_rate": 0.3936
+  },
+  "VoxBind": {
+   "n_molecules": 7888,
+   "sucos_mean": 0.3356,
+   "sucos_median": 0.328,
+   "sucos_q25": 0.2698,
+   "sucos_q75": 0.3918,
+   "sucos_mean_size_standardized": 0.3368,
+   "sucos_median_size_standardized": 0.3319,
+   "within_threshold_rate": 0.2252
+  },
+  "VoxBind + Ours": {
+   "n_molecules": 7873,
+   "sucos_mean": 0.3612,
+   "sucos_median": 0.3547,
+   "sucos_q25": 0.2983,
+   "sucos_q75": 0.4165,
+   "sucos_mean_size_standardized": 0.3648,
+   "sucos_median_size_standardized": 0.3611,
+   "within_threshold_rate": 0.3031
+  }
+ },
+ "paired": {
+  "VoxBind + Ours - VoxBind": {
+   "n_pockets": 79,
+   "mean_diff": 0.0255,
+   "median_diff": 0.025,
+   "ci95": [
+    0.0188,
+    0.0323
+   ],
+   "a_higher_in": 63
+  },
+  "VoxBind + Ours - TargetDiff": {
+   "n_pockets": 79,
+   "mean_diff": -0.0106,
+   "median_diff": -0.0122,
+   "ci95": [
+    -0.0242,
+    0.003
+   ],
+   "a_higher_in": 31
+  }
+ }
+}
