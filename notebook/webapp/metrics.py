@@ -905,10 +905,20 @@ def compute_target_metrics(
     # so reuse a cached `reference.vina` whenever available. The docking
     # section below will only re-dock the reference if the requested mode adds
     # fields the cache lacks.
+    # The same holds for the reference's pose blocks, and they need the carry-over
+    # more than vina does: `_reference_row` rebuilds a bare chem row every call, and
+    # the pose section below only writes back the blocks the requested mode asks for.
+    # Without this, filling in PoseBusters on a target that already had PoseCheck
+    # would silently DELETE reference.posecheck -- the crystal-ligand clash/strain
+    # baseline the PoseCheck figures plot as their "Reference ligand" series.
     if isinstance(reference, dict) and isinstance(prev, dict):
         prev_ref = prev.get("reference")
         if isinstance(prev_ref, dict) and isinstance(prev_ref.get("vina"), dict):
             reference["vina"] = prev_ref["vina"]
+        if isinstance(prev_ref, dict):
+            for blk in ("posecheck", "posebusters"):
+                if isinstance(prev_ref.get(blk), dict) and blk not in reference:
+                    reference[blk] = prev_ref[blk]
 
     # Per-sample Tanimoto similarity (RDKit fingerprint) to the reference
     # ligand. Reused samples already carry it (the reference is fixed per
