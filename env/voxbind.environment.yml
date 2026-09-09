@@ -1,0 +1,37 @@
+# voxbind — GPU train/sample pipeline + chem/geometry eval + convenience docking (Python 3.10).
+# conda-lock INPUT spec (functional deps; jupyter/streamlit cruft from the live env dropped).
+# vina is 1.2.7 here (py3.10 has no 1.2.2 wheel); paper-faithful 1.2.2 lives in voxdock.
+# Lock with:
+#   conda-lock lock -f env/voxbind.environment.yml -p linux-64 --lockfile env/voxbind.conda-lock.yml
+name: voxbind
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+dependencies:
+  - python=3.10
+  - pytorch=2.5.1
+  - pytorch-cuda=11.8
+  - torchmetrics
+  - numpy=1.26.4
+  - scipy
+  - pandas
+  - scikit-image
+  - rdkit=2024.03.6
+  - openbabel=3.1.1
+  - gemmi
+  - matplotlib-base
+  - wandb
+  - pip
+  - pip:
+      - pyuul
+      - hydra-core==1.3.2
+      - omegaconf==2.3.0
+      - easydict
+      - vina==1.2.7
+      - meeko==0.1.dev3
+      - pdb2pqr==3.6.1
+      - propka
+      - mmcif-pdbx
+      - docutils==0.17.1
+      - AutoDockTools_py3 @ git+https://github.com/Valdes-Tresanco-MS/AutoDockTools_py3.git@a62a5d98116f1590183b58a9ad732b997cf2579c
