@@ -76,7 +76,11 @@ bundle carries its own runnable environment.
 
 ```bash
 bash results/dropbox_push.sh        # local -> Dropbox (박성현/VoxBind/results)
-bash results/dropbox_pull.sh        # Dropbox -> local
+bash results/dropbox_pull.sh        # Dropbox -> local (entire bundle)
+bash results/dropbox_pull.sh VoxBind-Ours  # Only the current reported Ours model
+bash results/dropbox_pull.sh VoxBind VoxBind-Ours  # Multiple models
+bash results/dropbox_pull.sh --task task2-drugdesign --list  # Discover model names
+bash results/dropbox_pull.sh VoxBind-Ours --dry-run  # Preview only
 ```
 
 Prereq: an rclone remote named `dropbox` with `root_namespace_id = 12221840097`
@@ -107,3 +111,48 @@ Note the filters use `--filter`, not `--include`/`--exclude`: rclone parses thos
 two in an **indeterminate order** (it warns about it), and the `outputs_*`
 exclusion loses to the `samples/**` inclusion often enough that the "small" pull
 silently becomes the 3.5 GiB one. `--filter` rules apply strictly in order.
+
+## Current reported VoxBind + Ours: full sample bundle
+
+`task2-drugdesign/VoxBind-Ours/` contains the experiment used as **VoxBind + Ours**
+in the current qualitative notebook and 260910 figures:
+
+- Run: `voxbind/exps/voxbind_frozenenc_atomblob7_v2p1_sig0.9`, epoch 350.
+- Samples: `samples/full_eval_ep350`, all 79 density pockets.
+- The bundle preserves generated `samples.sdf`, reference ligand SDFs, pocket10
+  PDBs, per-target `metrics.json`, and all root-level evaluation JSONs.
+- Headline evaluation: `samples/eval_docking_results_full79.json`
+  (full receptor, 79 pockets; target-averaged Vina Dock **-8.488612 kcal/mol**).
+  Crop/full/rerun JSONs remain separate and retain their original filenames.
+- `metrics.json` records the source run, selected evaluation protocol, counts,
+  and the original summary. `SOURCE.txt` explains provenance and exclusions.
+- `SHA256SUMS` verifies the bundled files: run `sha256sum -c SHA256SUMS`
+  inside the method folder.
+- Generated SDF poses are not redocked poses. Full-receptor PDB inputs and
+  checkpoints are not included; pocket10 PDBs support the qualitative view.
+
+The older remote `Ours-v2/` folder is left untouched. It contains headline
+metrics and only three visualization SDFs, not this complete 79-pocket bundle.
+Its folder name must not be used to infer the identity of a local Ours v2 run.
+
+### Model-selective pulls
+
+`dropbox_pull.sh` accepts one or more model folder names (case-insensitive),
+or repeated `--method MODEL` / `--model MODEL`. It resolves all names before
+copying, reports missing/ambiguous names, and supports `--task` for
+disambiguation. For example:
+
+```bash
+bash results/dropbox_pull.sh --method VoxBind-Ours
+bash results/dropbox_pull.sh --task task2-drugdesign VoxBind-Ours
+RESULTS_DEST=/data/results bash results/dropbox_pull.sh VoxBind-Ours
+bash results/dropbox_pull.sh VoxBind-Ours -- --checksum --transfers 8
+```
+
+With no selectors, the script still downloads the entire results bundle.
+`--task TASK` without model names downloads that task, including shared
+artifacts. Selectors must precede extra rclone flags; use `--` to separate them.
+A model-only pull copies the complete model folder, including evaluation
+JSONs and provenance, but does not touch other models. The existing
+`dropbox_pull_baselines.sh` remains the smaller sample-only alternative.
+All transfers use `rclone copy`, never `sync` or deletion.
