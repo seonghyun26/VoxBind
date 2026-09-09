@@ -1,36 +1,58 @@
 #!/usr/bin/env python3
 """build_vina_per_atom.py — Vina Dock against ligand size, in the 260903 3-line style.
 
-    vina_dock_per_atom.{png,svg,pdf}    the figure
-    vina_dock_per_atom.csv              every plotted number, per heavy-atom count
+    vina_dock_per_atom_v1_mean.{png,svg,pdf}    vina_dock_per_atom_v1_median.{png,svg,pdf}
+    vina_dock_per_atom_v2_mean.{png,svg,pdf}    vina_dock_per_atom_v2_median.{png,svg,pdf}
+    vina_dock_per_atom.csv                      every plotted number, all four
 
-WHAT IT SHOWS. Two stacked panels over one x axis, the ligand's heavy-atom count.
+FOUR FIGURES: two variants x two statistics. Which statistic a figure shows is carried by
+its filename and by its y-axis name ("Vina Dock mean" / "Vina Dock median"), exactly as in
+build_vina_3line.py -- there are no panel titles, so the y name is the only thing telling
+two otherwise identical figures apart. One CSV serves all four: only which reference
+points get drawn depends on the variant, and `reference_firm` is that column.
 
-  top     Vina Dock MEDIAN at each exact heavy-atom count, for VoxBind, VoxBind + Ours
-          and the crystal reference ligand.
+TWO VARIANTS, ONE SCRIPT. v1 and v2 differ in three knobs, all of them about the crystal
+reference and all of them listed in VARIANTS below. They are kept in one file on purpose:
+split into two scripts they would drift, and then the "same figure, one choice different"
+claim would quietly stop being true.
+
+  v1  The reference's Vina curve is GATED: drawn only where its rolling window holds at
+      least REF_FIRM ligands, so the grey stops at 36 atoms. Its distribution below is
+      smoothed and filled like the models'.
+  v2  The reference's Vina curve runs the full x range, FADED where the window thins
+      (below REF_FIRM, from 37 atoms up). Its distribution is smoothed but UNFILLED, so
+      the two model areas underneath stay readable.
+
+      v2's cost is real and visible: the reference median at 42-45 is two crystal ligands,
+      TNKS1 (target_72, -15.99) and AKT1 (target_80, -14.66), and drawing them stretches y
+      to -15, which compresses the -3..-11 band where the two models are actually being
+      compared. v1 spends nothing on y but ends its grey five atoms short of where the
+      panel below it ends, which reads as missing data rather than as thin data. Neither
+      is free; that is why both are built.
+
+WHAT THEY SHOW. Two stacked panels over one x axis, the ligand's heavy-atom count.
+
+  top     Vina Dock mean or median at each exact heavy-atom count, for VoxBind,
+          VoxBind + Ours and the crystal reference ligand.
   bottom  How many molecules each set puts at each size, as a share of its own molecules
           -- a share and not a count, because 79 crystal ligands and ~7,900 generated ones
-          do not share a count axis. Per exact heavy-atom count for all three, unsmoothed:
-          the reference is 79 molecules, so its steps are 1.3% tall each and reach 7.6%
-          where six pockets happen to share a size, and that spike is what sets the
-          panel's y scale. That is the honest shape of it, and it is the same shape the
-          top panel's grey is rolled out of
-          -- which is what makes the top panel's tails trustworthy or not, and is itself
-          the finding this figure exists to guard against: the arms differ in the size
-          distribution they generate at least as much as in per-atom binding quality
-          (see the size-confound note; raw pooled Vina Dock is ~80% a size statistic).
-          The reference is on the same panel, so "does the model generate ligands the
-          size of the real one" is readable without a second figure.
+          do not share a count axis. This is what makes the top panel's tails trustworthy
+          or not, and is itself the finding the figure exists to guard against: the arms
+          differ in the size distribution they generate at least as much as in per-atom
+          binding quality (see the size-confound note; raw pooled Vina Dock is ~80% a size
+          statistic). The reference is on the same panel, so "does the model generate
+          ligands the size of the real one" is readable without a second figure.
 
-MEDIAN ONLY, ON PURPOSE. Both statistics were drawn at first, dash against solid, and the
-figure said nothing extra for the ink: at every size the two run within ~0.2 kcal/mol of
-each other, so six curves were three curves drawn twice and the pair merely thickened and
-blurred each series. That agreement IS a result -- the Ours/VoxBind gap is the whole
-distribution shifting, not a tail dragging the mean -- but it is a sentence, not a panel.
-Both statistics stay in the CSV, and the run log prints the per-size win count and mean
-gap under each, so the mean is one column away whenever it is wanted.
+ONE STATISTIC PER FIGURE. Both were drawn in one panel at first, dash against solid, and
+it said nothing extra for the ink: at every size the two run within ~0.2 kcal/mol of each
+other, so six curves were three curves drawn twice and the pair merely thickened and
+blurred each series. They are separate figures instead. That near-agreement IS a result --
+the Ours/VoxBind gap is the whole distribution shifting, not a tail dragging the mean --
+and it is what makes the two figures nearly interchangeable; the mean is the slightly
+kinder one to Ours (lower at 36/41 sizes against the median's 32/41, mean per-size gap
+-0.48 against -0.42), because Ours' size distribution reaches further right.
 
-STYLE. 260903/build_vina_3line.py: no panel titles, warm near-black furniture (#514F52),
+STYLE. 260910/fig-vina-3line/build_vina_3line.py: no panel titles, warm near-black furniture (#514F52),
 left+bottom spines only, dotted mid-grey rules, live text in the SVG and TrueType in the
 PDF. Colour is the identity of the series -- reference grey #9aa0a6, VoxBind sand #F5B27E,
 VoxBind + Ours periwinkle #8291E8 -- and the reference is additionally DASHED and thinner,
@@ -46,20 +68,12 @@ clipped to the counts where BOTH models have at least MIN_N molecules, so no cur
 tail the other cannot answer, and the bottom panel shows how thin each end actually is.
 The per-count sample sizes are in the CSV.
 
-THE REFERENCE IS ROLLED, AND FADES WHERE IT THINS. There is exactly ONE crystal ligand per
-pocket -- 79 in total, 1-6 at any exact heavy-atom count -- so a per-count reference curve
-would be noise. Its VINA curve -- the top panel only -- is a centred rolling window of
-+-REF_WIN atoms. The models are NOT rolled: they have hundreds of molecules per count, and
-neither is the distribution panel, where a share is a share at any n.
-
-Above 36 atoms the window holds fewer than REF_FIRM ligands and by 43 it is down to three,
-so that end of the grey is drawn at REF_THIN_ALPHA rather than gated away. Read it as an
-anecdote, not a curve: the plunge to -14.7 at 42-45 is two real crystal ligands, TNKS1
-(target_72, -15.99) and AKT1 (target_80, -14.66), and nothing else. It costs the panel
-about 4 kcal/mol of y range, which compresses the models where they are actually being
-compared -- the price of the grey ending where the distribution panel below it ends
-instead of five atoms short, which read as missing data. `n_reference_window` in the CSV
-is the pool behind every reference point.
+THE REFERENCE IS ROLLED. There is exactly ONE crystal ligand per pocket -- 79 in total,
+1-6 at any exact heavy-atom count -- so anything per-count off it is noise: raw, its
+distribution is a picket fence of 1.3%-tall steps reaching 7.6% where six pockets happen
+to share a size, and that spike, not the models, would set the lower panel's y scale. Both
+its curves are therefore a centred rolling window of +-REF_WIN atoms. The models are NOT
+rolled, in either panel: they have hundreds of molecules per count.
 
     /opt/conda/envs/voxbind/bin/python notebook/html/260910/fig-vina-per-atom/build_vina_per_atom.py
 """
@@ -84,11 +98,19 @@ OURS = f"{E}/voxbind_frozenenc_atomblob7_v2p1_sig0.9/samples/full_eval_ep350"
 BASENAME = "eval_docking_results_full79.json"
 PROTOCOL = "full receptor, exhaustiveness 32, 79 pockets (baseline protocol)"
 
-FIELD, REF_FIELD = "vina_dock", "ref_vina_dock"
-STATS = ("mean", "median")
-DRAWN = "median"                 # the one the top panel plots; both go to the CSV
+# The whole difference between the two figures. `ref_gate` "hard" stops the reference's
+# Vina curve where its window drops below REF_FIRM; "fade" keeps drawing down to REF_FLOOR
+# at REF_THIN_ALPHA. `ref_dist_smooth` rolls the reference's distribution; `ref_dist_fill`
+# gives it an area under it like the models have.
+VARIANTS = {
+    "v1": dict(ref_gate="hard", ref_dist_smooth=True, ref_dist_fill=True),
+    "v2": dict(ref_gate="fade", ref_dist_smooth=True, ref_dist_fill=False),
+}
 
-Y_LABEL = f"Vina Dock {DRAWN}"   # the y name is what says which statistic, as in 3line
+FIELD, REF_FIELD = "vina_dock", "ref_vina_dock"
+STATS = ("mean", "median")       # one figure each, per variant
+
+Y_LABEL = "Vina Dock {stat}"     # the y name is what says which statistic, as in 3line
 X_LABEL = "Number of heavy atoms in ligand"
 D_LABEL = "% of ligands"
 
@@ -99,13 +121,10 @@ OUR_LABEL, OUR_COLOR = "VoxBind + Ours", "#8291E8"
 # A heavy-atom count is plotted only where BOTH models have this many molecules, so the
 # two curves start and stop together and neither carries a tail the other cannot answer.
 MIN_N = 25
-# The reference window: +-REF_WIN atoms. MIN_REF is the floor for drawing a point at all;
-# REF_FIRM is where the window is populated enough to be read as a curve. Between the two
-# the line is drawn at REF_THIN_ALPHA, so the sparse end is present but visibly not
-# load-bearing. The gate used to be a hard 12, which stopped the grey at 36 while the
-# distribution panel below it ran to 45 -- the same series ending at two different places,
-# which reads as missing data rather than as thin data.
-REF_WIN, MIN_REF, REF_FIRM = 4, 3, 12
+# The reference window is +-REF_WIN atoms. REF_FIRM is where it holds enough crystal
+# ligands to be read as a curve (v1 gates there, v2 fades below it); REF_FLOOR is v2's
+# floor for drawing a point at all -- at 43-45 atoms the window is down to three ligands.
+REF_WIN, REF_FIRM, REF_FLOOR = 4, 12, 3
 REF_THIN_ALPHA = 0.42
 
 # The reference dash. It stays legible at hairline weights and does not shimmer where it
@@ -116,10 +135,14 @@ INK, GRID, AXIS = "#514F52", "#c2c6cd", "#514F52"
 LEGEND_EDGE = "#b6bbc3"
 
 # Line weights in points. Model curves carry the argument; the reference is the benchmark
-# they are read against, so it is the thinnest ink on the panel.
-MODEL_LW, REF_LW = 2.35, 1.5
+# they are read against, so it is the thinnest ink on the panel. MODEL_BOOST widens ONLY
+# the two model series -- both their Vina curves and their distribution steps -- and is
+# applied as a factor on the base weights rather than baked into them, so the gap it opens
+# against the reference's hairline stays visible as a decision.
+MODEL_BOOST = 1.2
+MODEL_LW, REF_LW = 2.35 * MODEL_BOOST, 1.5
 AXIS_LW, GRID_LW = 1.35, 1.1
-DIST_LW, DIST_FILL = 1.7, 0.16
+DIST_LW, DIST_FILL = 1.7 * MODEL_BOOST, 0.16
 
 # GEOMETRY, in inches. The 3-line base figure is 7.25 x 2.77; WIDE/TALL scale it. This one
 # is a shade wider than the 3-line standalone, and its height is the top panel at roughly
@@ -186,30 +209,30 @@ def model_curve(by_size, xs, stat):
     return [f(by_size[a]) for a in xs]
 
 
-def reference_curve(by_size, xs, stat):
-    """Same, over a centred +-REF_WIN window; None where the window is too thin to mean
-    anything, which leaves a gap in the line rather than an invented value."""
-    f = st.mean if stat == "mean" else st.median
-    out = []
-    for a in xs:
-        pool = [v for n, vals in by_size.items() if abs(n - a) <= REF_WIN for v in vals]
-        out.append(f(pool) if len(pool) >= MIN_REF else None)
-    return out
-
-
 def window_counts(by_size, xs):
     """How many crystal ligands each plotted point's rolling window pools."""
     return [sum(len(v) for n, v in by_size.items() if abs(n - a) <= REF_WIN) for a in xs]
 
 
+def reference_curve(by_size, xs, stat, floor):
+    """The reference over a centred +-REF_WIN window; None where the window holds fewer
+    than `floor` ligands, which leaves a gap in the line rather than an invented value."""
+    f = st.mean if stat == "mean" else st.median
+    out = []
+    for a in xs:
+        pool = [v for n, vals in by_size.items() if abs(n - a) <= REF_WIN for v in vals]
+        out.append(f(pool) if len(pool) >= floor else None)
+    return out
+
+
 def split_firm(values, counts):
     """The reference curve cut into the part its window can carry and the part it cannot.
 
-    Returns (firm, thin): both are full-length, each holding None wherever the other holds
-    the value. A point on the boundary belongs to BOTH, so the solid and the faded stretch
-    meet rather than leaving a gap -- a gap would say "no data here", which is the
-    opposite of what the fade is for."""
-    firm_at = [c >= REF_FIRM for c in counts]
+    Returns (firm, thin): both full-length, each holding None wherever the other holds the
+    value. A point on the boundary belongs to BOTH, so the solid and the faded stretch meet
+    rather than leaving a gap -- a gap would say "no data here", which is the opposite of
+    what the fade is for."""
+    firm_at = [v is not None and c >= REF_FIRM for v, c in zip(values, counts)]
     n = len(firm_at)
     edge = [firm_at[i] and any(not firm_at[j] for j in (i - 1, i + 1) if 0 <= j < n)
             for i in range(n)]
@@ -219,11 +242,22 @@ def split_firm(values, counts):
 
 
 def share(by_size, xs):
-    """Percent of a set's molecules at each plotted count. A share, not a count: 79
-    reference ligands and ~7,900 generated ones do not share a count axis, and the
-    question the panel answers -- where does this set put its mass -- is a share."""
+    """Percent of a set's molecules at each plotted count."""
     total = sum(len(v) for v in by_size.values())
     return [100.0 * len(by_size.get(a, ())) / total for a in xs], total
+
+
+def rolled(values, xs):
+    """The same shares under the reference's +-REF_WIN window.
+
+    Averaging the shares over the window -- not summing them -- keeps the height on the
+    same scale as the models' per-count shares, so all three can be read against one axis.
+    It is the same window the reference's Vina curve uses, and for the same reason. At the
+    two ends of x the window is truncated to the plotted counts, as any moving average's
+    is, so the first and last few points sit on fewer sizes; `reference_pct_exact` in the
+    CSV is the unsmoothed share if that matters."""
+    index = {a: i for i, a in enumerate(xs)}
+    return [st.mean([values[index[n]] for n in xs if abs(n - a) <= REF_WIN]) for a in xs]
 
 
 def furniture(ax, *, ylabel, xlabel, xs):
@@ -297,29 +331,14 @@ def save(fig, stem):
     plt.close(fig)
 
 
-def main():
-    vox, n_vox_pockets = load(VANILLA)
-    our, n_our_pockets = load(OURS)
-    ref, dropped = load_reference(VANILLA)
+def build(name, cfg, stat, xs, curves, exact, counts):
+    """One variant at one statistic: the figure, and the line about it for the run log."""
+    stem = os.path.join(HERE, f"vina_dock_per_atom_{name}_{stat}")
+    ref_dist = rolled(exact[REF_LABEL], xs) if cfg["ref_dist_smooth"] else exact[REF_LABEL]
+    shares = dict(exact, **{REF_LABEL: ref_dist})
+    ref_values = curves[(REF_LABEL, stat)] if cfg["ref_gate"] == "fade" else [
+        v if c >= REF_FIRM else None for v, c in zip(curves[(REF_LABEL, stat)], counts)]
 
-    xs = [a for a in sorted(set(vox) & set(our))
-          if len(vox[a]) >= MIN_N and len(our[a]) >= MIN_N]
-    # A gap would break both curves at the same place, but nothing guarantees the gated
-    # set is contiguous, so say so rather than letting matplotlib bridge it silently.
-    gaps = [a for a in range(xs[0], xs[-1] + 1) if a not in xs]
-
-    # Both statistics are computed for the CSV and the run log; only DRAWN is plotted.
-    curves = {}
-    for stat in STATS:
-        curves[(REF_LABEL, stat)] = reference_curve(ref, xs, stat)
-        curves[(VOX_LABEL, stat)] = model_curve(vox, xs, stat)
-        curves[(OUR_LABEL, stat)] = model_curve(our, xs, stat)
-
-    shares, totals = {}, {}
-    for label, by_size in ((REF_LABEL, ref), (VOX_LABEL, vox), (OUR_LABEL, our)):
-        shares[label], totals[label] = share(by_size, xs)
-
-    plt.rcParams.update(RC)
     fig, (ax, bx) = plt.subplots(
         2, 1, figsize=(FIG_W, FIG_H), dpi=220, sharex=True,
         gridspec_kw=dict(height_ratios=list(HEIGHT_RATIOS)))
@@ -332,31 +351,34 @@ def main():
     order = ((REF_LABEL, REF_COLOR, REF_LW, DASH, 2),
              (VOX_LABEL, VOX_COLOR, MODEL_LW, "-", 3),
              (OUR_LABEL, OUR_COLOR, MODEL_LW, "-", 4))
-    ref_counts = window_counts(ref, xs)
     for label, colour, lw, style, z in order:
-        if label is REF_LABEL:
-            firm, thin = split_firm(curves[(label, DRAWN)], ref_counts)
+        if label is not REF_LABEL:
+            ax.plot(xs, curves[(label, stat)], color=colour, lw=lw, ls=style, zorder=z,
+                    solid_capstyle="round")
+        elif cfg["ref_gate"] == "fade":
+            firm, thin = split_firm(ref_values, counts)
             for ys, alpha in ((thin, REF_THIN_ALPHA), (firm, 1.0)):
                 ax.plot(xs, ys, color=colour, lw=lw, ls=style, zorder=z, alpha=alpha,
                         dash_capstyle="round")
         else:
-            ax.plot(xs, curves[(label, DRAWN)], color=colour, lw=lw, ls=style, zorder=z,
-                    solid_capstyle="round")
+            ax.plot(xs, ref_values, color=colour, lw=lw, ls=style, zorder=z,
+                    dash_capstyle="round")
 
-    # Same three identities below: colour for the series, dash for the reference. All
-    # three are per-count steps -- the reference is NOT smoothed here, so its shape is the
-    # 79 crystal ligands themselves. It is the only one left unfilled: at 79 molecules its
-    # steps are tall and jagged, and a third fill over the two model areas would darken
-    # exactly the region being compared without adding a reading.
+    # Same three identities below: colour for the series, dash for the reference. The
+    # models are always per-count steps; the reference is a curve when it is smoothed,
+    # because drawing a rolling average stepped would claim a precision it lost.
     for label, colour, lw, style, z in order:
-        if label is not REF_LABEL:
-            bx.fill_between(xs, shares[label], step="mid", color=colour, alpha=DIST_FILL,
-                            linewidth=0, zorder=z)
-        bx.step(xs, shares[label], where="mid", color=colour, ls=style, zorder=z + 3,
-                lw=DIST_LW if label is not REF_LABEL else lw,
-                solid_capstyle="round", dash_capstyle="round")
+        stepped = label is not REF_LABEL or not cfg["ref_dist_smooth"]
+        if label is not REF_LABEL or cfg["ref_dist_fill"]:
+            bx.fill_between(xs, shares[label], step="mid" if stepped else None,
+                            color=colour, alpha=DIST_FILL, linewidth=0, zorder=z)
+        draw = bx.step if stepped else bx.plot
+        draw(xs, shares[label], color=colour, ls=style, zorder=z + 3,
+             lw=DIST_LW if label is not REF_LABEL else lw,
+             solid_capstyle="round", dash_capstyle="round",
+             **(dict(where="mid") if stepped else {}))
 
-    furniture(ax, ylabel=Y_LABEL, xlabel=None, xs=xs)
+    furniture(ax, ylabel=Y_LABEL.format(stat=stat), xlabel=None, xs=xs)
     furniture(bx, ylabel=D_LABEL, xlabel=X_LABEL, xs=xs)
     ax.margins(y=0.075)              # the default 5% puts Ours on the bottom spine
     # Every 2 kcal/mol. The locator, left to itself over a ~9 kcal/mol span, picks 3 and
@@ -371,59 +393,103 @@ def main():
     fig.align_ylabels((ax, bx))
     legend(ax)
     fit(fig, pad=0.5, h_pad=H_PAD)
-
-    stem = os.path.join(HERE, "vina_dock_per_atom")
+    lo, hi = ax.get_ylim()
     save(fig, stem)
 
-    with open(f"{stem}.csv", "w", newline="", encoding="utf-8") as handle:
+    drawn = [a for a, v in zip(xs, ref_values) if v is not None]
+    return (f"  {os.path.basename(stem)}.{{png,svg,pdf}}   "
+            f"reference {drawn[0]}..{drawn[-1]} atoms   y {lo:.1f} .. {hi:.1f}")
+
+
+def write_csv(xs, vox, our, ref, curves, exact, counts):
+    """One table behind all four figures.
+
+    Only WHICH reference points a figure draws depends on the variant, and that is
+    `reference_firm` -- yes wherever the rolling window holds at least REF_FIRM crystal
+    ligands. v1 draws the reference exactly there; v2 draws everywhere and fades the rest.
+    So a per-figure CSV would be four copies of one table plus one boolean."""
+    path = os.path.join(HERE, "vina_dock_per_atom.csv")
+    rolled_ref = rolled(exact[REF_LABEL], xs)
+    with open(path, "w", newline="", encoding="utf-8") as handle:
         w = csv.writer(handle)
         w.writerow(["heavy_atoms",
                     "n_voxbind", "voxbind_mean", "voxbind_median", "voxbind_pct",
                     "n_ours", "ours_mean", "ours_median", "ours_pct",
-                    "n_reference_exact", "n_reference_window",
+                    "n_reference_exact", "n_reference_window", "reference_firm",
                     "reference_mean", "reference_median",
-                    "reference_pct"])
+                    "reference_pct_exact", "reference_pct_rolled"])
         fmt = lambda v: "" if v is None else f"{v:.3f}"
         for i, a in enumerate(xs):
-            pool = [v for n, vals in ref.items() if abs(n - a) <= REF_WIN for v in vals]
             w.writerow([a,
                         len(vox[a]), fmt(curves[(VOX_LABEL, "mean")][i]),
-                        fmt(curves[(VOX_LABEL, "median")][i]), f"{shares[VOX_LABEL][i]:.3f}",
+                        fmt(curves[(VOX_LABEL, "median")][i]), f"{exact[VOX_LABEL][i]:.3f}",
                         len(our[a]), fmt(curves[(OUR_LABEL, "mean")][i]),
-                        fmt(curves[(OUR_LABEL, "median")][i]), f"{shares[OUR_LABEL][i]:.3f}",
-                        len(ref.get(a, ())), len(pool),
+                        fmt(curves[(OUR_LABEL, "median")][i]), f"{exact[OUR_LABEL][i]:.3f}",
+                        len(ref.get(a, ())), counts[i],
+                        "yes" if counts[i] >= REF_FIRM else "no",
                         fmt(curves[(REF_LABEL, "mean")][i]),
                         fmt(curves[(REF_LABEL, "median")][i]),
-                        f"{shares[REF_LABEL][i]:.3f}"])
+                        f"{exact[REF_LABEL][i]:.3f}", f"{rolled_ref[i]:.3f}"])
+    return path
 
+
+def main():
+    vox, n_vox_pockets = load(VANILLA)
+    our, n_our_pockets = load(OURS)
+    ref, dropped = load_reference(VANILLA)
+
+    xs = [a for a in sorted(set(vox) & set(our))
+          if len(vox[a]) >= MIN_N and len(our[a]) >= MIN_N]
+    # A gap would break both curves at the same place, but nothing guarantees the gated
+    # set is contiguous, so say so rather than letting matplotlib bridge it silently.
+    gaps = [a for a in range(xs[0], xs[-1] + 1) if a not in xs]
+
+    # The reference is computed at REF_FLOOR and narrowed per variant, so one array serves
+    # both gates.
+    curves = {}
+    for stat in STATS:
+        curves[(REF_LABEL, stat)] = reference_curve(ref, xs, stat, REF_FLOOR)
+        curves[(VOX_LABEL, stat)] = model_curve(vox, xs, stat)
+        curves[(OUR_LABEL, stat)] = model_curve(our, xs, stat)
+    counts = window_counts(ref, xs)
+
+    exact, totals = {}, {}
+    for label, by_size in ((REF_LABEL, ref), (VOX_LABEL, vox), (OUR_LABEL, our)):
+        exact[label], totals[label] = share(by_size, xs)
+
+    plt.rcParams.update(RC)
     print(f"=== {PROTOCOL} ===")
-    print(f"{os.path.basename(stem)}.{{png,svg,pdf,csv}}   drawn statistic: {DRAWN}")
     print(f"  pockets: VoxBind {n_vox_pockets} · Ours {n_our_pockets} · "
           f"reference {sum(len(v) for v in ref.values())}"
           + (f" (dropped {', '.join(dropped)})" if dropped else ""))
     print(f"  x = {xs[0]}..{xs[-1]} heavy atoms, both models >= {MIN_N} molecules"
           + (f"; GAPS at {gaps}" if gaps else " (contiguous)"))
-    firm_xs = [a for a, c in zip(xs, ref_counts) if c >= REF_FIRM]
-    print(f"  reference window >= {REF_FIRM} ligands at {firm_xs[0]}..{firm_xs[-1]} atoms "
-          f"(drawn solid); {xs[0]}..{firm_xs[0] - 1} and {firm_xs[-1] + 1}..{xs[-1]} are "
-          f"drawn at alpha {REF_THIN_ALPHA} on {min(ref_counts)}-{REF_FIRM - 1} ligands")
-    for label, *_ in order:
-        drawn = sum(1 for v in curves[(label, DRAWN)] if v is not None)
+    for label in (REF_LABEL, VOX_LABEL, OUR_LABEL):
         print(f"  {label:16s} n={totals[label]:5d}  "
-              f"Vina curve drawn at {drawn}/{len(xs)} counts  "
-              f"{sum(shares[label]):.1f}% of its molecules inside the plotted x range")
+              f"{sum(exact[label]):.1f}% of its molecules inside the plotted x range")
     for stat in STATS:
         wins = [a for i, a in enumerate(xs)
                 if curves[(OUR_LABEL, stat)][i] <= curves[(VOX_LABEL, stat)][i]]
         gap = st.mean([curves[(OUR_LABEL, stat)][i] - curves[(VOX_LABEL, stat)][i]
                        for i in range(len(xs))])
-        mark = "  <- drawn" if stat == DRAWN else ""
         print(f"  {stat:6s}: Ours lower at {len(wins)}/{len(xs)} sizes, "
-              f"mean per-size gap {gap:+.3f} kcal/mol{mark}")
+              f"mean per-size gap {gap:+.3f} kcal/mol")
     for label, by in ((REF_LABEL, ref), (VOX_LABEL, vox), (OUR_LABEL, our)):
         vals = [n for n, v in by.items() for _ in v]
         print(f"  size of {label:16s} mean {st.mean(vals):5.2f}  "
               f"median {st.median(vals):5.1f} heavy atoms")
+    for name, cfg in VARIANTS.items():
+        firm_xs = [a for a, c in zip(xs, counts) if c >= REF_FIRM]
+        tail = ("gated off beyond it" if cfg["ref_gate"] == "hard" else
+                f"faded to alpha {REF_THIN_ALPHA} outside it, down to {min(counts)} ligands")
+        print(f"\n{name}: reference window >= {REF_FIRM} ligands at "
+              f"{firm_xs[0]}..{firm_xs[-1]} atoms, {tail}; distribution "
+              + ("rolled" if cfg["ref_dist_smooth"] else "per-count")
+              + (", filled" if cfg["ref_dist_fill"] else ", unfilled"))
+        for stat in STATS:
+            print(build(name, cfg, stat, xs, curves, exact, counts))
+    print(f"\n{os.path.basename(write_csv(xs, vox, our, ref, curves, exact, counts))}"
+          f"  -- one table behind all four")
 
 
 if __name__ == "__main__":

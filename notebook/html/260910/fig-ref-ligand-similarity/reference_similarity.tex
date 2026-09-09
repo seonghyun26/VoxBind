@@ -1,0 +1,25 @@
+\begin{table}[t]
+    \centering
+    \caption{
+        \textbf{Reference-ligand similarity}, metrics averaged over pockets.
+    }
+    \label{tab:result-drug-reference-similarity}
+    \begin{tabular}{lcccccc}
+        \toprule
+        & \multicolumn{2}{c}{\textbf{ECFP4}} & \multirow{2}{*}{\shortstack{\textbf{Scaffold}\\ \textbf{match}}} & \multicolumn{2}{c}{\textbf{Novelty vs. train}} & \multirow{2}{*}{\shortstack{\textbf{SNN}}} \\
+        \cmidrule(lr){2-3}\cmidrule(lr){5-6}
+        \textbf{Method} & Avg. & Med. &  & SMILES & Scaffold &  \\
+        \midrule
+        AR & 0.100 & 0.096 & 1.04\% & -- & -- & -- \\
+        Pocket2Mol & 0.097 & 0.092 & 1.12\% & -- & -- & -- \\
+        DiffSBDD & 0.089 & 0.085 & 0.55\% & -- & -- & -- \\
+        DecompDiff & 0.152 & 0.137 & 2.17\% & -- & -- & -- \\
+        TargetDiff & 0.091 & 0.087 & 0.62\% & 98.01\% & 82.27\% & 0.280 \\
+        FuncBind & 0.118 & 0.110 & 1.30\% & 93.80\% & 70.67\% & 0.339 \\
+        VoxBind\textsubscript{\scriptsize $\sigma$=0.9} & 0.099 & 0.092 & 0.96\% & 97.16\% & 80.57\% & 0.350 \\
+        VoxBind\textsubscript{\scriptsize $\sigma$=1.0} & 0.103 & 0.099 & 1.18\% & 98.57\% & 78.21\% & 0.314 \\
+        \midrule
+        Ours\textsubscript{\scriptsize v1} & 0.099 & 0.094 & 0.81\% & 98.85\% & 84.83\% & 0.301 \\
+        \bottomrule
+    \end{tabular}
+\end{table}

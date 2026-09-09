@@ -25,7 +25,7 @@ the one the Vina figures already make, not a subset picked after seeing the numb
 the variant is part of the FILENAME: two figures that differ in which arms they draw must
 not be able to sit in a folder under one name.
 
-STYLE. 260903/build_vina_3line.py and 260910/fig-vina-per-atom: no panel titles, warm
+STYLE. 260910/fig-vina-3line/build_vina_3line.py and 260910/fig-vina-per-atom: no panel titles, warm
 near-black furniture (#514F52), left+bottom spines only, dotted mid-grey rules, live text
 in the SVG and TrueType in the PDF.
 """
