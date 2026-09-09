@@ -25,7 +25,9 @@ import numpy as np
 import torch
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-OUT = os.path.join(HERE, "posecheck eval")
+# Moved out of 260903 on 2026-09-09: these figures and their per-method exports are
+# 260910 deck material now.
+OUT = os.path.join(os.path.dirname(HERE), "260910", "fig-posecheck")
 BASE = "/home/shpark/prj-denovo/baselines"
 CHUNK = 20
 

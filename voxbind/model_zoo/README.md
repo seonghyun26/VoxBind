@@ -60,3 +60,16 @@ python dataset/01c_pdbbind_probe.py probe \
   --feature_tag 260725_ar_cvit_100m_v3_m095 --exp_dir model_zoo/pareto_100m_v3_mask095
 ```
 Add `--leak_test append` for the train-on-test optimistic-ceiling diagnostic (writes a `_leaktest`-tagged CSV).
+
+## Generated samples (`generated_samples/`)
+
+De-novo sample sets kept alongside the encoders, so a published generation table can be
+re-scored without re-running the GPU sampler (which would not reproduce the same molecules).
+
+| folder | source run | set |
+|---|---|---|
+| `ours_v1_frozenenc_atomblob7_v2p1_sig0.9_ep350` | `exps/voxbind_frozenenc_atomblob7_v2p1_sig0.9` (frozen C+D+G, σ=0.9, ep350) | 79 x-ray-density pockets × 100 mols — the gold **"Ours"** row of `results.html` Table 4 |
+
+Each folder carries the training run's `cfg.yaml` + `.hydra/`, the sample dir, the docking
+eval JSONs, and a `README.md` with the provenance and the published numbers. Contents are
+gitignored (see `.gitignore`) and travel via `dropbox_push.sh`.

@@ -21,7 +21,7 @@ The three methods in the sibling script (TargetDiff, vanilla VoxBind, Ours v1) l
 exist they are merged into the same axes, so running this on that machine yields one
 figure with all eight. Here it draws the five plus the crystal reference.
 
-Writes into 260903/posecheck eval/:
+Writes into 260910/fig-posecheck/:
   * posecheck_baselines_by_atom_range.json
   * strain_ecdf_<bin>.{png,svg}
   * clash_violin_<bin>.{png,svg}
@@ -45,7 +45,7 @@ import numpy as np
 import torch
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-OUT = os.path.join(HERE, "posecheck eval")
+OUT = os.path.join(os.path.dirname(HERE), "260910", "fig-posecheck")
 BASE = "/home/shpark/prj-denovo/baselines"
 CHUNK = 20
 

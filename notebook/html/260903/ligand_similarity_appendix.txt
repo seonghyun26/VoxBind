@@ -1,6 +1,6 @@
 ================================================================================
 LIGAND SIMILARITY — appendix text (final) + measured values + provenance
-작성 2026-09-03 · 대상: de-novo CrossDocked 표 (notebook/html/260903/)
+작성 2026-09-05 · 대상: de-novo CrossDocked 표 (notebook/html/260903/)
 빌더: notebook/html/build_reference_similarity.py → 이 파일: 260903/build_ligand_similarity_appendix.py
 지표 출처 정리: notebook/html/reference_similarity_metrics.md
 ================================================================================
@@ -13,41 +13,59 @@ LIGAND SIMILARITY — appendix text (final) + measured values + provenance
 \begin{table}[t]
     \centering
     \caption{
-        \textbf{Reference-ligand similarity} on the CrossDocked benchmark. Metrics are averaged over pockets.
+        \textbf{Reference-ligand similarity}, metrics averaged over pockets.
     }
     \label{tab:result-drug-reference-similarity}
-    \begin{tabular}{@{}llccccc@{}}
+    \begin{tabular}{lccc}
         \toprule
-        \multicolumn{2}{@{}l}{\textbf{Method}} & \textbf{TargetDiff} & \textbf{FuncBind} & \textbf{VoxBind\textsubscript{\scriptsize $\sigma$=0.9}} & \textbf{VoxBind\textsubscript{\scriptsize $\sigma$=1.0}} & \textbf{Ours} \\
+        & \multicolumn{2}{c}{\textbf{ECFP4}} & \multirow{2}{*}{\shortstack{\textbf{Scaffold}\\ \textbf{match}}} \\
+        \cmidrule(lr){2-3}
+        \textbf{Method} & Avg. & Med. &  \\
         \midrule
-        \multirow{2}{*}{ECFP4} & mean & 0.091 & 0.118 & 0.099 & 0.103 & 0.099 \\
-         & median & 0.087 & 0.110 & 0.092 & 0.099 & 0.094 \\
-        \addlinespace
-        \multicolumn{2}{@{}l}{\shortstack[l]{Scaffold\\ match}} & 0.62\% & 1.30\% & 0.96\% & 1.18\% & 0.81\% \\
+        AR & 0.100 & 0.096 & 1.04\% \\
+        Pocket2Mol & 0.097 & 0.092 & 1.12\% \\
+        DiffSBDD & 0.089 & 0.085 & 0.55\% \\
+        DecompDiff & 0.152 & 0.137 & 2.17\% \\
+        TargetDiff & 0.091 & 0.087 & 0.62\% \\
+        FuncBind & 0.118 & 0.110 & 1.30\% \\
+        VoxBind\textsubscript{\scriptsize $\sigma$=0.9} & 0.099 & 0.092 & 0.96\% \\
+        VoxBind\textsubscript{\scriptsize $\sigma$=1.0} & 0.103 & 0.099 & 1.18\% \\
+        \midrule
+        Ours\textsubscript{\scriptsize v1} & 0.099 & 0.094 & 0.81\% \\
         \bottomrule
     \end{tabular}
 \end{table}
 
 본문 옆에 끼우는 wraptable 판 (260820 표와 같은 배치, wrapfig 추가로 필요):
 
-\begin{wraptable}{r}{0.55\textwidth}
+\begin{wraptable}{r}{0.35\textwidth}
+    \vspace{-.15in}
     \centering
     \caption{
-        \textbf{Reference-ligand similarity} on the CrossDocked benchmark. Metrics are averaged over pockets.
+        \textbf{Reference-ligand similarity}, metrics averaged over pockets.
     }
     \label{tab:result-drug-reference-similarity}
     \resizebox{.98\linewidth}{!}{%
-        \begin{tabular}{@{}llccccc@{}}
+        \begin{tabular}{lccc}
             \toprule
-            \multicolumn{2}{@{}l}{\textbf{Method}} & \textbf{TargetDiff} & \textbf{FuncBind} & \textbf{VoxBind\textsubscript{\scriptsize $\sigma$=0.9}} & \textbf{VoxBind\textsubscript{\scriptsize $\sigma$=1.0}} & \textbf{Ours} \\
+            & \multicolumn{2}{c}{\textbf{ECFP4}} & \multirow{2}{*}{\shortstack{\textbf{Scaffold}\\ \textbf{match}}} \\
+            \cmidrule(lr){2-3}
+            \textbf{Method} & Avg. & Med. &  \\
             \midrule
-            \multirow{2}{*}{ECFP4} & mean & 0.091 & 0.118 & 0.099 & 0.103 & 0.099 \\
-             & median & 0.087 & 0.110 & 0.092 & 0.099 & 0.094 \\
-            \addlinespace
-            \multicolumn{2}{@{}l}{\shortstack[l]{Scaffold\\ match}} & 0.62\% & 1.30\% & 0.96\% & 1.18\% & 0.81\% \\
+            AR & 0.100 & 0.096 & 1.04\% \\
+            Pocket2Mol & 0.097 & 0.092 & 1.12\% \\
+            DiffSBDD & 0.089 & 0.085 & 0.55\% \\
+            DecompDiff & 0.152 & 0.137 & 2.17\% \\
+            TargetDiff & 0.091 & 0.087 & 0.62\% \\
+            FuncBind & 0.118 & 0.110 & 1.30\% \\
+            VoxBind\textsubscript{\scriptsize $\sigma$=0.9} & 0.099 & 0.092 & 0.96\% \\
+            VoxBind\textsubscript{\scriptsize $\sigma$=1.0} & 0.103 & 0.099 & 1.18\% \\
+            \midrule
+            Ours\textsubscript{\scriptsize v1} & 0.099 & 0.094 & 0.81\% \\
             \bottomrule
         \end{tabular}
     }
+    \vspace{-.4in}
 \end{wraptable}
 
 --------------------------------------------------------------------------------
@@ -77,11 +95,15 @@ density 를 넣어도 레퍼런스 모방이 늘지 않았다는 가장 직접�
 
   method         pockets   n mol.   ECFP4 mean  ECFP4 median  Scaffold match
   -------------------------------------------------------------------------
+  AR                  79     7655       0.100         0.096           1.04%
+  Pocket2Mol          79     7772       0.097         0.092           1.12%
+  DiffSBDD            79     7720       0.089         0.085           0.55%
+  DecompDiff          79     6427       0.152         0.137           2.17%
   TargetDiff          79     7798       0.091         0.087           0.62%
   FuncBind            79     7886       0.118         0.110           1.30%
   VoxBind σ=0.9       79     7888       0.099         0.092           0.96%
   VoxBind σ=1.0       79     7870       0.103         0.099           1.18%
-  Ours                79     7873       0.099         0.094           0.81%
+  Ours v1             79     7873       0.099         0.094           0.81%
 
 표에서 뺀 우리 나머지 arm (같은 79 포켓, 2026-09-03 측정):
   Ours σ=1.0        ECFP4 0.107 / 0.102   scaffold 1.23%

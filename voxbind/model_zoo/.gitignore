@@ -15,3 +15,9 @@
 # transfer bundles (+ checksums); *.tar.sha256 is missed by the top-level *.tar rule
 *.tar
 *.tar.sha256
+
+# generated_samples/ -- backed-up de-novo sample sets (SDF + prepared receptors).
+# *.sdf/*.pdb are caught by the repo-root .gitignore; these receptor-prep artefacts
+# are not, and a single sample set is ~100k files, so keep them out of git too.
+*.pdbqt
+*.pqr
