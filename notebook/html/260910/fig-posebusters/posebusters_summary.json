@@ -96,16 +96,16 @@
    "p79": {
     "n_molecules": 7287,
     "atoms_mean": 22.22,
-    "n_posebusters": 7247,
-    "pb_valid_rate": 0.6089,
-    "pb_valid_rate_size_standardized": 0.5881
+    "n_posebusters": 7287,
+    "pb_valid_rate": 0.6078,
+    "pb_valid_rate_size_standardized": 0.5874
    },
    "all_pockets": {
     "n_molecules": 9206,
     "atoms_mean": 22.56,
-    "n_posebusters": 9166,
-    "pb_valid_rate": 0.6006,
-    "pb_valid_rate_size_standardized": 0.5866
+    "n_posebusters": 9206,
+    "pb_valid_rate": 0.5997,
+    "pb_valid_rate_size_standardized": 0.5863
    }
   },
   "VoxBind": {
@@ -118,14 +118,14 @@
     "atoms_mean": 24.0,
     "n_posebusters": 7888,
     "pb_valid_rate": 0.693,
-    "pb_valid_rate_size_standardized": 0.6979
+    "pb_valid_rate_size_standardized": 0.6978
    },
    "all_pockets": {
     "n_molecules": 9988,
     "atoms_mean": 23.99,
     "n_posebusters": 9988,
     "pb_valid_rate": 0.6908,
-    "pb_valid_rate_size_standardized": 0.6944
+    "pb_valid_rate_size_standardized": 0.6942
    }
   },
   "VoxBind + Ours": {
@@ -138,14 +138,14 @@
     "atoms_mean": 24.93,
     "n_posebusters": 7873,
     "pb_valid_rate": 0.6747,
-    "pb_valid_rate_size_standardized": 0.6895
+    "pb_valid_rate_size_standardized": 0.6894
    },
    "all_pockets": {
     "n_molecules": 7873,
     "atoms_mean": 24.93,
     "n_posebusters": 7873,
     "pb_valid_rate": 0.6747,
-    "pb_valid_rate_size_standardized": 0.6895
+    "pb_valid_rate_size_standardized": 0.6894
    }
   }
  },

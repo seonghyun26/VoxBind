@@ -2,28 +2,28 @@
  "n_pockets": 79,
  "arms": {
   "TargetDiff": {
-   "n_mols": 7247,
+   "n_mols": 7287,
    "counts": {
-    "bond_angles": 1628,
-    "minimum_distance_to_protein": 722,
+    "bond_angles": 1643,
+    "minimum_distance_to_protein": 735,
     "internal_energy": 127,
-    "internal_steric_clash": 443,
-    "non-aromatic_ring_non-flatness": 648,
-    "bond_lengths": 81,
+    "internal_steric_clash": 447,
+    "non-aromatic_ring_non-flatness": 652,
+    "bond_lengths": 83,
     "volume_overlap_with_protein": 26,
     "aromatic_ring_flatness": 2,
     "double_bond_flatness": 1
    },
    "rates": {
-    "bond_angles": 22.464468055747204,
-    "minimum_distance_to_protein": 9.962743204084449,
-    "internal_energy": 1.752449289361115,
-    "internal_steric_clash": 6.112874292810818,
-    "non-aromatic_ring_non-flatness": 8.941631019732304,
-    "bond_lengths": 1.117703877466538,
-    "volume_overlap_with_protein": 0.3587691458534566,
-    "aromatic_ring_flatness": 0.027597626604112045,
-    "double_bond_flatness": 0.013798813302056023
+    "bond_angles": 22.547001509537534,
+    "minimum_distance_to_protein": 10.086455331412104,
+    "internal_energy": 1.7428296967201866,
+    "internal_steric_clash": 6.1342116097159325,
+    "non-aromatic_ring_non-flatness": 8.947440647728833,
+    "bond_lengths": 1.1390146836832715,
+    "volume_overlap_with_protein": 0.3567997804309043,
+    "aromatic_ring_flatness": 0.027446136956223412,
+    "double_bond_flatness": 0.013723068478111706
    }
   },
   "VoxBind": {

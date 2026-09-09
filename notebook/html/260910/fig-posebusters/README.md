@@ -38,15 +38,17 @@ they appear in `../fig-posecheck` and cannot appear here without a run there.
 
 | arm | heavy atoms | **PB-valid** | PB-valid, size-std | molecules scored |
 |---|---|---|---|---|
-| TargetDiff | 22.2 | **60.9 %** | 58.8 % | 7,247 |
+| TargetDiff | 22.2 | **60.8 %** | 58.7 % | 7,287 |
 | VoxBind | 24.0 | **69.3 %** | 69.8 % | 7,888 |
-| VoxBind + Ours | 24.9 | **67.5 %** | 69.0 % | 7,873 |
+| VoxBind + Ours | 24.9 | **67.5 %** | 68.9 % | 7,873 |
 | *Reference ligand* | *22.8* | *96.2 %* | *—* | *79* |
 
-"Molecules scored" is `n_posebusters`, the denominator every rate in the row is over — not
-`n_molecules`, which counts the valid molecules in the SDF. The two differ only for
-TargetDiff, by 40: two chunks of 20 (target_31, target_85) hit the per-chunk timeout, so
-those molecules carry no verdict and are excluded rather than counted as failures.
+"Molecules scored" is `n_posebusters`, the denominator every rate in the row is over. It
+now equals `n_molecules` for every arm. It did not on 2026-09-09: two chunks of 20 in
+TargetDiff (target_31, target_85) had hit the 1800 s per-chunk timeout and carried no
+verdict. Re-scored at `POSE_CHUNK_SIZE=1` so a slow molecule costs only itself — both
+pockets then finished in ~25 min each and TargetDiff went 7,247 → 7,287 scored, moving its
+validity by 0.1 points.
 
 `size-std` is the direct-standardized rate: each arm's validity **within** every
 1-heavy-atom stratum, re-weighted by one common size distribution (every arm pooled), so
@@ -59,20 +61,20 @@ same confound the Vina numbers have.
 
 | arm | ≤15 | 16–20 | 21–25 | 26–30 | >30 |
 |---|---|---|---|---|---|
-| TargetDiff | 85.1 % | 66.1 % | 58.6 % | 46.5 % | 37.0 % |
+| TargetDiff | 85.1 % | 66.0 % | 58.6 % | 46.6 % | 36.8 % |
 | VoxBind | 85.0 % | 76.3 % | 68.8 % | 62.2 % | 56.5 % |
 | VoxBind + Ours | 83.2 % | 76.3 % | 67.7 % | 61.6 % | 56.1 % |
 
 **Size explains more than half of the v1 ↔ vanilla gap, but not all of it.** Crude, vanilla
-leads Ours v1 by 1.8 points; size-standardized the lead is **0.8** (69.8 % vs 69.0 %).
+leads Ours v1 by 1.8 points; size-standardized the lead is **0.9** (69.8 % vs 68.9 %).
 Vanilla is ahead in every bin — by 1.8 / 0.0 / 1.1 / 0.6 / 0.4 points from ≤15 to >30 — so
 the remaining gap is small but real, not an artefact. Do not claim the two are tied on pose
 validity; claim the gap is under one point once size is controlled.
 
 **TargetDiff's deficit is entirely a large-molecule deficit.** In the ≤15 bin it is
 actually the *best* arm (85.1 %, ahead of Ours v1 by 1.9 and level with vanilla), and it
-only falls behind from 16–20 onward, ending 19.1 points below Ours v1 at >30. Standardized
-it lands at 58.8 %, ~11 points below both VoxBind-family arms.
+only falls behind from 16–20 onward, ending 19.3 points below Ours v1 at >30. Standardized
+it lands at 58.7 %, ~10-11 points below both VoxBind-family arms.
 
 The crystal reference poses hold 92-100 % across every bin, so the size slope is a property
 of the generated poses, not of the checks becoming unpassable for big ligands.
@@ -83,17 +85,17 @@ of the generated poses, not of the checks becoming unpassable for big ligands.
 |---|---|---|---|---|
 | non-aromatic ring non-flatness | 8.9 % | 21.1 % | **22.5 %** | 1.3 % |
 | bond angles | **22.5 %** | 5.5 % | 5.9 % | 0.0 % |
-| minimum distance to protein | **10.0 %** | 1.3 % | 1.6 % | 2.5 % |
+| minimum distance to protein | **10.1 %** | 1.3 % | 1.6 % | 2.5 % |
 | internal steric clash | 6.1 % | 4.1 % | 5.3 % | 0.0 % |
 | bond lengths | 1.1 % | 2.9 % | 3.6 % | 0.0 % |
-| internal energy | 1.8 % | 2.5 % | 2.6 % | 0.0 % |
+| internal energy | 1.7 % | 2.5 % | 2.6 % | 0.0 % |
 
 The two families fail for different reasons, and the voxel methods' single dominant failure
 is one check: **non-aromatic ring non-flatness**, 21-23 % of molecules against the crystal
 ligands' 1.3 %. Puckering a saturated ring past the tolerance is what costs VoxBind-family
 poses their validity, not protein contact — their `minimum distance to protein` failure
 rate (1.3-1.6 %) is *below* the crystal ligands' own 2.5 %. TargetDiff inverts this: it
-fails bond angles (22.5 %) and runs into the protein (10.0 %) instead. **Fixing ring
+fails bond angles (22.5 %) and runs into the protein (10.1 %) instead. **Fixing ring
 geometry is the single highest-value target for our arms**; it is worth roughly 20 points
 of validity on its own.
 
@@ -123,7 +125,7 @@ enters the all-must-pass `valid`. What that would cost, if the two were independ
 
 | arm | dock `valid` | gen `valid` (upper bound) |
 |---|---|---|
-| TargetDiff | 60.9 % | 24.0 % |
+| TargetDiff | 60.8 % | 23.9 % |
 | VoxBind | 69.3 % | 15.6 % |
 | VoxBind + Ours | 67.5 % | 20.5 % |
 
