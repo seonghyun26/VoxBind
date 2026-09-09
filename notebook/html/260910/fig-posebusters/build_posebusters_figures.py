@@ -50,7 +50,9 @@ from method_colors import color                                      # noqa: E40
 # see pose_common.model_curve for why the strain and clash curves are not.
 VALID_WIN = 2
 # A check no method fails above this often is a row of white space in the breakdown: it
-# says only that PoseBusters ran it. The full counts stay in the JSON.
+# says only that PoseBusters ran it. The full counts stay in the JSON. The filter stays a
+# RATE even though the bars are counts -- it asks "is this row informative", and the arms
+# hold different numbers of molecules.
 MIN_FAIL_PCT = 0.5
 
 DATA, P79_ROWS, REFROWS = pc.load_arms()
@@ -133,19 +135,22 @@ def fig_check_failures(arms, variant, fails):
     h = 0.19 if len(arms) > 2 else 0.26
     for i, (lab, key, _) in enumerate(arms):
         ax.barh(ys + (i - (len(arms) - 1) / 2) * h,
-                [fails[key]["rates"].get(k, 0) for k in names],
+                [fails[key]["counts"].get(k, 0) for k in names],
                 height=h, color=color(lab), edgecolor=color(lab), lw=0.8, zorder=3)
-    ax.plot([fails["reference"]["rates"].get(k, 0) for k in names], ys, "|",
-            color=pc.REF_COLOR, ms=20, mew=pc.REF_LW + 0.4, zorder=5)
-    pc.furniture(ax, ylabel=None, xlabel="Molecules failing the check (%)", xloc=5)
+    # The crystal ligands are NOT drawn here. Counts put them on the same axis as the
+    # arms while there are 79 of them against ~7,900: their worst row is 1 molecule, an
+    # invisible tick beside a bar of 1,769. Their rates are in the README and in
+    # posebusters_check_failures.json, where the denominators are explicit.
+    pc.furniture(ax, ylabel=None, xlabel="Molecules failing the check", xloc=None)
     ax.grid(False, axis="y")
     ax.set_yticks(ys)
     ax.set_yticklabels([k.replace("_", " ") for k in names], fontsize=13)
     ax.set_ylim(-0.6, len(names) - 0.4)
-    handles = [Line2D([], [], color=pc.REF_COLOR, lw=0, marker="|", ms=13,
-                      mew=pc.REF_LW + 0.4, label=pc.REF_LABEL)] + \
-              [Patch(facecolor=color(lab), edgecolor=color(lab), label=lab)
-               for lab, _, _ in arms]
+    # Counts are only comparable between arms if the reader can see the denominators, and
+    # they differ by ~8% here (7,287 to 7,888), so every arm carries its own n in the key.
+    handles = [Patch(facecolor=color(lab), edgecolor=color(lab),
+                     label=f"{lab}  (n={fails[key]['n_mols']:,})")
+               for lab, key, _ in arms]
     pc.legend(ax, handles, loc="lower right")
     pc.fit(fig, pad=0.5)
     pc.save(fig, HERE, "pb_check_failures", variant)

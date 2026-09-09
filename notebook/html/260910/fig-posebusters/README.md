@@ -36,12 +36,17 @@ they appear in `../fig-posecheck` and cannot appear here without a run there.
 
 ## Headline — 79 pockets
 
-| arm | heavy atoms | **PB-valid** | PB-valid, size-std | molecules |
+| arm | heavy atoms | **PB-valid** | PB-valid, size-std | molecules scored |
 |---|---|---|---|---|
-| TargetDiff | 22.2 | **60.9 %** | 58.8 % | 7,287 |
+| TargetDiff | 22.2 | **60.9 %** | 58.8 % | 7,247 |
 | VoxBind | 24.0 | **69.3 %** | 69.8 % | 7,888 |
 | VoxBind + Ours | 24.9 | **67.5 %** | 69.0 % | 7,873 |
 | *Reference ligand* | *22.8* | *96.2 %* | *—* | *79* |
+
+"Molecules scored" is `n_posebusters`, the denominator every rate in the row is over — not
+`n_molecules`, which counts the valid molecules in the SDF. The two differ only for
+TargetDiff, by 40: two chunks of 20 (target_31, target_85) hit the per-chunk timeout, so
+those molecules carry no verdict and are excluded rather than counted as failures.
 
 `size-std` is the direct-standardized rate: each arm's validity **within** every
 1-heavy-atom stratum, re-weighted by one common size distribution (every arm pooled), so
@@ -91,6 +96,12 @@ rate (1.3-1.6 %) is *below* the crystal ligands' own 2.5 %. TargetDiff inverts t
 fails bond angles (22.5 %) and runs into the protein (10.0 %) instead. **Fixing ring
 geometry is the single highest-value target for our arms**; it is worth roughly 20 points
 of validity on its own.
+
+The bars are **counts**, and the arms hold different numbers of molecules, so each carries
+its own *n* in the key. Rates are the fair cross-arm comparison and are in the table above
+and in `posebusters_check_failures.json`. The crystal ligands are not drawn in the count
+figure at all — with 79 of them against ~7,900, their worst row is 1 molecule, an invisible
+tick beside a bar of 1,769.
 
 A check no method fails above 0.5 % is left off the figure — it would be a row of white
 space saying only that PoseBusters ran it. The full counts are in
