@@ -1,0 +1,112 @@
+# syntax=docker/dockerfile:1.6
+#
+# VoxBind — ALL-IN-ONE image, SBintuitions CLUSTER variant.
+#
+# This is script/Dockerfile tuned for the SBintuitions cluster, where the image
+# is built on the login node (rootless Docker) and run on compute nodes
+# (srdgx00206, 8x H100) via enroot. The canonical script/Dockerfile is LEFT
+# UNCHANGED — collaborators build it off-cluster. This file diverges from it in
+# three ways, all forced by the cluster environment:
+#
+#   1. voxbind env is built from env/voxbind.conda-lock.yml (NOT the explicit
+#      env/voxbind.conda-linux-64.lock + env/voxbind.pip.lock.txt pair). The
+#      explicit pip lock omits seaborn + kaleido (only conda-lock.yml carries
+#      them), and conda-lock restores conda AND pip in one shot — so this also
+#      removes the seaborn/kaleido overlay the cluster previously needed.
+#   2. moleval `reduce` is pulled with `-c bioconda`; it is NOT on conda-forge,
+#      so the unqualified create fails with "package 'reduce' not found".
+#   3. /workspace/targetdiff and /workspace/VoxBind are chown'd to $MAMBA_USER
+#      before git clone / COPY. /workspace is root-owned (created by WORKDIR),
+#      so without this the rootless build fails with Permission denied and
+#      `pip install -e .` cannot write egg-info.
+#
+# Same three conda envs + a TargetDiff sibling clone as script/Dockerfile:
+#   voxbind  torch cu118 + pyuul + hydra + rdkit + openbabel + gemmi + seaborn/kaleido
+#   voxdock  python 3.8  + vina 1.2.2 + meeko 0.1.dev3 + pdb2pqr        (docking)
+#   moleval  python 3.10 + posecheck 1.3.1 + prolif + posebusters      (pose quality)
+#
+# CUDA runtime libs come from pytorch-cuda inside the voxbind env, so the host
+# only needs an NVIDIA driver new enough for CUDA 11.8 (>= 520) + the NVIDIA
+# Container Toolkit. The image is large (~15-20 GB); the eval envs add ~3 GB.
+#
+# BUILD FROM THE REPO ROOT (--network=host: the rootless gvisor net has broken
+# DNS on the login node, so host networking is required for the conda/pip pulls):
+#
+#   docker build --network=host -f script/dockerfile.sbint -t voxbind:allinone .
+#
+# Then enroot import on the login node and run on srdgx00206; see the cluster
+# runbook (memory: kaist-voxbind-cluster-setup). Data + weights are NOT baked in
+# (large + licence-encumbered) — pull at runtime with script/01_download_data.sh
+# or mount them (see script/Dockerfile run docs).
+
+ARG MICROMAMBA_VERSION=1.5.10
+FROM mambaorg/micromamba:${MICROMAMBA_VERSION}
+
+USER root
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+        git ca-certificates curl unzip \
+        libxrender1 libxext6 libsm6 \
+ && rm -rf /var/lib/apt/lists/*
+USER $MAMBA_USER
+
+WORKDIR /workspace/VoxBind
+
+# --- env 1: voxbind (GPU pipeline). conda-lock restores conda AND pip (incl.
+#     seaborn/kaleido/plotly + vina 1.2.7 + AutoDockTools) in one shot; the
+#     explicit *.lock/*.pip.lock.txt pair omits seaborn+kaleido, which is why we
+#     use the YAML lock here. Install conda-lock into base first. ---
+RUN micromamba install -y -n base -c conda-forge conda-lock \
+ && micromamba clean --all --yes
+COPY --chown=$MAMBA_USER:$MAMBA_USER env/voxbind.conda-lock.yml /tmp/voxbind.conda-lock.yml
+RUN micromamba run -n base conda-lock install --micromamba -n voxbind /tmp/voxbind.conda-lock.yml \
+ && micromamba clean --all --yes
+
+# --- env 2: voxdock (Vina 1.2.2 docking stack; pins are load-bearing) ---
+RUN micromamba create -y -n voxdock -c conda-forge \
+        python=3.8.16 numpy=1.24.3 scipy=1.10.1 rdkit=2022.03.2 openbabel=3.1.1 \
+        pdb2pqr easydict pip \
+ && micromamba run -n voxdock pip install --no-cache-dir \
+        vina==1.2.2 meeko==0.1.dev3 pdb2pqr==3.6.1 propka==3.5.0 \
+        mmcif-pdbx==2.0.1 docutils==0.17.1 \
+        "git+https://github.com/Valdes-Tresanco-MS/AutoDockTools_py3.git@aee55d50d5bdcfdbcd80220499df8cde2a8f4b2a" \
+ && micromamba clean --all --yes
+
+# --- env 3: moleval (PoseCheck 1.3.1 + PoseBusters + ProLIF) ---
+# reduce lives on bioconda, not conda-forge — without -c bioconda the create
+# fails with "package 'reduce' not found".
+RUN micromamba create -y -n moleval -c conda-forge -c bioconda python=3.10 reduce pip \
+ && micromamba run -n moleval pip install --no-cache-dir \
+        posebusters 'pandas>=2.2.3' prolif datamol hydride biopython rdkit \
+ && micromamba run -n moleval pip install --no-cache-dir --no-deps 'posecheck==1.3.1' \
+ && micromamba clean --all --yes
+
+# --- TargetDiff: sibling of the repo (data.py resolves VOXBIND.parent/targetdiff).
+#     Its data/test_set/ (full receptors) is a separate download — pull via
+#     script/01_download_data.sh or mount it. chown first: /workspace is root-
+#     owned (from WORKDIR), so a bare git clone as $MAMBA_USER fails with
+#     Permission denied on the rootless cluster build. ---
+USER root
+RUN mkdir -p /workspace/targetdiff && chown -R $MAMBA_USER:$MAMBA_USER /workspace/targetdiff
+USER $MAMBA_USER
+RUN git clone --depth 1 https://github.com/guanjq/targetdiff /workspace/targetdiff
+
+# --- project source + editable install into the voxbind env ---
+# Same chown reason as above: COPY --chown sets file ownership but the dest dir
+# /workspace/VoxBind is root-owned, so `pip install -e .` can't write egg-info.
+USER root
+RUN mkdir -p /workspace/VoxBind && chown -R $MAMBA_USER:$MAMBA_USER /workspace/VoxBind
+USER $MAMBA_USER
+COPY --chown=$MAMBA_USER:$MAMBA_USER . /workspace/VoxBind
+ARG MAMBA_DOCKERFILE_ACTIVATE=1
+RUN micromamba run -n voxbind pip install --no-cache-dir -e .
+
+ENV HOME=/home/$MAMBA_USER \
+    PYTHONUNBUFFERED=1 \
+    MPLBACKEND=Agg \
+    CONDA_LAUNCHER=micromamba \
+    REPO_ROOT=/workspace/VoxBind \
+    TARGETDIFF_ROOT=/workspace/targetdiff \
+    FULL_RECEPTOR_ROOT=/workspace/targetdiff/data/test_set/test_set
+
+CMD ["bash"]
