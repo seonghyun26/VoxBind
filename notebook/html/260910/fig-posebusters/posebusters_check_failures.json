@@ -1,6 +1,129 @@
 {
  "n_pockets": 79,
  "arms": {
+  "AR": {
+   "n_mols": 7615,
+   "counts": {
+    "bond_angles": 1022,
+    "aromatic_ring_flatness": 645,
+    "internal_steric_clash": 768,
+    "double_bond_flatness": 238,
+    "bond_lengths": 152,
+    "internal_energy": 68,
+    "minimum_distance_to_protein": 296,
+    "non-aromatic_ring_non-flatness": 4,
+    "volume_overlap_with_protein": 30
+   },
+   "rates": {
+    "bond_angles": 13.420879842416284,
+    "aromatic_ring_flatness": 8.470124753775444,
+    "internal_steric_clash": 10.085357846355876,
+    "double_bond_flatness": 3.1254103742613264,
+    "bond_lengths": 1.9960604070912673,
+    "internal_energy": 0.8929743926460932,
+    "minimum_distance_to_protein": 3.887065003282994,
+    "non-aromatic_ring_non-flatness": 0.05252790544977019,
+    "volume_overlap_with_protein": 0.3939592908732764
+   }
+  },
+  "Pocket2Mol": {
+   "n_mols": 7772,
+   "counts": {
+    "minimum_distance_to_protein": 1305,
+    "bond_lengths": 805,
+    "bond_angles": 158,
+    "double_bond_flatness": 109,
+    "internal_steric_clash": 59,
+    "non-aromatic_ring_non-flatness": 70,
+    "aromatic_ring_flatness": 36,
+    "internal_energy": 14,
+    "volume_overlap_with_protein": 45
+   },
+   "rates": {
+    "minimum_distance_to_protein": 16.791044776119403,
+    "bond_lengths": 10.357694287184765,
+    "bond_angles": 2.0329387545033453,
+    "double_bond_flatness": 1.402470406587751,
+    "internal_steric_clash": 0.7591353576942872,
+    "non-aromatic_ring_non-flatness": 0.9006690684508492,
+    "aromatic_ring_flatness": 0.46320123520329387,
+    "internal_energy": 0.18013381369016984,
+    "volume_overlap_with_protein": 0.5790015440041173
+   }
+  },
+  "DiffSBDD": {
+   "n_mols": 7700,
+   "counts": {
+    "bond_lengths": 1461,
+    "minimum_distance_to_protein": 1614,
+    "bond_angles": 1634,
+    "non-aromatic_ring_non-flatness": 89,
+    "internal_steric_clash": 498,
+    "double_bond_flatness": 39,
+    "aromatic_ring_flatness": 8,
+    "internal_energy": 108,
+    "volume_overlap_with_protein": 435,
+    "protein-ligand_maximum_distance": 1
+   },
+   "rates": {
+    "bond_lengths": 18.974025974025974,
+    "minimum_distance_to_protein": 20.961038961038962,
+    "bond_angles": 21.22077922077922,
+    "non-aromatic_ring_non-flatness": 1.155844155844156,
+    "internal_steric_clash": 6.467532467532467,
+    "double_bond_flatness": 0.5064935064935064,
+    "aromatic_ring_flatness": 0.1038961038961039,
+    "internal_energy": 1.4025974025974026,
+    "volume_overlap_with_protein": 5.64935064935065,
+    "protein-ligand_maximum_distance": 0.012987012987012988
+   }
+  },
+  "DecompDiff": {
+   "n_mols": 6427,
+   "counts": {
+    "bond_angles": 248,
+    "bond_lengths": 139,
+    "minimum_distance_to_protein": 635,
+    "double_bond_flatness": 118,
+    "non-aromatic_ring_non-flatness": 121,
+    "internal_steric_clash": 206,
+    "internal_energy": 42,
+    "volume_overlap_with_protein": 22,
+    "inchi_convertible": 1
+   },
+   "rates": {
+    "bond_angles": 3.8587210206939475,
+    "bond_lengths": 2.16275089466314,
+    "minimum_distance_to_protein": 9.880192936051035,
+    "double_bond_flatness": 1.8360043566205073,
+    "non-aromatic_ring_non-flatness": 1.8826824334837404,
+    "internal_steric_clash": 3.205227944608682,
+    "internal_energy": 0.6534930760852653,
+    "volume_overlap_with_protein": 0.3423058969970437,
+    "inchi_convertible": 0.015559358954411079
+   }
+  },
+  "FuncBind": {
+   "n_mols": 7895,
+   "counts": {
+    "bond_lengths": 1822,
+    "internal_steric_clash": 550,
+    "bond_angles": 1147,
+    "non-aromatic_ring_non-flatness": 1773,
+    "internal_energy": 403,
+    "minimum_distance_to_protein": 322,
+    "volume_overlap_with_protein": 29
+   },
+   "rates": {
+    "bond_lengths": 23.077897403419886,
+    "internal_steric_clash": 6.966434452184927,
+    "bond_angles": 14.528182393920202,
+    "non-aromatic_ring_non-flatness": 22.457251424952503,
+    "internal_energy": 5.104496516782774,
+    "minimum_distance_to_protein": 4.078530715642812,
+    "volume_overlap_with_protein": 0.36732108929702345
+   }
+  },
   "TargetDiff": {
    "n_mols": 7287,
    "counts": {

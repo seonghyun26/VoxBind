@@ -232,8 +232,9 @@ def main():
     # The claim this figure exists to support, stated as a paired test rather than a
     # difference of two pooled means.
     summary["paired"] = {
-        "VoxBind + Ours - VoxBind": paired(p79_rows["ours_v1"], p79_rows["vanilla"]),
-        "VoxBind + Ours - TargetDiff": paired(p79_rows["ours_v1"], p79_rows["targetdiff"]),
+        "CoDE - VoxBind": paired(p79_rows["ours_v1"], p79_rows["vanilla"]),
+        "CoDE - TargetDiff": paired(p79_rows["ours_v1"], p79_rows["targetdiff"]),
+        "CoDE - DecompDiff": paired(p79_rows["ours_v1"], p79_rows["decompdiff"]),
     }
     print()
     for name, d in summary["paired"].items():

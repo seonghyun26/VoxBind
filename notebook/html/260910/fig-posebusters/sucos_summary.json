@@ -9,14 +9,64 @@
   "n": 79
  },
  "arms": {
+  "AR": {
+   "n_molecules": 7655,
+   "sucos_mean": 0.3627,
+   "sucos_median": 0.3503,
+   "sucos_q25": 0.2805,
+   "sucos_q75": 0.4395,
+   "sucos_mean_size_standardized": 0.3588,
+   "sucos_median_size_standardized": 0.3498,
+   "within_threshold_rate": 0.348
+  },
+  "Pocket2Mol": {
+   "n_molecules": 7772,
+   "sucos_mean": 0.3431,
+   "sucos_median": 0.3455,
+   "sucos_q25": 0.2738,
+   "sucos_q75": 0.4131,
+   "sucos_mean_size_standardized": 0.3455,
+   "sucos_median_size_standardized": 0.3454,
+   "within_threshold_rate": 0.2918
+  },
+  "DiffSBDD": {
+   "n_molecules": 7720,
+   "sucos_mean": 0.3294,
+   "sucos_median": 0.3318,
+   "sucos_q25": 0.2488,
+   "sucos_q75": 0.4108,
+   "sucos_mean_size_standardized": 0.3306,
+   "sucos_median_size_standardized": 0.3256,
+   "within_threshold_rate": 0.2812
+  },
+  "DecompDiff": {
+   "n_molecules": 6427,
+   "sucos_mean": 0.4646,
+   "sucos_median": 0.4496,
+   "sucos_q25": 0.395,
+   "sucos_q75": 0.5154,
+   "sucos_mean_size_standardized": 0.4719,
+   "sucos_median_size_standardized": 0.4639,
+   "within_threshold_rate": 0.7307
+  },
+  "FuncBind": {
+   "n_molecules": 7895,
+   "sucos_mean": 0.4262,
+   "sucos_median": 0.4056,
+   "sucos_q25": 0.3426,
+   "sucos_q75": 0.4887,
+   "sucos_mean_size_standardized": 0.4196,
+   "sucos_median_size_standardized": 0.4038,
+   "within_threshold_rate": 0.5226
+  },
   "TargetDiff": {
    "n_molecules": 7287,
    "sucos_mean": 0.3733,
    "sucos_median": 0.3715,
    "sucos_q25": 0.2998,
    "sucos_q75": 0.4422,
-   "sucos_mean_size_standardized": 0.374,
-   "sucos_median_size_standardized": 0.3703,
+   "sucos_mean_size_standardized": 0.3718,
+   "sucos_median_size_standardized": 0.3671,
    "within_threshold_rate": 0.3936
   },
   "VoxBind": {
@@ -25,23 +75,23 @@
    "sucos_median": 0.328,
    "sucos_q25": 0.2698,
    "sucos_q75": 0.3918,
-   "sucos_mean_size_standardized": 0.3368,
-   "sucos_median_size_standardized": 0.3319,
+   "sucos_mean_size_standardized": 0.3438,
+   "sucos_median_size_standardized": 0.3376,
    "within_threshold_rate": 0.2252
   },
-  "VoxBind + Ours": {
+  "CoDE": {
    "n_molecules": 7873,
    "sucos_mean": 0.3612,
    "sucos_median": 0.3547,
    "sucos_q25": 0.2983,
    "sucos_q75": 0.4165,
-   "sucos_mean_size_standardized": 0.3648,
-   "sucos_median_size_standardized": 0.3611,
+   "sucos_mean_size_standardized": 0.3721,
+   "sucos_median_size_standardized": 0.367,
    "within_threshold_rate": 0.3031
   }
  },
  "paired": {
-  "VoxBind + Ours - VoxBind": {
+  "CoDE - VoxBind": {
    "n_pockets": 79,
    "mean_diff": 0.0255,
    "median_diff": 0.025,
@@ -51,7 +101,7 @@
    ],
    "a_higher_in": 63
   },
-  "VoxBind + Ours - TargetDiff": {
+  "CoDE - TargetDiff": {
    "n_pockets": 79,
    "mean_diff": -0.0106,
    "median_diff": -0.0122,
@@ -60,6 +110,16 @@
     0.003
    ],
    "a_higher_in": 31
+  },
+  "CoDE - DecompDiff": {
+   "n_pockets": 79,
+   "mean_diff": -0.0984,
+   "median_diff": -0.0971,
+   "ci95": [
+    -0.1104,
+    -0.0863
+   ],
+   "a_higher_in": 3
   }
  }
 }

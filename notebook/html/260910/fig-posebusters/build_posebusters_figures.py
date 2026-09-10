@@ -132,11 +132,17 @@ def fig_check_failures(arms, variant, fails):
     names = sorted({k for g in shown for k in g["counts"]
                     if max(h["rates"].get(k, 0) for h in shown) >= MIN_FAIL_PCT},
                    key=lambda k: -max(g["rates"].get(k, 0) for g in shown))
-    fig, ax = plt.subplots(figsize=(pc.FIG_W, 0.52 * len(names) + 1.5), dpi=220)
+    # One row of the y axis is 1.0 apart, so the bars of a group must fit inside that:
+    # a fixed height works for three arms and silently overlaps the neighbouring groups at
+    # eight (8 x 0.19 = 1.52), which reads as bars detached from their labels. Derive it.
+    h = 0.86 / len(arms)
+    # Row pitch: enough that eight thin bars stay readable, without turning a 7.6 in wide
+    # figure into a 10 in tall one.
+    fig, ax = plt.subplots(
+        figsize=(pc.FIG_W, (0.40 if len(arms) <= 3 else 0.62) * len(names) + 1.6), dpi=220)
     fig.patch.set_facecolor("white")
     ax.set_facecolor("white")
     ys = np.arange(len(names))[::-1]
-    h = 0.19 if len(arms) > 2 else 0.26
     for i, (lab, key, _) in enumerate(arms):
         ax.barh(ys + (i - (len(arms) - 1) / 2) * h,
                 [fails[key]["counts"].get(k, 0) for k in names],
@@ -155,7 +161,12 @@ def fig_check_failures(arms, variant, fails):
     handles = [Patch(facecolor=color(lab), edgecolor=color(lab),
                      label=f"{lab}  (n={fails[key]['n_mols']:,})")
                for lab, key, _ in arms]
-    pc.legend(ax, handles, loc="lower right")
+    # Two arms fit in the corner; eight do not, and a key that covers the bars it explains
+    # is worse than one that costs a strip of height.
+    # The bottom rows are the checks nothing much fails, so the lower right is empty at any
+    # arm count; eight entries just need two columns.
+    pc.legend(ax, handles, loc="lower right", ncol=1 if len(arms) <= 3 else 2,
+              fontsize=12.5 if len(arms) <= 3 else 11)
     pc.fit(fig, pad=0.5)
     pc.save(fig, HERE, "pb_check_failures", variant)
 
