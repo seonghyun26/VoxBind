@@ -168,7 +168,7 @@ def exports(xs):
                        "targets": pc.P79},
         "arms": {}, "reference_ligand": block(REFROWS),
     }
-    for lab, key, root in pc.ARMS:
+    for lab, key, root in pc.arms_for("s", DATA):
         pockets = sorted(DATA[key])
         summary["arms"][lab] = {
             "root": root, "key": key, "pockets_all": len(pockets),
@@ -180,7 +180,7 @@ def exports(xs):
 
     # The curves themselves, so a reader can check a figure without re-running it.
     per_atom = {"heavy_atoms": xs, "n_pockets": len(pc.P79), "arms": {}}
-    for lab, key, _ in pc.ARMS:
+    for lab, key, _ in pc.arms_for("s", DATA):
         s_per, c_per = pc.by_size(P79_ROWS[key], "s"), pc.by_size(P79_ROWS[key], "c")
         per_atom["arms"][lab] = {
             "n": [len(s_per.get(a, ())) for a in xs],
@@ -210,7 +210,7 @@ def exports(xs):
                 w.writerow([arm, a, n]
                            + [("" if d[f][i] is None else round(d[f][i], 3)) for f in fields])
 
-    for lab, key, root in pc.ARMS:
+    for lab, key, root in pc.arms_for("s", DATA):
         mols = [{"t": t, "n": r["n"], "s": r["s"], "c": r["c"]}
                 for t in sorted(DATA[key]) for r in DATA[key][t]]
         json.dump({"arm": lab, "root": root, "n_pockets": len(DATA[key]),
@@ -227,7 +227,7 @@ def exports(xs):
 def main():
     pc.use_style()
     ranges, drops = {}, {}
-    for variant, arms in pc.variants():
+    for variant, arms in pc.variants("s", DATA):
         per = {key: pc.by_size(P79_ROWS[key], "s") for _, key, _ in arms}
         xs = pc.x_range(per, arms)
         ranges[variant] = xs
@@ -241,7 +241,7 @@ def main():
           + f" (counts where every drawn arm has >={pc.MIN_N} molecules)\n")
     print(f"{'arm':16s} {'atoms':>6s} {'strain med':>11s} {'strain mean':>12s} "
           f"{'clash med':>10s} {'mols':>7s}")
-    for lab, key, _ in pc.ARMS:
+    for lab, key, _ in pc.arms_for("s", DATA):
         r = summary["arms"][lab]["p79"]
         print(f"{lab:16s} {r['atoms_mean']:6.1f} {r['strain_median']:11.1f} "
               f"{r['strain_mean']:12.3g} {r['clash_median']:10.1f} {r['n_molecules']:7d}")

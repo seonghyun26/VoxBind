@@ -8,7 +8,7 @@ them would silently corrupt. **Each folder carries the code that draws its own f
 here, `build_posebusters_figures.py`.
 
 Built 2026-09-09 from the per-target `metrics.json` of the runs on this box. PoseBusters
-had only ever run on 33/79 of Ours v1 and 53/100 of vanilla, and never on TargetDiff;
+had only ever run on 33/79 of CoDE and 53/100 of vanilla, and never on TargetDiff;
 `voxbind/scripts/85_fill_pose_eval_4runs.sh` filled the remaining 276 pocket-dirs, so this
 is the first build where every arm carries it on every pocket — and the first with the
 per-check breakdown that says *why* a validity rate is what it is.
@@ -17,7 +17,7 @@ per-check breakdown that says *why* a validity rate is what it is.
 |---|---|---|---|
 | TargetDiff | — | `/home1/irteam/base_drug/eval/targetdiff` | 100 |
 | VoxBind | vanilla, σ=0.9 | `exps/_vanilla_ep923/samples/full_eval_ep923` | 100 |
-| VoxBind + Ours | Ours v1 | `exps/voxbind_frozenenc_atomblob7_v2p1_sig0.9/samples/full_eval_ep350` | 79 |
+| CoDE | CoDE | `exps/voxbind_frozenenc_atomblob7_v2p1_sig0.9/samples/full_eval_ep350` | 79 |
 
 **Ours v2** (`exps/samples_reference_receptor_ed_ep350`, 92 pockets) was dropped from this
 section on 2026-09-09. It is still evaluated — both metrics are complete on it and
@@ -25,7 +25,7 @@ section on 2026-09-09. It is still evaluated — both metrics are complete on it
 Re-adding it is one line in `../pose_common.py`'s `ARMS`.
 
 **Everything plotted is the 79-pocket set** (`frozenenc_probes/p79_targets.json`), the
-electron-density pockets all three arms cover — Ours v1 never sampled more. Each arm's own
+electron-density pockets all three arms cover — CoDE never sampled more. Each arm's own
 full-coverage number is in `posebusters_summary.json` under `all_pockets`; it is **not**
 comparable across arms and moves the headline by ≤1.3 points. target_71 is included: it is
 unscoreable on the *docking* side only, both pose metrics work on it.
@@ -40,7 +40,7 @@ they appear in `../fig-posecheck` and cannot appear here without a run there.
 |---|---|---|---|---|
 | TargetDiff | 22.2 | **60.8 %** | 58.7 % | 7,287 |
 | VoxBind | 24.0 | **69.3 %** | 69.8 % | 7,888 |
-| VoxBind + Ours | 24.9 | **67.5 %** | 68.9 % | 7,873 |
+| CoDE | 24.9 | **67.5 %** | 68.9 % | 7,873 |
 | *Reference ligand* | *22.8* | *96.2 %* | *—* | *79* |
 
 "Molecules scored" is `n_posebusters`, the denominator every rate in the row is over. It
@@ -63,17 +63,17 @@ same confound the Vina numbers have.
 |---|---|---|---|---|---|
 | TargetDiff | 85.1 % | 66.0 % | 58.6 % | 46.6 % | 36.8 % |
 | VoxBind | 85.0 % | 76.3 % | 68.8 % | 62.2 % | 56.5 % |
-| VoxBind + Ours | 83.2 % | 76.3 % | 67.7 % | 61.6 % | 56.1 % |
+| CoDE | 83.2 % | 76.3 % | 67.7 % | 61.6 % | 56.1 % |
 
 **Size explains more than half of the v1 ↔ vanilla gap, but not all of it.** Crude, vanilla
-leads Ours v1 by 1.8 points; size-standardized the lead is **0.9** (69.8 % vs 68.9 %).
+leads CoDE by 1.8 points; size-standardized the lead is **0.9** (69.8 % vs 68.9 %).
 Vanilla is ahead in every bin — by 1.8 / 0.0 / 1.1 / 0.6 / 0.4 points from ≤15 to >30 — so
 the remaining gap is small but real, not an artefact. Do not claim the two are tied on pose
 validity; claim the gap is under one point once size is controlled.
 
 **TargetDiff's deficit is entirely a large-molecule deficit.** In the ≤15 bin it is
-actually the *best* arm (85.1 %, ahead of Ours v1 by 1.9 and level with vanilla), and it
-only falls behind from 16–20 onward, ending 19.3 points below Ours v1 at >30. Standardized
+actually the *best* arm (85.1 %, ahead of CoDE by 1.9 and level with vanilla), and it
+only falls behind from 16–20 onward, ending 19.3 points below CoDE at >30. Standardized
 it lands at 58.7 %, ~10-11 points below both VoxBind-family arms.
 
 The crystal reference poses hold 92-100 % across every bin, so the size slope is a property
@@ -81,7 +81,7 @@ of the generated poses, not of the checks becoming unpassable for big ligands.
 
 ## Which checks fail (`pb_check_failures`)
 
-| check | TargetDiff | VoxBind | VoxBind + Ours | Reference |
+| check | TargetDiff | VoxBind | CoDE | Reference |
 |---|---|---|---|---|
 | non-aromatic ring non-flatness | 8.9 % | 21.1 % | **22.5 %** | 1.3 % |
 | bond angles | **22.5 %** | 5.5 % | 5.9 % | 0.0 % |
@@ -127,7 +127,7 @@ enters the all-must-pass `valid`. What that would cost, if the two were independ
 |---|---|---|
 | TargetDiff | 60.8 % | 23.9 % |
 | VoxBind | 69.3 % | 15.6 % |
-| VoxBind + Ours | 67.5 % | 20.5 % |
+| CoDE | 67.5 % | 20.5 % |
 
 `build_sucos.py` therefore calls `check_sucos(..., sucos_threshold=0.4)` — exactly what
 `gen.yml` configures — and keeps the number separate. It also skips re-running the 20 dock
@@ -137,7 +137,7 @@ checks for one extra column: SuCOS needs only the two molecules, ~1.4 s per pock
 |---|---|---|---|---|
 | TargetDiff | 0.373 | 0.371 | 0.374 | 39.4 % |
 | VoxBind | 0.336 | 0.328 | 0.337 | 22.5 % |
-| VoxBind + Ours | 0.361 | 0.355 | 0.365 | 30.3 % |
+| CoDE | 0.361 | 0.355 | 0.365 | 30.3 % |
 
 **Three things worth carrying:**
 
@@ -177,7 +177,7 @@ control has not been run and (3) should not be reported as a clean win until it 
 Figures follow the 260903 3-line house style (`../fig-vina-per-atom`): no panel titles,
 warm near-black furniture, dotted rules, live text in the SVG and TrueType in the PDF.
 
-**Every figure is written in two variants.** `_core` draws VoxBind, VoxBind + Ours and the
+**Every figure is written in two variants.** `_core` draws VoxBind, CoDE and the
 crystal reference — the comparison this section is making, and the same three series the
 Vina 3-line figures carry. `_all` adds every baseline the figure has data for (here:
 TargetDiff). The split is the one the Vina figures already make, not a subset picked after

@@ -49,20 +49,39 @@ from method_colors import color                                       # noqa: E4
 
 E = "/home1/irteam/VoxBind/voxbind/exps"
 
-# label, key, run root
+# label, key, run root — drawn in this order, so our method lands on top.
+#
+# The five published baselines were sampled on another box and arrive as TargetDiff-format
+# meta bundles; voxbind/scripts/tools/stage_baseline_samples.py writes them out as ordinary
+# sample dirs under exps/baselines_pose/ and 86_pose_eval_baselines.sh scores them with the
+# same metrics.py as everything else, against the same hard-linked pocket10 crops. They
+# carry PoseBusters only -- their PoseCheck lives in fig-posecheck's whole-receptor
+# figures, at a scope these crops are not comparable with -- so builders take the arms
+# that actually hold the field they draw (see `arms_for`) rather than a hard-coded list.
 ARMS = [
-    ("TargetDiff",     "targetdiff", "/home1/irteam/base_drug/eval/targetdiff"),
-    ("VoxBind",        "vanilla",    f"{E}/_vanilla_ep923/samples/full_eval_ep923"),
-    ("VoxBind + Ours", "ours_v1",    f"{E}/voxbind_frozenenc_atomblob7_v2p1_sig0.9/samples/full_eval_ep350"),
+    ("AR",         "ar",         f"{E}/baselines_pose/ar"),
+    ("Pocket2Mol", "pocket2mol", f"{E}/baselines_pose/pocket2mol"),
+    ("DiffSBDD",   "diffsbdd",   f"{E}/baselines_pose/diffsbdd"),
+    ("DecompDiff", "decompdiff", f"{E}/baselines_pose/decompdiff"),
+    ("FuncBind",   "funcbind",   f"{E}/baselines_pose/funcbind"),
+    ("TargetDiff", "targetdiff", "/home1/irteam/base_drug/eval/targetdiff"),
+    ("VoxBind",    "vanilla",    f"{E}/_vanilla_ep923/samples/full_eval_ep923"),
+    ("CoDE",       "ours_v1",    f"{E}/voxbind_frozenenc_atomblob7_v2p1_sig0.9/samples/full_eval_ep350"),
 ]
 # Ours v2 (exps/samples_reference_receptor_ed_ep350, 92 pockets) was dropped from this
 # section on 2026-09-09. It is still evaluated -- both metrics are complete on it and
 # 85_fill_pose_eval_4runs.sh still fills it -- it is just not one of the arms reported
 # here. Re-adding it is one line.
+# `core` is the comparison this section makes: our method against the model it modifies,
+# with the crystal ligand as the benchmark. `all` is every arm the figure has data for.
 CORE = ("vanilla", "ours_v1")
 REF_LABEL = "Reference ligand"
 REF_COLOR = color(REF_LABEL)
-REF_ROOT = ARMS[2][2]        # any arm carries the same crystal ligand per pocket
+# The crystal ligand is the same molecule in every run that carries one, so any of OUR
+# roots will do -- but it is resolved BY KEY, never by position. It used to be ARMS[2][2],
+# which silently became DiffSBDD the moment the baselines were prepended to ARMS, and the
+# staged baseline dirs have no reference block at all.
+REF_ROOT = next(root for _, key, root in ARMS if key == "ours_v1")
 
 P79 = json.load(open(f"{E}/frozenenc_probes/p79_targets.json"))
 EDGES = [0, 16, 21, 26, 31, 10 ** 6]
@@ -162,9 +181,34 @@ def load_arms():
     return data, p79_rows, refrows
 
 
-def variants():
-    """(name, arms) for each figure variant, core first."""
-    return (("core", [a for a in ARMS if a[1] in CORE]), ("all", ARMS))
+def arms_for(field, data, arms=None):
+    """The arms that carry `field` across the WHOLE 79-pocket set, in ARMS order.
+
+    An arm with no data for a metric must not become an empty curve and a legend row that
+    says it was measured and lost -- it was never measured. The baselines hold PoseBusters
+    and not PoseCheck, so the two folders end up with different arm lists from one ARMS.
+
+    The test is per POCKET, not "has any value at all", and that is the point: a scoring
+    run in progress leaves an arm with a handful of finished pockets, and pooling those
+    would draw a complete-looking curve over 4% of the data. An arm is in only when every
+    p79 pocket it holds has at least one scored molecule."""
+    arms = ARMS if arms is None else arms
+    out = []
+    for a in arms:
+        pockets = [t for t in P79 if t in data.get(a[1], {})]
+        if not pockets:
+            continue
+        scored = sum(any(r[field] is not None for r in data[a[1]][t]) for t in pockets)
+        if scored == len(pockets) == len(P79):
+            out.append(a)
+    return out
+
+
+def variants(field=None, data=None):
+    """(name, arms) for each figure variant, core first. Pass `field` and the loaded
+    per-arm data to drop arms that do not carry that metric over the whole pocket set."""
+    arms = ARMS if field is None else arms_for(field, data)
+    return (("core", [a for a in arms if a[1] in CORE]), ("all", arms))
 
 
 # ── statistics ───────────────────────────────────────────────────────────────────

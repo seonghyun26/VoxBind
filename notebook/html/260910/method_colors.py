@@ -6,7 +6,7 @@ builders import it; nothing defines a method's colour locally.
 
 THE FIXED POINTS (set 2026-09-09, and the reason the rest moved):
 
-  VoxBind + Ours   #4363D8  blue        — OUR blue: the saturated blue the CDG charts and
+  CoDE             #4363D8  blue        — OUR blue: the saturated blue the CDG charts and
                                           the PoseCheck figures already carry (the Vina
                                           3-line figures use #8291E8, a lighter tint of
                                           the same family, and still read as ours)
@@ -21,11 +21,16 @@ Two of those forced changes elsewhere, which is the whole point of centralising 
     that, and it is far from both the blue and the green.
   * AR used to be #9b59b6 purple, which violet now sits on top of. AR takes a teal-cyan
     instead: no other method is anywhere near that hue.
-  * Ours v1 used to be green #3cb44b in the PoseCheck figures. It hands the green to
+  * CoDE used to be green #3cb44b in the PoseCheck figures. It hands the green to
     DecompDiff and takes our blue, so "ours" is one colour everywhere.
 
+OUR METHOD IS NAMED CoDE (2026-09-10), \textsc{CoDE} in LaTeX. The figures carry the plain
+string, since matplotlib has no small caps without a TeX backend; the .tex files carry the
+\textsc form. "VoxBind + Ours", "Ours v1" and "Ours" all still resolve through ALIASES, so
+older builders and hand-written HTML keep working.
+
 Ours v2 is a deeper shade of the same blue rather than a hue of its own, because it IS the
-same family as Ours v1 and should read as one. It is deliberately DARKER and not lighter:
+same family as CoDE and should read as one. It is deliberately DARKER and not lighter:
 TargetDiff's violet is a light tint, and a light blue beside it is the one pairing in this
 palette that genuinely does not separate. Dark blue / mid blue / light violet is a
 lightness ladder, and that reads at a glance even where the hues are neighbours.
@@ -46,9 +51,26 @@ COLORS = {
     "FuncBind":         "#A9744F",   # brown
     "TargetDiff":       "#B58FDB",   # violet
     "VoxBind":          "#F5B27E",   # sand
-    "VoxBind + Ours":   "#4363D8",   # blue — ours
+    "CoDE":             "#4363D8",   # blue — ours (LaTeX: \textsc{CoDE})
     "Ours v2":          "#2B3A8C",   # deep indigo — same family as Ours v1
 }
+
+# The MCP (macrocyclic-peptide) fine-tune arms of §1 are NOT four independent methods --
+# they are one model at four amounts of receptor-ED fine-tuning, so they get an ordinal
+# ramp rather than four hues: same brown as FuncBind above (they ARE FuncBind), darkening
+# with training. Reading order is the encoding, which four categorical hues would throw
+# away, and it keeps §1 out of the categorical slots §2's methods already own.
+#
+# Validated as an ordinal ramp (monotone lightness, adjacent dL >= 0.06, light end 3.86:1
+# on the light surface, hue spread 4 degrees). The light end IS the FuncBind brown, so the
+# untouched base model reads the same here as it does in §2.
+MCP_RAMP = {
+    "FuncBind vanilla":   "#A9744F",
+    "FuncBind ft 3.17M":  "#86593A",
+    "FuncBind ft 8.21M":  "#684226",
+    "FuncBind ft 26.1M":  "#4A2C12",
+}
+COLORS.update(MCP_RAMP)
 
 # The same method is spelled several ways across the builders and the HTML. Every spelling
 # resolves here rather than each builder carrying its own hard-coded hex.
@@ -62,14 +84,22 @@ ALIASES = {
     "VoxBind σ=0.9": "VoxBind",
     "VoxBind σ0.9": "VoxBind",
     "VoxBind sigma=0.9": "VoxBind",
-    "ours_v1": "VoxBind + Ours",
-    "Ours": "VoxBind + Ours",
-    "Ours · v1": "VoxBind + Ours",
-    "Ours &middot; v1": "VoxBind + Ours",
-    "Ours v1": "VoxBind + Ours",
+    "ours_v1": "CoDE",
+    "Ours": "CoDE",
+    "Ours · v1": "CoDE",
+    "Ours &middot; v1": "CoDE",
+    "Ours v1": "CoDE",
+    "VoxBind + Ours": "CoDE",
+    "\\textsc{CoDE}": "CoDE",
+    "CODE": "CoDE",
     "ours_v2": "Ours v2",
     "Ours · v2": "Ours v2",
     "Ours &middot; v2": "Ours v2",
+    "vanilla_mcp": "FuncBind vanilla",
+    "fb_unified": "FuncBind vanilla",
+    "ft_3.17M": "FuncBind ft 3.17M",
+    "ft_8.21M": "FuncBind ft 8.21M",
+    "ft_26.1M": "FuncBind ft 26.1M",
 }
 
 

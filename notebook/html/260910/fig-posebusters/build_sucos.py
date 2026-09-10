@@ -249,6 +249,10 @@ def main():
         pb = json.load(open(os.path.join(HERE, "posebusters_summary.json")))
         print(f"\n{'arm':16s} {'dock valid':>11s} {'gen valid (upper bound)':>24s}")
         for lab, key, _ in pc.ARMS:
+            # An arm whose PoseBusters run has not finished is simply absent from that
+            # summary; skip its row rather than dropping the whole table.
+            if lab not in pb.get("arms", {}):
+                continue
             dock = pb["arms"][lab]["p79"]["pb_valid_rate"]
             gen = dock * summary["arms"][lab]["within_threshold_rate"]
             print(f"{lab:16s} {100 * dock:10.1f}% {100 * gen:23.1f}%")

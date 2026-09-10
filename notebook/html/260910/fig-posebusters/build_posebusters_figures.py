@@ -63,8 +63,12 @@ DATA, P79_ROWS, REFROWS = pc.load_arms()
 # size. Strata where the arm holds <10 molecules are dropped, not extrapolated. This is the
 # number to compare arms with; the crude rate is what the arm actually produced, and the
 # two answer different questions.
-STD_W = collections.Counter(r["n"] for key in P79_ROWS for r in P79_ROWS[key]
-                            if r["v"] is not None)
+# The weights come from the arms that are actually IN the comparison, not from every key
+# the loader returned: a scoring run in progress leaves partial rows in P79_ROWS, and
+# folding those into the standard population moves every arm's standardized rate.
+STD_W = collections.Counter(
+    r["n"] for _, key, _ in pc.arms_for("v", DATA) for r in P79_ROWS[key]
+    if r["v"] is not None)
 
 
 def std_rate(rows):
@@ -111,7 +115,7 @@ def fig_valid_per_atom(arms, variant):
 def check_failures():
     """{key: {n_mols, counts, rates}} over every arm, plus the crystal ligands."""
     out = {}
-    for lab, key, _ in pc.ARMS:
+    for lab, key, _ in pc.arms_for("v", DATA):
         rows = [r for r in P79_ROWS[key] if r["v"] is not None]
         cnt = collections.Counter(c for r in rows for c in r["f"])
         out[key] = {"n_mols": len(rows), "counts": dict(cnt),
@@ -178,7 +182,7 @@ def exports(fails):
                  "own coverage and is NOT comparable across arms."),
         "arms": {}, "reference_ligand": block(REFROWS),
     }
-    for lab, key, root in pc.ARMS:
+    for lab, key, root in pc.arms_for("v", DATA):
         pockets = sorted(DATA[key])
         summary["arms"][lab] = {
             "root": root, "key": key, "pockets_all": len(pockets),
@@ -191,7 +195,7 @@ def exports(fails):
 
     by_bin = {"bins": pc.BIN_LABELS, "edges": pc.EDGES[:-1] + ["inf"],
               "n_pockets": len(pc.P79), "arms": {}}
-    for lab, key, _ in pc.ARMS:
+    for lab, key, _ in pc.arms_for("v", DATA):
         by_bin["arms"][lab] = [block([r for r in P79_ROWS[key] if pc.bin_of(r["n"]) == b])
                                for b in range(len(pc.BIN_LABELS))]
     by_bin["arms"][pc.REF_LABEL] = [
@@ -210,12 +214,12 @@ def exports(fails):
                 w.writerow([arm, lab] + [r[c] for c in cols])
 
     json.dump({"n_pockets": len(pc.P79),
-               "arms": {lab: fails[key] for lab, key, _ in pc.ARMS},
+               "arms": {lab: fails[key] for lab, key, _ in pc.arms_for("v", DATA)},
                "reference_ligand": fails["reference"]},
               open(os.path.join(HERE, "posebusters_check_failures.json"), "w"),
               indent=1, ensure_ascii=False)
 
-    for lab, key, root in pc.ARMS:
+    for lab, key, root in pc.arms_for("v", DATA):
         mols = [{"t": t, "n": r["n"], "v": r["v"], "f": r["f"]}
                 for t in sorted(DATA[key]) for r in DATA[key][t]]
         json.dump({"arm": lab, "root": root, "n_pockets": len(DATA[key]),
@@ -232,7 +236,7 @@ def main():
     pc.use_style()
     fails = check_failures()
     ranges = {}
-    for variant, arms in pc.variants():
+    for variant, arms in pc.variants("v", DATA):
         ranges[variant] = fig_valid_per_atom(arms, variant)
         fig_check_failures(arms, variant, fails)
     summary, by_bin = exports(fails)
@@ -241,7 +245,7 @@ def main():
           + " · ".join(f"{v} x {xs[0]}-{xs[-1]}" for v, xs in ranges.items())
           + f" (counts where every drawn arm has >={pc.MIN_N} molecules)\n")
     print(f"{'arm':16s} {'atoms':>6s} {'PB-valid':>9s} {'size-std':>9s} {'mols':>7s}")
-    for lab, key, _ in pc.ARMS:
+    for lab, key, _ in pc.arms_for("v", DATA):
         r = summary["arms"][lab]["p79"]
         print(f"{lab:16s} {r['atoms_mean']:6.1f} {100 * r['pb_valid_rate']:8.1f}% "
               f"{100 * r['pb_valid_rate_size_standardized']:8.1f}% {r['n_molecules']:7d}")
@@ -249,7 +253,7 @@ def main():
     print(f"{pc.REF_LABEL:16s} {r['atoms_mean']:6.1f} {100 * r['pb_valid_rate']:8.1f}% "
           f"{'—':>9s} {r['n_molecules']:7d}")
     print(f"\nPB-valid by bin ({' · '.join(pc.BIN_LABELS)}):")
-    for lab, key, _ in pc.ARMS:
+    for lab, key, _ in pc.arms_for("v", DATA):
         print(f"  {lab:16s} " + "  ".join(
             f"{100 * b['pb_valid_rate']:5.1f}%" if b["pb_valid_rate"] is not None else "    -"
             for b in by_bin["arms"][lab]))
