@@ -293,10 +293,32 @@ This family scores the local arms against the **whole receptor**
 crop cannot show a clash with an atom it does not contain — so do not read a number from
 one against a number from the other.
 
+**And the crop, not the whole receptor, is what the literature reports** (checked against
+both papers, 2026-09-10). PoseCheck's own pipeline is crop-scored: `get_ids_to_pockets`
+reads element `[0]` of each CrossDocked split entry, and that element is
+`..._pocket10.pdb` (element `[1]` is the ligand SDF). The PoseCheck paper says the same in
+words — "the model is given a reduced PDB file containing only the atoms for a single
+pocket" — without naming the radius, which the code settles. Two numeric anchors agree:
+
+| | VoxBind paper, Fig. 7 | our crop | our whole receptor |
+|---|---|---|---|
+| TargetDiff clash mean | 10.8 | **10.72** | 11.01 |
+| VoxBind σ=0.9 clash mean | 5.1 | **5.38** | 6.23 |
+
+So `build_posecheck_per_atom.py`'s numbers sit on the published axis and this family's do
+not. Two things follow. The "~10.8" that older scripts in this repo cite is the **VoxBind**
+paper's figure, not PoseCheck's — the PoseCheck paper reports 9.08 for TargetDiff, from its
+own samples, and that gap is a difference of sample set, not of scope. And the whole-
+receptor numbers err upward, not downward: scoring against more protein finds more clashes,
+so this family is not a conservative version of the crop, it is a different measurement.
+
 ## Two things to carry into the writeup
 
 1. **Strain here is the posecheck 1.3.1 definition, not the VoxBind paper's.** Numbers are
-   ~10× smaller than Fig. 6 of arXiv 2405.03961 and must never be placed beside it. Report
+   ~10× smaller than Fig. 6 of arXiv 2405.03961 and must never be placed beside it. Now
+   confirmed from both papers: VoxBind's Fig. 6 reference median is 102.5, the identical
+   value the PoseCheck paper gives for its CrossDocked baseline, so VoxBind carried the old
+   definition. Ours is 34.3. Report
    the median: the distribution is heavy-tailed enough that the mean reports the UFF
    failure rate instead (vanilla: mean 2.26e8, median 62).
 2. **Strain is not reproducible run-to-run**, even with `randomSeed=0` forced. The same
