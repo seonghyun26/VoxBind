@@ -22,6 +22,16 @@ DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 # identical HP to the canonical 01c probe + tta_6set_probe (hidden/lr/wd/bs/patience/epochs)
 HP = dict(dropout=0.1, lr=1e-3, wd=1e-4, epochs=200, patience=30, bs=64)
 
+CORR_W = 0.0   # Pearson-correlation auxiliary weight (set by --corr; 0 = pure MSE, like 01c mse+corr)
+def _corr_pen(p, y):                                   # 1 - Pearson(pred, target) over the batch
+    p = p - p.mean(); y = y - y.mean()
+    den = torch.sqrt((p * p).sum() * (y * y).sum()) + 1e-8
+    return 1.0 - (p * y).sum() / den
+
+BASE_LOSS = "mse"   # base regression loss (set by --base): mse | huber | mae
+def _base_loss():
+    return {"mse": nn.MSELoss(), "huber": nn.HuberLoss(delta=1.0), "mae": nn.L1Loss()}[BASE_LOSS]
+
 HEADS = {                       # name -> (width, n_hidden_layers, tapered, act)
     "default":  (128, 2, True,  "relu"),   # casf-machinery 128→64 (NOT the results.html head)
     "l1x64":    (64, 1, False, "relu"),    # smallest, best-for-ID30 in the capacity sweep (ReLU)
@@ -39,6 +49,7 @@ HEADS = {                       # name -> (width, n_hidden_layers, tapered, act)
     "silu128":   (128, 1, False, "silu"),
     "silu256":   (256, 1, False, "silu"),
     "silu128d2": (128, 2, False, "silu"),
+    "silu_640_128": (128, 2, [640, 128], "silu"),   # 2-hidden SiLU, widths [640, 128] = feat→640→128→1
     # ── EXTENDED activation zoo at the FIXED 640→128→1 head ──
     "mish":      (128, 1, False, "mish"),
     "leaky":     (128, 1, False, "leaky_relu"),
@@ -105,7 +116,8 @@ class _GLUBlock(nn.Module):
 class MLP(nn.Module):
     def __init__(self, d, h, L, p=0.1, tapered=False, act="relu"):
         super().__init__()
-        widths = ([h, h // 2] if tapered else [h] * L)
+        widths = (list(tapered) if isinstance(tapered, (list, tuple))     # explicit per-layer widths
+                  else ([h, h // 2] if tapered else [h] * L))
         layers, prev = [], d
         for w in widths:
             if act in _GATED:
@@ -161,7 +173,7 @@ def cohorts(v2):
 
 def train_predict(feats, pK, v2, test_pids, seed, h, L, tapered, act="relu"):
     torch.manual_seed(seed); np.random.seed(seed)
-    lossf = nn.MSELoss()
+    lossf = _base_loss()
 
     def arrs(pids):
         pids = [p for p in pids if p in feats and p in pK]
@@ -178,7 +190,7 @@ def train_predict(feats, pK, v2, test_pids, seed, h, L, tapered, act="relu"):
     ytr_t = torch.tensor((ytr - ym) / ys, device=DEVICE)
     model = MLP(Xtr.shape[1], h, L, HP["dropout"], tapered, act).to(DEVICE)
     opt = torch.optim.Adam(model.parameters(), lr=HP["lr"], weight_decay=HP["wd"])
-    best, bstate, bad = 1e9, None, 0
+    best, bstate, bad = -1e9, None, 0                        # early-stop on val Spearman (↑ better)
     n = Xtr_t.size(0)
     for ep in range(HP["epochs"]):
         model.train()
@@ -187,13 +199,20 @@ def train_predict(feats, pK, v2, test_pids, seed, h, L, tapered, act="relu"):
             j = perm[i:i + HP["bs"]]
             if j.numel() < 4:
                 continue
-            opt.zero_grad(); lossf(model(Xtr_t[j]), ytr_t[j]).backward(); opt.step()
+            opt.zero_grad()
+            out_j = model(Xtr_t[j])
+            loss_j = lossf(out_j, ytr_t[j])
+            if CORR_W > 0:
+                loss_j = loss_j + CORR_W * _corr_pen(out_j, ytr_t[j])   # MSE + λ·(1-Pearson)
+            loss_j.backward(); opt.step()
         model.eval()
         with torch.no_grad():
             pv = model(Xva_t).cpu().numpy() * ys + ym
-        vr = float(np.sqrt(((yva - pv) ** 2).mean()))
-        if vr < best - 1e-4:
-            best, bstate, bad = vr, {k: v.detach().clone() for k, v in model.state_dict().items()}, 0
+        vs = float(spearmanr(pv, yva).statistic)             # match 01c: select best val Spearman
+        if not np.isfinite(vs):
+            vs = -1.0
+        if vs > best + 1e-4:
+            best, bstate, bad = vs, {k: v.detach().clone() for k, v in model.state_dict().items()}, 0
         else:
             bad += 1
             if bad >= HP["patience"]:
@@ -235,7 +254,12 @@ def main():
     ap.add_argument("--head", default="default,l1x64", help="comma list of head names")
     ap.add_argument("--seeds", type=int, default=5)
     ap.add_argument("--name", default=None)
+    ap.add_argument("--corr", type=float, default=0.0, help="Pearson-corr aux weight (λ; 0=pure MSE)")
+    ap.add_argument("--base", default="mse", choices=["mse", "huber", "mae"], help="base regression loss")
     args = ap.parse_args()
+    global CORR_W, BASE_LOSS
+    CORR_W = args.corr
+    BASE_LOSS = args.base
     feats, pK, v2 = load_feats(args.feat), load_pK(), v2_split()
     coh = cohorts(v2)
     order = ["FULL", "CL3", "CL3-ID60", "CL3-ID30", "CASF-nontrain", "CASF-clean"]

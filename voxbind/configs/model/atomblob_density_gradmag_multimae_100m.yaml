@@ -1,0 +1,34 @@
+model_name: atomblob_density_gradmag_multimae_100m
+arch: multimae                 # routes the unified pretrain entrypoint to the MultiMAE path (via mae.method)
+# MultiMAE (arXiv:2204.01678) — multi-modal multi-task masked autoencoder, 3D voxel adaptation.
+# 3 MODALITIES = the channel groups: 7 ligand atom types / 4 pocket atom types / (density+gradmag).
+# Encoder = grouped DensityViT (channel_group, [7,4,2]) at the CDG-v2 100M width/depth so a
+# frozen affinity probe is apples-to-apples with the champion; per-modality shallow decoders
+# cross-attend to ALL encoded tokens (cross-modal completion → density reconstructed from atoms).
+n_channels: 32
+patch_size: 8
+input_mode: atomblob_density
+with_gradmag: true
+n_in_channels: 13              # 7 lig + 4 poc + 1 density + 1 gradmag
+dim: 640                       # ── 100M encoder (matches CDG v2 champion) ──
+depth: 18
+heads: 10
+mlp_ratio: 4
+dropout: 0.1
+channel_groups: [7, 4, 2]      # lig atoms / poc atoms / (density+gradmag) = 3 MultiMAE modalities
+patch_embed_mode: channel_group  # grouped; declared so downstream loaders rebuild the encoder from cfg.yaml
+n_memory_tokens: 0             # no global token → frozen-probe path identical to the CDG champion
+
+# ── MultiMAE per-modality decoders (one per modality, cross-attention to all encoded tokens) ──
+dec_dim: 256                   # shallow decoder width (paper)
+dec_depth: 2                   # self-attention blocks after the cross-attention layer (paper)
+dec_heads: 8
+dec_mlp_ratio: 4
+
+# ── MultiMAE multi-modal Dirichlet masking ──────────────────────────────────────
+keep_ratio: 0.1667             # keep 1/6 of all tokens visible (5/6 masked) — MultiMAE canonical
+dirichlet_alpha: 1.0           # symmetric Dirichlet concentration (alpha=1 ⇒ uniform simplex)
+
+# ── loss ─────────────────────────────────────────────────────────────────────────
+lambda_fourier: 0.0            # pure per-modality MSE (paper); set >0 to add Fourier-magnitude L1
+# modality_weights: [1, 1, 1]  # optional per-modality loss weights (default equal ⇒ mean)

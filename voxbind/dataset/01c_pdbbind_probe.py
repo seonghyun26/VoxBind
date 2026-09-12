@@ -1142,6 +1142,17 @@ def run_features(args: argparse.Namespace) -> None:
     if tta_ops:
         print(f"  tta_rot        : {len(tta_ops)} cube rotations (feature-level averaging)")
 
+    # --mask_density: zero the density-derived input channels (density+gradmag[+diff]) — the
+    # trailing channels after the n_atom atom channels — to simulate REAL inference where no
+    # crystal structure / X-ray density exists. The encoder then sees atoms only.
+    _n_atom_ch = spec.expected_channels - (
+        (1 if spec.input_mode.endswith("_density") else 0)
+        + (1 if spec.with_gradmag else 0)
+        + (2 if getattr(spec, "with_diff", False) else 0))
+    if getattr(args, "mask_density", False):
+        print(f"  mask_density   : zeroing input channels [{_n_atom_ch}:] (density-derived) "
+              f"→ no-density inference; encoder sees {_n_atom_ch} atom channels only")
+
     feat_chunks: list[torch.Tensor] = []                            # kept on-device
     ordered_pids: list[str] = []
     pbar = tqdm(loader, unit="batch", desc=f"encode {args.condition}")
@@ -1152,6 +1163,8 @@ def run_features(args: argparse.Namespace) -> None:
         if x is None:
             continue
         x = x.to(args.device, non_blocking=on_cuda)                # (B, n_in, G, G, G)
+        if getattr(args, "mask_density", False):
+            x[:, _n_atom_ch:] = 0.0                                # no-density inference (atoms only)
         feat_chunks.append(encode_pooled(encoder, x, tta_ops, getattr(args, "pool", "mean")))  # (B,D) or (B,(1+l)D)
         ordered_pids.extend(batch_pids)
         pbar.set_postfix(saved=len(ordered_pids), err=n_err, refresh=False)
@@ -2826,6 +2839,12 @@ def build_parser() -> argparse.ArgumentParser:
                          "bit-identical to the untouched path. cls_concat = ChA-MAE hybrid "
                          "concat(mean-pool patches, CLS/memory token) (B,(1+l)D); requires the "
                          "encoder to have n_memory_tokens>0 (e.g. the 260908_cls_100m_v2 run).")
+    pf.add_argument("--mask_density", action="store_true",
+                    help="Zero the density-derived input channels (density+gradmag[+diff]) at "
+                         "extraction → simulates REAL inference where no crystal structure / X-ray "
+                         "electron density is available (the encoder sees atoms only). Use to measure "
+                         "no-density performance; pair with a density-dropout-trained encoder "
+                         "(mae.modal_mask_prob>0) for graceful degradation. Tag the cache separately.")
     pf.set_defaults(func=run_features)
 
     pr = sub.add_parser(

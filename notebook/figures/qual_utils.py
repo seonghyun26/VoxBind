@@ -18,6 +18,14 @@ from IPython.display import display
 from rdkit import Chem, rdBase
 
 
+POCKET_OCCUPANCY_COLOR = "#B4BEF0"
+DATA_CUBE_BORDER_COLOR = "#514F52"
+POCKET_OCCUPANCY_OPACITY = 0.15
+MOLECULE_RADIUS_SCALE = 0.8
+OCCUPANCY_RESOLUTION_A = 0.25
+OCCUPANCY_ISO = 0.45
+
+
 def natural_key(path):
     return [int(s) if s.isdigit() else s for s in re.split(r"(\d+)", str(path))]
 
@@ -48,6 +56,8 @@ def fig1_style(path):
     if missing:
         raise ValueError(f"fig1 style definitions missing: {sorted(missing)}")
     original_mesh_trace = namespace["mesh_trace"]
+    original_atom_trace = namespace["atom_trace"]
+    original_bond_trace = namespace["bond_trace"]
 
     def uniform_mesh_trace(vertices, faces, vertex_colors, *args, **kwargs):
         # fig1 uses one color per role. A scalar color avoids repeating it at every vertex.
@@ -58,7 +68,17 @@ def fig1_style(path):
             return trace
         return original_mesh_trace(vertices, faces, vertex_colors, *args, **kwargs)
 
+    def scaled_atom_trace(*args, **kwargs):
+        kwargs.setdefault("radius", namespace["BALL_RADIUS_A"] * MOLECULE_RADIUS_SCALE)
+        return original_atom_trace(*args, **kwargs)
+
+    def scaled_bond_trace(*args, **kwargs):
+        kwargs.setdefault("radius", namespace["STICK_RADIUS_A"] * MOLECULE_RADIUS_SCALE)
+        return original_bond_trace(*args, **kwargs)
+
     namespace["mesh_trace"] = uniform_mesh_trace
+    namespace["atom_trace"] = scaled_atom_trace
+    namespace["bond_trace"] = scaled_bond_trace
     return namespace
 
 
@@ -303,6 +323,32 @@ class Catalog:
         document = json.loads(Path(path).read_text())
         return {r["target"]: r for r in document.get("per_target", [])}
 
+    REF_ENERGY_KEYS = {"vina_score": "ref_vina_score", "vina_min": "ref_vina_min",
+                       "vina_dock": "ref_vina_dock"}
+
+    @lru_cache(maxsize=256)
+    def reference_energy(self, target, energy_key="vina_dock"):
+        """Cached docking score of the crystal reference ligand for this pocket.
+
+        The displayed reference comes from 'VoxBind + Ours' (see reference()), whose
+        score file carries ref_vina_* per target; fall back to any other method whose
+        score file exposes those fields. Returns None when no source has it.
+        """
+        ref_key = self.REF_ENERGY_KEYS.get(energy_key)
+        if ref_key is None:
+            return None
+        ordered = ["VoxBind + Ours", *[m for m in self.specs if m != "VoxBind + Ours"]]
+        for method in ordered:
+            if method not in self.specs:
+                continue
+            score_file = self._score_file(method)
+            if not score_file.is_file():
+                continue
+            row = self._energy_results(str(score_file)).get(target)
+            if row and isinstance(row.get(ref_key), (int, float)):
+                return float(row[ref_key])
+        return None
+
     def reference_paths(self, method, target):
         spec = self.specs[method]
         if spec["layout"] == "mcp_results":
@@ -364,20 +410,104 @@ def geometry(mol, center=None, extent=None):
     if center is not None:
         coords = coords - center
     elements = np.array([a.GetSymbol() for a in mol.GetAtoms()])
-    keep = np.array([a.GetAtomicNum() > 1 for a in mol.GetAtoms()])
+    heavy = np.array([a.GetAtomicNum() > 1 for a in mol.GetAtoms()])
+    keep = heavy.copy()
     if extent is not None:
         keep &= np.all(np.abs(coords) <= extent + 0.15, axis=1)
+    bonds = np.array([[b.GetBeginAtomIdx(), b.GetEndAtomIdx()] for b in mol.GetBonds()],
+                     dtype=int).reshape(-1, 2)
+    if extent is not None and len(bonds):
+        # Atom-wise cube cropping can leave the first atom beyond a cut bond as a
+        # floating ball. Remove only those crop-created singletons; preserve ions
+        # and other atoms that were already unbonded in the source pocket.
+        full_degree = np.zeros(len(coords), dtype=int)
+        heavy_bonds = bonds[np.all(heavy[bonds], axis=1)]
+        if len(heavy_bonds):
+            np.add.at(full_degree, heavy_bonds[:, 0], 1)
+            np.add.at(full_degree, heavy_bonds[:, 1], 1)
+        cropped_degree = np.zeros(len(coords), dtype=int)
+        cropped_bonds = bonds[np.all(keep[bonds], axis=1)]
+        if len(cropped_bonds):
+            np.add.at(cropped_degree, cropped_bonds[:, 0], 1)
+            np.add.at(cropped_degree, cropped_bonds[:, 1], 1)
+        keep &= ~((full_degree > 0) & (cropped_degree == 0))
     indices = np.flatnonzero(keep)
     remap = np.full(len(coords), -1, dtype=int)
     remap[indices] = np.arange(len(indices))
-    bonds = np.array([[b.GetBeginAtomIdx(), b.GetEndAtomIdx()] for b in mol.GetBonds()],
-                     dtype=int).reshape(-1, 2)
     bonds = remap[bonds[np.all(keep[bonds], axis=1)]]
     return coords[keep], elements[keep], bonds
 
 
 def scene_name(index):
     return "scene" if index == 0 else f"scene{index + 1}"
+
+
+def atom_occupancy_mesh(coords, elements, extent, resolution=OCCUPANCY_RESOLUTION_A,
+                        threshold=OCCUPANCY_ISO):
+    """Mesh the summed Gaussian atom occupancy used by VoxBind.
+
+    The grid and threshold match fig-overview: a 0.25 A grid centered on the
+    reference ligand and an iso value of 0.45. Each heavy atom uses its RDKit
+    van-der-Waals radius as the Gaussian sigma, matching VoxBind's pocket input.
+    """
+    from skimage.measure import marching_cubes
+
+    grid_dim = int(round(2 * extent / resolution))
+    if grid_dim < 2 or not np.isclose(grid_dim * resolution, 2 * extent):
+        raise ValueError("Occupancy extent must be an integer multiple of the resolution.")
+    volume = np.zeros((grid_dim, grid_dim, grid_dim), dtype=np.float32)
+    periodic_table = Chem.GetPeriodicTable()
+    neighborhood = 8  # VoxBind Voxelizer.cubes_around default.
+    for coord, element in zip(np.asarray(coords, dtype=float), elements):
+        atomic_number = periodic_table.GetAtomicNumber(str(element))
+        radius = periodic_table.GetRvdw(atomic_number) if atomic_number else 1.8
+        grid_coord = coord / resolution + grid_dim * 0.5
+        anchor = np.rint(grid_coord).astype(int)
+        lo = np.maximum(anchor - neighborhood, 0)
+        hi = np.minimum(anchor + neighborhood + 1, grid_dim)
+        if np.any(lo >= hi):
+            continue
+        gx = np.arange(lo[0], hi[0], dtype=np.float32)[:, None, None]
+        gy = np.arange(lo[1], hi[1], dtype=np.float32)[None, :, None]
+        gz = np.arange(lo[2], hi[2], dtype=np.float32)[None, None, :]
+        dist_sq = ((gx - grid_coord[0]) ** 2 + (gy - grid_coord[1]) ** 2
+                   + (gz - grid_coord[2]) ** 2)
+        sigma_vox = max(float(radius) / resolution, 1e-3)
+        volume[lo[0]:hi[0], lo[1]:hi[1], lo[2]:hi[2]] += np.exp(
+            -dist_sq / (2.0 * sigma_vox ** 2)
+        ).astype(np.float32)
+    if not np.any(volume >= threshold):
+        raise ValueError("Pocket occupancy is empty at the requested iso threshold.")
+    vertices, faces, _, _ = marching_cubes(
+        volume, level=threshold, spacing=(resolution,) * 3,
+        allow_degenerate=False,
+    )
+    vertices -= extent
+    return vertices, faces
+
+
+def data_cube_trace(extent, color=DATA_CUBE_BORDER_COLOR, width=1.5, opacity=0.7):
+    """Draw the 12 edges of the fixed reference-centered data cube."""
+    corners = np.array([
+        [x, y, z]
+        for x in (-extent, extent)
+        for y in (-extent, extent)
+        for z in (-extent, extent)
+    ], dtype=float)
+    edges = [
+        (i, j) for i in range(len(corners)) for j in range(i + 1, len(corners))
+        if np.count_nonzero(corners[i] != corners[j]) == 1
+    ]
+    x, y, z = [], [], []
+    for start, end in edges:
+        x.extend((corners[start, 0], corners[end, 0], None))
+        y.extend((corners[start, 1], corners[end, 1], None))
+        z.extend((corners[start, 2], corners[end, 2], None))
+    return go.Scatter3d(
+        x=x, y=y, z=z, mode="lines", name="Data cube", legendgroup="data-cube",
+        line=dict(color=color, width=width), opacity=opacity,
+        showlegend=False, hoverinfo="skip",
+    )
 
 
 def make_table(rows):
@@ -469,8 +599,20 @@ class QualitativeGrid:
         self.catalog.validate_target(target, self.methods)
         ref = self.catalog.reference(target)
         state["ref"] = ref
-        state["pocket_traces"] = self._model_traces(
-            geometry(ref["pocket"], ref["center"], self.pocket_extent), "Pocket")
+        pocket_geom = geometry(ref["pocket"], ref["center"], self.pocket_extent)
+        state["pocket_traces"] = self._model_traces(pocket_geom, "Pocket")
+        occupancy_vertices, occupancy_faces = atom_occupancy_mesh(
+            pocket_geom[0], pocket_geom[1], self.pocket_extent)
+        state["pocket_occupancy_trace"] = self.style["mesh_trace"](
+            occupancy_vertices, occupancy_faces,
+            [POCKET_OCCUPANCY_COLOR] * len(occupancy_vertices),
+            "Pocket atom occupancy", "pocket-occupancy",
+            opacity=POCKET_OCCUPANCY_OPACITY,
+        )
+        state["panel_prefix_traces"] = [
+            state["pocket_occupancy_trace"], data_cube_trace(self.pocket_extent),
+            *state["pocket_traces"],
+        ]
         state["records"], state["menus"] = {}, {}
         controls = []
         for method in self.methods:
@@ -549,11 +691,13 @@ class QualitativeGrid:
             figure = state["figure"]
             column = self.columns.index(changed_method)
             traces = self._model_traces(geometries[column], "Ligand")
+            traces_per_panel = len(state["panel_prefix_traces"]) + len(traces)
+            ligand_offset = len(state["panel_prefix_traces"])
             with figure.batch_update():
                 for offset, trace in enumerate(traces):
                     payload = trace.to_plotly_json()
                     payload.pop("type", None)
-                    figure.data[column * 4 + 2 + offset].update(payload)
+                    figure.data[column * traces_per_panel + ligand_offset + offset].update(payload)
                 for i in range(len(self.columns)):
                     scene = figure.layout[scene_name(i)]
                     scene.xaxis.range = [-extent, extent]
@@ -563,16 +707,16 @@ class QualitativeGrid:
 
         fig = make_subplots(rows=1, cols=len(self.columns),
                             specs=[[{"type": "scene"}] * len(self.columns)],
-                            subplot_titles=self.columns, horizontal_spacing=0.006)
+                            horizontal_spacing=0.006)
         camera = self.cameras.get(target, self.style["DEFAULT_CAMERA"])
         for column, geom in enumerate(geometries):
-            for trace in [*state["pocket_traces"], *self._model_traces(geom, "Ligand")]:
+            for trace in [*state["panel_prefix_traces"], *self._model_traces(geom, "Ligand")]:
                 fig.add_trace(trace, row=1, col=column + 1)
             fig.update_layout({scene_name(column): dict(
                 xaxis=axis, yaxis=axis, zaxis=axis, aspectmode="cube", camera=deepcopy(camera),
                 dragmode="orbit", bgcolor="white")})
-        fig.update_layout(width=self.panel_px * len(self.columns), height=self.panel_px + 35,
-                          margin=dict(l=0, r=0, t=35, b=0), showlegend=False, hovermode=False,
+        fig.update_layout(width=self.panel_px * len(self.columns), height=self.panel_px,
+                          margin=dict(l=0, r=0, t=0, b=0), showlegend=False, hovermode=False,
                           paper_bgcolor="white", plot_bgcolor="white",
                           font=dict(family="Arial", size=15, color="#514F52"))
         old = state.get("figure")
@@ -654,12 +798,12 @@ class QualitativeGrid:
                 scene.pop("domain", None)
                 dest_name = scene_name(row * ncols + col)
                 fig.update_layout({dest_name: scene})
-                domain = fig.layout[dest_name].domain
-                if row == 0:
-                    fig.add_annotation(text=self.columns[col], x=sum(domain.x) / 2, y=1.045,
-                                       xref="paper", yref="paper", showarrow=False, font=dict(size=17))
             first = fig.layout[scene_name(row * ncols)].domain
-            fig.add_annotation(text=state["ref"]["label"], x=-0.018, y=sum(first.y) / 2,
+            ref_energy = self.catalog.reference_energy(state["target"], self.energy_key)
+            row_label = state["ref"]["label"]
+            if ref_energy is not None:
+                row_label += f" · ref {ref_energy:.1f}"
+            fig.add_annotation(text=row_label, x=-0.018, y=sum(first.y) / 2,
                                xref="paper", yref="paper", textangle=-90, showarrow=False,
                                font=dict(size=16))
         fig.update_layout(width=ncols * self.panel_px + 65, height=nrows * self.panel_px + 85,
@@ -677,6 +821,9 @@ class QualitativeGrid:
                     pose="original SDF coordinates; reference-heavy-atom centroid subtracted from all models",
                     style_source=self.style.get("_source_name", "fig1.ipynb"), ligand_color=self.style["LIGAND_COLOR"],
                     pocket_color=self.style["POCKET_COLOR"],
+                    pocket_occupancy_color=POCKET_OCCUPANCY_COLOR,
+                    pocket_occupancy_opacity=POCKET_OCCUPANCY_OPACITY,
+                    data_cube_border_color=DATA_CUBE_BORDER_COLOR,
                     references=[dict(target=s["target"], ligand=str(s["ref"]["ligand_path"]),
                                      pocket=str(s["ref"]["pocket_path"]),
                                      shared_view_half_extent_A=s["extent"]) for s in self.rows],

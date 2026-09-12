@@ -114,7 +114,7 @@ def train_predict(feats, pK, v2, test_pids, seed):
 
     model = MLP(Xtr.shape[1], HP["hidden"], HP["dropout"]).to(DEVICE)
     opt = torch.optim.Adam(model.parameters(), lr=HP["lr"], weight_decay=HP["wd"])
-    best, best_state, bad = 1e9, None, 0
+    best, best_state, bad = -1e9, None, 0        # early-stop on val Spearman (↑ better), matches 01c
     n = Xtr_t.size(0)
     for ep in range(HP["epochs"]):
         model.train()
@@ -129,9 +129,11 @@ def train_predict(feats, pK, v2, test_pids, seed):
         model.eval()
         with torch.no_grad():
             pv = model(Xva_t).cpu().numpy() * ys + ym
-        vr = float(np.sqrt(((yva - pv) ** 2).mean()))
-        if vr < best - 1e-4:
-            best, best_state, bad = vr, {k: v.detach().clone() for k, v in model.state_dict().items()}, 0
+        vs = float(spearmanr(pv, yva).statistic)   # match 01c: select best val Spearman
+        if not np.isfinite(vs):
+            vs = -1.0
+        if vs > best + 1e-4:
+            best, best_state, bad = vs, {k: v.detach().clone() for k, v in model.state_dict().items()}, 0
         else:
             bad += 1
             if bad >= HP["patience"]:

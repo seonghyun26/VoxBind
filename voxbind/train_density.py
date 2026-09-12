@@ -62,6 +62,7 @@ from voxbind.models.mae_ops import (
     region_keep_masks, voxel_mask_to_patch_target,
 )
 from voxbind.models.density_cha_mae import DensityChaMAE
+from voxbind.models.density_multimae import DensityMultiMAE
 from voxbind.models.density_vit import DensityViTMAE
 from voxbind.train_common import (  # shared pretext-independent engine (extracted)
     AsyncCheckpointSaver, _amp_setup, _build_merged_atoms, _build_role_atoms, _channel_layout,
@@ -1426,6 +1427,127 @@ def val_epoch_cha(cfg, model, val_cache, device, ch_weight=None):
     return metrics
 
 
+def _build_multimae(cfg: DictConfig, device, layout=None, is_main: bool = True) -> DensityMultiMAE:
+    groups = tuple(int(c) for c in cfg.model.channel_groups)
+    n_in = int(cfg.model.n_in_channels)
+    assert sum(groups) == n_in, (
+        f"channel_groups {groups} must sum to n_in_channels {n_in}"
+    )
+    mw = cfg.model.get("modality_weights", None)
+    model = DensityMultiMAE(
+        grid_dim=int(cfg.vox.grid_dim),
+        patch_size=int(cfg.model.patch_size),
+        channel_groups=groups,
+        n_in_channels=n_in,
+        n_channels=int(cfg.model.n_channels),
+        dim=int(cfg.model.dim),
+        depth=int(cfg.model.depth),
+        n_heads=int(cfg.model.heads),
+        mlp_ratio=int(cfg.model.mlp_ratio),
+        dropout=float(cfg.model.dropout),
+        n_memory_tokens=int(cfg.model.get("n_memory_tokens", 0)),
+        dec_dim=int(cfg.model.get("dec_dim", 256)),
+        dec_depth=int(cfg.model.get("dec_depth", 2)),
+        dec_heads=int(cfg.model.get("dec_heads", 8)),
+        dec_mlp_ratio=int(cfg.model.get("dec_mlp_ratio", 4)),
+        keep_ratio=float(cfg.model.get("keep_ratio", 1.0 / 6.0)),
+        dirichlet_alpha=float(cfg.model.get("dirichlet_alpha", 1.0)),
+        lambda_fourier=float(cfg.model.get("lambda_fourier", 0.0)),
+        modality_weights=(list(mw) if mw is not None else None),
+        norm_pix=bool(cfg.model.get("norm_pix", False)),
+        force_mask_groups=tuple(int(g) for g in cfg.model.get("force_mask_groups", [])),
+    ).to(device)
+    if is_main:
+        n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        n_enc = sum(p.numel() for p in model.encoder.parameters())
+        logger.info(
+            f"DensityMultiMAE {(n_params/1e6):.02f}M params (encoder {(n_enc/1e6):.02f}M) — "
+            f"modalities={model.channel_groups}, n_visible={model.n_visible}/"
+            f"{model.n_groups * model.n_tokens} (keep={model.keep_ratio:.3f}), "
+            f"dirichlet_alpha={model.dirichlet_alpha}, n_memory_tokens={model.n_memory_tokens}")
+    return model
+
+
+def train_epoch_multimae(cfg, prefetcher, model, optimizer, model_ema, device,
+                         global_step, ch_weight=None, ema_source_model=None):
+    """MultiMAE training loop — mirrors train_epoch_cha (masking lives inside model.forward),
+    but sums whatever loss keys the model returns (incl. per-modality L_lig/L_poc/L_dens)."""
+    model.train()
+    grad_clip = float(cfg.mae.get("grad_clip", 0.0))
+    accum_steps = max(1, int(cfg.get("accum_steps", 1)))
+    channels_last = bool(cfg.get("channels_last", False))
+    _, amp_ctx_fn = _amp_setup(cfg)
+    sums: dict = {}
+    grad_norm_sum, n_batches = 0.0, 0
+    optimizer.zero_grad(set_to_none=True)
+    n_iter = len(prefetcher)
+
+    # MAEPrefetcher yields (x_in, x_clean, mask, target_str, x_in_b) — MultiMAE uses x_clean only.
+    for i, (_x_in, x_clean, _mask, _target_str, _x_in_b) in enumerate(prefetcher):
+        is_step = ((i + 1) % accum_steps == 0) or ((i + 1) == n_iter)
+        sync_ctx = contextlib.nullcontext()
+        if not is_step and hasattr(model, "no_sync"):
+            sync_ctx = model.no_sync()
+        if channels_last:
+            x_clean = x_clean.to(memory_format=torch.channels_last_3d)
+        with sync_ctx:
+            with amp_ctx_fn():
+                out = model(x_clean)
+            loss = out["L_recon"]
+            loss.backward()
+        if is_step:
+            if grad_clip > 0:
+                gn = torch.nn.utils.clip_grad_norm_(
+                    _unwrap(model).parameters(), max_norm=grad_clip)
+                grad_norm_sum += float(gn)
+            optimizer.step()
+            optimizer.zero_grad(set_to_none=True)
+            model_ema.update(ema_source_model if ema_source_model is not None else _unwrap(model))
+            global_step += 1
+        for k, v in out.items():
+            sums[k] = sums.get(k, 0.0) + float(v)
+        n_batches += 1
+        if cfg.debug and i == 10:
+            break
+
+    n_b = max(1, n_batches)
+    metrics = {k: sums[k] / n_b for k in sums}
+    metrics["loss"] = metrics["L_recon"]
+    if grad_clip > 0:
+        metrics["grad_norm"] = grad_norm_sum / max(1, n_batches // accum_steps)
+    return metrics, global_step
+
+
+def val_epoch_multimae(cfg, model, val_cache, device, ch_weight=None):
+    """Deterministic MultiMAE recon-loss pass — the Dirichlet mask is fixed per batch via a
+    re-seeded generator so val loss is comparable across epochs."""
+    model.eval()
+    _, amp_ctx_fn = _amp_setup(cfg)
+    channels_last = bool(cfg.get("channels_last", False))
+    input_mode = str(cfg.get("input_mode", "density"))
+    with_gradmag = bool(cfg.get("with_gradmag", False))
+    n = val_cache["voxels_lig"].shape[0]
+    sums: dict = {}
+    n_b = 0
+    gen = torch.Generator(device=device)
+    with torch.no_grad():
+        for bi, start in enumerate(range(0, n, cfg.bsz)):
+            gen.manual_seed(bi + 1)
+            x = _assemble_x_clean(cfg, val_cache, start, cfg.bsz, device, input_mode, with_gradmag)
+            if channels_last:
+                x = x.to(memory_format=torch.channels_last_3d)
+            with amp_ctx_fn():
+                out = model(x, generator=gen)
+            for k, v in out.items():
+                sums[k] = sums.get(k, 0.0) + float(v)
+            n_b += 1
+            if cfg.debug and n_b >= 5:
+                break
+    metrics = {k: sums[k] / max(1, n_b) for k in sums}
+    metrics["loss"] = metrics["L_recon"]
+    return metrics
+
+
 def _build_vit(cfg: DictConfig, device, layout: dict, is_main: bool):
     """Build DensityViTMAE for the reconstruction/detection pretexts (mae | denoise | electra)."""
     pretext_style = str(cfg.mae.get("pretext_style", "mae"))
@@ -2085,6 +2207,7 @@ MAE_METHODS = {
     "denoise": MaeMethod("density-ViT-denoise", _build_vit,    train_epoch,     val_epoch,     uses_ch_weight=True),
     "electra": MaeMethod("density-ViT-ELECTRA", _build_vit,    train_epoch,     val_epoch,     uses_ch_weight=True),
     "chamae":  MaeMethod("ChA-MAEViT",          _build_chamae, train_epoch_cha, val_epoch_cha, ddp_find_unused=True),
+    "multimae": MaeMethod("MultiMAE-3mod",      _build_multimae, train_epoch_multimae, val_epoch_multimae, ddp_find_unused=True),
 }
 
 

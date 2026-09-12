@@ -29,7 +29,7 @@ fixed path and a new champion is adopted by just **repointing the symlink** (rel
 
 | pointer | → current target |
 |---|---|
-| `champion` | `champion_100m_v2_mask075` (C+D+G best encoder) |
+| `champion` | `CDG_v2` (= `atombias_100m_v2_e25`, `260806_cdg_100m_v2_ep100` **e25** — headline CDG v2, best-on-record 0.653/0.666; **repointed 260911** from the older/weaker `champion_100m_v2_mask075` 0.644) |
 | `coords` | `coords_100m_v2_mask075` (matched coords-only control) |
 
 Use `--exp_dir model_zoo/champion` in the probe (each target dir is self-contained: `cfg.yaml` +

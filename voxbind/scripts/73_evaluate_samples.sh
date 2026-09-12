@@ -35,9 +35,12 @@
 #
 # Env knobs: SAMPLE_DIR, DOCK, POSE, RECEPTOR_ROOT, WORKERS, CPU, EXH, SKIP_EXISTING.
 set -uo pipefail
-ROOT=/home/shpark/prj-denovo/Voxbind
+# ROOT/ENV_BIN env-overridable; defaults corrected for this box (case-sensitive
+# VoxBind, and the sbdd env no longer exists -> voxbind carries vina+meeko+pdb2pqr30
+# +obabel; set MOLEVAL_PY to an env with posecheck, e.g. .conda/envs/moleval).
+ROOT="${ROOT:-/home/shpark/prj-denovo/VoxBind}"
 WEBAPP="$ROOT/notebook/webapp"
-ENV_BIN="$HOME/miniforge3/envs/sbdd/bin"
+ENV_BIN="${ENV_BIN:-/home/shpark/.conda/envs/voxbind/bin}"
 
 : "${SAMPLE_DIR:?set SAMPLE_DIR (dir containing target_*/)}"
 case "$SAMPLE_DIR" in /*) ;; *) SAMPLE_DIR="$ROOT/voxbind/$SAMPLE_DIR";; esac

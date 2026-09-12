@@ -98,8 +98,15 @@ def sample_molecules(
             density_vox = density_vox.unsqueeze(1)
 
     n_target = int(cfg.wjs.n_samples_per_pocket)
-    n_chains = n_target
-    max_batches = max(1, math.ceil(500 / n_chains))
+    # Decouple the on-GPU walk-jump batch (n_chains) from the number of molecules
+    # requested per pocket (n_target). Requesting many samples per pocket (e.g. 100)
+    # would otherwise run a batch of that size through the 3D UNet and OOM a 24GB
+    # card at the attention layer. VOXBIND_N_CHAINS caps the per-batch chain count;
+    # the collect-until-n_target loop below simply runs more batches and trims to
+    # n_target. Must satisfy sample()'s constraint: <10, or a multiple of 10.
+    # Default (unset) reproduces the original n_chains == n_target behaviour.
+    n_chains = int(os.environ.get("VOXBIND_N_CHAINS", n_target))
+    max_batches = max(1, math.ceil(max(500, n_target) / n_chains))
     lookahead_batches = max(
         1, min(max_batches, int(os.environ.get("VOXBIND_LOOKAHEAD_BATCHES", "2")))
     )

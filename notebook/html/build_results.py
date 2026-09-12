@@ -170,6 +170,13 @@ def strip_repeated_table_units(table):
 
 sys.path.insert(0, os.path.join(HERE, "260715"))
 import build_appendixB_bar as bar                                 # noqa: E402  (METHODS, svg(), legend())
+# CoDE v2 (+aux corr): SAME 260806 e25 encoder as CDG v2, probe head trained MSE + Pearson-corr(λ5)
+# instead of pure MSE. Added as a SECOND row beside the mse-only CDG v2 so results.html shows corr
+# vs no-corr side by side. Appended to the LOCAL bar.METHODS copy ONLY (build_appendixB_bar.py is
+# untouched — other pages import bar fresh). v2 (FULL) values = the msecorr 5-seed CSV.
+if not any(m[0] == "CDG v2 (+aux corr)" for m in bar.METHODS):
+    bar.METHODS = list(bar.METHODS) + [
+        ("CDG v2 (+aux corr)", "#d4a017", "new", (0.665, 0.001), (0.653, 0.005), (1.337, 0.013))]
 import build_regression_baseline as reg                           # noqa: E402  (read_cheapnet())
 
 DOC715 = os.path.join(HERE, "260715", "260715_meeting.html")
@@ -226,7 +233,7 @@ TYPE = {  # display tag per method — three categories, distinctly colored
     "GeoSSL": "pretrained",
     "IPNet (frozen)": "pretrained", "IPNet (scratch)": "supervised", "Nesso-1": "zero-shot",
     "C": "pretrained", "C+D+G": "pretrained", "C+D+G +corr": "pretrained",
-    "CDG v2": "pretrained", "CDG v3": "pretrained",
+    "CDG v2": "pretrained", "CDG v2 (+aux corr)": "pretrained", "CDG v3": "pretrained",
     "DeepDTA": "supervised", "MolTrans": "supervised",
 }
 TAGCLASS = {"supervised": "supervised", "pretrained": "pretrained", "zero-shot": "zeroshot"}
@@ -238,7 +245,7 @@ MODALITY = {
     "Nesso-1": "seq", "HonestAffinity": "seq",
     "DeepDTA": "seq", "MolTrans": "seq",
 }  # default → "3d"
-DENSITY_OURS = {"C+D+G", "C+D+G +corr", "CDG v2", "CDG v3"}   # our voxel+density models → their own top information tier
+DENSITY_OURS = {"C+D+G", "C+D+G +corr", "CDG v2", "CDG v2 (+aux corr)", "CDG v3"}   # our voxel+density models → their own top information tier
 
 # Methods with NO official author checkpoint — the whole model was re-trained from scratch on our
 # data (faithful reimplementation or vendored code). Flagged "re-trained" for transparency. NOT
@@ -289,7 +296,7 @@ CANON_ORDER = [
     "IPNet (scratch)", "IPNet (frozen)",
     "AEV-PLIG", "DSMBind", "BindNet", "ProFSA", "GeoSSL", "C",
     # 3D + density (ours)
-    "C+D+G", "C+D+G +corr", "CDG v2", "CDG v3",
+    "C+D+G", "C+D+G +corr", "CDG v2", "CDG v2 (+aux corr)", "CDG v3",
 ]
 CANON_RANK = {n: i for i, n in enumerate(CANON_ORDER)}
 
@@ -382,7 +389,8 @@ BACKBONE = {
     "C":              ("voxel-MAE",    "backbone"),    # our SSL-pretrained voxel ViT (frozen)
     "C+D+G":          ("voxel-MAE",    "backbone"),
     "C+D+G +corr":    ("voxel-MAE",    "backbone"),    # same encoder; probe head = MSE + Pearson-aux (λ5)
-    "CDG v2":    ("voxel-MAE",    "backbone"),    # v2_ep100_e25 encoder + mse+corr head (headline)
+    "CDG v2":    ("voxel-MAE",    "backbone"),    # v2_ep100_e25 encoder + mse head
+    "CDG v2 (+aux corr)": ("voxel-MAE", "backbone"),  # same encoder, MSE + Pearson-corr(λ5) head
     "CDG v3":    ("voxel-MAE",    "backbone"),    # interface+curriculum e20 encoder + mse+corr head
     "Nesso-1":        ("ESM-2",        "esm"),         # cofolding trunk on ESM-2 protein embeddings
 }
@@ -434,7 +442,8 @@ CASF_KEY = {"C": "C_100m_mask075_coords", "C+D+G": "CDG_100m_mask075",
             "AEV-PLIG": "AEV", "HBGSA": "HBGSA", "ProFSA": "ProFSA", "GeoSSL": "GeoSSL", "HonestAffinity": "HonestAffinity",
             # DSMBind CASF = 方式1 zero-shot binding energy (|ρ|, RMSE n/a); DSMBind_zeroshot.json.
             "IPNet (frozen)": "IPNet_frozen", "IPNet (scratch)": "IPNet_retrain", "Nesso-1": "Nesso",
-            "DeepDTA": "DeepDTA", "MolTrans": "MolTrans", "CDG v2": "CDG_v2", "CDG v3": "CDG_v3"}
+            "DeepDTA": "DeepDTA", "MolTrans": "MolTrans", "CDG v2": "CDG_v2",
+            "CDG v2 (+aux corr)": "CDG_v2_corr", "CDG v3": "CDG_v3"}
 
 
 def load_casf(method, which):
@@ -512,6 +521,14 @@ PROBE_CSV = {
         "lp_edrscc_v2_cl1":   "probe_results_e25_v5_lp_edrscc_v2_cl1split_260806_cdg_100m_v2_ep100_e25.csv",
         "lp_edrscc_v2_cl12":  "probe_results_e25_v5_lp_edrscc_v2_cl12split_260806_cdg_100m_v2_ep100_e25.csv",
         "lp_edrscc_v2_cl123": "probe_results_e25_v5_lp_edrscc_v2_cl123split_260806_cdg_100m_v2_ep100_e25_mse.csv",
+    },
+    # CDG v2 (+aux corr) = SAME 260806 e25 encoder, probe head = MSE + Pearson-corr(λ5), 5-seed.
+    # Shown as a second row beside the mse-only CDG v2 (ρ/r ≈ identical, corr mainly lowers RMSE).
+    "CDG v2 (+aux corr)": {
+        "lp_edrscc_v2":       "probe_results_e25_v5_lp_edrscc_v2split_260806_cdg_100m_v2_ep100_e25_msecorr.csv",
+        "lp_edrscc_v2_cl1":   "probe_results_e25_v5_lp_edrscc_v2_cl1split_260806_cdg_100m_v2_ep100_e25_msecorr.csv",
+        "lp_edrscc_v2_cl12":  "probe_results_e25_v5_lp_edrscc_v2_cl12split_260806_cdg_100m_v2_ep100_e25_msecorr.csv",
+        "lp_edrscc_v2_cl123": "probe_results_e25_v5_lp_edrscc_v2_cl123split_260806_cdg_100m_v2_ep100_e25_msecorr.csv",
     },
     # CDG v3 = interface+curriculum e20 (260823), MSE-only 5-seed. Table 1b via cl123-results,
     # Table 1c via _OURS_1C. (mse+corr had inflated CASF-clean 0.706 → mse 0.680 ≈ CDG v2.)
@@ -2430,7 +2447,9 @@ def build():
     <p class="subsec-intro" style="border-left:3px solid #b8860b;padding-left:10px;background:#faf7ef;">
       <b>Probe head.</b> All VoxBind frozen-encoder rows (<b>C, C+D+G, CDG&nbsp;v2, CDG&nbsp;v3</b>) share one MLP
       head: <code>feat&nbsp;&rarr;&nbsp;128&nbsp;&rarr;&nbsp;SiLU&nbsp;&rarr;&nbsp;Dropout(0.1)&nbsp;&rarr;&nbsp;1</code>,
-      MSE loss, 5 seeds, features mean-pooled &amp; standardized, early-stopped on val RMSE (Table&nbsp;1a/1b/1c
+      MSE loss (headline density rows add a Pearson-correlation auxiliary, &lambda;=5 &mdash; MSE-only vs
+      MSE&plus;corr agree to &plusmn;0.001 on &#961;, so corr is not the source of any gap), 5 seeds, features
+      mean-pooled &amp; standardized, <b>model-selected on best val Spearman</b> (Table&nbsp;1a/1b/1c
       unified). A head-design sweep (activation &#123;ReLU, SiLU, GELU, Mish, Hardswish, ELU, gated&#125; &times;
       width 32&#8211;1024 &times; depth 1&#8211;3, 8 seeds) found SiLU best but the whole smooth-activation /
       small-head cluster ties within seed noise (&plusmn;0.01); the head is <i>not</i> the source of the ranking.
@@ -2715,6 +2734,27 @@ def build():
   </div>
 
 </div></body></html>"""
+    # ── CoDE display rename (results.html DISPLAY only) ──────────────────────────
+    # Rewrites the assembled output string so the density model reads "CoDE" everywhere it
+    # is shown (tables, SVG <title>, legends, prose). Internal dict keys, probe-result CSV
+    # condition names, and base/_casf/*.json filenames ("CDG_v2" with an underscore) are NOT
+    # touched — the space/"+"-bearing display labels below never collide with them. The bars'
+    # data-method="…" carries the JS lookup key, so stash+restore it verbatim.
+    import re as _re
+    # bare "CDG" catches "CDG v2/v3", the "CDG&nbsp;v2" nbsp variant, and "CDG ablation" in one
+    # pass; "CDG_v2" (the base/_casf json filename, underscore) never appears in the rendered HTML
+    # (verified), so the bare rewrite is display-safe. "C+D+G" has no "CDG" substring.
+    _CODE_MAP = [("C+D+G +corr", "CoDE +corr"), ("C+D+G", "CoDE"), ("CDG", "CoDE")]
+    _stash: dict = {}
+    def _protect(mm):                                            # match → placeholder key
+        k = f"\x01{len(_stash)}\x01"
+        _stash[k] = mm.group(0)
+        return k
+    html = _re.sub(r'data-method="[^"]*"', _protect, html)       # freeze JS keys
+    for _a, _b in _CODE_MAP:
+        html = html.replace(_a, _b)
+    for _k, _v in _stash.items():
+        html = html.replace(_k, _v)                              # restore JS keys verbatim
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
     open(OUT, "w", encoding="utf-8").write(html)
     print(f"wrote {OUT}  ({len(html)} bytes)")

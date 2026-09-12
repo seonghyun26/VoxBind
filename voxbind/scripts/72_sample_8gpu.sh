@@ -26,8 +26,10 @@
 #
 # Env knobs: EXP, OUT, SAMPLES, SPLIT, NTARGETS, GPUS, N_POCKETS.
 set -uo pipefail
-ROOT=/home/shpark/prj-denovo/Voxbind
-PY="$HOME/miniforge3/envs/voxbind/bin/python"
+# ROOT/PY are env-overridable; defaults point at this server's real checkout + env.
+# (The literal path is case-sensitive on Linux: it is VoxBind, not Voxbind.)
+ROOT="${ROOT:-/home/shpark/prj-denovo/VoxBind}"
+PY="${PY:-/home/shpark/.conda/envs/voxbind/bin/python}"
 cd "$ROOT/voxbind" || exit 1
 
 # XRAY_CROPS — REQUIRED for a density-conditioned checkpoint (with_density=true).
