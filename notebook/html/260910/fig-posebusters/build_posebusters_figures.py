@@ -160,7 +160,8 @@ def fig_check_failures(arms, variant, fails):
     # a fixed height works for three series and silently overlaps the neighbouring groups
     # at nine (9 x 0.19 = 1.71), which reads as bars detached from their labels. Derive it.
     h = 0.86 / len(series)
-    # THE KEY GOES OUTSIDE THE AXES, bottom left, 3 x 3. There is no empty corner inside:
+    # THE KEY GOES OUTSIDE THE AXES, centred along the bottom, 3 x 3. There is no empty
+    # corner inside:
     # the long bars fill the top and the right, and the in-axes box this used to carry
     # reached far enough left to bury the bottom rows' bars -- `double bond flatness`
     # looked empty while AR, DecompDiff and Pocket2Mol were failing it 3.1, 1.8 and 1.4% of
@@ -201,11 +202,11 @@ def fig_check_failures(arms, variant, fails):
     # if the key overruns the figure, which is cheaper than trusting a width estimate.
     fs = 12.5 if len(arms) <= 3 else 11
     for c in range(ncol, 0, -1):
-        leg = pc.legend(fig, handles, loc="lower left", ncol=c, fontsize=fs,
-                        bbox_to_anchor=(0.008, 0.008))
+        leg = pc.legend(fig, handles, loc="lower center", ncol=c, fontsize=fs,
+                        bbox_to_anchor=(0.5, 0.008))
         fig.canvas.draw()
         bb = leg.get_window_extent().transformed(fig.transFigure.inverted())
-        if bb.x1 <= 0.997 or c == 1:
+        if (bb.x0 >= 0.003 and bb.x1 <= 0.997) or c == 1:
             break
         leg.remove()
     fig.subplots_adjust(bottom=min(0.6, fig.subplotpars.bottom

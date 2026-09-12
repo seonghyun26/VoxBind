@@ -118,7 +118,7 @@ against the arms' ±0.2 — so **the reference bar alone keeps its *n* in the ke
 A check no method fails above 0.5 % is left off, and the `_core` figure re-ranks rows by what
 its own two arms fail, so its order differs from `_all`.
 
-**The key sits outside the axes, at the lower left, 3 × 3.** There is no empty corner inside:
+**The key sits outside the axes, centred along the bottom, 3 × 3.** There is no empty corner inside:
 the long bars fill the top and the right, and the in-axes box this used to carry reached far
 enough left to bury the bottom rows — until 2026-09-13 `double bond flatness` looked empty in
 `_all` while AR, DecompDiff and Pocket2Mol were failing it 3.1, 1.8 and 1.4 % of the time.
