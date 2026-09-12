@@ -35,11 +35,10 @@ import csv
 import json
 import os
 import sys
+import textwrap
 
-import matplotlib.patheffects as pe
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -128,75 +127,71 @@ def check_failures():
     return out
 
 
+def wrap_check(name):
+    """The PoseBusters check name, wrapped instead of abbreviated.
+
+    `non-aromatic_ring_non-flatness` on one line is 30 characters and was eating 2.9 in of
+    a 7.6 in figure -- nearly half the width -- as a tick label. Abbreviating it is the
+    wrong fix: this check passes when a non-aromatic ring is sufficiently NON-flat (it is
+    `check_nonflat: True` in dock.yml, threshold 0.1 A), so failing it means a saturated
+    ring came out planar, and every shortening of that name I tried either flipped its
+    sense or read as the aromatic check next to it. Wrapping is free and exact."""
+    return "\n".join(textwrap.wrap(name.replace("_", " "), 18))
+
+
 def fig_check_failures(arms, variant, fails):
-    shown = [fails[key] for _, key, _ in arms] + [fails["reference"]]
+    """Rows are checks, bars are the SHARE of each set's molecules that fail them.
+
+    Rates, not counts, and that is what lets the crystal ligands be an ordinary bar here:
+    on a count axis 79 of them against ~7,900 generated molecules put their worst row at 2
+    molecules, invisible beside a bar of 1,822, and they had to be drawn as a rate-matched
+    marker instead. The price is that a rate hides its denominator -- the reference's 2.5%
+    IS those 2 molecules, and it carries about +-1.8 points of binomial noise against the
+    arms' +-0.2 -- so its bar alone keeps its n in the key. Counts for every arm and every
+    check stay in posebusters_check_failures.json.
+    """
+    # The reference is one more series, first in every group and first in the key.
+    series = [(pc.REF_LABEL, "reference")] + [(lab, key) for lab, key, _ in arms]
+    shown = [fails[key] for _, key in series]
     names = sorted({k for g in shown for k in g["counts"]
                     if max(h["rates"].get(k, 0) for h in shown) >= MIN_FAIL_PCT},
                    key=lambda k: -max(g["rates"].get(k, 0) for g in shown))
     # One row of the y axis is 1.0 apart, so the bars of a group must fit inside that:
-    # a fixed height works for three arms and silently overlaps the neighbouring groups at
-    # eight (8 x 0.19 = 1.52), which reads as bars detached from their labels. Derive it.
-    h = 0.86 / len(arms)
-    # THE KEY GOES OUTSIDE THE AXES, bottom left. There is no empty corner inside: the long
-    # bars fill the top and the right, and the lower-right box this used to carry reached
-    # far enough left to bury the bottom rows' bars -- `double bond flatness` looked empty
-    # while AR, DecompDiff and Pocket2Mol were failing it 238, 118 and 109 times. Outside it
-    # covers nothing, and it lands in the white block under the check names rather than
-    # costing the figure more width.
-    # Two columns of nine entries is 4.9 in of the 7.6 in width; three would overflow it,
-    # because every entry carries its own n. The fit is checked below, not trusted here.
-    entries = len(arms) + 1
-    ncol = 2 if entries > 4 else 1
-    leg_rows = -(-entries // ncol)
-    # Row pitch: enough that eight thin bars stay readable, without turning a 7.6 in wide
-    # figure into a 10 in tall one. Plus the strip the key now needs at the bottom.
+    # a fixed height works for three series and silently overlaps the neighbouring groups
+    # at nine (9 x 0.19 = 1.71), which reads as bars detached from their labels. Derive it.
+    h = 0.86 / len(series)
+    # THE KEY GOES OUTSIDE THE AXES, bottom left, 3 x 3. There is no empty corner inside:
+    # the long bars fill the top and the right, and the in-axes box this used to carry
+    # reached far enough left to bury the bottom rows' bars -- `double bond flatness`
+    # looked empty while AR, DecompDiff and Pocket2Mol were failing it 3.1, 1.8 and 1.4% of
+    # the time. Outside it covers nothing. Three columns only fit because the bars are
+    # rates now: an arm's own n no longer has to be in the key for its bar to be readable.
+    ncol = 3
+    leg_rows = -(-len(series) // ncol)
+    # Row pitch: enough that nine thin bars stay readable, without turning a 7.6 in wide
+    # figure into a 10 in tall one. Plus the strip the key needs at the bottom.
     fig, ax = plt.subplots(
-        figsize=(pc.FIG_W, (0.40 if len(arms) <= 3 else 0.58) * len(names)
+        figsize=(pc.FIG_W, (0.40 if len(arms) <= 3 else 0.62) * len(names)
                  + 1.6 + 0.30 * leg_rows + 0.2), dpi=220)
     fig.patch.set_facecolor("white")
     ax.set_facecolor("white")
     ys = np.arange(len(names))[::-1]
-    for i, (lab, key, _) in enumerate(arms):
-        ax.barh(ys + (i - (len(arms) - 1) / 2) * h,
-                [fails[key]["counts"].get(k, 0) for k in names],
+    for i, (lab, key) in enumerate(series):
+        # top of the group downwards, so the key's order IS the order of the bars
+        ax.barh(ys + ((len(series) - 1) / 2 - i) * h,
+                [fails[key]["rates"].get(k, 0.0) for k in names],
                 height=h, color=color(lab), edgecolor=color(lab), lw=0.8, zorder=3)
 
-    # THE CRYSTAL LIGANDS CANNOT BE A BAR HERE, and they are the comparison the whole figure
-    # exists to support. There are 79 of them against ~7,900 generated molecules, so on a
-    # count axis their worst row is 2 molecules -- an invisible tick beside a bar of 1,822.
-    # They are drawn instead at the count their failure RATE would produce in a set the size
-    # of the arms': a rate read on a count axis, dashed and unfilled so it cannot be mistaken
-    # for one more method's bar. N_BAR is the mean over the arms actually drawn, which spread
-    # +-10% (6,427 to 7,895), so the marker is worth about that much less than its position
-    # suggests -- it separates 2.5% from 1.3%, not 2.5% from 2.4%. Exact counts and rates for
-    # every arm and the reference are in posebusters_check_failures.json and the README.
-    ref = fails["reference"]
-    n_bar = float(np.mean([fails[key]["n_mols"] for _, key, _ in arms]))
-    ref_x = {k: ref["rates"].get(k, 0.0) / 100 * n_bar for k in names}
-    for j, k in enumerate(names):
-        if ref["rates"].get(k, 0.0) <= 0:      # absent means zero, as for a missing bar
-            continue
-        ax.plot([ref_x[k]] * 2, [ys[j] - 0.47, ys[j] + 0.47], color=pc.REF_COLOR,
-                lw=2.2, ls=pc.DASH, zorder=6, dash_capstyle="round",
-                # the marker often lands INSIDE a bar (2.5% of 79 is a smaller count than
-                # most arms reach), and warm grey on orange at 2 pt is invisible
-                path_effects=[pe.withStroke(linewidth=4.8, foreground="white")])
-
-    top = max([c for g in (fails[key] for _, key, _ in arms) for c in
-               (g["counts"].get(k, 0) for k in names)] + list(ref_x.values()))
-    pc.furniture(ax, ylabel=None, xlabel="Molecules failing the check",
+    top = max(g["rates"].get(k, 0.0) for g in shown for k in names)
+    pc.furniture(ax, ylabel=None, xlabel="Molecules failing the check (%)",
                  xlim=(0, top * 1.03), xloc=None)
     ax.grid(False, axis="y")
     ax.set_yticks(ys)
-    ax.set_yticklabels([k.replace("_", " ") for k in names], fontsize=13)
+    ax.set_yticklabels([wrap_check(k) for k in names], fontsize=12)
     ax.set_ylim(-0.6, len(names) - 0.4)
-    # Counts are only comparable between arms if the reader can see the denominators, and
-    # they differ by ~20% here (6,427 to 7,895), so every arm carries its own n in the key.
-    handles = [Line2D([], [], color=pc.REF_COLOR, lw=2.2, ls=pc.DASH,
-                      label=f"{pc.REF_LABEL}  (n={ref['n_mols']}, rate-matched)")]
-    handles += [Patch(facecolor=color(lab), edgecolor=color(lab),
-                      label=f"{display(lab)}  (n={fails[key]['n_mols']:,})")
-                for lab, key, _ in arms]
+    handles = [Patch(facecolor=color(lab), edgecolor=color(lab),
+                     label=display(lab) + ("  (n=79)" if key == "reference" else ""))
+               for lab, key in series]
     pc.fit(fig, pad=0.5)
     # tight_layout does not see a FIGURE legend, so it has just laid the axes out over the
     # strip the key occupies. Place the key, measure what it actually took, and RAISE the

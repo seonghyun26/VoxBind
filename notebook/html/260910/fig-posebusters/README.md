@@ -103,25 +103,35 @@ validity to us and would put CoDE level with DecompDiff.**
 sits at 5–6 % and 3–4 %. AR is the only method that meaningfully breaks aromatic ring
 flatness (8.5 %).
 
-The bars are **counts**, and the arms hold different numbers of molecules, so each carries
-its own *n* in the key; rates are the fair cross-arm comparison and live in this table and in
-`posebusters_check_failures.json`.
+The bars are **rates** — the share of each set's molecules that fail the check — which is
+the fair cross-arm comparison, since the arms hold 6,427 to 7,895 molecules each (the exact
+*n* and the raw counts for every arm and check are in `posebusters_check_failures.json`).
 
-**The crystal ligands cannot be a bar here, so they are a dashed rule.** There are 79 of
-them against ~7,900 generated molecules, so on a count axis their worst row is 2 molecules —
-an invisible tick beside a bar of 1,822. The dashed grey rule instead marks the count their
-failure *rate* would produce in a set the size of the arms' (`rate × n̄`, n̄ = the mean over
-the arms drawn, 7,557 for `_all`, 7,880 for `_core`). It is a rate read on a count axis: the arms' own *n* spread
-±10 % (6,427–7,895), so the rule is worth about that much less than its position suggests —
-it separates 2.5 % from 1.3 %, not 2.5 % from 2.4 %. The exact counts and rates for every arm
-and for the reference are in the table above and in `posebusters_check_failures.json`.
+They were counts until 2026-09-13, and the switch is what let the **crystal ligands become an
+ordinary bar**: on a count axis 79 of them against ~7,900 generated molecules put their worst
+row at 2 molecules, an invisible tick beside a bar of 1,822, and they had to be drawn as a
+rate-matched marker instead. The price of a rate is that it hides its denominator — the
+reference's 2.5 % *is* those 2 molecules, and carries about ±1.8 points of binomial noise
+against the arms' ±0.2 — so **the reference bar alone keeps its *n* in the key**. Read it as
+"the crystal ligands essentially never fail this", not as a number with two decimals.
 
 A check no method fails above 0.5 % is left off, and the `_core` figure re-ranks rows by what
-its own two arms fail, so its order differs from `_all`. **The key sits outside the axes, at
-the lower left.** There is no empty corner inside: the long bars fill the top and the right,
-and the in-axes box this used to carry reached far enough left to bury the bottom rows — until
-2026-09-13 `double bond flatness` looked empty in `_all` while AR, DecompDiff and Pocket2Mol
-were failing it 238, 118 and 109 times.
+its own two arms fail, so its order differs from `_all`.
+
+**The key sits outside the axes, at the lower left, 3 × 3.** There is no empty corner inside:
+the long bars fill the top and the right, and the in-axes box this used to carry reached far
+enough left to bury the bottom rows — until 2026-09-13 `double bond flatness` looked empty in
+`_all` while AR, DecompDiff and Pocket2Mol were failing it 3.1, 1.8 and 1.4 % of the time.
+Three columns fit only because the bars are rates: an arm's own *n* no longer has to be in the
+key for its bar to be readable. The bars run in the key's order from the top of each group
+down.
+
+**The check names are wrapped, not abbreviated.** `non-aromatic_ring_non-flatness` on one line
+is 30 characters and was eating 2.9 in of a 7.6 in figure as a tick label. It cannot be safely
+shortened: that check passes when a non-aromatic ring is sufficiently *non*-flat
+(`check_nonflat: True`, threshold 0.1 Å), so failing it means **a saturated ring came out
+planar** — every abbreviation either flips that sense or reads as the aromatic check sitting
+two rows below it.
 
 ## SuCOS — the one check `gen` mode adds (`build_sucos.py`)
 
@@ -197,7 +207,7 @@ molecules, and the baselines stop producing large molecules sooner.
 | `build_posebusters_figures.py` | validity figures + the exports below (`voxbind` env) |
 | `build_sucos.py` | SuCOS figures + exports (**`moleval` env** — posebusters lives there) |
 | `pb_valid_per_atom_{core,all}.*` | **headline** — validity against ligand size, with each arm's size distribution underneath |
-| `pb_check_failures_{core,all}.*` | per-check failure counts |
+| `pb_check_failures_{core,all}.*` | per-check failure rates |
 | `sucos_ecdf_{core,all}.*` | SuCOS distribution, 0.4 gen threshold marked |
 | `sucos_per_atom_{mean,median}_{core,all}.*` | SuCOS against ligand size |
 | `posebusters_summary.json` | coverage + pooled rates, `p79` and `all_pockets` |
