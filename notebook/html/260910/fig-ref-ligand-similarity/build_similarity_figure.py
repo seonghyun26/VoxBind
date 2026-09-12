@@ -52,7 +52,14 @@ OUT = HERE
 
 # Row labels run along the y axis, where a long name costs width and nothing else, so
 # they stay on one line; only "Ours v1" is shortened, to the name the deck uses.
-PRETTY = {"Ours v1": "Ours"}
+# Row labels. The noise level is a setting of one model, not part of its name, so it
+# rides as a subscript exactly as the paper table writes it -- and, unlike the two-line
+# form, it keeps every row one line tall so the rows stay evenly spaced.
+# "Ours v1" is the key the CSV and every other table use; CoDE is what the paper calls
+# the model, so the rename lives here, at the display edge, and no data key moves.
+PRETTY = {"Ours v1": "CoDE",
+          "VoxBind σ=0.9": r"VoxBind$_{\sigma=0.9}$",
+          "VoxBind σ=1.0": r"VoxBind$_{\sigma=1.0}$"}
 OURS = "Ours v1"
 VOXBIND = ("VoxBind σ=0.9", "VoxBind σ=1.0")
 
@@ -65,7 +72,11 @@ ORDER = ("AR", "Pocket2Mol", "DiffSBDD", "DecompDiff", "FuncBind", "TargetDiff",
 INK, GRID, AXIS = "#514F52", "#c2c6cd", "#514F52"
 LEGEND_EDGE = "#b6bbc3"
 OUR_COLOR, VOX_COLOR, BASE_COLOR = "#8291E8", "#F5B27E", "#9aa0a6"
-BASE_LABEL, VOX_LABEL, OUR_LABEL = "Published baselines", "VoxBind", "Ours"
+# The two VoxBind rows are one family at two noise levels, so they share a hue and
+# separate by tint rather than by taking a third colour: sigma=0.9 is the run ours is
+# built on and keeps the full-strength sand, sigma=1.0 the lighter one.
+VOX_TINTS = {"VoxBind σ=1.0": "#F8D3B0"}
+BASE_LABEL, VOX_LABEL, OUR_LABEL = "Published baselines", "VoxBind", "CoDE"
 
 # Heavier than the Vina charts: this figure carries nine rows of two dots each, not a
 # 79-point cloud, so the marks have to hold their own at slide size rather than stay out
@@ -75,6 +86,7 @@ GRID_DASH = (0, (1, 2.6))
 
 RC = {
     "font.family": "DejaVu Sans", "font.size": 15,
+    "mathtext.default": "regular",   # the subscript is text, not maths: same face, upright
     "text.color": INK, "axes.labelcolor": INK,
     "xtick.color": AXIS, "ytick.color": AXIS,
     "svg.fonttype": "none",
@@ -118,7 +130,9 @@ def load():
 def colour(row):
     if row["method"] == OURS:
         return OUR_COLOR
-    return VOX_COLOR if row["method"] in VOXBIND else BASE_COLOR
+    if row["method"] in VOXBIND:
+        return VOX_TINTS.get(row["method"], VOX_COLOR)
+    return BASE_COLOR
 
 
 # ------------------------------------------------------------------------ shared parts
@@ -179,8 +193,14 @@ def top_key(fig, handles, *, y=0.995, fontsize=12.5):
     return leg
 
 
-def panel_key(ax, handles, *, loc="upper right", fontsize=12.5):
-    """The same key as the Vina charts, inside a panel rather than above the figure."""
+def panel_key(ax, handles, *, loc="upper right", fontsize=12.5, scale=1.0):
+    """The same key as the Vina charts, inside a panel rather than above the figure.
+
+    `scale` shrinks the whole key at once -- type, swatches and the ring weight together --
+    so a panel whose data reaches into its corner can make room without the key losing its
+    proportions or drifting from the one the other figures carry.
+    """
+    fontsize *= scale
     leg = ax.legend(handles=handles, loc=loc, ncol=1, frameon=True, fontsize=fontsize,
                     handlelength=1.4, handletextpad=0.4, labelspacing=0.3,
                     borderpad=0.4, borderaxespad=0.39, facecolor="white",
@@ -192,7 +212,8 @@ def panel_key(ax, handles, *, loc="upper right", fontsize=12.5):
         text.set_color(INK)
     for handle in getattr(leg, "legend_handles", None) or leg.legendHandles:
         if isinstance(handle, Line2D) and handle.get_markersize():
-            handle.set_markersize(handle.get_markersize() * 2)
+            handle.set_markersize(handle.get_markersize() * 2 * scale)
+            handle.set_markeredgewidth(handle.get_markeredgewidth() * scale)
     return leg
 
 
@@ -336,12 +357,14 @@ def variant_novelty(rows):
     the four remote baselines were re-measured here on 2026-09-09) draws an italic note
     rather than a zero, which would read as "memorised everything".
 
-    Both axes start at zero. Novelty spanning 71-99% would separate far better on a 70-100
-    axis, but these are rates and a cropped rate axis turns a 14-point spread into an
-    apparent order of magnitude.
+    The novelty axis starts at 50, not at zero: the rates live in a 70-99 band and a
+    zero-based axis spent half its width on empty space. It is cropped only to half, and
+    to a round number, so the truncation is legible rather than a subtle exaggeration --
+    and the panel is narrowed to match, so half the range does not occupy the width the
+    full one did. SNN, a similarity, keeps its true zero.
     """
-    fig, (ax, ax2) = plt.subplots(1, 2, figsize=(7.377, 4.05), dpi=220,
-                                  gridspec_kw={"width_ratios": [1.75, 1]}, sharey=True)
+    fig, (ax, ax2) = plt.subplots(1, 2, figsize=(6.42, 4.05), dpi=220,
+                                  gridspec_kw={"width_ratios": [1.22, 1]}, sharey=True)
     fig.patch.set_facecolor("white")
     for i, row in enumerate(rows):
         c = colour(row)
@@ -365,8 +388,11 @@ def variant_novelty(rows):
     bare_pct = FuncFormatter(lambda v, _: f"{100 * v:.0f}")
     for axis, name, step, fmt in (
             # the arrow in the name is the direction of BETTER, the usual convention
-            (ax, "Novelty vs. training set (%) \u2191", 0.25, bare_pct),
-            (ax2, "SNN to training set \u2193", 0.1, FormatStrFormatter("%.1f"))):
+            # Both names lead with the shared qualifier so the parallel is visible, and
+            # both now fit their own panel: at this width the old "Novelty vs. training
+            # set (%)" was 3.09 in against a 2.53 in panel and ran into its neighbour.
+            (ax, "Training-set novelty (%) \u2191", 0.1, bare_pct),
+            (ax2, "Training-set SNN \u2193", 0.1, FormatStrFormatter("%.1f"))):
         spines_and_ticks(axis)
         axis.set_xlabel(name, fontsize=15, labelpad=9)
         axis.grid(True, axis="x", color=GRID, lw=GRID_LW, ls=GRID_DASH)
@@ -377,7 +403,7 @@ def variant_novelty(rows):
 
     method_axis(ax, rows)
     ax.invert_yaxis()
-    ax.set_xlim(0, 1.03)
+    ax.set_xlim(0.5, 1.02)
     ax2.set_xlim(0, 0.41)
     ax2.tick_params(axis="y", length=0)
     ax2.spines["left"].set_visible(False)
@@ -386,7 +412,8 @@ def variant_novelty(rows):
                     markeredgewidth=0, label="molecule"),
              Line2D([], [], ls="none", marker="o", markersize=5.2, color=INK, mfc="white",
                     markeredgewidth=2.2, markeredgecolor=INK, label="scaffold")]
-    panel_key(ax, shape, loc="lower left")
+    # 80%: at full size the key reached the sigma=1.0 scaffold dot at 78%.
+    panel_key(ax, shape, loc="lower left", scale=0.8)
     fit(fig, pad=0.5, w_pad=1.3)
     save(fig, "similarity_novelty",
          "novelty barbell (molecule vs scaffold) beside SNN stems")

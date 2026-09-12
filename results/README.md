@@ -97,13 +97,15 @@ analysis actually reads are the 12.7 MiB of `samples/meta/*.pt` beside it. So fo
 bash results/dropbox_pull_baselines.sh                   # the 5 CrossDocked baselines, ~68 MiB
 bash results/dropbox_pull_baselines.sh AR DiffSBDD GET   # any number of methods, any task
 bash results/dropbox_pull_baselines.sh -l                # list the methods on the remote
+bash results/dropbox_pull_baselines.sh --with-eval        # + per-pocket vina/posecheck/posebusters
 bash results/dropbox_pull_baselines.sh -n DecompDiff     # dry run
 bash results/dropbox_pull_baselines.sh -a --task task3-mcp --with-shared
 ```
 
 Per method it takes `samples/**` + `metrics.json` + `SOURCE.txt`, and skips
-`run/` (cfg, hydra, train logs), `representations/` (task1 cached features) and —
-unless `--with-raw` — `samples/outputs_*/`. Method names resolve across all three
+`run/` (cfg, hydra, train logs), `representations/` (task1 cached features),
+`eval/` (the per-pocket vina / posecheck / posebusters behind `metrics.json` —
+add it with `--with-eval`) and — unless `--with-raw` — `samples/outputs_*/`. Method names resolve across all three
 tasks, so pass a bare name; `--task` disambiguates when one exists in two tasks.
 It prints a per-method size table before transferring anything.
 

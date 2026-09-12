@@ -1,6 +1,6 @@
 ================================================================================
 NOVELTY / SNN — 논문 본문 문단 + 인용 문헌
-작성 2026-09-09 · 그림: similarity_novelty.{png,svg,pdf}
+작성 2026-09-10 · 그림: similarity_novelty.{png,svg,pdf}
 숫자 출처: reference_similarity.csv (build_reference_similarity.py --novelty)
 ================================================================================
 
@@ -12,23 +12,24 @@ NOVELTY / SNN — 논문 본문 문단 + 인용 문헌
 상대 지표만 이야기합니다.
 
 \textbf{Novelty.} Since \ours{} also receives reference-ligand
-information, as in DecompDiff \citep{guan2024decompdiff}, we check that generation does
-not simply replay the molecules the model was shown. Against the CrossDocked training
-split \citep{francoeur2020three} we report novelty at two levels -- the fraction of
-generated molecules whose canonical SMILES, respectively whose Bemis--Murcko scaffold
-\citep{bemis1996properties}, never appears in training, as in MOSES
-\citep{polykovskiy2020molecular} and GuacaMol \citep{brown2019guacamol} -- together with
-the nearest-neighbour similarity (SNN) of MOSES, the mean Tanimoto similarity of a
-generated molecule to the closest training molecule. We measure SNN against the training
-split rather than the held-out set MOSES scores it on, so that a \emph{low} value means
-distance from everything the model was shown \citep{walters2020assessing}.
-\Cref{fig:result-drug-novelty} shows that no method here reproduces its training set:
-molecule-level novelty spans 93.8--99.1\% and SNN 0.280--0.350 over all nine. \ours{}
-sits at the more novel end of that band on all three measures (98.9\%, 84.8\% and 0.301),
-and is more novel than the density-free VoxBind\textsubscript{\scriptsize $\sigma$=0.9}
-it is built on by every one of them (97.2\%, 80.6\% and 0.350). Conditioning on
-experimental density therefore supplies pocket information that yields favorable
-predicted interactions, rather than a template the model copies.
+information, as in DecompDiff \citep{guan2024decompdiff}, we check that it does not replay
+its training set. Against the CrossDocked training split \citep{francoeur2020three} we
+report novelty -- the fraction of generated molecules whose canonical SMILES
+\citep{weininger1988smiles} never occurs in training, defined identically in MOSES \citep{polykovskiy2020molecular} and GuacaMol
+\citep{brown2019guacamol} -- and the same fraction taken over Bemis--Murcko scaffolds
+\citep{bemis1996properties}, a stricter test that a new molecule can still fail, so that
+the gap between the two is the share that is new only by decoration. We add MOSES'
+similarity to a nearest neighbour (SNN), the mean Tanimoto similarity of a generated
+molecule to the closest training one, scored against the training split rather than the
+held-out set MOSES uses, so that a \emph{low} value means distance from everything the
+model saw \citep{walters2020assessing}.
+\Cref{fig:result-drug-novelty} places all nine methods within a narrow band on every
+measure: none of them reproduces its training set. \ours{} sits at the novel end of that
+band, and is more novel than the density-free
+VoxBind\textsubscript{\scriptsize $\sigma$=0.9} it is built on by all three measures at
+once. The few molecules that do occur in training are fragments, far below the size of a
+typical generated one. Density conditioning therefore supplies pocket information, not a
+template to copy.
 
 --------------------------------------------------------------------------------
 [2] 측정값 — 79개 공통 포켓, 포켓별 평균 후 macro-average
@@ -53,20 +54,31 @@ predicted interactions, rather than a template the model copies.
   재현됩니다 (0.100/0.096/1.04%, 0.097/0.092/1.12%, 0.089/0.085/0.55%,
   0.152/0.137/2.17%). 같은 분자를 같은 포켓에서 재고 있다는 뜻입니다.
 
-  본문은 일부러 순위를 주장하지 않습니다. 이 지표들의 목적은 "베끼지 않았다"는 sanity
-  check 이지 벤치마크 경쟁이 아니고, 순위는 지문/split 을 조금만 바꿔도 뒤집히는 폭
-  안에 있습니다 (9개 방법 전부 novelty 93.8-99.1%, SNN 0.280-0.350 의 좁은 띠 안).
-  대신 두 가지만 말합니다 — Ours 는 그 띠의 novel 쪽 절반에 있고 (novelty 2/9,
-  scaffold novelty 1/9, SNN 4/9), density 없는 자기 베이스보다 세 지표 모두 낫습니다
-  (98.85 vs 97.16 · 84.83 vs 80.57 · 0.301 vs 0.350).
-
-  참고로 각 지표 1위는 AR (novelty 99.13%), Ours (scaffold novelty 84.83%),
-  TargetDiff (SNN 0.280) 로 갈립니다. "가장 novel 하다"는 어느 방법도 못 씁니다.
-
   구현: Novelty 는 canonical SMILES 완전일치, Scaffold novelty 는 Bemis-Murcko canonical
   scaffold 완전일치 (고리 없는 분자는 분모에서 제외), SNN 은 Morgan/ECFP4 radius 2,
-  2048-bit folded Tanimoto 의 학습셋 최근접값 평균입니다. 지문 종류는 본문에서 뺐으므로
-  캡션이나 부록 어딘가에 이 한 줄은 남아야 합니다.
+  2048-bit folded Tanimoto 의 학습셋 최근접값 평균. 본문이 지문 종류를 안 쓰므로 캡션이나
+  부록에 이 한 줄은 남아야 합니다. molecule novelty 는 통과하기 쉬운 시험입니다 — RDKit
+  canonical SMILES 가 기본 isomeric 이라 입체이성질체도 "새 분자"로 셉니다.
+
+  두 수준이 실제로 세는 것 (Ours v1, 79 포켓 전수 pooled — 표의 macro-average 와 분모가
+  달라 숫자가 조금 다릅니다):
+      학습셋에 문자 그대로 있던 분자        52 / 7,356 고리보유    0.71%
+      새 분자인데 골격은 학습셋에 있음      922 / 7,356           12.53%  <- 아령 길이
+      새 분자 + 새 골격                   6,382 / 7,356          86.76%
+  겹치는 분자의 정체 (본문 마지막 문장의 근거): 고리 없는 것까지 포함하면 7,873 개 중
+  91 개(1.16%), 크기 median 9 / max 18 / min 3 heavy atom. 생성 분자 전체 median 은 25,
+  20 을 넘는 것 중 재생된 것은 0 개입니다. 즉 3-클로로벤즈아마이드 같은 조각이지 리간드
+  크기의 분자가 아닙니다.
+
+  함정 1 — 본문은 일부러 순위를 주장하지 않습니다. 1위가 AR (novelty 99.13%) / Ours
+  (scaffold novelty 84.83%) / TargetDiff (SNN 0.280) 로 갈리고, 9개가 전부 좁은 띠 안이라
+  지문이나 split 을 조금만 바꿔도 뒤집힙니다. 본문이 말하는 건 둘뿐입니다 — 그 띠의 novel
+  쪽 절반 (2/9 · 1/9 · 4/9), 그리고 density 없는 자기 베이스보다 세 지표 모두 낫다는 것.
+
+  함정 2 — Scaffold novelty 는 분자 크기와 섞입니다. 걸리는 골격이 벤젠, 테트라하이드로
+  피란처럼 자명한 것들이라, "흥미로운 골격을 베꼈나"보다 "고리가 단순한 분자를 많이
+  만들었나"에 더 민감합니다. Pocket2Mol 의 69.8% 도 표절이 아니라 작은 분자를 많이 만든
+  결과일 수 있습니다. Vina 순위 대부분이 크기 효과였던 것과 같은 함정입니다.
 
 --------------------------------------------------------------------------------
 [3] 인용 문헌 — 이 문단이 쓰는 것만
@@ -105,6 +117,14 @@ predicted interactions, rather than a template the model copies.
   volume  = {38}, number = {2}, pages = {143--145}, year = {2020},
   doi     = {10.1038/s41587-020-0418-2}}
 
+@article{weininger1988smiles,
+  title   = {{SMILES}, a chemical language and information system. 1. Introduction to
+             methodology and encoding rules},
+  author  = {Weininger, David},
+  journal = {Journal of Chemical Information and Computer Sciences},
+  volume  = {28}, number = {1}, pages = {31--36}, year = {1988},
+  doi     = {10.1021/ci00057a005}}
+
 @article{bemis1996properties,
   title   = {The Properties of Known Drugs. 1. Molecular Frameworks},
   author  = {Bemis, Guy W. and Murcko, Mark A.},
@@ -123,6 +143,12 @@ predicted interactions, rather than a template the model copies.
 
 guan2024decompdiff (DecompDiff) 는 이미 쓰고 계신 키입니다. francoeur2020three 와
 bemis1996properties 도 bib 에 이미 있으면 그대로 재사용하세요.
+
+  ※ SMILES 2 (Weininger et al. 1989, CANGEN 알고리즘) 는 인용하지 않습니다. novelty 의
+    동치 판정을 실제로 하는 것은 RDKit 의 canonical ranking 이지 CANGEN 이 아니라서,
+    1989 를 걸면 우리가 안 쓴 알고리즘을 인용하는 셈이 됩니다. 정규화의 출처로는
+    RDKit 을 소프트웨어로 인용하는 편이 맞습니다:
+        RDKit: Open-source cheminformatics. https://www.rdkit.org  (버전 명시)
 
 --------------------------------------------------------------------------------
 [4] 리뷰어가 물고 늘어질 두 가지

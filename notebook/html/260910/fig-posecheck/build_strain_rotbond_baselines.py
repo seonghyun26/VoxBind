@@ -2,7 +2,8 @@
 """build_strain_rotbond_baselines.py — strain against rotatable bonds, ALL methods.
 
     strain_rotbond_all_methods_{median,mean}.*  lines, every method, per exact bond count
-    strain_box_rotbond_grid_all_methods.*       ONE PANEL PER METHOD, boxes across the axis
+    strain_box_per_rotbond_all_methods.*        strain, every method on one axis
+    rotbond_distribution_all_methods.*          where each method puts its ligands, 3x3
     strain_rotbond_all_methods.{json,csv}       the numbers behind both
 
 `build_strain_per_rotbond.py` next door draws the same metric for the three arms we run
@@ -23,17 +24,19 @@ this one).
 That is an argument, not evidence, so the join is CHECKED rather than trusted: for every
 pocket the heavy-atom sequence recomputed from the meta must equal the `n` sequence in the
 export, position by position, and a mismatch aborts. It matches 100/100 pockets for all
-four methods, on exactly 7,655 / 7,772 / 7,720 / 6,427 molecules over the 79 pockets --
+five methods, on exactly 7,655 / 7,772 / 7,720 / 6,427 / 7,895 molecules over the 79
+pockets --
 the totals `../fig-posecheck/README.md` already records from
 `baselines/_eval/summary_density79.json`.
 
-FUNCBIND IS NOT HERE, and that is a finding rather than an omission. Its strain export
-exists (`posecheck_FuncBind.json`, 9,992 molecules) but no meta for it reached this box.
-Its shard SDFs under `funcbind/artifacts/reproduction/crossdocked/paper_run` were tried as
-a substitute and FAIL the same check -- 1 pocket of 100 matches, pocket 0 holds 99
-molecules against the export's 100, and the atom counts disagree from the first record.
-They are a different sampling run, not the one PoseCheck scored. Joining them would have
-attached the wrong molecule's torsion count to every strain value, silently.
+FUNCBIND IS IN, since 2026-09-10. Its meta reached the bundle that day and joins cleanly:
+100/100 pockets, 9,992 molecules, the export's own total. Before that only its strain
+export was here, and its shard SDFs under `funcbind/artifacts/reproduction/crossdocked/
+paper_run` were tried as a substitute and FAILED this same check -- 1 pocket of 100 matched,
+pocket 0 held 99 molecules against the export's 100, atom counts disagreeing from the first
+record. Those shards are a different sampling run from the one PoseCheck scored, and the
+pocket mapping is not the problem (`pocket_ligand_filename` agrees with the shard target
+dirs); do not reach for them again if the meta ever goes missing.
 
 MIXING THE TWO SCORING RUNS IS SAFE FOR STRAIN, AND ONLY FOR STRAIN. The baselines were
 scored against the whole `*_rec.pdb` receptor; the local arms here are read from the
@@ -45,14 +48,15 @@ confirms it does not: median |relative difference| 0.6-1.0 %, which is the run-t
 82.9, 346.2 vs 350.4). Do NOT extend this to clashes or interactions: those are
 receptor-dependent and a crop cannot see an atom it does not contain.
 
-TWO FORMS, BECAUSE EIGHT SERIES DO NOT FIT ONE AXIS. The sibling figure dodges its boxes
-inside each bond count, which works at two or three arms and fails at eight: 120 boxes on
-one axis, 0.17 in of width each, and the reader asked to compare eight thin slivers across
-a group boundary. So the boxes here become SMALL MULTIPLES -- one panel per method, the
-paper's Fig. 12/13 form -- sharing one y range, one x range, one whisker rule and the same
-grey crystal-ligand line in every panel, so only the boxes differ between them. The lines
-keep the all-on-one-axis view, where colour plus a dash pattern per baseline is the
-identity channel `build_posecheck_all_by_atom_range.py` already uses for nine series.
+THREE FIGURES, AND THE BOXES ARE THE ONE TO READ. All eight methods are dodged inside each
+bond count on ONE axis: the comparison that matters is between methods AT a bond count, and
+small multiples -- one panel per method, the paper's Fig. 12/13 form -- were built first and
+dropped because a grid makes exactly that comparison hardest. The share of each method's
+ligands at each count is now its OWN figure (3x3, log y) rather than a strip under the
+boxes: the two answer different questions, are read at different times, and nine share
+panels do not fit under a box panel at any useful size. The median/mean LINES keep the
+summary view, where colour plus a dash pattern per baseline is the identity channel
+`build_posecheck_all_by_atom_range.py` already uses for nine series.
 
     /opt/conda/envs/voxbind/bin/python \\
         notebook/html/260910/fig-posecheck/build_strain_rotbond_baselines.py
@@ -104,38 +108,77 @@ BASELINES = [
     ("Pocket2Mol", "Pocket2Mol", "Pocket2Mol"),
     ("DiffSBDD",   "DiffSBDD",   "DiffSBDD"),
     ("DecompDiff", "DecompDiff", "DecompDiff_ref_prior"),
+    # Arrived in the bundle on 2026-09-10 and joins cleanly: 100/100 pockets, 9,992
+    # molecules. Until then only its strain export was here and the shard SDFs under
+    # funcbind/artifacts were a different sampling run -- see the docstring.
+    ("FuncBind",   "FuncBind",   "FuncBind"),
 ]
-# Thin and dashed: with seven models on one axis hue alone is not enough, and the three
+# Thin and dashed: with eight models on one axis hue alone is not enough, and the three
 # local arms are the subject while these are context. Same channel split as
 # build_posecheck_all_by_atom_range.py.
 BASE_LW = 1.6
 BASE_DASH = {"AR": (0, (5, 2)), "Pocket2Mol": (0, (1, 1.6)),
-             "DiffSBDD": (0, (6, 2, 1, 2)), "DecompDiff": (0, (9, 3))}
+             "DiffSBDD": (0, (6, 2, 1, 2)), "DecompDiff": (0, (9, 3)),
+             "FuncBind": (0, (3, 1.4, 1, 1.4))}
 
 X_LABEL = "Number of rotatable bonds in ligand"
 XTICK = 1
 STRAIN_FLOOR, WHIS = 1e-2, (5, 95)
-BOX_WIDE, BOX_GAP = 1.52, 0.30
-# The small-multiple grid: two columns of wide panels rather than one row of narrow ones,
-# because the x carries fifteen bond counts and each needs room for a box.
-GRID_COLS, GRID_WIDE, GRID_TALL, GRID_XTICK, BOX_W = 2, 1.34, 1.06, 3, 0.62
+BOX_GAP = 0.30               # of a bond count's width, left clear between neighbouring groups
+# The box panel is wider and taller than the house figure -- eight boxes have to fit inside
+# each of thirteen counts -- and the share panels are a 3x3 block of small ones.
+BOX_WIDE_1, BOX_TALL, DIST_COLS, DIST_WIDE, DIST_TALL = 1.72, 1.22, 3, 1.34, 0.66
+BOX_YLIM = (1e0, 1e5)
+# THE AXIS STOPS AT 12 ROTATABLE BONDS, because each INDIVIDUAL count past it is thin and
+# stretching the axis to the last molecule anyone made (25, one VoxBind ligand) spent two
+# thirds of the width on a handful of boxes.
+#
+# THE CUMULATIVE TAIL IS NOT NEGLIGIBLE, THOUGH, and the figure must not imply it is: 5.0 %
+# of VoxBind's ligands, 3.1 % of DecompDiff's and 2.8 % of DiffSBDD's have more than 12
+# rotatable bonds (Pocket2Mol is the outlier at 0.0 %). So every share panel PRINTS its own
+# excluded percentage rather than letting the cap pass silently. Raise X_MAX to see them.
+X_MAX = 12
+# Above this many counts the axis is split over two rows so the boxes stay wide enough to
+# read; at X_MAX = 12 it is one row. Raise X_MAX and the split comes back on its own.
+SPLIT_ABOVE = 14
 # Boxes are drawn far further into the tail than the sibling figures' MIN_N=25 allows,
 # so every method covers its own full range instead of being clipped to the narrowest
-# one. Ten molecules is the floor for a box to carry quartiles at all; the share strip
-# under each panel is what tells the reader which end of the axis is thin.
-# The crystal ligands get a panel of their own, and 79 of them over ~12 bond counts
-# cannot meet MIN_REF at every one. Their panel uses a lower floor than the dashed
-# reference LINE does -- a box on 6 ligands is thin but it is honest and visibly thin,
-# whereas the line is a summary and would read as solid at the same n.
-GRID_MIN_N, GRID_MIN_REF = 10, 5
+# one. Ten molecules is the floor for a box to carry quartiles at all; the share figure
+# is what tells the reader which end of the axis is thin. The crystal ligands are a LINE
+# in the box figure, not a ninth box series, so this floor never applies to them -- theirs
+# is pose_common's MIN_REF over the +-REF_WIN window, and it is why their line stops at 9.
+GRID_MIN_N = 10
 TAIL = 1e4
+# Floor for the log-scaled share panels; below this a bond count is empty, not rare.
+DIST_FLOOR = 0.05
 STATS = {"median": lambda v: float(np.median(v)), "mean": lambda v: float(np.mean(v))}
-LEGEND_LOC = {"median": "upper left", "mean": "lower right"}
+KEY_H = 0.92                 # inches of key strip under the line panels; see lines()
 
 # The boxes bin the axis; the lines keep every count. Half-open, so these are {0}, {1,2},
 # {3,4}, {5,6}, {7,8,9}, {10+}.
 BIN_EDGES = [0, 1, 3, 5, 7, 10, 10 ** 6]
 BIN_LABELS = ["0", "1–2", "3–4", "5–6", "7–9", "10+"]
+
+# The three arms this section runs locally, addressed by pose_common's stable KEYS --
+# their LABELS moved ("VoxBind + Ours" -> "Ours") on 2026-09-10 and may move again.
+LOCAL_KEYS = ("targetdiff", "vanilla", "ours_v1")
+REF_KEY = "ours_v1"          # any arm carries the same crystal ligand per pocket
+LOCAL_LABELS = []            # filled by load_all() from ARMS, in LOCAL_KEYS order
+
+# OUR ARM IS LABELLED CoDE, whatever pose_common currently spells it. That file has called
+# it "VoxBind + Ours" and then "Ours"; the method's name is CoDE and it is what
+# ../../260827/table_drug_design.tex's last row carries. method_colors resolves every
+# spelling to the same blue, so relabelling here cannot desynchronise the palette.
+RELABEL = {"ours_v1": "CoDE"}
+
+# THE ROW ORDER OF ../../260827/table_drug_design.tex, which is canonical for this section:
+# Reference, AR, Pocket2Mol, DiffSBDD, TargetDiff, DecompDiff, VoxBind, FuncBind, then ours
+# last. Legends, panels and exports all read from this, so a method cannot sit in one order
+# in the legend and another in the share panels.
+# The table's order, except that VoxBind is pulled down next to CoDE so the model our arm
+# modifies sits immediately before it and the two read as a pair.
+ORDER = ["AR", "Pocket2Mol", "DiffSBDD", "TargetDiff", "DecompDiff", "FuncBind", "VoxBind",
+         "CoDE"]
 
 _RB = {}
 
@@ -163,62 +206,101 @@ def load_meta(folder, stem):
 
 
 def baseline_rows(label, folder, stem, keep):
-    """Rows shaped like pose_common's, for the p79 pockets, with the join checked."""
+    """Rows shaped like pose_common's, for the p79 pockets, with the join checked.
+
+    THE CHECK RUNS OVER EVERY POCKET THE EXPORT HOLDS -- all 100 -- while only the p79 ones
+    become rows. Checking just the 79 that are drawn would leave the other 21 as evidence
+    nobody looked at, and they cost nothing: the meta is already in memory and the export
+    already carries them."""
     meta = load_meta(folder, stem)
     export = json.load(open(os.path.join(HERE, f"posecheck_{label}.json")))
     by_pocket = collections.defaultdict(list)
     for m in export["molecules"]:
         by_pocket[m["p"]].append(m)
 
-    rows, unparsed = [], 0
-    for p in sorted(keep):
+    rows, unparsed, checked = [], 0, 0
+    for p in sorted(by_pocket):
         entries = [e for e in meta[p] if e.get("mol") is not None]
         scored = by_pocket[p]
         mine = [int(e["mol"].GetNumAtoms()) for e in entries[:len(scored)]]
         if mine != [m["n"] for m in scored]:
             raise SystemExit(f"{label}: meta/export heavy-atom sequence differs at pocket "
                              f"{p} -- the join is not valid, refusing to guess")
+        checked += 1
+        if p not in keep:
+            continue
         for e, m in zip(entries, scored):
             rb = rot_bonds(e.get("smiles"))
             unparsed += rb is None
             rows.append({"n": m["n"], "s": m["s"], "c": m["c"], "rb": rb})
-    return rows, unparsed, len(export["molecules"])
+    return rows, unparsed, len(export["molecules"]), checked
 
 
 def load_all():
-    """(label -> rows) for every drawn method, plus the crystal-ligand rows. The three
-    local arms come through pose_common so their curves are identical, molecule for
-    molecule, to the ones the sibling figure draws."""
-    _, p79_rows, refrows = pc.load_arms()
+    """(label -> rows) for every drawn method, plus the crystal-ligand rows.
+
+    THE THREE LOCAL ARMS ARE PICKED BY KEY, NOT BY WALKING pose_common.ARMS. That list grew
+    from three arms to eight on 2026-09-10 -- the five published baselines were added to it,
+    pointing at `exps/baselines_pose/<m>`, which another job is still filling. Those trees
+    carry PoseBusters but no `posecheck` block yet, so walking ARMS here would load three
+    methods' worth of rows with `s=None` and silently empty every range this builder
+    computes. Selecting `targetdiff`/`vanilla`/`ours_v1` out of it keeps the roots in sync
+    with that file while ignoring arms it cannot yet serve.
+
+    WHEN `exps/baselines_pose/` IS COMPLETE, the bundle join below becomes unnecessary:
+    those trees carry SMILES and will carry strain, so `build_strain_per_rotbond.py` will
+    cover every method through pose_common alone and this builder can be retired. Until
+    then the bundle is the only source with strain for the baselines."""
+    by_key = {key: (lab, root) for lab, key, root in pc.ARMS}
     series, notes = {}, {}
-    for lab, key, _ in pc.ARMS:
-        rows = p79_rows[key]
+    local = []
+    for key in LOCAL_KEYS:
+        if key not in by_key:
+            raise SystemExit(f"pose_common.ARMS no longer defines {key!r}")
+        lab, root = by_key[key]
+        lab = RELABEL.get(key, lab)
+        rows = [r for t in pc.P79 for r in pc.rows_of(os.path.join(root, t))]
         for r in rows:
             r["rb"] = rot_bonds(r.get("smi"))
         series[lab] = rows
-        notes[lab] = {"source": "target metrics.json (pocket10 crop)", "n_rows": len(rows)}
+        notes[lab] = {"source": f"{root} (pocket10 crop)", "n_rows": len(rows)}
+        local.append(lab)
+    LOCAL_LABELS[:] = local
+
+    ref_root = by_key[REF_KEY][1]
+    refrows = [r for t in pc.P79
+               for r in pc.rows_of(os.path.join(ref_root, t), reference=True)]
     for r in refrows:
         r["rb"] = rot_bonds(r.get("smi"))
 
     keep = {int(t.split("_")[1]) for t in pc.P79}
     for lab, folder, stem in BASELINES:
-        rows, bad, n_all = baseline_rows(lab, folder, stem, keep)
+        rows, bad, n_all, checked = baseline_rows(lab, folder, stem, keep)
         series[lab] = rows
         notes[lab] = {"source": f"results/task2-drugdesign/{folder} meta x posecheck_{lab}.json"
                                 " (whole receptor)",
-                      "n_rows": len(rows), "n_all_pockets": n_all, "smiles_unparsed": bad}
+                      "n_rows": len(rows), "n_all_pockets": n_all, "smiles_unparsed": bad,
+                      "pockets_join_checked": checked}
     return series, refrows, notes
 
 
 def order(labels):
-    """Local arms first, then the baselines, so the legend reads subject-then-context."""
-    local = [l for l, _, _ in pc.ARMS]
-    return [l for l in local if l in labels] + [l for l, _, _ in BASELINES if l in labels]
+    """The drug-design table's row order, ours last. Anything the table does not name is a
+    bug rather than something to append quietly, so it raises."""
+    unknown = [l for l in labels if l not in ORDER]
+    if unknown:
+        raise SystemExit(f"not in table_drug_design.tex's order: {unknown}")
+    return [l for l in ORDER if l in labels]
 
 
 def style_of(label):
-    return ((pc.MODEL_LW, "-") if label in [l for l, _, _ in pc.ARMS]
-            else (BASE_LW, BASE_DASH[label]))
+    return (pc.MODEL_LW, "-") if label in LOCAL_LABELS else (BASE_LW, BASE_DASH[label])
+
+
+def panel_order(labels):
+    """Same order as `order`, with the crystal ligands FIRST -- they are the table's first
+    row and the thing every other panel is read against."""
+    return [pc.REF_LABEL] + order(labels)
 
 
 # ── figures ──────────────────────────────────────────────────────────────────────
@@ -231,140 +313,191 @@ def save(fig, stem):
     plt.close(fig)
 
 
-def handles(labels):
+def handles(labels, solid=False):
+    """`solid` for the box figure: nothing in it is a dashed line, so a dashed swatch in the
+    key advertises an encoding the panel does not use. The crystal ligands keep their dash
+    either way -- there they really are a dashed line."""
     h = [Line2D([], [], color=pc.REF_COLOR, lw=pc.REF_LW, ls=pc.DASH, label=pc.REF_LABEL)]
     for lab in labels:
         lw, ls = style_of(lab)
-        h.append(Line2D([], [], color=color(lab), lw=lw, ls=ls, label=lab))
+        h.append(Line2D([], [], color=color(lab), lw=pc.MODEL_LW if solid else lw,
+                        ls="-" if solid else ls, label=lab))
     return h
 
 
+def line_curve(per_lab, xs, f):
+    """The statistic at each exact bond count, null where that count holds fewer than
+    pose_common.MIN_N molecules. THE AXIS IS FIXED AT 0-X_MAX (see `main`) rather than cut
+    back to the counts every method can answer: past nine bonds the methods thin out at
+    very different rates -- Pocket2Mol has 40 ligands at nine and single figures at eleven,
+    CoDE and VoxBind still have hundreds -- and the old rule let the emptiest method decide
+    where everyone's line stopped. Now each line simply ends where its own method ran out,
+    which is the more informative thing to show, and the crystal ligands' dashed line ends
+    earlier still: 79 of them cannot fill a window at twelve bonds."""
+    return [f(per_lab[x]) if len(per_lab.get(x, ())) >= pc.MIN_N else None for x in xs]
+
+
 def lines(xs, per, ref_per, labels, stat):
+    """One statistic, one panel, and the key in a strip of its own beneath it.
+
+    NINE SERIES DO NOT LEAVE A CORNER FREE. Inside the axes this key covered FuncBind's
+    spike at six bonds and everything above ~500 kcal/mol on the left half -- the part of
+    the figure that carries the finding. Under the panel it covers nothing, and it is the
+    same 3x3 block the box figure's key is."""
     f = STATS[stat]
-    fig, ax = plt.subplots(figsize=(pc.FIG_W, pc.PANEL_H), dpi=220)
+    fig, (ax, key) = plt.subplots(2, 1, figsize=(pc.FIG_W, pc.PANEL_H + KEY_H), dpi=220,
+                                  gridspec_kw={"height_ratios": [pc.PANEL_H, KEY_H]})
     fig.patch.set_facecolor("white")
     ax.set_facecolor("white")
+    key.axis("off")
     ax.plot(xs, pc.reference_curve(ref_per, xs, f), color=pc.REF_COLOR, lw=pc.REF_LW,
             ls=pc.DASH, zorder=4, dash_capstyle="round")
     for lab in labels:
         lw, ls = style_of(lab)
-        ax.plot(xs, pc.model_curve(per[lab], xs, f), color=color(lab), lw=lw, ls=ls,
+        ax.plot(xs, line_curve(per[lab], xs, f), color=color(lab), lw=lw, ls=ls,
                 zorder=5, solid_capstyle="round")
     ax.set_yscale("log")
     pc.furniture(ax, ylabel=f"Strain {stat}\n(kcal mol⁻¹)", xlabel=X_LABEL,
                  xlim=(xs[0] - 0.6, xs[-1] + 0.6), xloc=XTICK)
-    pc.legend(ax, handles(labels), loc=LEGEND_LOC[stat], fontsize=10, ncol=2)
+    pc.legend(key, handles(labels), loc="center", ncol=3, fontsize=11)
     pc.fit(fig, pad=0.5)
     save(fig, f"strain_rotbond_all_methods_{stat}")
 
 
-def boxes_grid(series, refrows, labels):
-    """ONE CELL PER METHOD -- its strain distribution across the axis, over its own
-    rotatable-bond distribution. The paper's Fig. 12/13 form.
-
-    With eight series this is the only box form that works: dodging them inside each bond
-    count gave 0.17 in of width per box and asked the reader to compare eight thin slivers
-    across a group boundary. Small multiples ask the easier question -- one method's shape
-    at a glance -- and everything that has to be shared for the panels to be comparable IS
-    shared: one y range, one x range, one whisker rule, and the same grey crystal-ligand
-    line repeated in every panel as the common ruler.
-
-    EVERY METHOD IS DRAWN OVER ITS OWN FULL RANGE, not clipped to where the others or the
-    crystal ligands reach. The axis spans the union, so a method that stops at 11 rotatable
-    bonds visibly stops while VoxBind runs past 20 -- that difference is a property of the
-    models and the figure should show it. The grey reference line simply ends where the 79
-    crystal ligands run out; being cut off is the honest thing for it to do.
-
-    THE STRIP UNDER EACH PANEL IS WHAT MAKES THE THIN END READABLE. Boxes are drawn wherever
-    a method has GRID_MIN_N molecules, which is far below the sibling figures' MIN_N -- so
-    the axis reaches the tail, and the share strip immediately below says how little of the
-    method's output lives there. Without it a box over 12 molecules and a box over 1,100
-    look identical."""
-    panels = labels + [pc.REF_LABEL]
+def _axis(labels, refrows, series):
+    """The shared x range and per-method rows both figures are drawn over, so the boxes and
+    the share panels cannot end up covering different molecules."""
+    panels = panel_order(labels)
     rows_of = {lab: series[lab] for lab in labels}
     rows_of[pc.REF_LABEL] = refrows
-
     per = {lab: pc.by_size(rows_of[lab], "s", key="rb") for lab in panels}
-    # The strip counts EVERY molecule with a bond count, including the few whose UFF
-    # relaxation failed and so contribute no box -- it is the output distribution, not the
-    # scored-subset distribution.
     dist = {lab: collections.Counter(r["rb"] for r in rows_of[lab] if r["rb"] is not None)
             for lab in panels}
-    floor = {lab: (GRID_MIN_REF if lab == pc.REF_LABEL else GRID_MIN_N) for lab in panels}
-    valid = {lab: [x for x in sorted(per[lab]) if len(per[lab][x]) >= floor[lab]]
-             for lab in panels}
-    xs = list(range(min(v[0] for v in valid.values() if v),
-                    max(v[-1] for v in valid.values() if v) + 1))
-    ref_line = pc.reference_curve(per[pc.REF_LABEL], xs, STATS["median"])
+    # 0 to X_MAX, the same span `main` gives the line figures, so the three are read
+    # against one axis BY CONSTRUCTION rather than by today's data happening to agree.
+    # Boxes still appear only where a method has GRID_MIN_N molecules, so pinning the axis
+    # adds no box; it only stops the axis shrinking when the tail thins.
+    xs = list(range(0, X_MAX + 1))
+    beyond = {lab: 100 * sum(n for x, n in dist[lab].items() if x > X_MAX)
+              / max(sum(dist[lab].values()), 1) for lab in panels}
+    return panels, per, dist, xs, beyond
 
-    ncol = GRID_COLS
-    nrow = -(-len(panels) // ncol)
-    # Constrained layout, not pose_common's tight_layout pass: each cell is a main panel
-    # plus a strip that must sit tight against it, while consecutive CELLS need a real gap.
-    # tight_layout applies one spacing to every row and cannot make that distinction.
-    fig = plt.figure(figsize=(pc.FIG_W * GRID_WIDE, pc.PANEL_H * GRID_TALL * nrow),
-                     dpi=220, layout="constrained")
+
+def strain_boxes(series, refrows, labels):
+    """Strain against rotatable bonds, every method on one axis, dodged inside each count.
+
+    The paper's Fig. 12 shape: one panel of boxplots per number of rotatable bonds, all
+    methods together. (The paper packs 151 boxes into one row and colours each box by its
+    median strain, spending colour on the value; here colour stays the method key it is in
+    every other 260910 figure, and the legend carries it.)
+
+    The crystal ligands stay the dashed grey line rather than becoming a ninth box series:
+    79 of them over thirteen bond counts cannot fill a box at every count, and as a line
+    they are the same ruler here that they are in every sibling figure."""
+    panels, per, dist, xs, beyond = _axis(labels, refrows, series)
+    if len(xs) > SPLIT_ABOVE:
+        split = len(xs) - len(xs) // 2                 # low row takes the extra count
+        bands = [xs[:split], xs[split:]]
+    else:
+        bands = [xs]
+    ref_line = {x: v for x, v in
+                zip(xs, pc.reference_curve(per[pc.REF_LABEL], xs, STATS["median"]))}
+
+    fig, axes = plt.subplots(len(bands), 1, figsize=(pc.FIG_W * BOX_WIDE_1,
+                                                     pc.PANEL_H * BOX_TALL * len(bands)),
+                             dpi=220, squeeze=False)
     fig.patch.set_facecolor("white")
-    fig.get_layout_engine().set(h_pad=0.06, w_pad=0.04, hspace=0.045, wspace=0.03)
-    cells = fig.subfigures(nrow, ncol).ravel()
-
-    top_ax = None
-    for i, lab in enumerate(panels):
-        sub = cells[i]
-        sub.patch.set_facecolor("white")
-        ax, strip = sub.subplots(2, 1, sharex=True,
-                                 gridspec_kw={"height_ratios": pc.HEIGHT_RATIOS,
-                                              "hspace": 0.06})
-        for a in (ax, strip):
-            a.set_facecolor("white")
-        col = pc.REF_COLOR if lab == pc.REF_LABEL else color(lab)
-
-        drawn = valid[lab]
-        if drawn:
+    n = len(labels)
+    slot = (1.0 - BOX_GAP) / n
+    for band, ax in zip(bands, axes.ravel()):
+        ax.set_facecolor("white")
+        for i, lab in enumerate(labels):
+            offs = (i - (n - 1) / 2) * slot
+            drawn = [x for x in band if x in per[lab] and len(per[lab][x]) >= GRID_MIN_N]
+            if not drawn:
+                continue
+            col = color(lab)
             bp = ax.boxplot([np.clip(per[lab][x], STRAIN_FLOOR, None) for x in drawn],
-                            positions=drawn, widths=BOX_W, whis=WHIS, showfliers=False,
-                            patch_artist=True, zorder=5, manage_ticks=False)
+                            positions=[x + offs for x in drawn], widths=slot * 0.88,
+                            whis=WHIS, showfliers=False, patch_artist=True, zorder=5,
+                            manage_ticks=False)
             for box in bp["boxes"]:
-                box.set(facecolor=col, alpha=0.55, edgecolor=col, linewidth=1.0)
+                box.set(facecolor=col, alpha=0.55, edgecolor=col, linewidth=0.8)
             for part in ("whiskers", "caps"):
                 for art in bp[part]:
-                    art.set(color=col, linewidth=1.0)
+                    art.set(color=col, linewidth=0.8)
             for med in bp["medians"]:
-                med.set(color=pc.INK, linewidth=1.4, solid_capstyle="butt")
-        # The crystal ligands as the same ruler in every panel, including their own.
-        ax.plot(xs, ref_line, color=pc.REF_COLOR, lw=pc.REF_LW, ls=pc.DASH, zorder=6,
-                dash_capstyle="round")
+                med.set(color=pc.INK, linewidth=1.1, solid_capstyle="butt")
+        ax.plot(band, [ref_line.get(x) for x in band], color=pc.REF_COLOR, lw=pc.REF_LW,
+                ls=pc.DASH, zorder=6, dash_capstyle="round")
         ax.set_yscale("log")
-        if top_ax is None:
-            top_ax = ax
-        else:
-            ax.sharey(top_ax)
-        pc.furniture(ax, ylabel="Strain (kcal mol⁻¹)" if i % ncol == 0 else None,
-                     xlim=(xs[0] - 0.8, xs[-1] + 0.8), xloc=GRID_XTICK)
-        ax.set_title(lab, fontsize=13, color=pc.INK, loc="left", pad=5)
-        ax.tick_params(labelbottom=False)
+        # A FIXED FIVE DECADES, AND THE TAIL IS ALLOWED TO RUN OFF THE TOP. FuncBind's
+        # 95th percentile at 6 rotatable bonds reaches ~1e11; autoscaling to it stretched
+        # the panel over fourteen decades and pressed every box into the bottom fifth. The
+        # window is pinned so the boxes -- which all sit between 1e0 and 1e5 -- stay legible
+        # across every rebuild, and the whiskers that leave the top simply leave it. How
+        # much tail each method carries is reported as `strain_gt_1e4`, not drawn.
+        ax.set_ylim(*BOX_YLIM)
+        pc.furniture(ax, ylabel=f"Strain (kcal mol⁻¹)\n{WHIS[0]:g}–{WHIS[1]:g}th pct "
+                                "whiskers",
+                     xlabel=X_LABEL, xlim=(band[0] - 0.62, band[-1] + 0.62), xloc=1)
+        ax.set_xticks(band)
+    # Nine entries -- the crystal ligands plus eight methods -- in three columns, so the
+    # key is a 3x3 block rather than one long strip across the top of the panel.
+    # Lower right: the boxes climb left-to-right, so the empty corner is under the high
+    # bond counts, where only the lower whiskers reach.
+    pc.legend(axes.ravel()[0], handles(labels, solid=True), loc="lower right",
+              fontsize=10, ncol=3)
+    pc.fit(fig, pad=0.5)
+    save(fig, "strain_box_per_rotbond_all_methods")
 
+
+def rotbond_distribution(series, refrows, labels):
+    """Where each method puts its ligands on the same axis the boxes use -- its own share
+    at each rotatable-bond count, one panel per method in a 3x3 block.
+
+    ITS OWN FIGURE, not a strip under the boxes. The two answer different questions and are
+    read at different times: the boxes compare methods at a bond count, this compares the
+    bond counts a method produces. Sharing a canvas forced one to be a third the height of
+    the other, and a nine-panel block does not fit under a box panel at any useful size.
+
+    LOG y. The share spans two decades inside 0-12 bonds -- Pocket2Mol puts 33 % at one bond
+    and 0.1 % at twelve -- and on a linear axis everything under ~2 % is a flat line on the
+    floor."""
+    panels, per, dist, xs, beyond = _axis(labels, refrows, series)
+    ncol = DIST_COLS
+    nrow = -(-len(panels) // ncol)
+    fig, axes = plt.subplots(nrow, ncol, figsize=(pc.FIG_W * DIST_WIDE,
+                                                 pc.PANEL_H * DIST_TALL * nrow),
+                             dpi=220, sharex=True, squeeze=False)
+    fig.patch.set_facecolor("white")
+    flat = axes.ravel()
+    for i, lab in enumerate(panels):
+        ax = flat[i]
+        ax.set_facecolor("white")
+        col = pc.REF_COLOR if lab == pc.REF_LABEL else color(lab)
         total = sum(dist[lab].values())
         pct = [100 * dist[lab].get(x, 0) / total for x in xs]
-        strip.step(xs, pct, where="mid", color=col, lw=pc.DIST_LW, zorder=3)
-        strip.fill_between(xs, pct, step="mid", color=col, alpha=pc.DIST_FILL, lw=0,
-                           zorder=2)
-        # The x name goes under the BOTTOM ROW only. Repeated under all eight cells it was
-        # wider than a cell, overran into the neighbouring column and pushed the right-hand
-        # panels off the figure; the whisker rule it used to carry lives in the README and
-        # the docstring instead of costing a line of width in every cell.
-        pc.furniture(strip, ylabel="% of ligands" if i % ncol == 0 else None,
-                     xlabel=X_LABEL if i >= len(panels) - ncol else None,
-                     xlim=(xs[0] - 0.8, xs[-1] + 0.8), xloc=GRID_XTICK)
-        strip.set_ylim(bottom=0)
-
-    for sub in cells[len(panels):]:
-        sub.set_visible(False)
-    top_ax.set_ylim(bottom=STRAIN_FLOOR)
-    for ext in ("png", "svg", "pdf"):
-        fig.savefig(os.path.join(HERE, f"strain_box_rotbond_grid_all_methods.{ext}"),
-                    facecolor="white")
-    plt.close(fig)
+        ax.step(xs, pct, where="mid", color=col, lw=pc.DIST_LW, zorder=3)
+        ax.fill_between(xs, pct, DIST_FLOOR, step="mid", color=col, alpha=pc.DIST_FILL,
+                        lw=0, zorder=2)
+        ax.set_yscale("log")
+        # The x name goes under the BOTTOM ROW only; repeated under all nine it is wider
+        # than a panel and the copies overprint each other.
+        pc.furniture(ax, ylabel="% of ligands" if i % ncol == 0 else None,
+                     xlim=(xs[0] - 0.6, xs[-1] + 0.6), xloc=2)
+        ax.set_ylim(bottom=DIST_FLOOR)
+        ax.set_title(lab, fontsize=12, color=pc.INK, loc="left", pad=4)
+        ax.text(0.97, 0.07, f">{X_MAX} bonds: {beyond[lab]:.1f}%", transform=ax.transAxes,
+                ha="right", va="bottom", fontsize=9.5, color=pc.AXIS, zorder=6)
+    for ax in flat[len(panels):]:
+        ax.set_visible(False)
+    # ONE x name for the whole block, centred under the bottom row. sharex already leaves
+    # the tick labels on that row alone; three copies of the name did not fit -- each is
+    # wider than a panel -- and overprinted each other.
+    fig.supxlabel(X_LABEL, fontsize=15.5, color=pc.INK)
+    pc.fit(fig, pad=0.5, h_pad=0.9)
+    save(fig, "rotbond_distribution_all_methods")
 
 
 def bin_of(rb):
@@ -379,15 +512,19 @@ def tail_share(rows):
 
 def exports(xs, series, per, ref_per, refrows, labels, notes):
     out = {
-        "built": "2026-09-09",
+        "built": "2026-09-10",
         "metric": "PoseCheck strain against RDKit strict rotatable-bond count",
         "pocket_set": {"name": "p79 electron-density pockets", "n": len(pc.P79)},
         "join": ("baselines: results/task2-drugdesign/<M>/samples/meta (base + _part2, per "
                  "pocket) x posecheck_<M>.json, verified position-by-position on the "
-                 "heavy-atom sequence for all 100 pockets"),
-        "excluded": {"FuncBind": ("strain export exists but no meta on this box; its shard "
-                                  "SDFs are a different sampling run and fail the "
-                                  "heavy-atom check (1/100 pockets)")},
+                 "heavy-atom sequence"),
+        "join_checked": ("every baseline's heavy-atom sequence was verified against its "
+                         "export on ALL 100 pockets (see each arm's pockets_join_checked); "
+                         "rows are kept for the 79 drawn"),
+        "n_columns": ("`n` is the molecules at that exact count. `n_window` is the sample "
+                      "the value on the row was computed from -- identical for the models, "
+                      f"which use no window, and the +-{pc.REF_WIN}-count pool for the "
+                      "crystal ligands, which do"),
         "scope_note": ("baselines scored whole-receptor, local arms on the pocket10 crop; "
                        "measured median |rel diff| 0.6-1.0 % on strain, which is "
                        "receptor-independent by construction"),
@@ -401,14 +538,19 @@ def exports(xs, series, per, ref_per, refrows, labels, notes):
             "n_scored": sum(len(v) for v in per[lab].values()),
             "strain_gt_1e4": tail_share(rows),
             "atoms_mean": round(float(np.mean([r["n"] for r in rows])), 2),
-            **{f"strain_{s}": pc.model_curve(per[lab], xs, STATS[s]) for s in STATS},
+            **{f"strain_{s}": line_curve(per[lab], xs, STATS[s]) for s in STATS},
             "bins": {b: (round(float(np.median(v)), 2) if v else None) for b, v in
                      ((BIN_LABELS[i], [r["s"] for r in rows if r["s"] is not None
                                        and r["rb"] is not None and bin_of(r["rb"]) == i])
                       for i in range(len(BIN_LABELS)))},
         }
+    ref_window = [sum(len(v) for x, v in ref_per.items() if abs(x - a) <= pc.REF_WIN)
+                  for a in xs]
     out["arms"][pc.REF_LABEL] = {
         "source": "crystal ligand of each of the 79 pockets",
+        "window": f"+-{pc.REF_WIN} counts, drawn where it pools >= {pc.MIN_REF} ligands",
+        "n": [len(ref_per.get(a, ())) for a in xs],
+        "n_window": ref_window,
         "n_scored": sum(len(v) for v in ref_per.values()),
         "strain_gt_1e4": tail_share(refrows),
         "atoms_mean": round(float(np.mean([r["n"] for r in refrows])), 2),
@@ -419,16 +561,17 @@ def exports(xs, series, per, ref_per, refrows, labels, notes):
 
     with open(os.path.join(HERE, "strain_rotbond_all_methods.csv"), "w", newline="") as fh:
         w = csv.writer(fh)
-        w.writerow(["arm", "rotatable_bonds", "n", "strain_median", "strain_mean"])
+        w.writerow(["arm", "rotatable_bonds", "n", "n_window", "strain_median",
+                    "strain_mean"])
         for lab in labels:
             for i, x in enumerate(xs):
-                d = out["arms"][lab]
-                w.writerow([lab, x, len(per[lab].get(x, ())),
+                d, n = out["arms"][lab], len(per[lab].get(x, ()))
+                w.writerow([lab, x, n, n,          # the models are drawn per exact count
                             "" if d["strain_median"][i] is None else round(d["strain_median"][i], 3),
                             "" if d["strain_mean"][i] is None else round(d["strain_mean"][i], 3)])
         d = out["arms"][pc.REF_LABEL]
         for i, x in enumerate(xs):
-            w.writerow([pc.REF_LABEL, x, len(ref_per.get(x, ())),
+            w.writerow([pc.REF_LABEL, x, len(ref_per.get(x, ())), ref_window[i],
                         "" if d["strain_median"][i] is None else round(d["strain_median"][i], 3),
                         "" if d["strain_mean"][i] is None else round(d["strain_mean"][i], 3)])
     return out
@@ -448,19 +591,33 @@ def main():
     per = {lab: pc.by_size(series[lab], "s", key="rb") for lab in labels}
     ref_per = pc.by_size(refrows, "s", key="rb")
 
-    common = set.intersection(*(set(per[l]) for l in labels))
-    xs = [x for x in sorted(common)
-          if all(len(per[l][x]) >= pc.MIN_N for l in labels)]
+    # 0 to X_MAX, always -- the same span the box and share figures cover, so the three
+    # are read against one axis. Where a method (or the reference) is too thin at a count,
+    # its own line stops; the axis does not.
+    xs = list(range(0, X_MAX + 1))
     if "line" in kinds:
         for s in stats:
             lines(xs, per, ref_per, labels, s)
     if "box" in kinds:
-        boxes_grid(series, refrows, labels)
+        strain_boxes(series, refrows, labels)
+        rotbond_distribution(series, refrows, labels)
     out = exports(xs, series, per, ref_per, refrows, labels, notes)
 
     print(f"{len(pc.P79)} pockets · {len(labels)} methods + reference · "
           f"x = {xs[0]}-{xs[-1]} rotatable bonds "
-          f"(counts where every drawn method has ≥{pc.MIN_N} molecules)\n")
+          f"(each line drawn where its own method has ≥{pc.MIN_N} molecules)\n")
+    for lab in labels:
+        drawn = [x for x in xs if len(per[lab].get(x, ())) >= pc.MIN_N]
+        # A break INSIDE a method's span is reported rather than collapsed into the
+        # endpoints -- "0-12" over a line with a hole in it would be a false summary.
+        gaps = [x for x in range(drawn[0], drawn[-1] + 1) if x not in drawn] if drawn else []
+        print(f"  {lab:12s} line drawn {drawn[0]}-{drawn[-1]}"
+              + (f", broken at {gaps}" if gaps else "") if drawn else
+              f"  {lab:12s} nowhere thick enough to draw")
+    ref_drawn = [x for x, v in zip(xs, pc.reference_curve(ref_per, xs, STATS["median"]))
+                 if v is not None]
+    print(f"  {pc.REF_LABEL:12s} line drawn {ref_drawn[0]}-{ref_drawn[-1]} "
+          f"(±{pc.REF_WIN} window, ≥{pc.MIN_REF} ligands)\n")
     head = BIN_LABELS
     print(f"{'method':16s} {'mols':>6s} {'atoms':>6s} "
           + " ".join(f"{b:>8s}" for b in head) + f" {'>1e4':>7s}   (strain median by bin)")
@@ -477,7 +634,6 @@ def main():
                     for b in head]
         print(f"{lab:16s} {d['n_scored']:6d} {d['atoms_mean']:6.1f} " + " ".join(vals)
               + f" {d['strain_gt_1e4']:6.2f}%")
-    print(f"\nFuncBind excluded: {out['excluded']['FuncBind']}")
     print(f"\nwrote {HERE}")
 
 

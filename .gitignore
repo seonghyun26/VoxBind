@@ -57,4 +57,9 @@ notebook/html/nodes/
 /results/*
 !/results/dropbox_push.sh
 !/results/dropbox_pull.sh
+!/results/dropbox_pull_baselines.sh
 !/results/README.md
+# Staged gen/docked poses for the paired interaction figure — ~10 MB of intermediate SDF
+# that dock_core_poses.py rebuilds from the exports (at the cost of ~2,100 Vina docks), so
+# it rides Dropbox via fig-interaction/dropbox_sync.sh, not git. Same rule as /results.
+notebook/html/260910/fig-interaction/poses/

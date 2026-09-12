@@ -6,13 +6,14 @@ PoseBusters dock-mode validity. The two split by metric and share `../pose_commo
 method), which is everything a disagreement between them would silently corrupt. **Each
 folder carries the code that draws its own figures.**
 
-## The six builders
+## The seven builders
 
 | builder | draws | runs here? |
 |---|---|---|
 | `build_posecheck_per_atom.py` | strain and clashes against ligand SIZE, three local arms | yes |
 | `build_strain_per_rotbond.py` | strain against ROTATABLE BONDS, the same three arms | yes |
 | `build_strain_rotbond_baselines.py` | the same axis with the **published baselines** added | yes |
+| `build_strain_atom_all_methods.py` | the SIZE axis with the **published baselines** added | yes |
 | `build_posecheck_all_by_atom_range.py` | all eight methods, binned: ECDF + violin | yes |
 | `build_posecheck_baselines_by_atom_range.py` | the five published baselines alone → `_baselines_only/` | no — needs `prj-denovo/baselines` |
 | `export_posecheck_json.py` | `posecheck_<Method>.json`, the five baselines per molecule | no — same |
@@ -59,7 +60,9 @@ Headline numbers over the 79 pockets — strain median / clash median:
 Strain medians at 15 / 25 / 35 heavy atoms: TargetDiff 141 / 577 / 1425, VoxBind
 29 / 65 / 116, CoDE 29 / 90 / 169. So **the two VoxBind arms stay within a factor
 of ~2-3 of the crystal ligands across the whole size range while TargetDiff runs 5-12×
-above them**, with CoDE drifting slightly higher than vanilla as molecules grow. That is
+above them**, with CoDE drifting slightly higher than vanilla as molecules grow — though
+only up to ~34 heavy atoms: past that the two cross and CoDE is the lower of the pair, see
+the all-methods size section below. That is
 the same ordering PoseBusters gives from a different measurement, which is the main reason
 to trust either — and it is *not* the Vina ordering, where CoDE wins. Pose quality and
 affinity are separate axes.
@@ -161,8 +164,10 @@ is too thin for a per-count curve — that is why it is windowed at all — but 
 counts run 0–14 where ligand sizes run 5–45, so ±4 would span two thirds of the axis and
 flatten the reference into a near-constant line. ±1 pools 12–29 ligands per point, and the
 line **stops at 9** where the window falls under `MIN_REF` rather than being extended into
-an invented value. Same narrowing, for the same reason, as `../fig-consistency`. In the
-exports the reference's `n` is that window's pool, not the exact-count one.
+an invented value. Same narrowing, for the same reason, as `../fig-consistency`. The
+exports carry both counts side by side — `n` is the ligands at that exact bond count,
+`n_window` the pool the value was computed from — because for the reference they differ by
+a factor of 2–4 and a single `n` column would misstate one row or the other.
 
 **The mean panel is not clipped, where the per-atom one is.** That figure clips to 1e6
 because its curves have a bulk below it and only a few thin heavy-atom counts spike out.
@@ -175,36 +180,46 @@ the median. The tail driving it is in the table above and in the JSON as `strain
 
 ## Torsion-resolved, all methods (`build_strain_rotbond_baselines.py`)
 
-The section above with the published baselines added: **7 methods + the crystal ligands**,
+The section above with the published baselines added: **8 methods + the crystal ligands**,
 same 79 pockets, same axis.
 
 | file | what |
 |---|---|
-| `strain_box_rotbond_grid_all_methods.*` | **one cell per method** — its box distribution across the axis, over its own bond-count distribution |
-| `strain_rotbond_all_methods_{median,mean}.*` | lines, every method on one axis, per exact bond count |
-| `strain_rotbond_all_methods.{json,csv}` | the numbers behind both |
+| `strain_box_per_rotbond_all_methods.*` | the **distribution** at each bond count, all methods dodged on one axis — **the figure to read** |
+| `rotbond_distribution_all_methods.*` | where each method puts its ligands on that axis, one panel per method, 3×3 |
+| `strain_rotbond_all_methods_{median,mean}.*` | the medians (and means) alone, as lines, per exact bond count |
+| `strain_rotbond_all_methods.{json,csv}` | the numbers behind all of them |
 
-**The boxes are small multiples, not one dodged axis.** Dodging eight series inside each
-bond count gives 0.17 in of width per box and asks the reader to compare eight thin slivers
-across a group boundary; one cell per method asks the easier question. Everything that has
-to be shared for the cells to be comparable is shared — one y range, one x range, one
-whisker rule (quartile box, 5–95th percentile whiskers, no fliers), and the same grey
-crystal-ligand median line repeated in every cell as the common ruler.
+**One dodged axis, and the shares are a separate figure.** Small multiples — one panel per
+method, the paper's Fig. 12/13 form — were built first and dropped: the comparison that
+matters is between methods *at* a bond count, and that is the one a grid makes hardest.
+Eight boxes dodged inside each count put it back. The two figures answer different
+questions (the boxes compare methods at a count; the shares compare the counts a method
+produces) and are read at different times, so they no longer share a canvas — nine share
+panels do not fit under a box panel at any useful size.
 
-**Every method is drawn over its own full range**, not clipped to the narrowest one or to
-where the crystal ligands reach. The axis spans the union, so Pocket2Mol visibly stops at
-10 rotatable bonds while VoxBind runs past 24 — that difference is a property of the models
-and the figure should show it. The grey reference line simply ends where the 79 crystal
-ligands run out; being cut off is the honest thing for it to do. Boxes are drawn wherever a
-method has ≥10 molecules (≥5 for the crystal ligands), far below the `MIN_N = 25` the
-sibling figures gate on.
+**The axis stops at 12 rotatable bonds** (`X_MAX`). Past it every individual count is thin,
+and stretching to the last molecule anyone made — 25, one VoxBind ligand — spent two thirds
+of the width on a handful of boxes. The cut is **not** silent: every share panel prints its
+own excluded percentage (`>12 bonds: N%` — 0.0 % for Pocket2Mol up to 5.0 % for VoxBind),
+and raising `X_MAX` brings the tail back, splitting the axis over two rows above 14 counts.
 
-**The strip under each cell is what makes that safe.** It is the share of that method's own
-ligands at each bond count — every molecule with a bond count, including the few whose UFF
-relaxation failed and so contribute no box. Without it, a box over 12 molecules and a box
-over 1,100 look identical. It is also a finding in its own right: Pocket2Mol puts a third
-of its output at 0–1 rotatable bonds, while the VoxBind arms peak at 3–4 and carry a tail
-past 20 that no other method has.
+**Each series is drawn over its own range, not the narrowest one.** Boxes appear wherever a
+method has ≥10 molecules at a count (≥5 for the crystal ligands, whose panel is the one
+place a box over six ligands is worth more than nothing); the median *lines* use the house
+`MIN_N = 25`. So Pocket2Mol's line stops at 9 bonds while the other seven run to 12, and
+the grey reference line stops at 9 as well — 79 crystal ligands cannot fill a window past
+it. Being cut off is the honest thing for it to do.
+
+**The y range of the box figure is pinned to 1e0–1e5** and the tails are allowed to leave
+the top. FuncBind's 95th percentile at 6 rotatable bonds reaches ~1e11; autoscaling to it
+stretched the panel over fourteen decades and pressed every box into the bottom fifth. How
+much tail each method carries is reported as `strain_gt_1e4`, not drawn. The cost is that
+the 5th-percentile whiskers of the low-strain methods at 0–2 bonds now rest on the floor.
+
+**The share figure is a finding in its own right**: Pocket2Mol puts a third of its output at
+0–1 rotatable bonds, while the VoxBind arms peak at 3–4 and carry a tail past 12 that only
+DecompDiff matches.
 
 Strain median by bond bin, over the 79 pockets:
 
@@ -213,6 +228,7 @@ Strain median by bond bin, over the 79 pockets:
 | AR | 7,654 | 17.2 | 130.3 | 238.4 | 426.7 | 628.7 | 921.9 | 1121.1 | 5.83 % |
 | TargetDiff | 7,232 | 22.2 | 77.0 | 172.0 | 313.7 | 546.6 | 819.5 | 1496.8 | 6.28 % |
 | DiffSBDD | 7,720 | 20.2 | 57.8 | 131.7 | 255.0 | 388.5 | 652.0 | 1174.7 | 1.24 % |
+| FuncBind | 7,895 | 19.0 | 41.3 | 83.5 | 201.9 | 1623.2 | 1882.0 | 1427.2 | **12.36 %** |
 | DecompDiff | 6,299 | 20.9 | 34.9 | 50.7 | 96.7 | 231.5 | 326.1 | 699.1 | 1.25 % |
 | Pocket2Mol | 7,772 | 18.5 | 24.9 | 41.6 | 113.7 | 133.7 | 156.6 | 146.9 | **0.04 %** |
 | **CoDE** | 7,826 | 24.9 | 12.9 | 33.8 | 70.1 | 109.3 | 205.1 | 428.7 | 6.56 % |
@@ -229,13 +245,21 @@ interesting ones:
   CoDE at 7–9 (157 vs 205) and is the **best method of all at 10+** (147, against 415 /
   429 for the VoxBind arms). Per exact count it crosses below Ours at 8 bonds and below
   both arms at 9. Its tail is also in a different class: only **0.04 %** of its molecules
-  relax past 1e4, against 1.2–1.5 % for DiffSBDD/DecompDiff and 4.3–6.6 % for the VoxBind
-  arms and TargetDiff. It makes small molecules (18.5 atoms) and almost never produces a
-  catastrophic conformer. Read this together with its Vina numbers before calling it a win.
+  relax past 1e4, against 1.2–1.5 % for DiffSBDD/DecompDiff, 4.3–6.6 % for the VoxBind
+  arms and TargetDiff, and 12.4 % for FuncBind. It makes small molecules (18.5 atoms) and
+  almost never produces a catastrophic conformer. Read this together with its Vina numbers
+  before calling it a win.
 * **DecompDiff beats Pocket2Mol in exactly one bin** (3–4: 97 vs 114) and nowhere else.
+* **FuncBind breaks at five rotatable bonds.** Through 3–4 it is the third-lowest method in
+  the table (41 / 84 / 202, under everything but the two VoxBind arms); at 5–6 it jumps to
+  1,623 and stays there, making it the **worst** method of all at 5–6 and 7–9 — 2.6× and
+  2.0× AR. Its tail says the same thing from the other end: **12.4 %** of its molecules
+  relax past 1e4, twice the next worst. Whatever fails, fails on flexible ligands and fails
+  hard, so read its pooled numbers as two populations rather than one.
 
 Everything else holds throughout: DiffSBDD < TargetDiff < AR in every bin up to 7–9. **AR
-is the worst arm over most of the axis, not TargetDiff** — and it is worst at *zero*
+is the worst of the published baselines over most of the axis, not TargetDiff** (FuncBind
+aside, which is worst wherever it is broken) — and it is worst at *zero*
 rotatable bonds (130.3 against TargetDiff's 77.0), where there is no torsional freedom at
 all, so that is bond and angle geometry rather than conformation. Only at 10+ does
 TargetDiff take last place (1497 vs AR's 1121).
@@ -255,20 +279,28 @@ ships in the bundle but which that loader never read.
 
 That is an argument, not evidence, so the builder **checks** it: for every pocket the
 heavy-atom sequence recomputed from the meta must equal the export's `n` sequence position
-by position, and a mismatch aborts rather than guesses. It matches **100/100 pockets for
-all four methods**, on exactly 7,655 / 7,772 / 7,720 / 6,427 molecules over the 79 pockets
-— the totals this README already records from `baselines/_eval/summary_density79.json`.
+by position, and a mismatch aborts rather than guesses. **The check runs over all 100
+pockets, not only the 79 that are drawn** — the meta is already in memory and the export
+already carries them, so the other 21 cost nothing and would otherwise be evidence nobody
+looked at. It matches **100/100 for all five methods** (`pockets_join_checked` in the
+JSON), and the 79 kept pockets hold exactly 7,655 / 7,772 / 7,720 / 6,427 / 7,895
+molecules — the totals this README already records from
+`baselines/_eval/summary_density79.json`.
 
-### FuncBind is missing, and that is a finding
+### FuncBind is in, and how it got there
 
-Its strain export exists (`posecheck_FuncBind.json`, 9,992 molecules) but **no meta for it
-reached this box**. Its shard SDFs under
+Until 2026-09-10 it was not: its strain export existed (`posecheck_FuncBind.json`, 9,992
+molecules) but **no meta for it had reached this box**, and without one there is no torsion
+count. Its meta arrived in the results bundle that day and joins cleanly — 100/100 pockets,
+9,992 molecules, the export's own total.
+
+**Do not reach for the shard SDFs if the meta ever goes missing again.** Those under
 `funcbind/artifacts/reproduction/crossdocked/paper_run` were tried as a substitute and
 **fail the same check**: 1 pocket of 100 matches, pocket 0 holds 99 molecules against the
 export's 100, and the atom counts disagree from the first record. They are a different
-sampling run from the one PoseCheck scored. Joining them would have attached the wrong
-molecule's torsion count to every strain value, silently. To add FuncBind, bring over its
-`_meta/FuncBind.pt` from `prj-denovo/baselines` and add one line to `BASELINES`.
+sampling run from the one PoseCheck scored — the pocket mapping is not the problem,
+`pocket_ligand_filename` agrees with the shard target dirs. Joining them would have
+attached the wrong molecule's torsion count to every strain value, silently.
 
 ### Mixing the two scoring runs is safe for strain, and only for strain
 
@@ -280,6 +312,100 @@ cannot enter it, and measuring the same molecules both ways confirms it does not
 and pooled medians move under 1 % — 60.1 vs 62.6, 80.5 vs 82.9, 346.2 vs 350.4. **Do not
 extend this to clashes or interactions**: those are receptor-dependent, and a crop cannot
 see an atom it does not contain.
+
+## Size-resolved, all methods (`build_strain_atom_all_methods.py`)
+
+The size axis of `build_posecheck_per_atom.py` with the published baselines added:
+**8 methods + the crystal ligands**, same 79 pockets, same metric. The torsion sibling
+above and this one are the same molecules grouped two ways.
+
+| file | what |
+|---|---|
+| `strain_per_atom_all_methods_median.*` | strain **median** against heavy-atom count, every method on one axis — **the figure to read** |
+| `strain_per_atom_all_methods_mean.*` | the same, **mean**, clipped to 1e6 with the off-panel points named in the run log |
+| `strain_per_atom_all_methods.{json,csv}` | the plotted curves plus the `n` behind every point |
+
+**No bundle join is needed on this axis.** The rotatable-bond figure had to go back to
+`results/task2-drugdesign` for SMILES; heavy atoms and strain are *both* already in
+`posecheck_<Method>.json`, so the five baselines are read straight out of their exports
+(p79 pockets only, by the export's own pocket index). The row counts land on the same
+7,655 / 7,772 / 7,720 / 6,427 / 7,895 the bundle join produces, which is the cheapest
+available check that the two builders are looking at the same molecules.
+
+**The key sits in a strip under the panel, not inside it.** Nine series leave no free
+corner: across the top the key covered exactly the high-strain curves the figure is about,
+and in a corner it sat on the crystal-ligand line.
+
+### DecompDiff puts exactly one molecule size in each pocket, and it is the crystal ligand's
+
+Checked on every run and printed: **79/79** pockets hold a single heavy-atom count, and
+**79/79** of those equal the reference ligand's. Its reference prior fixes the atom budget
+per pocket, so on this axis DecompDiff is not a distribution but a comb over the 79
+reference sizes, with exact zeros at 7, 24, 30, 34, 36, 39–41 and 43–44 atoms. Two things
+follow, both live in the builder:
+
+* **Every model curve pools a ±1-atom window** — the same rule for all eight methods — so
+  DecompDiff's line does not break ten times inside the axis on sizes that were never going
+  to exist. At 100–400 molecules a count it moves a median almost nowhere. The one hole it
+  cannot fill (40 atoms, where no crystal ligand sits within ±1) is left as a break rather
+  than widened away. **The window is clipped to the axis**, which matters at exactly one
+  place: DecompDiff has nothing at 43 or 44 atoms and 125 molecules at 45+, so an unclipped
+  window would have put a point at 44 computed entirely from molecules the same file
+  reports as *beyond* the axis. Clipped, its line ends at 43 (and AR's at 43 too).
+* **DecompDiff is size-matched to the reference by construction**, which is exactly the
+  confound this figure controls for. Its pooled numbers elsewhere carry that advantage;
+  here it is neutralised, so this is the fair place to read it — and it reads badly:
+  232 kcal/mol at 20 heavy atoms against Pocket2Mol's 80 and VoxBind's 47.
+
+The axis runs **5–44 heavy atoms**, each line drawn only where its own method has ≥25
+molecules in the window — so AR's and DecompDiff's stop at 43. The exports carry `n` (that
+exact count) and `n_window` (the pooled sample the value came from) as separate columns;
+for DecompDiff's comb they differ by everything. The share past 44 is exported per method (0.1 % for AR up to 3.4 %
+for CoDE, and 3.8 % of the crystal ligands). The reference line uses the house ±4-atom
+window and ends at 36, where 79 ligands stop filling it.
+
+Strain median at 10 / 15 / 20 / 25 / 30 / 35 / 40 heavy atoms:
+
+| method | mols | mean atoms | 10 | 15 | 20 | 25 | 30 | 35 | 40 |
+|---|---|---|---|---|---|---|---|---|---|
+| AR | 7,654 | 17.2 | 125.2 | 267.3 | 494.4 | 874.3 | 1142.3 | 1859.9 | 2194.7 |
+| TargetDiff | 7,232 | 22.2 | 45.9 | 150.3 | 312.5 | 500.6 | 700.9 | 1318.2 | 1442.3 |
+| DiffSBDD | 7,720 | 20.2 | 68.2 | 172.9 | 314.9 | 514.0 | 728.4 | 1065.0 | 1410.1 |
+| FuncBind | 7,895 | 19.0 | 38.8 | 121.5 | 217.5 | 488.3 | 687.3 | 1128.7 | 2082.8 |
+| DecompDiff | 6,299 | 20.9 | 22.1 | 81.9 | 231.8 | 310.3 | 393.2 | 872.2 | — |
+| Pocket2Mol | 7,772 | 18.5 | 15.3 | 32.3 | 80.1 | 102.6 | 195.1 | 183.3 | 332.1 |
+| **CoDE** | 7,826 | 24.9 | 17.0 | 30.1 | 51.1 | 89.9 | 111.8 | **143.6** | **193.7** |
+| **VoxBind** | 7,854 | 24.0 | **13.0** | **30.0** | **47.4** | **63.0** | **92.9** | 150.1 | 276.0 |
+| *Reference ligand* | *79* | *22.8* | *9.1* | *12.9* | *29.4* | *42.2* | *54.0* | *55.9* | *—* |
+
+**The size confound is what this figure removes, and the ordering survives it.** The two
+VoxBind arms generate the largest molecules in the table (24.0 / 24.9 mean heavy atoms
+against 17.2–22.2) and still sit lowest *at matched size* — over 7–36 atoms, where the
+crystal ligands are drawn, VoxBind runs 1.3–3.0× and CoDE 1.5–2.7× above them, against
+7–39× for AR and 2–24× for TargetDiff. Per-molecule aggregates would have flattered the
+small-molecule methods; this axis does not.
+
+**The two VoxBind arms cross at ~35 heavy atoms.** Up to 34 vanilla is lower (the drift the
+size-resolved section above reports); from 35 on CoDE is, and the gap widens with size —
+194 vs 276 at 40 atoms, 246 vs 602 at 44. It is not an artefact of the ±1 pooling: in the
+unwindowed per-count series (`posecheck_per_atom.json`) CoDE is the lower of the two at
+**every** drawn size from 36 up, 35 being the one count that goes the other way. The
+largest ligands are where the two arms differ most, and there CoDE is ahead.
+
+**Pocket2Mol's torsion-axis advantage does not appear here.** On the bond axis it is the
+best method of all at 10+ rotatable bonds; on the size axis it sits above vanilla VoxBind at
+every size from 6 to 40 — up to 2.1× at 30 atoms — and crosses below only at 41–44, where a
+few dozen of its molecules are left. Against CoDE it is lower only below 13 atoms and again
+past 41. The two axes ask different questions of the same molecules — Pocket2Mol's ligands
+are both smaller *and* more rigid than the VoxBind arms' (a third of them at 0–1 rotatable
+bonds), so the few it makes with 10+ rotatable bonds are a different population from
+theirs, and a win on that axis is not a win on this one.
+
+**FuncBind's break shows on this axis too, and later.** It is the third-lowest method up to
+~20 heavy atoms, passes DiffSBDD for good at 35, passes AR at 41, and is the highest of the
+eight from 41 on (3,061 at 42, 3,244 at 44) — the size axis puts its collapse a little
+further out than the torsion axis does, but in the same direction. Its mean curve is over
+the 1e6 clip at **22 of 40** counts, against at most 15 for any other method.
 
 ## All eight methods, binned (`build_posecheck_all_by_atom_range.py`)
 

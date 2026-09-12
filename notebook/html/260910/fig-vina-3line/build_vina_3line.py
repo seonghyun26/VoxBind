@@ -63,6 +63,9 @@ import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+import sys                                                            # noqa: E402
+sys.path.insert(0, os.path.dirname(HERE))
+from method_colors import display                                     # noqa: E402
 E = "/home1/irteam/VoxBind/voxbind/exps"
 
 VANILLA = f"{E}/_vanilla_ep923/samples/full_eval_ep923"
@@ -80,7 +83,11 @@ STATS = ("mean", "median")
 
 REF_LABEL, REF_COLOR = "Reference ligand", "#9aa0a6"
 VOX_LABEL, VOX_COLOR = "VoxBind", "#F5B27E"
-OUR_LABEL, OUR_COLOR = "VoxBind + Ours", "#8291E8"
+# These two are DATA KEYS as well as labels (they head this folder's CSV columns), so they
+# stay plain; method_colors.display() dresses them for a legend -- VoxBind picks up its
+# sigma=0.9 subscript there. CoDE is \textsc{CoDE} in the .tex files; matplotlib has no
+# small caps without a TeX backend, so the figures carry the plain string.
+OUR_LABEL, OUR_COLOR = "CoDE", "#8291E8"
 
 # Shape is a second identity channel for the two models, so they survive greyscale and
 # colour blindness: triangle vs circle. matplotlib's `markersize` is a DIAMETER, and at
@@ -195,7 +202,8 @@ def draw(ax, order, y_our, y_vox, y_ref, ylim, *, legend, ylabel):
     for y, colour, marker, size, label, z in ((y_vox, VOX_COLOR, "^", VOX_SIZE, VOX_LABEL, 3),
                                               (y_our, OUR_COLOR, "o", OUR_SIZE, OUR_LABEL, 4)):
         ax.plot(x, y, ls="none", marker=marker, markersize=size, color=colour,
-                markerfacecolor=colour, markeredgewidth=0, zorder=z, label=label)
+                markerfacecolor=colour, markeredgewidth=0, zorder=z,
+                label=label if label == REF_LABEL else display(label))
 
     ax.set_xlabel(X_LABEL, fontsize=15.5, labelpad=9)
     if ylabel:

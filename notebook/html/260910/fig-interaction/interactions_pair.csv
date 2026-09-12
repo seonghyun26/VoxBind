@@ -1,0 +1,16 @@
+arm,type,n_molecules,gen_mean,docked_mean,delta_mean,gen_median,docked_median,share_nonzero_gen_pct,share_nonzero_docked_pct
+Reference,VdWContact,78,8.462,8.462,0.0,8.0,8.0,100.0,100.0
+Reference,Hydrophobic,78,1.564,1.756,0.192,0.0,1.0,48.72,57.69
+Reference,HBAcceptor,78,1.974,1.782,-0.192,1.0,1.0,74.36,71.79
+Reference,HBDonor,78,0.923,0.962,0.038,1.0,1.0,55.13,61.54
+Reference,All interactions,78,12.923,12.962,0.038,12.0,12.5,100.0,100.0
+VoxBind,VdWContact,1013,8.45,8.982,0.532,8.0,9.0,100.0,100.0
+VoxBind,Hydrophobic,1013,2.096,2.328,0.232,2.0,2.0,79.27,82.23
+VoxBind,HBAcceptor,1013,0.952,1.118,0.167,1.0,1.0,53.11,59.82
+VoxBind,HBDonor,1013,0.491,0.664,0.174,0.0,0.0,37.81,47.88
+VoxBind,All interactions,1013,11.988,13.093,1.105,12.0,13.0,100.0,100.0
+CoDE,VdWContact,1014,8.943,9.249,0.306,9.0,9.0,100.0,100.0
+CoDE,Hydrophobic,1014,2.27,2.387,0.116,2.0,2.0,78.5,79.59
+CoDE,HBAcceptor,1014,1.059,1.212,0.153,1.0,1.0,55.42,62.72
+CoDE,HBDonor,1014,0.548,0.681,0.133,0.0,0.0,41.52,46.84
+CoDE,All interactions,1014,12.821,13.529,0.708,13.0,13.0,100.0,100.0

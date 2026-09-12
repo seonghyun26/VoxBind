@@ -24,10 +24,11 @@ Two of those forced changes elsewhere, which is the whole point of centralising 
   * CoDE used to be green #3cb44b in the PoseCheck figures. It hands the green to
     DecompDiff and takes our blue, so "ours" is one colour everywhere.
 
-OUR METHOD IS NAMED CoDE (2026-09-10), \textsc{CoDE} in LaTeX. The figures carry the plain
-string, since matplotlib has no small caps without a TeX backend; the .tex files carry the
-\textsc form. "VoxBind + Ours", "Ours v1" and "Ours" all still resolve through ALIASES, so
-older builders and hand-written HTML keep working.
+OUR METHOD IS NAMED CoDE (2026-09-10), \textsc{CoDE} in LaTeX -- and that is what its legends say too.
+"CoDE", "VoxBind + Ours", "Ours v1" and "Ours" all resolve through ALIASES, so the colour,
+fig-interaction's row order and older builders are unaffected by which spelling reaches
+them. Legend text that differs from the data key lives in DISPLAY below -- vanilla VoxBind
+is drawn as VoxBind with a sigma=0.9 subscript, and stored as plain "VoxBind".
 
 Ours v2 is a deeper shade of the same blue rather than a hue of its own, because it IS the
 same family as CoDE and should read as one. It is deliberately DARKER and not lighter:
@@ -84,6 +85,7 @@ ALIASES = {
     "VoxBind σ=0.9": "VoxBind",
     "VoxBind σ0.9": "VoxBind",
     "VoxBind sigma=0.9": "VoxBind",
+    r"VoxBind$_{\sigma=0.9}$": "VoxBind",
     "ours_v1": "CoDE",
     "Ours": "CoDE",
     "Ours · v1": "CoDE",
@@ -101,6 +103,26 @@ ALIASES = {
     "ft_8.21M": "FuncBind ft 8.21M",
     "ft_26.1M": "FuncBind ft 26.1M",
 }
+
+
+# WHAT A LEGEND SHOWS, where that differs from the key the data is stored under. Keeping
+# these apart matters: the key travels into every exported CSV column and JSON object, and
+# a column header containing matplotlib mathtext is not something a reader can join on.
+# So `ARMS` and the exports carry "VoxBind" and "CoDE"; only the drawn label is dressed up.
+#
+# CoDE is \textsc{CoDE} in LaTeX. matplotlib has no small caps without a TeX backend, so the
+# figures carry the plain mixed-case string and the .tex files carry the \textsc form.
+DISPLAY = {
+    "VoxBind": r"VoxBind$_{\sigma=0.9}$",
+}
+
+
+def display(label):
+    """The string to put in a legend for a method, by any of its spellings."""
+    key = ALIASES.get(label, label)
+    if key not in COLORS:
+        raise KeyError(f"no method named {label!r}")
+    return DISPLAY.get(key, key)
 
 
 def color(label):

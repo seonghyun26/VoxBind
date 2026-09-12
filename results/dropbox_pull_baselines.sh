@@ -5,7 +5,8 @@
 #
 # Per method it takes:   samples/**  +  metrics.json  +  SOURCE.txt
 # and deliberately skips: run/ (cfg + hydra + train logs), representations/
-#   (task1 cached features) and -- unless --with-raw -- the raw generator dumps
+#   (task1 cached features), eval/ (per-pocket vina/posecheck/posebusters --
+#   add it with --with-eval) and -- unless --with-raw -- the raw generator dumps
 #   under samples/outputs_*/. That last one is the whole point: DecompDiff is
 #   3.47 GiB of outputs_* against 12.7 MiB of samples/meta/*.pt, and the .pt is
 #   what every downstream analysis actually reads.
@@ -23,6 +24,7 @@
 #   bash results/dropbox_pull_baselines.sh                   # the 5 CrossDocked baselines
 #   bash results/dropbox_pull_baselines.sh AR DiffSBDD GET   # any number of methods
 #   bash results/dropbox_pull_baselines.sh -l                # what does the remote have?
+#   bash results/dropbox_pull_baselines.sh --with-eval       # samples + per-pocket eval
 #   bash results/dropbox_pull_baselines.sh -n DecompDiff     # dry run
 #   bash results/dropbox_pull_baselines.sh -a --task task3-mcp
 #
@@ -30,6 +32,8 @@
 #   -l, --list          list every method on the remote, grouped by task, then exit
 #   -a, --all           every method of --task (of all tasks when --task is unset)
 #   -n, --dry-run       preview the transfer, write nothing
+#       --with-eval     also take eval/ -- the per-pocket vina / posecheck /
+#                       posebusters results behind each method's metrics.json
 #       --with-raw      also take samples/outputs_*/  (DecompDiff: +3.45 GiB)
 #       --with-shared   also take each touched task's _shared/ aggregates
 #       --task <name>   restrict resolution to one task (task1-affinity |
@@ -48,7 +52,7 @@ DEST="${RESULTS_DEST:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
 TASKS=(task1-affinity task2-drugdesign task3-mcp)
 DEFAULT_METHODS=(AR Pocket2Mol DiffSBDD DecompDiff FuncBind)
 
-DO_LIST=0; DO_ALL=0; WITH_RAW=0; WITH_SHARED=0; TASK_FILTER=""
+DO_LIST=0; DO_ALL=0; WITH_RAW=0; WITH_EVAL=0; WITH_SHARED=0; TASK_FILTER=""
 METHODS=(); PASSTHRU=()
 
 usage() { sed -n '2,/^set -euo/{/^set -euo/d;s/^# \{0,1\}//;p;}' "${BASH_SOURCE[0]}"; }
@@ -58,6 +62,7 @@ while [[ $# -gt 0 ]]; do
     -l|--list)     DO_LIST=1 ;;
     -a|--all)      DO_ALL=1 ;;
     -n|--dry-run)  PASSTHRU+=(--dry-run) ;;
+    --with-eval)   WITH_EVAL=1 ;;
     --with-raw)    WITH_RAW=1 ;;
     --with-shared) WITH_SHARED=1 ;;
     --task)        TASK_FILTER="${2:?--task needs a value}"; shift ;;
@@ -135,7 +140,8 @@ fi
 #  outputs_*/ exclusion lose to the samples/** inclusion -- rclone warns about
 #  exactly this. --filter rules are applied strictly in the order given.)
 FILTERS=( --filter "+ /metrics.json" --filter "+ /SOURCE.txt" )
-[[ "$WITH_RAW" -eq 1 ]] || FILTERS+=( --filter "- /samples/outputs_*/**" )
+[[ "$WITH_RAW"  -eq 1 ]] || FILTERS+=( --filter "- /samples/outputs_*/**" )
+[[ "$WITH_EVAL" -ne 1 ]] || FILTERS+=( --filter "+ /eval/**" )
 FILTERS+=( --filter "+ /samples/**" --filter "- **" )
 
 human() { awk -v b="$1" 'BEGIN{ split("B KiB MiB GiB TiB",u," "); i=1;
@@ -143,7 +149,7 @@ human() { awk -v b="$1" 'BEGIN{ split("B KiB MiB GiB TiB",u," "); i=1;
 
 echo ">> source  : $BASE"
 echo ">> dest    : $DEST"
-echo ">> filter  : samples/** + metrics.json + SOURCE.txt$([[ "$WITH_RAW" -eq 1 ]] && echo "  (INCLUDING raw samples/outputs_*/)" || echo "  (raw samples/outputs_*/ skipped)")"
+echo ">> filter  : samples/** + metrics.json + SOURCE.txt$([[ "$WITH_EVAL" -eq 1 ]] && echo " + eval/**")$([[ "$WITH_RAW" -eq 1 ]] && echo "  (INCLUDING raw samples/outputs_*/)" || echo "  (raw samples/outputs_*/ skipped)")"
 echo ">> methods : ${#TARGETS[@]}"
 echo
 
@@ -176,5 +182,5 @@ echo
 echo ">> done. verify integrity (hash compare) with:"
 for e in "${TARGETS[@]}"; do
   echo "   rclone check \"$DEST/$e/\" \"$BASE/$e/\" --filter '+ /metrics.json' --filter '+ /SOURCE.txt' \\"
-  echo "     $([[ "$WITH_RAW" -eq 1 ]] || echo "--filter '- /samples/outputs_*/**' ")--filter '+ /samples/**' --filter '- **' --one-way"
+  echo "     $([[ "$WITH_RAW" -eq 1 ]] || echo "--filter '- /samples/outputs_*/**' ")$([[ "$WITH_EVAL" -eq 1 ]] && echo "--filter '+ /eval/**' ")--filter '+ /samples/**' --filter '- **' --one-way"
 done
