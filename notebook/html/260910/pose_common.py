@@ -45,7 +45,7 @@ from matplotlib.ticker import MultipleLocator
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-from method_colors import color                                       # noqa: E402
+from method_colors import color, display                              # noqa: E402
 
 E = "/home1/irteam/VoxBind/voxbind/exps"
 
@@ -66,6 +66,9 @@ ARMS = [
     ("FuncBind",   "funcbind",   f"{E}/baselines_pose/funcbind"),
     ("TargetDiff", "targetdiff", "/home1/irteam/base_drug/eval/targetdiff"),
     ("VoxBind",    "vanilla",    f"{E}/_vanilla_ep923/samples/full_eval_ep923"),
+    # These labels are DATA KEYS -- they head CSV columns and JSON objects -- so they stay
+    # plain. What a legend shows comes from method_colors.display(), which is where vanilla
+    # VoxBind picks up its sigma=0.9 subscript.
     ("CoDE",       "ours_v1",    f"{E}/voxbind_frozenenc_atomblob7_v2p1_sig0.9/samples/full_eval_ep350"),
 ]
 # Ours v2 (exps/samples_reference_receptor_ed_ep350, 92 pockets) was dropped from this
@@ -302,13 +305,17 @@ def furniture(ax, *, ylabel, xlabel=None, xlim=None, xloc=XTICK_STEP):
         ax.spines[sp].set_linewidth(AXIS_LW)
 
 
-def legend(ax, handles, loc="upper right", ncol=1, fontsize=12.5):
+def legend(target, handles, loc="upper right", ncol=1, fontsize=12.5, **kw):
     """Opaque white with a rule in the axis pen, so the dotted grid does not run through
-    the labels but the box itself stays quiet."""
-    leg = ax.legend(handles=handles, loc=loc, ncol=ncol, frameon=True, fontsize=fontsize,
-                    handlelength=1.9, handletextpad=0.55, labelspacing=0.3,
-                    borderpad=0.4, borderaxespad=0.39, facecolor="white",
-                    edgecolor=LEGEND_EDGE, framealpha=1.0)
+    the labels but the box itself stays quiet.
+
+    `target` is an Axes or a FIGURE. Both carry .legend() with this signature, and a key
+    that has to sit outside the data area -- the check-failure bars fill every corner of
+    their axes -- belongs to the figure, not to the axes it would otherwise cover."""
+    leg = target.legend(handles=handles, loc=loc, ncol=ncol, frameon=True,
+                        fontsize=fontsize, handlelength=1.9, handletextpad=0.55,
+                        labelspacing=0.3, borderpad=0.4, borderaxespad=0.39,
+                        facecolor="white", edgecolor=LEGEND_EDGE, framealpha=1.0, **kw)
     leg.get_frame().set_boxstyle("square", pad=0.16)
     leg.get_frame().set_linewidth(AXIS_LW)
     leg.set_zorder(7)
@@ -320,7 +327,7 @@ def legend(ax, handles, loc="upper right", ncol=1, fontsize=12.5):
 def arm_handles(arms, include_ref=True):
     h = [Line2D([], [], color=REF_COLOR, lw=REF_LW, ls=DASH, label=REF_LABEL)] \
         if include_ref else []
-    return h + [Line2D([], [], color=color(lab), lw=MODEL_LW, ls="-", label=lab)
+    return h + [Line2D([], [], color=color(lab), lw=MODEL_LW, ls="-", label=display(lab))
                 for lab, _, _ in arms]
 
 

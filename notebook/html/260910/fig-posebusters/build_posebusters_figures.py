@@ -36,6 +36,7 @@ import json
 import os
 import sys
 
+import matplotlib.patheffects as pe
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.lines import Line2D
@@ -44,7 +45,7 @@ from matplotlib.patches import Patch
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
 import pose_common as pc                                             # noqa: E402
-from method_colors import color                                      # noqa: E402
+from method_colors import color, display                             # noqa: E402
 
 # Validity is a proportion, so its per-count curve is smoothed over +-VALID_WIN atoms --
 # see pose_common.model_curve for why the strain and clash curves are not.
@@ -136,10 +137,22 @@ def fig_check_failures(arms, variant, fails):
     # a fixed height works for three arms and silently overlaps the neighbouring groups at
     # eight (8 x 0.19 = 1.52), which reads as bars detached from their labels. Derive it.
     h = 0.86 / len(arms)
+    # THE KEY GOES OUTSIDE THE AXES, bottom left. There is no empty corner inside: the long
+    # bars fill the top and the right, and the lower-right box this used to carry reached
+    # far enough left to bury the bottom rows' bars -- `double bond flatness` looked empty
+    # while AR, DecompDiff and Pocket2Mol were failing it 238, 118 and 109 times. Outside it
+    # covers nothing, and it lands in the white block under the check names rather than
+    # costing the figure more width.
+    # Two columns of nine entries is 4.9 in of the 7.6 in width; three would overflow it,
+    # because every entry carries its own n. The fit is checked below, not trusted here.
+    entries = len(arms) + 1
+    ncol = 2 if entries > 4 else 1
+    leg_rows = -(-entries // ncol)
     # Row pitch: enough that eight thin bars stay readable, without turning a 7.6 in wide
-    # figure into a 10 in tall one.
+    # figure into a 10 in tall one. Plus the strip the key now needs at the bottom.
     fig, ax = plt.subplots(
-        figsize=(pc.FIG_W, (0.40 if len(arms) <= 3 else 0.62) * len(names) + 1.6), dpi=220)
+        figsize=(pc.FIG_W, (0.40 if len(arms) <= 3 else 0.58) * len(names)
+                 + 1.6 + 0.30 * leg_rows + 0.2), dpi=220)
     fig.patch.set_facecolor("white")
     ax.set_facecolor("white")
     ys = np.arange(len(names))[::-1]
@@ -147,27 +160,61 @@ def fig_check_failures(arms, variant, fails):
         ax.barh(ys + (i - (len(arms) - 1) / 2) * h,
                 [fails[key]["counts"].get(k, 0) for k in names],
                 height=h, color=color(lab), edgecolor=color(lab), lw=0.8, zorder=3)
-    # The crystal ligands are NOT drawn here. Counts put them on the same axis as the
-    # arms while there are 79 of them against ~7,900: their worst row is 1 molecule, an
-    # invisible tick beside a bar of 1,769. Their rates are in the README and in
-    # posebusters_check_failures.json, where the denominators are explicit.
-    pc.furniture(ax, ylabel=None, xlabel="Molecules failing the check", xloc=None)
+
+    # THE CRYSTAL LIGANDS CANNOT BE A BAR HERE, and they are the comparison the whole figure
+    # exists to support. There are 79 of them against ~7,900 generated molecules, so on a
+    # count axis their worst row is 2 molecules -- an invisible tick beside a bar of 1,822.
+    # They are drawn instead at the count their failure RATE would produce in a set the size
+    # of the arms': a rate read on a count axis, dashed and unfilled so it cannot be mistaken
+    # for one more method's bar. N_BAR is the mean over the arms actually drawn, which spread
+    # +-10% (6,427 to 7,895), so the marker is worth about that much less than its position
+    # suggests -- it separates 2.5% from 1.3%, not 2.5% from 2.4%. Exact counts and rates for
+    # every arm and the reference are in posebusters_check_failures.json and the README.
+    ref = fails["reference"]
+    n_bar = float(np.mean([fails[key]["n_mols"] for _, key, _ in arms]))
+    ref_x = {k: ref["rates"].get(k, 0.0) / 100 * n_bar for k in names}
+    for j, k in enumerate(names):
+        if ref["rates"].get(k, 0.0) <= 0:      # absent means zero, as for a missing bar
+            continue
+        ax.plot([ref_x[k]] * 2, [ys[j] - 0.47, ys[j] + 0.47], color=pc.REF_COLOR,
+                lw=2.2, ls=pc.DASH, zorder=6, dash_capstyle="round",
+                # the marker often lands INSIDE a bar (2.5% of 79 is a smaller count than
+                # most arms reach), and warm grey on orange at 2 pt is invisible
+                path_effects=[pe.withStroke(linewidth=4.8, foreground="white")])
+
+    top = max([c for g in (fails[key] for _, key, _ in arms) for c in
+               (g["counts"].get(k, 0) for k in names)] + list(ref_x.values()))
+    pc.furniture(ax, ylabel=None, xlabel="Molecules failing the check",
+                 xlim=(0, top * 1.03), xloc=None)
     ax.grid(False, axis="y")
     ax.set_yticks(ys)
     ax.set_yticklabels([k.replace("_", " ") for k in names], fontsize=13)
     ax.set_ylim(-0.6, len(names) - 0.4)
     # Counts are only comparable between arms if the reader can see the denominators, and
-    # they differ by ~8% here (7,287 to 7,888), so every arm carries its own n in the key.
-    handles = [Patch(facecolor=color(lab), edgecolor=color(lab),
-                     label=f"{lab}  (n={fails[key]['n_mols']:,})")
-               for lab, key, _ in arms]
-    # Two arms fit in the corner; eight do not, and a key that covers the bars it explains
-    # is worse than one that costs a strip of height.
-    # The bottom rows are the checks nothing much fails, so the lower right is empty at any
-    # arm count; eight entries just need two columns.
-    pc.legend(ax, handles, loc="lower right", ncol=1 if len(arms) <= 3 else 2,
-              fontsize=12.5 if len(arms) <= 3 else 11)
+    # they differ by ~20% here (6,427 to 7,895), so every arm carries its own n in the key.
+    handles = [Line2D([], [], color=pc.REF_COLOR, lw=2.2, ls=pc.DASH,
+                      label=f"{pc.REF_LABEL}  (n={ref['n_mols']}, rate-matched)")]
+    handles += [Patch(facecolor=color(lab), edgecolor=color(lab),
+                      label=f"{display(lab)}  (n={fails[key]['n_mols']:,})")
+                for lab, key, _ in arms]
     pc.fit(fig, pad=0.5)
+    # tight_layout does not see a FIGURE legend, so it has just laid the axes out over the
+    # strip the key occupies. Place the key, measure what it actually took, and RAISE the
+    # axes by that much -- reserving the measured height keeps the tick labels and the x
+    # label, which sit BELOW the axes box and would otherwise end up behind an opaque
+    # legend; reserving up to its top edge instead would bury them. Columns are dropped
+    # if the key overruns the figure, which is cheaper than trusting a width estimate.
+    fs = 12.5 if len(arms) <= 3 else 11
+    for c in range(ncol, 0, -1):
+        leg = pc.legend(fig, handles, loc="lower left", ncol=c, fontsize=fs,
+                        bbox_to_anchor=(0.008, 0.008))
+        fig.canvas.draw()
+        bb = leg.get_window_extent().transformed(fig.transFigure.inverted())
+        if bb.x1 <= 0.997 or c == 1:
+            break
+        leg.remove()
+    fig.subplots_adjust(bottom=min(0.6, fig.subplotpars.bottom
+                                   + (bb.y1 - bb.y0) + 0.016))
     pc.save(fig, HERE, "pb_check_failures", variant)
 
 

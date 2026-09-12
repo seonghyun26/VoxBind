@@ -105,10 +105,23 @@ flatness (8.5 %).
 
 The bars are **counts**, and the arms hold different numbers of molecules, so each carries
 its own *n* in the key; rates are the fair cross-arm comparison and live in this table and in
-`posebusters_check_failures.json`. The crystal ligands are not drawn in the count figure —
-with 79 of them against ~7,900, their worst row is 1 molecule. A check no method fails above
-0.5 % is left off, and the `_core` figure re-ranks rows by what its own two arms fail, so its
-order differs from `_all`.
+`posebusters_check_failures.json`.
+
+**The crystal ligands cannot be a bar here, so they are a dashed rule.** There are 79 of
+them against ~7,900 generated molecules, so on a count axis their worst row is 2 molecules —
+an invisible tick beside a bar of 1,822. The dashed grey rule instead marks the count their
+failure *rate* would produce in a set the size of the arms' (`rate × n̄`, n̄ = the mean over
+the arms drawn, 7,557 for `_all`, 7,880 for `_core`). It is a rate read on a count axis: the arms' own *n* spread
+±10 % (6,427–7,895), so the rule is worth about that much less than its position suggests —
+it separates 2.5 % from 1.3 %, not 2.5 % from 2.4 %. The exact counts and rates for every arm
+and for the reference are in the table above and in `posebusters_check_failures.json`.
+
+A check no method fails above 0.5 % is left off, and the `_core` figure re-ranks rows by what
+its own two arms fail, so its order differs from `_all`. **The key sits outside the axes, at
+the lower left.** There is no empty corner inside: the long bars fill the top and the right,
+and the in-axes box this used to carry reached far enough left to bury the bottom rows — until
+2026-09-13 `double bond flatness` looked empty in `_all` while AR, DecompDiff and Pocket2Mol
+were failing it 238, 118 and 109 times.
 
 ## SuCOS — the one check `gen` mode adds (`build_sucos.py`)
 
