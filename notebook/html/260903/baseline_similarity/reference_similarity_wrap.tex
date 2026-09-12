@@ -1,0 +1,19 @@
+\begin{wraptable}{r}{0.55\textwidth}
+    \centering
+    \caption{
+        \textbf{Reference-ligand similarity} on the CrossDocked benchmark. Metrics are averaged over pockets.
+    }
+    \label{tab:result-drug-reference-similarity}
+    \resizebox{.98\linewidth}{!}{%
+        \begin{tabular}{@{}llcccc@{}}
+            \toprule
+            \multicolumn{2}{@{}l}{\textbf{Method}} & \textbf{AR} & \textbf{Pocket2Mol} & \textbf{DiffSBDD} & \textbf{DecompDiff} \\
+            \midrule
+            \multirow{2}{*}{ECFP4} & mean & 0.101 & 0.098 & 0.090 & 0.154 \\
+             & median & 0.097 & 0.093 & 0.086 & 0.139 \\
+            \addlinespace
+            \multicolumn{2}{@{}l}{\shortstack[l]{Scaffold\\ match}} & 1.17\% & 1.25\% & 0.53\% & 2.57\% \\
+            \bottomrule
+        \end{tabular}
+    }
+\end{wraptable}

@@ -21,7 +21,16 @@
 #   WORKERS is deliberately below 73's default 48: svr12 is shared and has been fork-bombed
 #   into an OOM kill before; at launch the box was already at load 128.
 #
-#   Env knobs: EXP, OUT, SAMPLES, WORKERS, DOCK, POSE, CPU.
+#   Env knobs: EXP, OUT, SAMPLES, WORKERS, DOCK, POSE, CPU, EXH, LOOKAHEAD.
+#
+#   EXH is Vina exhaustiveness (73 defaults to 8). The paper-protocol tables in
+#   results/reports/results_drug_design.html were produced at 32, and docking cost scales
+#   ~linearly with it, so raising it is the single biggest driver of eval wall-clock.
+#
+#   LOOKAHEAD caps VOXBIND_LOOKAHEAD_BATCHES. n_samples_per_pocket IS the number of parallel
+#   Langevin chains (sampling_utils: n_chains = n_target), so SAMPLES=100 makes every WJS
+#   batch 10x the size of the SAMPLES=10 runs — which used 8 GB of 97 GB per GPU. Holding 2
+#   batches in flight at that width risks OOM, so this defaults to 1 whenever SAMPLES>10.
 set -uo pipefail
 ROOT=/home/shpark/prj-denovo/Voxbind
 cd "$ROOT/voxbind" || exit 1
@@ -30,6 +39,8 @@ EXP="${EXP:-260831_fusion_v4_cdgv2_8gpu}"
 OUT="${OUT:-samples_ep100_test79}"
 SAMPLES="${SAMPLES:-10}"
 WORKERS="${WORKERS:-32}"
+EXH="${EXH:-8}"
+LOOKAHEAD="${LOOKAHEAD:-$([ "$SAMPLES" -gt 10 ] && echo 1 || echo 2)}"
 DOCK="${DOCK:-vina_dock}"
 POSE="${POSE:-posecheck}"
 CPU="${CPU:-4}"
@@ -45,8 +56,8 @@ say "=== chain start: sample -> eval | exp=$EXP out=$OUT ==="
 if [ -d "$SAVE" ] && [ "$(ls -d "$SAVE"/target_* 2>/dev/null | wc -l)" -ge 79 ]; then
     say "[1/2] samples already present ($(ls -d "$SAVE"/target_* | wc -l) targets) — skipping"
 else
-    say "[1/2] sampling 79 density-bearing test pockets x $SAMPLES on 8 GPUs"
-    EXP="$EXP" OUT="$OUT" SAMPLES="$SAMPLES" \
+    say "[1/2] sampling 79 density-bearing test pockets x $SAMPLES on 8 GPUs (lookahead=$LOOKAHEAD)"
+    EXP="$EXP" OUT="$OUT" SAMPLES="$SAMPLES" VOXBIND_LOOKAHEAD_BATCHES="$LOOKAHEAD" \
       XRAY_CROPS="$CROPS" EXPECT_TARGETS=79 \
       bash scripts/72_sample_8gpu.sh >>"$LOG" 2>&1
     rc=$?
@@ -58,8 +69,8 @@ say "[1/2] done: $n_t target dirs, $n_sdf sdf files"
 [ "$n_t" -ge 1 ] || { say "[1/2] FAILED: no target dirs — aborting"; exit 1; }
 
 # ── 2. evaluation ─────────────────────────────────────────────────────────────
-say "[2/2] evaluating (dock=$DOCK pose=$POSE workers=$WORKERS)"
-SAMPLE_DIR="$SAVE" DOCK="$DOCK" POSE="$POSE" WORKERS="$WORKERS" CPU="$CPU" \
+say "[2/2] evaluating (dock=$DOCK pose=$POSE workers=$WORKERS exhaustiveness=$EXH)"
+SAMPLE_DIR="$SAVE" DOCK="$DOCK" POSE="$POSE" WORKERS="$WORKERS" CPU="$CPU" EXH="$EXH" \
   bash scripts/73_evaluate_samples.sh >>"$LOG" 2>&1
 say "[2/2] eval exited $?"
 say "=== chain done -> $SAVE ==="

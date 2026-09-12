@@ -28,6 +28,8 @@ EXCLUDES=(
   --exclude "*.html"
   --exclude "*.md"
   --exclude ".gitignore"
+  # agent scratch state -- never model data
+  --exclude ".omc/**"
 )
 
 ASSUME_YES=0; ARGS=()
@@ -62,4 +64,4 @@ echo
 echo ">> done. verify integrity (hash compare) with:"
 echo "   rclone check \"$HERE/\" \"$DEST/\" \\"
 echo "     --exclude model_zoo_bundle.tar --exclude model_zoo_bundle.tar.sha256 \\"
-echo "     --exclude '*.sh' --exclude '*.html' --exclude '*.md' --exclude .gitignore"
+echo "     --exclude '*.sh' --exclude '*.html' --exclude '*.md' --exclude .gitignore --exclude '.omc/**'"
