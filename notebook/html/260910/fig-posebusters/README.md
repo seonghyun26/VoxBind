@@ -115,6 +115,17 @@ reference's 2.5 % *is* those 2 molecules, and carries about ±1.8 points of bino
 against the arms' ±0.2 — so **the reference bar alone keeps its *n* in the key**. Read it as
 "the crystal ligands essentially never fail this", not as a number with two decimals.
 
+**The x axis is log — symlog, to be exact.** The rates that matter span 0.09 % to 23 %, and
+on a linear axis everything under ~2 % (volume overlap, internal energy, aromatic ring
+flatness, and both of the reference's own rows) was a stub against FuncBind's 23 %. A plain
+log axis cannot draw a bar that starts at zero, and 13 of the 81 cells here are an exact zero
+with 5 more at a single-digit molecule count — it would clip all of them to whatever floor
+the axis was given, making *never fails this* and *fails it 5 times* the same picture. symlog
+is linear below 0.1 % (~8 of an arm's ~7,900 molecules) and logarithmic above, so bars still
+start at a true zero, a 1-molecule cell still looks like 1 molecule, and nothing is hidden or
+invented. The cost is the usual one for bars on a log axis: bar *length* no longer encodes the
+rate, only the position of its right end does, so read the ends and not the areas.
+
 A check no method fails above 0.5 % is left off, and the `_core` figure re-ranks rows by what
 its own two arms fail, so its order differs from `_all`.
 

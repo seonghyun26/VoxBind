@@ -40,6 +40,7 @@ import textwrap
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.patches import Patch
+from matplotlib.ticker import FuncFormatter, NullFormatter, SymmetricalLogLocator
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
@@ -54,6 +55,10 @@ VALID_WIN = 2
 # RATE even though the bars are counts -- it asks "is this row informative", and the arms
 # hold different numbers of molecules.
 MIN_FAIL_PCT = 0.5
+# Where the symlog x axis stops being linear and starts being logarithmic. 0.1% is ~8 of
+# the ~7,900 molecules an arm holds: below it the difference between two arms is a handful
+# of molecules and belongs in the JSON, above it the decades do the work.
+LINTHRESH = 0.1
 
 DATA, P79_ROWS, REFROWS = pc.load_arms()
 
@@ -184,8 +189,26 @@ def fig_check_failures(arms, variant, fails):
                 height=h, color=color(lab), edgecolor=color(lab), lw=0.8, zorder=3)
 
     top = max(g["rates"].get(k, 0.0) for g in shown for k in names)
-    pc.furniture(ax, ylabel=None, xlabel="Molecules failing the check (%)",
-                 xlim=(0, top * 1.03), xloc=None)
+    # LOG X, AND SYMLOG RATHER THAN LOG. The rates that matter run 0.09% to 23%, and on a
+    # linear axis everything under ~2% -- volume overlap, internal energy, the reference's
+    # own two rows -- was a stub against FuncBind's 23%. But 13 of the 81 cells here are an
+    # exact zero and 5 more are a single-digit molecule count, and a plain log axis cannot
+    # draw a bar that starts at zero: it would clip them all to whatever floor the axis was
+    # given, making "never fails this" and "fails it 5 times" the same picture. symlog is
+    # linear below LINTHRESH and logarithmic above, so the bars still start at a true zero,
+    # a 1-molecule cell still looks like 1 molecule, and nothing is hidden or invented.
+    ax.set_xscale("symlog", linthresh=LINTHRESH, linscale=0.35)
+    pc.furniture(ax, ylabel=None, xlabel="Molecules failing the check (%, log scale)",
+                 xlim=(0, top * 1.25), xloc=None)
+    ax.xaxis.set_major_locator(SymmetricalLogLocator(base=10, linthresh=LINTHRESH))
+    # "0.1" and "10", not matplotlib's 10^-1 and 10^1: two decades of percentages read as
+    # numbers, and the zero tick has to be a zero.
+    ax.xaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:g}"))
+    ax.xaxis.set_minor_locator(SymmetricalLogLocator(base=10, linthresh=LINTHRESH,
+                                                     subs=tuple(range(2, 10))))
+    ax.xaxis.set_minor_formatter(NullFormatter())
+    ax.grid(True, axis="x", which="minor", color=pc.GRID, lw=pc.GRID_LW * 0.7,
+            ls=(0, (1, 4)), alpha=0.6)
     ax.grid(False, axis="y")
     ax.set_yticks(ys)
     ax.set_yticklabels([wrap_check(k) for k in names], fontsize=12)
