@@ -1,13 +1,15 @@
 # VoxBind environment — conda-lock files
 
 Reproducible YAML locks (via [conda-lock](https://github.com/conda/conda-lock)).
-Two envs are locked, because the paper's docking build (vina 1.2.2, py3.8) cannot
-share the py3.10 pipeline env:
+The two pipeline envs are locked separately, because the paper's docking build
+(vina 1.2.2, py3.8) cannot share the py3.10 pipeline env. A third, optional env
+(`voxel-bind`) adds FuncBind on top of the VoxBind runtime:
 
 | Env | Python | Runs | Input spec | Lock (YAML) |
 |-----|--------|------|-----------|-------------|
 | `voxbind` | 3.10 | GPU train/sample + chem/geometry eval + **vina 1.2.7** | `voxbind.environment.yml` | `voxbind.conda-lock.yml` |
 | `voxdock` | 3.8 | **paper-faithful Vina 1.2.2 docking** | `voxdock.environment.yml` | `voxdock.conda-lock.yml` |
+| `voxel-bind` | 3.12 | optional — VoxBind runtime **+ FuncBind's density branch** in one interpreter | `voxel-bind.environment.yml` | explicit pair (below) |
 
 Each `*.conda-lock.yml` is a hash-pinned, solver-free YAML lock covering **both
 conda and pip** deps (torch/cuda, vina, meeko, pdb2pqr, AutoDockTools, …),
@@ -34,6 +36,48 @@ conda-lock install -n voxdock env/voxdock.conda-lock.yml
 ```bash
 conda-lock lock -f env/voxbind.environment.yml -p linux-64 --lockfile env/voxbind.conda-lock.yml
 ```
+
+## `voxel-bind` — one env for VoxBind *and* FuncBind
+
+Optional, not part of the paper pipeline, not built by default. It exists so FuncBind's
+density-conditioning branch can `import voxbind.models.density_vit` in its own process
+instead of reaching across two interpreters. Build it by name:
+
+```bash
+# on a box whose default envs dir survives a restart
+bash script/00_setup_env.sh voxel-bind
+
+# here, /opt/conda/envs is a container overlay that a restart wipes — install onto the PVC
+VOXELBIND_PREFIX=$HOME/.conda/envs/voxel-bind bash script/00_setup_env.sh voxel-bind
+```
+
+Locked as an **explicit pair**, not a `conda-lock.yml`: the heavy stack (torch, rdkit,
+numpy, scipy) is pip in this env, so the conda layer is thin and the byte-exact pair needs
+no conda-lock tool at all.
+
+```bash
+conda create -p $HOME/.conda/envs/voxel-bind --file env/voxel-bind.conda-linux-64.lock
+ENV=$HOME/.conda/envs/voxel-bind
+PATH="$ENV/bin:$PATH" CC="$ENV/bin/gcc" $ENV/bin/pip install -r env/voxel-bind.pip.lock.txt
+$ENV/bin/pip install -e .
+```
+
+- **It is not the paper env.** `voxbind` above is py3.10 / cu118 / numpy 1.26 and is where
+  the published numbers come from. `voxel-bind` mirrors the *live* H200 box — python 3.12,
+  torch 2.5.1 + cu124 wheels, numpy 2.x, rdkit 2025.3.6 — because that is the stack the
+  FuncBind smoke test (`test/mcp_default_fusion_smoke.py`, 11/11) was validated on.
+- **`CC` is load-bearing.** `cpdb-protein` is source-only on PyPI and FuncBind's MCP
+  sampling calls it at runtime (`save_sdf_pdb` → `extract_sequences_from_pdb`), so it
+  cannot be skipped. The compiler comes from the conda layer (`c-compiler`); this box has
+  no system `cc`.
+- **`mamba run -n voxel-bind` does not work here, `conda run -n` does.** mamba 2.x resolves
+  a name only against `$MAMBA_ROOT_PREFIX/envs` (= `/opt/conda/envs`), so an env under
+  `$HOME/.conda/envs` is nameless to it. Prefer the absolute interpreter,
+  `$HOME/.conda/envs/voxel-bind/bin/python`.
+- **FuncBind itself is not installed into it.** `import funcbind.train_fb` still pulls
+  pyrosetta / anarci / posecheck / easydict / meeko / vina / AutoDockTools / plotly at
+  import time; that is an import-hygiene fix in the FuncBind repo, not a package to add
+  here. The density branch itself runs fine without them.
 
 ## Notes
 

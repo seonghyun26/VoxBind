@@ -34,6 +34,9 @@ export VOXBIND_DATA_ROOT="${VOXBIND_DATA_ROOT:-$DATA_ROOT}"
 export VOXBIND_ENV="${VOXBIND_ENV:-voxbind}"
 export VOXDOCK_ENV="${VOXDOCK_ENV:-voxdock}"
 export MOLEVAL_ENV="${MOLEVAL_ENV:-moleval}"
+# Optional: VoxBind runtime + FuncBind density-branch extras in one env (python 3.12).
+# Not used by any 0N_* pipeline step; built on request by 00_setup_env.sh voxel-bind.
+export VOXELBIND_ENV="${VOXELBIND_ENV:-voxel-bind}"
 
 # --------------------------------------------------------------------------
 # GPUs. GPUS is a comma list (e.g. "0,1,2,3"); NPROC is derived from it.

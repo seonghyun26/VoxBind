@@ -44,11 +44,34 @@
 #   bash voxbind/scripts/85_fill_pose_eval_4runs.sh          # fill everything missing
 #   N=2 bash voxbind/scripts/85_fill_pose_eval_4runs.sh      # if the box gets busier
 #   DRY=1 bash voxbind/scripts/85_fill_pose_eval_4runs.sh    # just print the worklist
+#   ONLY=vanilla_res100 POSE_SCOPE=full bash voxbind/scripts/85_fill_pose_eval_4runs.sh
+#   EXTRA_ROOTS="label=voxbind/exps/.../samples" bash voxbind/scripts/85_...sh
+#
+# A FIFTH ROOT, 2026-09-13: `vanilla_res100` -- exps/reproduction/samples/res_test_100, the
+# published sigma=0.9 reproduction at 100 molecules/pocket that the results bundle calls
+# `VoxBind-vanilla`. It was sampled and Vina-scored on svr12 and its pose pass never ran
+# anywhere, which is the one real gap in EVAL_STATUS.md; the samples are staged here from
+# Dropbox. It is filled at POSE_SCOPE=full so it lines up with the whole-receptor PoseCheck
+# the other VoxBind arms carry -- NOT with the crop-scope baselines in fig-posebusters.
 set -uo pipefail
-cd /home1/irteam/VoxBind
-export PATH="/opt/conda/envs/moleval/bin:$PATH"      # hydride + reduce for PoseCheck
+# Resolve the repo from THIS SCRIPT's own location (scripts/ -> voxbind/ -> repo), never
+# from a literal: this tree gets copied between boxes and a hardcoded /home1/irteam/VoxBind
+# is the first thing that breaks. ROOT/PY/BASEDRUG take environment overrides for a box
+# that arranges its conda envs or its sibling checkouts differently.
+ROOT="${ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+cd "$ROOT"
+BASEDRUG="${BASEDRUG:-$(cd "$ROOT/.." && pwd)/base_drug}"
+MOLEVAL_BIN="${MOLEVAL_BIN:-/opt/conda/envs/moleval/bin}"
+export PATH="$MOLEVAL_BIN:$PATH"      # hydride + reduce for PoseCheck
 
-PY=/opt/conda/envs/moleval/bin/python
+PY="${PY:-$MOLEVAL_BIN/python}"
+# crop | full. metrics.py records the scope in every metrics.json and DROPS a
+# cached row whose scope disagrees, so this is not a free switch: the original four
+# roots were filled at crop scope and stay there. POSE_SCOPE=full is for an arm that
+# has to line up with the whole-receptor numbers the other VoxBind arms carry.
+POSE_SCOPE=${POSE_SCOPE:-crop}
+SCOPE_ARG=()
+[ "$POSE_SCOPE" = full ] && SCOPE_ARG=(--pose-scope full)
 V=voxbind/exps
 N=${N:-5}
 DRY=${DRY:-0}
@@ -58,11 +81,36 @@ mkdir -p "$LOGDIR"
 
 # label -> run root. Labels are the log-file prefixes, so keep them path-safe.
 declare -A ROOTS=(
-  [targetdiff]="/home1/irteam/base_drug/eval/targetdiff"
+  [targetdiff]="$BASEDRUG/eval/targetdiff"
   [vanilla]="$V/_vanilla_ep923/samples/full_eval_ep923"
   [ours_v1]="$V/voxbind_frozenenc_atomblob7_v2p1_sig0.9/samples/full_eval_ep350"
   [ours_v2]="$V/samples_reference_receptor_ed_ep350"
+  # Staged here from the results bundle (results/dropbox_pull.sh VoxBind-vanilla), because
+  # it was sampled on svr12 and its pose pass never ran there. These are the 9,976
+  # molecules EVAL_STATUS.md lists under `VoxBind-vanilla`, 100 pockets x ~100.
+  [vanilla_res100]="$V/reproduction/samples/res_test_100"
 )
+
+# Anything else, without editing this list again:  EXTRA_ROOTS="label=path;label2=path2"
+if [ -n "${EXTRA_ROOTS:-}" ]; then
+    IFS=';' read -ra _extra <<< "$EXTRA_ROOTS"
+    for _e in "${_extra[@]}"; do
+        [ -n "$_e" ] || continue
+        ROOTS["${_e%%=*}"]="${_e#*=}"
+    done
+fi
+
+# ONLY these labels, when set -- so a fill for one new arm does not have to re-walk the
+# other four (they are complete, so the planner skips them anyway, but the walk is ~40 s).
+if [ -n "${ONLY:-}" ]; then
+    declare -A _keep=()
+    for _k in $ONLY; do
+        [ -n "${ROOTS[$_k]:-}" ] || { echo "[85] ONLY names unknown label: $_k"; exit 1; }
+        _keep[$_k]="${ROOTS[$_k]}"
+    done
+    unset ROOTS; declare -A ROOTS
+    for _k in "${!_keep[@]}"; do ROOTS[$_k]="${_keep[$_k]}"; done
+fi
 
 # ── worklist: one "<label> <target_dir> <pose-mode>" line per target needing work ──
 PLAN=$LOGDIR/plan.txt
@@ -97,7 +145,7 @@ EOF
 done
 
 total=$(wc -l < "$PLAN")
-echo "[$(date '+%F %H:%M:%S')] $total target(s) to fill, $N at a time, timeout ${POSE_TIMEOUT_S}s" \
+echo "[$(date '+%F %H:%M:%S')] $total target(s) to fill, $N at a time, timeout ${POSE_TIMEOUT_S}s, scope=$POSE_SCOPE" \
     | tee -a "$LOGDIR/driver.log"
 awk '{print $1, $3}' "$PLAN" | sort | uniq -c | sed 's/^/    /' | tee -a "$LOGDIR/driver.log"
 [ "$DRY" = "1" ] && { echo "DRY=1 — plan only: $PLAN"; exit 0; }
@@ -109,6 +157,7 @@ while read -r label dir mode; do
     (
       tag="${label}__$(basename "$dir")__${mode}"
       nice -n 15 "$PY" notebook/webapp/metrics.py "$dir" --pose "$mode" \
+          "${SCOPE_ARG[@]}" \
           > "$LOGDIR/$tag.log" 2>&1
       rc=$?
       # the run can exit 0 having recorded a per-chunk failure in-band, so grade on

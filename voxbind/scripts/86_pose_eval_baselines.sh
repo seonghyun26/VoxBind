@@ -25,10 +25,17 @@
 #   N=2 bash voxbind/scripts/86_pose_eval_baselines.sh      # if the box gets busier
 #   DRY=1 bash voxbind/scripts/86_pose_eval_baselines.sh    # print the worklist only
 set -uo pipefail
-cd /home1/irteam/VoxBind
-export PATH="/opt/conda/envs/moleval/bin:$PATH"      # hydride + reduce, as in 85
+# Resolve the repo from THIS SCRIPT's own location (scripts/ -> voxbind/ -> repo), never
+# from a literal: this tree gets copied between boxes and a hardcoded /home1/irteam/VoxBind
+# is the first thing that breaks. ROOT/PY/BASEDRUG take environment overrides for a box
+# that arranges its conda envs or its sibling checkouts differently.
+ROOT="${ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+cd "$ROOT"
+BASEDRUG="${BASEDRUG:-$(cd "$ROOT/.." && pwd)/base_drug}"
+MOLEVAL_BIN="${MOLEVAL_BIN:-/opt/conda/envs/moleval/bin}"
+export PATH="$MOLEVAL_BIN:$PATH"      # hydride + reduce, as in 85
 
-PY=/opt/conda/envs/moleval/bin/python
+PY="${PY:-$MOLEVAL_BIN/python}"
 STAGE=voxbind/exps/baselines_pose
 N=${N:-5}
 DRY=${DRY:-0}

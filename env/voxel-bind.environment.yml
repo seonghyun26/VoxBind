@@ -1,0 +1,49 @@
+# voxel-bind — the VoxBind runtime + the packages FuncBind's density branch needs,
+# in ONE env, so `voxbind.models.density_vit` can be imported by FuncBind directly
+# instead of being reached across two interpreters.
+#
+# Human-editable functional spec. The byte-exact rebuild is the pair
+#   env/voxel-bind.conda-linux-64.lock  +  env/voxel-bind.pip.lock.txt
+# and that pair is what script/00_setup_env.sh uses -- prefer it. This file
+# documents intent and is what you edit before re-locking.
+#
+# NOT the paper env. voxbind.environment.yml is python 3.10 / cu118 / numpy 1.26
+# and is what the published numbers come from; this one mirrors the *live* box
+# (python 3.12, torch 2.5.1 cu124 wheels, numpy 2.x, rdkit 2025.3.6), because that
+# is the env the FuncBind smoke test was validated against.
+#
+# Lock with:
+#   conda-lock lock -f env/voxel-bind.environment.yml -p linux-64 --lockfile env/voxel-bind.conda-lock.yml
+name: voxel-bind
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - openbabel=3.1.1
+  - c-compiler          # cpdb-protein is source-only; this box has no system cc
+  - ipykernel           # notebook/probe work runs in this env
+  - pip
+  - pip:
+      # --- VoxBind runtime (heavy stack is pip here, matching the live env) ---
+      - torch==2.5.1    # default PyPI wheel = cu124
+      - torchmetrics
+      - numpy
+      - scipy
+      - pandas
+      - scikit-image
+      - matplotlib
+      - seaborn
+      - gemmi
+      - lmdb
+      - rdkit==2025.3.6
+      - pyuul
+      - hydra-core==1.3.2
+      - omegaconf==2.3.0
+      - wandb
+      - tqdm
+      # --- FuncBind density-branch extras (the "+ alpha") ---
+      - lightning==2.5.5          # pinned to FuncBind's .repro-env; plain install pulls 2.6.x
+      - pytorch-lightning==2.5.5
+      - einops==0.8.1
+      - biopandas==0.5.1
+      - cpdb-protein==0.2.0       # needs CC=<env>/bin/gcc at install time

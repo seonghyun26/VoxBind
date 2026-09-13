@@ -1,0 +1,21 @@
+arm,bin,n,dock_median
+vanilla,20–29,7,-8.968
+vanilla,30–39,62,-10.048
+vanilla,40–49,62,-8.720
+vanilla,50–59,42,-9.209
+vanilla,60+,39,-9.190
+fine-tune 3.17M,20–29,5,-7.805
+fine-tune 3.17M,30–39,29,-8.855
+fine-tune 3.17M,40–49,56,-7.755
+fine-tune 3.17M,50–59,13,-8.498
+fine-tune 3.17M,60+,10,-8.358
+fine-tune 8.21M,20–29,21,-8.458
+fine-tune 8.21M,30–39,47,-8.645
+fine-tune 8.21M,40–49,31,-7.691
+fine-tune 8.21M,50–59,4,
+fine-tune 8.21M,60+,2,
+fine-tune 26.1M,20–29,12,-7.705
+fine-tune 26.1M,30–39,71,-8.644
+fine-tune 26.1M,40–49,65,-8.199
+fine-tune 26.1M,50–59,19,-8.784
+fine-tune 26.1M,60+,12,-8.221

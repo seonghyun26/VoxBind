@@ -37,6 +37,28 @@ run() {
     [ "$rc" -eq 0 ] || echo "[$(date '+%H:%M:%S')] WARNING: $name exited $rc" | tee -a "$LOGDIR/driver.log"
 }
 
-run vanilla "$V/_vanilla_ep923/samples/full_eval_ep923"
-run ours_v1 "$V/voxbind_frozenenc_atomblob7_v2p1_sig0.9/samples/full_eval_ep350"
+# The arms to dock, "<label> <dir>" one per line. ARMS overrides it, so a new run does
+# not need an edit here:
+#
+#   ARMS="vanilla_res100 $V/reproduction/samples/res_test_100" \
+#     bash voxbind/scripts/73_dock_baseline_protocol_79.sh
+#
+# 2026-09-13: the two arms below already carry eval_docking_results_full79.json and
+# --skip-existing makes a re-run a no-op, so the list is now the DEFAULT rather than the
+# only thing this can do. The arms that still need this protocol are the two that were
+# Vina-scored on svr12 with notebook/webapp/metrics.py instead -- `VoxBind-vanilla`
+# (reproduction/samples/res_test_100) and `VoxBind-base-ep350-n100` -- whose numbers are
+# therefore NOT on the baselines' axis. Stage their samples first with
+# results/dropbox_pull.sh, then name them in ARMS.
+DEFAULT_ARMS="vanilla $V/_vanilla_ep923/samples/full_eval_ep923
+ours_v1 $V/voxbind_frozenenc_atomblob7_v2p1_sig0.9/samples/full_eval_ep350"
+
+while read -r name dir; do
+    [ -n "$name" ] || continue
+    if [ ! -d "$dir" ]; then
+        echo "[$(date '+%H:%M:%S')] SKIP $name — missing $dir" | tee -a "$LOGDIR/driver.log"
+        continue
+    fi
+    run "$name" "$dir"
+done <<< "${ARMS:-$DEFAULT_ARMS}"
 echo "BASEPROTO_DONE" >> "$LOGDIR/driver.log"
