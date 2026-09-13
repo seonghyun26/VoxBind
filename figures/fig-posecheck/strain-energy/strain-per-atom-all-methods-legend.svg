@@ -1,0 +1,141 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN"
+  "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg xmlns:xlink="http://www.w3.org/1999/xlink" width="534.580775pt" height="71.874244pt" viewBox="0 0 534.580775 71.874244" xmlns="http://www.w3.org/2000/svg" version="1.1">
+ <metadata>
+  <rdf:RDF xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+   <cc:Work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
+    <dc:date>2026-09-13T19:32:53.212737</dc:date>
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <cc:Agent>
+      <dc:title>Matplotlib v3.10.9, https://matplotlib.org/</dc:title>
+     </cc:Agent>
+    </dc:creator>
+   </cc:Work>
+  </rdf:RDF>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="figure_1">
+  <g id="patch_1">
+   <path d="M 0 71.874244 
+L 534.580775 71.874244 
+L 534.580775 0 
+L 0 0 
+z
+" style="fill: #ffffff"/>
+  </g>
+  <g id="patch_2">
+   <path d="M 7.2 64.674244 
+L 527.380775 64.674244 
+L 527.380775 7.529844 
+L 7.2 7.529844 
+z
+" style="fill: #ffffff; stroke: #b6bbc3; stroke-width: 1.35; stroke-linejoin: miter"/>
+  </g>
+  <g id="legend_1">
+   <g id="line2d_1">
+    <path d="M 12.557302 39.077759 
+L 33.257302 39.077759 
+L 53.957302 39.077759 
+" style="fill: none; stroke-dasharray: 10.4,4.16; stroke-dashoffset: 0; stroke: #17a2b8; stroke-width: 2.08"/>
+   </g>
+   <g id="text_1">
+    <text style="font-size: 11.5px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #514f52" x="60.857302" y="43.102759" transform="rotate(-0 60.857302 43.102759)">AR</text>
+   </g>
+   <g id="line2d_2">
+    <path d="M 12.557302 53.657603 
+L 33.257302 53.657603 
+L 53.957302 53.657603 
+" style="fill: none; stroke-dasharray: 18.72,6.24; stroke-dashoffset: 0; stroke: #3cb44b; stroke-width: 2.08"/>
+   </g>
+   <g id="text_2">
+    <text style="font-size: 11.5px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #514f52" x="60.857302" y="57.682603" transform="rotate(-0 60.857302 57.682603)">DecompDiff</text>
+   </g>
+   <g id="line2d_3">
+    <path d="M 146.047145 39.077759 
+L 166.747145 39.077759 
+L 187.447145 39.077759 
+" style="fill: none; stroke-dasharray: 2.08,3.328; stroke-dashoffset: 0; stroke: #e87ba4; stroke-width: 2.08"/>
+   </g>
+   <g id="text_3">
+    <text style="font-size: 11.5px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #514f52" x="194.347145" y="43.102759" transform="rotate(-0 194.347145 43.102759)">Pocket2Mol</text>
+   </g>
+   <g id="line2d_4">
+    <path d="M 146.047145 53.657603 
+L 166.747145 53.657603 
+L 187.447145 53.657603 
+" style="fill: none; stroke-dasharray: 6.24,2.912,2.08,2.912; stroke-dashoffset: 0; stroke: #a9744f; stroke-width: 2.08"/>
+   </g>
+   <g id="text_4">
+    <text style="font-size: 11.5px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #514f52" x="194.347145" y="57.682603" transform="rotate(-0 194.347145 57.682603)">FuncBind</text>
+   </g>
+   <g id="line2d_5">
+    <path d="M 276.771598 39.077759 
+L 297.471598 39.077759 
+L 318.171598 39.077759 
+" style="fill: none; stroke-dasharray: 12.48,4.16,2.08,4.16; stroke-dashoffset: 0; stroke: #e34948; stroke-width: 2.08"/>
+   </g>
+   <g id="text_5">
+    <text style="font-size: 11.5px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #514f52" x="325.071598" y="43.102759" transform="rotate(-0 325.071598 43.102759)">DiffSBDD</text>
+   </g>
+   <g id="line2d_6">
+    <path d="M 276.771598 53.657603 
+L 297.471598 53.657603 
+L 318.171598 53.657603 
+" style="fill: none; stroke: #f5b27e; stroke-width: 3.9; stroke-linecap: round"/>
+   </g>
+   <g id="text_6">
+    <!-- VoxBind$_{\sigma=0.9}$ -->
+    <g style="fill: #514f52" transform="translate(325.071598 57.682603)">
+     <text>
+      <tspan x="0" y="-0.875" style="font-size: 11.5px; font-family: 'DejaVu Sans'; fill: #514f52">V</tspan>
+      <tspan x="7.866943" y="-0.875" style="font-size: 11.5px; font-family: 'DejaVu Sans'; fill: #514f52">o</tspan>
+      <tspan x="14.902832" y="-0.875" style="font-size: 11.5px; font-family: 'DejaVu Sans'; fill: #514f52">x</tspan>
+      <tspan x="21.708496" y="-0.875" style="font-size: 11.5px; font-family: 'DejaVu Sans'; fill: #514f52">B</tspan>
+      <tspan x="29.5979" y="-0.875" style="font-size: 11.5px; font-family: 'DejaVu Sans'; fill: #514f52">i</tspan>
+      <tspan x="32.792969" y="-0.875" style="font-size: 11.5px; font-family: 'DejaVu Sans'; fill: #514f52">n</tspan>
+      <tspan x="40.081543" y="-0.875" style="font-size: 11.5px; font-family: 'DejaVu Sans'; fill: #514f52">d</tspan>
+      <tspan x="47.496191" y="1.09375" style="font-style: oblique; font-size: 8.05px; font-family: 'DejaVu Sans'; fill: #514f52">σ</tspan>
+      <tspan x="54.166528" y="1.09375" style="font-size: 8.05px; font-family: 'DejaVu Sans'; fill: #514f52">=</tspan>
+      <tspan x="62.479883" y="1.09375" style="font-size: 8.05px; font-family: 'DejaVu Sans'; fill: #514f52">0</tspan>
+      <tspan x="67.601538" y="1.09375" style="font-size: 8.05px; font-family: 'DejaVu Sans'; fill: #514f52">.</tspan>
+      <tspan x="70.1604" y="1.09375" style="font-size: 8.05px; font-family: 'DejaVu Sans'; fill: #514f52">9</tspan>
+     </text>
+    </g>
+   </g>
+   <g id="line2d_7">
+    <path d="M 417.991598 39.077759 
+L 438.691598 39.077759 
+L 459.391598 39.077759 
+" style="fill: none; stroke: #b58fdb; stroke-width: 3.12; stroke-linecap: round"/>
+   </g>
+   <g id="text_7">
+    <text style="font-size: 11.5px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #514f52" x="466.291598" y="43.102759" transform="rotate(-0 466.291598 43.102759)">TargetDiff</text>
+   </g>
+   <g id="line2d_8">
+    <path d="M 417.991598 53.657603 
+L 438.691598 53.657603 
+L 459.391598 53.657603 
+" style="fill: none; stroke: #8291e8; stroke-width: 4.42; stroke-linecap: round"/>
+   </g>
+   <g id="text_8">
+    <text style="font-size: 11.5px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #514f52" x="466.291598" y="57.682603" transform="rotate(-0 466.291598 57.682603)">CoDE</text>
+   </g>
+  </g>
+  <g id="legend_2">
+   <g id="line2d_9">
+    <path d="M 194.696638 16.513203 
+L 215.396637 16.513203 
+L 236.096638 16.513203 
+" style="fill: none; stroke-dasharray: 10.4,6.76; stroke-dashoffset: 0; stroke: #9aa0a6; stroke-width: 2.6; stroke-linecap: round"/>
+   </g>
+   <g id="text_9">
+    <text style="font-size: 11.5px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #514f52" x="242.996638" y="20.538203" transform="rotate(-0 242.996638 20.538203)">Reference ligand</text>
+   </g>
+  </g>
+ </g>
+</svg>

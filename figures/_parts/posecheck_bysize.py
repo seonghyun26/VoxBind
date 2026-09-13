@@ -75,6 +75,13 @@ PCSZ_LOCAL = [
     ("VoxBind σ=0.9", f"{E}/frozenenc_probes/posecheck_full/vanilla",    3.0, "-"),
     ("CoDE",          f"{E}/frozenenc_probes/posecheck_full/ours_v1",    3.4, "-"),
 ]
+# Weight per METHOD, keyed by the canonical name so the other family can read it: the two
+# figures are a pair and a series that is thicker in one of them reads as a different series
+# (2026-09-13). NOT one flat weight -- our two arms are the subject and the five published
+# baselines are context, which is the same reason they are dashed and these are solid.
+PCSZ_REF_LW = 2.0
+PCSZ_LINE_LW = {**{ALIASES.get(lab, lab): lw for _, lab, lw, _ in PCSZ_BASELINES},
+                **{ALIASES.get(lab, lab): lw for lab, _, lw, _ in PCSZ_LOCAL}}
 
 # The five shared size bins plus the pooled one every molecule ALSO lands in.
 PCSZ_LABELS = BIN_LABELS + ["all sizes"]
@@ -92,7 +99,14 @@ PCSZ_XFLOOR, PCSZ_XTOP = 1e1, 3e3
 # key leaves room for the curves' long right tails, then 0.9x both ways (2026-09-13). The
 # per-atom all-methods figure reads its aspect from this, so keep scaling both sides together
 # unless that one should change too.
-PCSZ_ECDF_SIZE = (8.6 * 0.8 * 1.2 * 0.9, 5.6 * 0.8 * 0.9)
+# PCSZ_SHRINK pulls the canvas in once more (2026-09-13) WITHOUT touching the type sizes or
+# the dpi, so the same ink fills a smaller frame -- that, not a font change, is what makes the
+# panel read fuller. PCSZ_LW_SCALE thickens the curves by the same argument: at this canvas
+# the nine series were drawn for a frame a fifth wider. The trailing 1.1x is WIDTH ONLY
+# (2026-09-13): the lower-right key and the curves' right tails were tight against each other
+# once the canvas came in.
+PCSZ_SHRINK, PCSZ_LW_SCALE = 0.85, 1.3
+PCSZ_ECDF_SIZE = (8.6 * 0.8 * 1.2 * 0.9 * PCSZ_SHRINK * 1.1, 5.6 * 0.8 * 0.9 * PCSZ_SHRINK)
 # Axis-name size for the ECDF, and for the per-atom all-methods figure drawn in its style.
 # 1.4x the family's original 11.5 pt (2026-09-13).
 PCSZ_LABEL_FS = 11.5 * 1.4
@@ -279,6 +293,13 @@ def _pcsz_style(ax, *, grid_axis="both"):
 PCSZ_KEY_NCOL = 2
 PCSZ_KEY_KW = dict(fontsize=9.5, handlelength=1.6, handletextpad=0.5, labelspacing=0.32,
                    borderpad=0.4, columnspacing=1.2)
+# The frame's face, translucent so a curve running under the key is still followable, still
+# opaque enough to keep the dotted grid out of the text (2026-09-13). Set on the FACE, not as
+# the artist's alpha, which would fade the grey rule with it.
+PCSZ_KEY_FACE = (1.0, 1.0, 1.0, 0.82)
+# The reference line is anchored on the grid's top edge, so the gap between them is the two
+# legends' borderpad back to back. Pull it down by this much of the axes to close half of it.
+PCSZ_KEY_GAP = 0.022
 
 
 def _pcsz_key(fig, ax):
@@ -307,15 +328,16 @@ def _pcsz_key(fig, ax):
         fig.canvas.draw()
         bb = grid.get_window_extent(render()).transformed(ax.transAxes.inverted())
         legs.append(ax.legend(*zip(*ref), loc="lower center", borderaxespad=0, frameon=False,
-                              bbox_to_anchor=((bb.x0 + bb.x1) / 2, bb.y1), **PCSZ_KEY_KW))
+                              bbox_to_anchor=((bb.x0 + bb.x1) / 2, bb.y1 - PCSZ_KEY_GAP),
+                              **PCSZ_KEY_KW))
     fig.canvas.draw()
     boxes = [l.get_window_extent(render()).transformed(ax.transAxes.inverted()) for l in legs]
     x0, y0 = min(b.x0 for b in boxes), min(b.y0 for b in boxes)
     x1, y1 = max(b.x1 for b in boxes), max(b.y1 for b in boxes)
     # An AXES artist, not a figure one: a figure-level patch is drawn after the whole axes and
-    # would cover the legend text. Opaque white under the text, over the curves.
+    # would cover the legend text. Translucent white under the text, over the curves.
     ax.add_artist(matplotlib.patches.Rectangle(
-        (x0, y0), x1 - x0, y1 - y0, transform=ax.transAxes, facecolor="white",
+        (x0, y0), x1 - x0, y1 - y0, transform=ax.transAxes, facecolor=PCSZ_KEY_FACE,
         edgecolor=LEGEND_EDGE, linewidth=0.7, zorder=5, clip_on=False))
     for l in legs:
         l.set_zorder(6)
@@ -350,13 +372,14 @@ def draw_posecheck_strain_ecdf_by_size(out):
                 x = np.sort(np.clip(v, PCSZ_XFLOOR, None))
                 # soft(): CoDE in its lighter tint, as in the eight-method strain line figures
                 # (2026-09-13). The clash violin below still draws the palette colour.
-                ax.plot(x, np.arange(1, x.size + 1) / x.size, color=soft(label), lw=lw, ls=ls,
+                ax.plot(x, np.arange(1, x.size + 1) / x.size, color=soft(label),
+                        lw=lw * PCSZ_LW_SCALE, ls=ls,
                         label=label, solid_capstyle="round")
             r = np.asarray(ref[b]["strain"], dtype=float)
             if r.size >= 3:
                 x = np.sort(np.clip(r, PCSZ_XFLOOR, None))
-                ax.plot(x, np.arange(1, x.size + 1) / x.size, color=REF_COLOR, lw=2.0,
-                        ls=(0, (3, 2)),
+                ax.plot(x, np.arange(1, x.size + 1) / x.size, color=REF_COLOR,
+                        lw=PCSZ_REF_LW * PCSZ_LW_SCALE, ls=(0, (3, 2)),
                         label=REF_LABEL)
             ax.set_xscale("log")
             ax.set_xlim(PCSZ_XFLOOR, PCSZ_XTOP)

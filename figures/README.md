@@ -18,7 +18,19 @@ figures/fig-molweight/         where each arm puts its molecules
 figures/fig-similarity/        similarity and novelty against the crystal ligand
 figures/fig-mcp/               the macrocyclic-peptide fine-tune ladder
 figures/fig-ensemble/          champion + partner encoder cohorts
+figures/fig-jsd/               bond/pair/atom-type JSD and rings against CrossDocked ligands
 ```
+
+`fig-jsd/` draws `results/task2-drugdesign/_shared/260913_crossdocked_jsd/crossdocked_jsd.json`,
+which `bash voxbind/scripts/89_eval_crossdocked_jsd.sh` writes (~15 s, no GPU). The reference
+drawn is **every CrossDocked train+test ligand** of `split_by_name.pt`, each distinct molecule
+weighing one (100,100 files are 8,829 molecules). The 100 **test** ligands — the protocol
+behind TargetDiff's Table 2/3 and VoxBind's Table 2 — are too few to estimate a bond-length
+distribution (16 C=N bonds), but they are still scored, beside a pose-weighted train+test set,
+so the published scale stays available; the script's `--selfcheck` re-scores TargetDiff's own
+samples against its published row on every run.
+`fig-jsd/jsd-tables.ipynb` shows the same numbers as tables (bond JSD, distribution summary,
+ring sizes, ring statistics, re-evaluation vs published) and prints each one as LaTeX to paste.
 
 A file is named by the figure, minus whatever its folder already says — so
 `fig-posecheck/` holds `clash-per-atom-mean-all.png`, `strain-ecdf-by-size-le15.png`,

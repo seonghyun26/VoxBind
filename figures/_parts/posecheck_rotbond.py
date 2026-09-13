@@ -884,8 +884,8 @@ def _rb_atom_lines(out, xs, per, ref_per, labels, stat):
         fig, ax = plt.subplots(figsize=PCSZ_ECDF_SIZE)
         fig.patch.set_facecolor(PCSZ_BG)
         _pcsz_style(ax)
-        ax.plot(xs, reference_curve(ref_per, xs, f), color=REF_COLOR, lw=REF_LW,
-                ls=DASH, zorder=4, dash_capstyle="round")
+        ax.plot(xs, reference_curve(ref_per, xs, f), color=REF_COLOR,
+                lw=PCSZ_REF_LW * PCSZ_LW_SCALE, ls=DASH, zorder=4, dash_capstyle="round")
         dropped = []
         for lab in labels:
             y = _rb_curve(per[lab], xs, f)
@@ -893,8 +893,13 @@ def _rb_atom_lines(out, xs, per, ref_per, labels, stat):
                 over = [(a, v) for a, v in zip(xs, y) if v is not None and v > clip]
                 if over:
                     dropped.append((lab, over))
-            lw, ls = _rb_style_of(lab)
-            ax.plot(xs, y, color=soft(lab), lw=lw, ls=ls, zorder=5, solid_capstyle="round")
+            _, ls = _rb_style_of(lab)
+            # The ECDF's weights, not this family's (2026-09-13): the two panels are read as a
+            # pair, and our arms were 3.06 here against 3.9-4.4 there. KeyError rather than a
+            # default -- a method missing from that table is a rename to fix, not a thin line.
+            lw = PCSZ_LINE_LW[ALIASES.get(lab, lab)]
+            ax.plot(xs, y, color=soft(lab), lw=lw * PCSZ_LW_SCALE, ls=ls, zorder=5,
+                    solid_capstyle="round")
         ax.set_yscale("log")
         if clip:
             ax.set_ylim(top=clip)
@@ -1021,9 +1026,25 @@ RB_GRID_CMAP_STOPS = [(0.0, soft("CoDE")), (1 / 3, pale("CoDE")), (2 / 3, pale("
                       (1.0, color("VoxBind"))]
 RB_GRID_NORM, RB_GRID_CTICK = (0.0, 800.0), 200.0
 RB_GRID_TALL = 0.9975        # per row, as a share of PANEL_H
+# 0.8x the width the three-arm box figures use (2026-09-13). The nine panels keep their type
+# and line weights, so pulling the canvas in is what makes the block read fuller; the boxes
+# narrow with the axes, the colourbar keeps its share of the figure.
+RB_GRID_WIDE = 0.8 * 1.2
 # The outer names are a step above the house 15.5 pt, and the y name sits further off its
 # tick labels -- on a 3x3 block the house sizes read as small.
-RB_GRID_LABEL_FS, RB_GRID_CBAR_FS, RB_GRID_YPAD = 17, 15, 16
+RB_GRID_LABEL_FS, RB_GRID_YPAD = 17, 16
+# The x name's gap above it, DOUBLED (2026-09-13): measured off the drawn PNG it was 27 px at
+# 220 dpi, i.e. 8.8 pt from the tick labels; a labelpad of 15 measures back as 17.7 pt, which
+# is that doubled (the pad is spent from the axes bbox, so it is ~3 pt more than the gap it
+# buys). In points, like the y pad, which is why the name moved off fig.supxlabel and onto an
+# axes -- see the call.
+RB_GRID_XPAD = 15
+# The colourbar's name is the block's THIRD outer name, so it carries the same size as the
+# two axis names rather than a step below them (2026-09-13).
+RB_GRID_CBAR_FS = RB_GRID_LABEL_FS
+# Gap from the panel block to the bar, doubled from 0.012 (2026-09-13) -- a share of the
+# figure width, which is what colorbar(pad=) takes.
+RB_GRID_CBAR_PAD = 0.024
 # Spines and MAJOR tick marks 1.2x the house weight: nine small panels read as washed out at
 # 1.35, and 1.6x was too heavy. Minor ticks (the log decades' 2-9) keep their own weight.
 RB_GRID_AXIS_LW = AXIS_LW * 1.2
@@ -1054,7 +1075,8 @@ def _rb_grid(out, series, refrows, labels, stage):
 
     nrow = -(-len(panels) // RB_GRID_COLS)
     fig, axes = plt.subplots(nrow, RB_GRID_COLS, sharex=True, sharey=True,
-                             figsize=(FIG_W * RB_BOX_WIDE_1, PANEL_H * RB_GRID_TALL * nrow),
+                             figsize=(FIG_W * RB_BOX_WIDE_1 * RB_GRID_WIDE,
+                                      PANEL_H * RB_GRID_TALL * nrow),
                              dpi=220, squeeze=False, layout="constrained")
     fig.patch.set_facecolor("white")
     flat = axes.ravel()
@@ -1094,7 +1116,12 @@ def _rb_grid(out, series, refrows, labels, stage):
     for ax in flat[len(panels):]:
         ax.set_visible(False)
 
-    fig.supxlabel(RB_X_LABEL, fontsize=RB_GRID_LABEL_FS, color=INK)
+    # Both outer names now sit on an axes rather than on the figure: only an axes label takes a
+    # labelpad, and fig.supxlabel has no way to spend points on its gap. The bottom-middle axes
+    # is the block's centre with three full rows, so the name also stops being centred on the
+    # figure -- which included the colourbar -- and centres on the PANELS instead.
+    axes[nrow - 1, RB_GRID_COLS // 2].set_xlabel(RB_X_LABEL, fontsize=RB_GRID_LABEL_FS,
+                                                 color=INK, labelpad=RB_GRID_XPAD)
     # The y name goes on the MIDDLE row's left axes rather than fig.supylabel, because only an
     # axes label takes a labelpad -- supylabel sits flush against the tick labels. With three
     # rows the middle axes' centre is the block's centre.
@@ -1102,7 +1129,7 @@ def _rb_grid(out, series, refrows, labels, stage):
                                   fontsize=RB_GRID_LABEL_FS, color=INK,
                                   labelpad=RB_GRID_YPAD)
     cb = fig.colorbar(plt.cm.ScalarMappable(norm=norm, cmap=cmap), ax=axes, extend=extend,
-                      shrink=0.92, aspect=38, pad=0.012,
+                      shrink=0.92, aspect=38, pad=RB_GRID_CBAR_PAD,
                       ticks=np.arange(RB_GRID_NORM[0], RB_GRID_NORM[1] + RB_GRID_CTICK,
                                       RB_GRID_CTICK))
     cb.set_label("Median strain energy (kcal mol⁻¹)", fontsize=RB_GRID_CBAR_FS, color=INK)

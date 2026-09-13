@@ -85,6 +85,7 @@ EVAL_FOLDER = {
     "similarity":  "fig-similarity",
     "mcp":         "fig-mcp",
     "ensemble":    "fig-ensemble",
+    "jsd":         "fig-jsd",
 }
 
 # WHAT A FILE IS CALLED, once its folder already says which evaluation it belongs to.

@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""eval_crossdocked_jsd.py — how closely generated molecules match the CrossDocked test
-set's geometry and composition: the TargetDiff / VoxBind distribution metrics.
+"""eval_crossdocked_jsd.py — how closely generated molecules match CrossDocked ligands'
+geometry and composition: the TargetDiff / VoxBind distribution metrics.
 
     python voxbind/scripts/tools/eval_crossdocked_jsd.py \
         --run AR=<root> --run CoDE=<root> ... --out crossdocked_jsd.json [--selfcheck]
 
 Each <root> holds target_*/samples.sdf. `voxbind/scripts/89_eval_crossdocked_jsd.sh` runs
-it over the eight arms figures/draw.py draws; `draw.py jsd` then plots the JSON.
+it over the eight arms figures/draw.py draws; `draw.py jsd` then plots the JSON and
+figures/fig-jsd/jsd-tables.ipynb tabulates it.
 
 WHAT IS MEASURED — each one is the published definition, checked against the paper:
 
@@ -24,18 +25,34 @@ WHAT IS MEASURED — each one is the published definition, checked against the p
                 holding at least one ring of that size) cannot do. Rings are RDKit's
                 `GetRingInfo().AtomRings()`, as in TargetDiff's `scoring_func.get_chem`.
   Fig. 10       ring sizes over all rings, rings per molecule, and the fraction of a
-                molecule's heavy atoms that are aromatic (VoxBind Fig. 10).
+                molecule's heavy atoms that are aromatic (VoxBind Fig. 10). Alongside it,
+                the fraction of a molecule's RINGS that are aromatic (every ring bond
+                aromatic), over molecules with at least one ring, and exact means of both.
 
-THE REFERENCE IS THE 100 CROSSDOCKED TEST LIGANDS, not the histograms TargetDiff ships in
-`eval_bond_length_config.EMPIRICAL_DISTRIBUTIONS`. Those were built from the TRAINING set
-(~1.29M aromatic C:C bonds) and do not give the published numbers. Scoring TargetDiff's
-own 9,878 molecules against the 100 test ligands does (C-C .370 / C=N .548 / C:N .235 for
-the published .369 / .550 / .235), and against the shipped histograms it does not
-(.299 / .165 / .131). `--selfcheck` re-runs that comparison, so the claim stays checked.
+THE REFERENCES. Three are built; the first is the one the figures and main tables use.
 
-CAVEAT: the reference is small (716 C-C bonds but only 40 C=C and 16 C=N), and JSD against
-a sparse histogram is inflated by the sparsity alone. The C=C and C=N columns therefore
-mostly measure the reference's size; read them as a ranking, never as a distance to zero.
+  reference            ALL CrossDocked2020 ligands the models were trained and tested on:
+                       split_by_name.pt train + test, 100,100 ligand files. Bond lengths
+                       and composition are chemistry, not properties of 100 test pockets,
+                       and 100 ligands are too few to estimate them: a model that sampled
+                       the training distribution exactly would still score C=N JSD 0.52
+                       and C=C 0.46 against the test set (16 and 40 bonds), which is most of
+                       every method's score in those columns. DUPLICATES: the 100,000
+                       training files hold 8,765 distinct molecules -- one ligand is
+                       cross-docked into up to 869 pockets -- so each distinct molecule
+                       (canonical isomeric SMILES) weighs 1, averaged over its poses. No
+                       pose is picked, and no ligand counts 869 times.
+  reference_pose_weighted
+                       the same files, every pose weighing 1: the distribution training
+                       actually saw. Kept, with every arm's JSD against it (`jsd_pose_
+                       weighted`), as the sensitivity check on the de-duplication.
+  reference_test       the 100 test ligands: the PUBLISHED protocol (arms' `jsd_test`).
+                       Scoring TargetDiff's own 9,878 molecules against them reproduces its
+                       published row (C-C .370 / C=N .548 / C:N .235 for .369 / .550 /
+                       .235); the histograms TargetDiff ships in `eval_bond_length_config`
+                       do not (.299 / .165 / .131) -- they are the training set. `--selfcheck`
+                       re-runs that comparison, and also scores the shipped histograms
+                       against `reference_pose_weighted`, which should nearly coincide.
 
 `jensenshannon` is scipy's, which returns the JS DISTANCE (the square root of the
 divergence, natural log). Both papers print that number and call it a divergence; it is
@@ -62,7 +79,10 @@ import numpy as np
 from scipy.spatial.distance import jensenshannon
 
 REPO = Path(__file__).resolve().parents[3]
-REFERENCE_DIR = REPO / "targetdiff" / "data" / "test_set" / "test_set"
+TEST_DIR = REPO / "targetdiff" / "data" / "test_set" / "test_set"
+SPLIT = REPO / "voxbind" / "dataset" / "data" / "split_by_name.pt"
+CROSSDOCKED_ROOT = REPO / "voxbind" / "dataset" / "data" / "crossdocked_pocket10"
+TARGETDIFF_CONFIG = REPO / "targetdiff" / "utils" / "evaluation" / "eval_bond_length_config.py"
 P79_JSON = REPO / "voxbind" / "exps" / "frozenenc_probes" / "p79_targets.json"
 BASEDRUG = Path(os.environ.get("VOXBIND_BASEDRUG", REPO.parent / "base_drug"))
 
@@ -78,6 +98,7 @@ BOND_TYPES = {"C-C": (6, 6, 1), "C=C": (6, 6, 2), "C-N": (6, 7, 1), "C=N": (6, 7
 ATOM_TYPES = {6: "C", 7: "N", 8: "O", 9: "F", 15: "P", 16: "S", 17: "Cl"}
 RING_TABLE_SIZES = tuple(range(3, 10))
 AROM_EDGES = np.linspace(0, 1, 21)
+AROM_RING_BINS = 10          # aromatic share of a molecule's rings, [k/10, (k+1)/10), last closed
 
 # The published numbers, for the self-check and as context beside a re-evaluation.
 # Bond JSD: VoxBind arXiv:2405.03961 Table 2 (its TargetDiff/AR/Pocket2Mol rows are
@@ -101,19 +122,52 @@ PUBLISHED_RING_PCT = {
 # SDF round trip (see the docstring), measured at 0.006 JSD and 1.1 ring-share points.
 SELFCHECK_TOL_JSD, SELFCHECK_TOL_RING = 0.015, 2.0
 
+SCALAR_KEYS = ("n_entries", "n_unparseable", "n_disconnected", "n_mols",
+               "n_with_heavy", "n_with_rings", "arom_atom_sum", "arom_ring_sum")
+
+
+def zero_profile(dtype=np.int64):
+    """An empty profile. int for counting molecules; float for a weighted reference."""
+    return {
+        "n_entries": 0, "n_unparseable": 0, "n_disconnected": 0, "n_mols": 0,
+        "bond": {k: np.zeros(len(BOND_BINS) + 1, dtype) for k in BOND_TYPES},
+        "pair": {k: np.zeros(len(b) + 1, dtype) for k, b in PAIR_BINS.items()},
+        "atoms": collections.Counter(), "ring_sizes": collections.Counter(),
+        "n_rings": collections.Counter(), "arom": np.zeros(len(AROM_EDGES) - 1, dtype),
+        "arom_ring": np.zeros(AROM_RING_BINS, dtype),
+        "n_with_heavy": 0, "n_with_rings": 0, "arom_atom_sum": 0.0, "arom_ring_sum": 0.0,
+    }
+
+
+def accumulate(acc, p, w=1):
+    """acc += w * p, field by field. Every field is additive, which is what lets a run be
+    the sum of its files and a weighted reference the weighted sum of its ligands."""
+    for k in SCALAR_KEYS:
+        acc[k] += w * p[k]
+    for k in ("bond", "pair"):
+        for name in acc[k]:
+            acc[k][name] += w * p[k][name]
+    for k in ("atoms", "ring_sizes", "n_rings"):
+        for key, v in p[k].items():
+            acc[k][key] += w * v
+    acc["arom"] += w * p["arom"]
+    acc["arom_ring"] += w * p["arom_ring"]
+    return acc
+
+
+def merge(profiles):
+    acc = zero_profile()
+    for p in profiles:
+        accumulate(acc, p)
+    return acc
+
 
 def profile_sdf(path):
     """Additive counts for one SDF: every histogram is a count vector, so a run's profile
     is the sum over its files and no per-molecule list ever crosses a process boundary."""
     from rdkit import Chem, RDLogger
     RDLogger.DisableLog("rdApp.*")
-    p = {
-        "n_entries": 0, "n_unparseable": 0, "n_disconnected": 0, "n_mols": 0,
-        "bond": {k: np.zeros(len(BOND_BINS) + 1, np.int64) for k in BOND_TYPES},
-        "pair": {k: np.zeros(len(b) + 1, np.int64) for k, b in PAIR_BINS.items()},
-        "atoms": collections.Counter(), "ring_sizes": collections.Counter(),
-        "n_rings": collections.Counter(), "arom": np.zeros(len(AROM_EDGES) - 1, np.int64),
-    }
+    p = zero_profile()
     by_type = {v: k for k, v in BOND_TYPES.items()}
     order_of = {Chem.BondType.SINGLE: 1, Chem.BondType.DOUBLE: 2, Chem.BondType.AROMATIC: 4}
     for mol in Chem.SDMolSupplier(str(path), removeHs=False, sanitize=True):
@@ -156,30 +210,79 @@ def profile_sdf(path):
                                               minlength=len(bins) + 1)
 
         p["atoms"].update(z.tolist())
-        rings = mol.GetRingInfo().AtomRings()
+        ring_info = mol.GetRingInfo()
+        rings = ring_info.AtomRings()
         p["n_rings"][len(rings)] += 1
         p["ring_sizes"].update(len(r) for r in rings)
         if heavy:
-            frac = sum(mol.GetAtomWithIdx(i).GetIsAromatic() for i in heavy) / len(heavy)
-            p["arom"] += np.histogram([frac], bins=AROM_EDGES)[0]
+            # Integer arithmetic, not np.histogram over AROM_EDGES: linspace's 0.3 edge is
+            # 0.30000000000000004, so a molecule exactly 6/20 aromatic fell one bin low --
+            # 3.2% of molecules. The last bin is closed, so a fully aromatic molecule counts.
+            n_arom = sum(mol.GetAtomWithIdx(i).GetIsAromatic() for i in heavy)
+            nbin = len(AROM_EDGES) - 1
+            p["arom"][min(n_arom * nbin // len(heavy), nbin - 1)] += 1
+            p["n_with_heavy"] += 1
+            p["arom_atom_sum"] += n_arom / len(heavy)
+        if rings:
+            # The share of a molecule's RINGS that are aromatic (every ring bond aromatic).
+            # VoxBind Fig. 10 plots aromatic ATOMS; this is the ring-level companion, and it
+            # is undefined for a ring-free molecule, which is left out of it.
+            n_arom_rings = sum(all(mol.GetBondWithIdx(b).GetIsAromatic() for b in br)
+                               for br in ring_info.BondRings())
+            p["n_with_rings"] += 1
+            p["arom_ring_sum"] += n_arom_rings / len(rings)
+            p["arom_ring"][min(n_arom_rings * AROM_RING_BINS // len(rings),
+                               AROM_RING_BINS - 1)] += 1
     return p
 
 
-def merge(profiles):
-    out = None
-    for p in profiles:
-        if out is None:
-            out = p
-            continue
-        for k in ("n_entries", "n_unparseable", "n_disconnected", "n_mols"):
-            out[k] += p[k]
-        for k in ("bond", "pair"):
-            for name in out[k]:
-                out[k][name] += p[k][name]
-        for k in ("atoms", "ring_sizes", "n_rings"):
-            out[k].update(p[k])
-        out["arom"] += p["arom"]
-    return out
+def ligand_key(path):
+    """The molecule a CrossDocked ligand file holds, as canonical isomeric SMILES of its
+    heavy-atom graph -- the identity the de-duplication groups poses by. None for a file
+    the profile would not score (unparseable, disconnected, or not exactly one entry)."""
+    from rdkit import Chem, RDLogger
+    RDLogger.DisableLog("rdApp.*")
+    mols = list(Chem.SDMolSupplier(str(path), removeHs=False, sanitize=True))
+    if len(mols) != 1 or mols[0] is None or len(Chem.GetMolFrags(mols[0])) > 1:
+        return None
+    return Chem.MolToSmiles(Chem.RemoveHs(mols[0]))
+
+
+def profile_chunk(items):
+    """(de-duplicated, pose-weighted) profiles of a chunk of (ligand file, weight). Summed
+    inside the worker, so 100,100 per-file profiles never cross a process boundary."""
+    unique, poses = zero_profile(np.float64), zero_profile()
+    for path, w in items:
+        p = profile_sdf(path)
+        accumulate(unique, p, w)
+        accumulate(poses, p)
+    return unique, poses
+
+
+def crossdocked_reference(split_path, root, workers, chunk=400):
+    """(de-duplicated profile, pose-weighted profile, provenance) for every ligand file of
+    the train and test lists in split_by_name.pt."""
+    import torch
+    split = torch.load(split_path, weights_only=False)
+    files = [os.path.join(root, lig) for part in ("train", "test") for _, lig in split[part]]
+    missing = [f for f in files if not os.path.exists(f)]
+    if missing:
+        raise SystemExit(f"{len(missing)} of {len(files)} split ligands missing under {root} "
+                         f"(first: {missing[0]})")
+    with ProcessPoolExecutor(max_workers=workers) as ex:
+        keys = list(ex.map(ligand_key, files, chunksize=256))
+    poses_of = collections.Counter(k for k in keys if k is not None)
+    items = [(f, 1.0 / poses_of[k]) for f, k in zip(files, keys) if k is not None]
+    unique, poses = zero_profile(np.float64), zero_profile()
+    with ProcessPoolExecutor(max_workers=workers) as ex:
+        for u, p in ex.map(profile_chunk, [items[i:i + chunk] for i in range(0, len(items), chunk)]):
+            accumulate(unique, u)
+            accumulate(poses, p)
+    info = {"split": os.path.abspath(split_path), "ligand_root": os.path.abspath(root),
+            "n_train": len(split["train"]), "n_test": len(split["test"]), "n_files": len(files),
+            "n_files_not_scored": len(files) - len(items), "n_unique_ligands": len(poses_of),
+            "max_poses_per_ligand": max(poses_of.values())}
+    return unique, poses, info
 
 
 def _jsd(ref_counts, gen_counts):
@@ -206,40 +309,55 @@ def ring_share(ring_sizes):
     return pct
 
 
-def summarise(p, ref=None):
-    """A profile as JSON: the counts behind every figure, and, given the reference, the
-    JSDs against it."""
+def _num(x):
+    """A count for JSON: an int where it is whole (every generated arm), otherwise the
+    weighted count of the de-duplicated reference, to 4 places."""
+    x = float(x)
+    return int(x) if x.is_integer() else round(x, 4)
+
+
+def summarise(p):
+    """A profile as JSON: the counts behind every figure and table."""
     atom_total = sum(p["atoms"].values())
     listed = np.array([p["atoms"].get(z, 0) for z in ATOM_TYPES], float)
-    out = {
-        "n_entries": p["n_entries"], "n_unparseable": p["n_unparseable"],
-        "n_disconnected": p["n_disconnected"], "n_mols": p["n_mols"],
-        "bond_counts": {k: v.tolist() for k, v in p["bond"].items()},
-        "bond_n": {k: int(v.sum()) for k, v in p["bond"].items()},
-        "pair_counts": {k: v.tolist() for k, v in p["pair"].items()},
-        "pair_n": {k: int(v.sum()) for k, v in p["pair"].items()},
-        "atom_counts": {ATOM_TYPES.get(z, str(z)): int(n) for z, n in sorted(p["atoms"].items())},
+    return {
+        "n_entries": _num(p["n_entries"]), "n_unparseable": _num(p["n_unparseable"]),
+        "n_disconnected": _num(p["n_disconnected"]), "n_mols": _num(p["n_mols"]),
+        "bond_counts": {k: [_num(x) for x in v] for k, v in p["bond"].items()},
+        "bond_n": {k: _num(v.sum()) for k, v in p["bond"].items()},
+        "pair_counts": {k: [_num(x) for x in v] for k, v in p["pair"].items()},
+        "pair_n": {k: _num(v.sum()) for k, v in p["pair"].items()},
+        "atom_counts": {ATOM_TYPES.get(z, str(z)): _num(n) for z, n in sorted(p["atoms"].items())},
         "atom_frac": {s: (float(listed[i] / listed.sum()) if listed.sum() else 0.0)
                       for i, s in enumerate(ATOM_TYPES.values())},
         "atom_other_frac": (1 - float(listed.sum()) / atom_total) if atom_total else 0.0,
-        "ring_size_counts": {str(s): int(n) for s, n in sorted(p["ring_sizes"].items())},
+        "ring_size_counts": {str(s): _num(n) for s, n in sorted(p["ring_sizes"].items())},
         "ring_size_pct": ring_share(p["ring_sizes"]),
-        "n_rings_counts": {str(s): int(n) for s, n in sorted(p["n_rings"].items())},
-        "arom_frac_counts": p["arom"].tolist(),
+        "n_rings_counts": {str(s): _num(n) for s, n in sorted(p["n_rings"].items())},
+        "arom_frac_counts": [_num(x) for x in p["arom"]],
+        "mean_arom_atom_frac": (p["arom_atom_sum"] / p["n_with_heavy"]
+                                if p["n_with_heavy"] else None),
+        "arom_ring_frac_counts": [_num(x) for x in p["arom_ring"]],
+        "n_mols_with_rings": _num(p["n_with_rings"]),
+        "mean_arom_ring_frac": (p["arom_ring_sum"] / p["n_with_rings"]
+                                if p["n_with_rings"] else None),
         "mean_n_rings": (sum(s * n for s, n in p["n_rings"].items()) / p["n_mols"]
                          if p["n_mols"] else None),
     }
-    if ref is not None:
-        bond = {k: _jsd(ref["bond"][k], p["bond"][k]) for k in BOND_TYPES}
-        have = [v for v in bond.values() if v is not None]
-        ref_listed = np.array([ref["atoms"].get(z, 0) for z in ATOM_TYPES], float)
-        out["jsd"] = {
-            "bond": bond,
-            "bond_mean": float(np.mean(have)) if len(have) == len(bond) else None,
-            "pair": {k: _jsd(ref["pair"][k], p["pair"][k]) for k in PAIR_BINS},
-            "atom_type": _jsd(ref_listed, listed),
-        }
-    return out
+
+
+def jsd_block(p, ref):
+    """Every JSD of profile `p` against reference profile `ref`."""
+    bond = {k: _jsd(ref["bond"][k], p["bond"][k]) for k in BOND_TYPES}
+    have = [v for v in bond.values() if v is not None]
+    listed = np.array([p["atoms"].get(z, 0) for z in ATOM_TYPES], float)
+    ref_listed = np.array([ref["atoms"].get(z, 0) for z in ATOM_TYPES], float)
+    return {
+        "bond": bond,
+        "bond_mean": float(np.mean(have)) if len(have) == len(bond) else None,
+        "pair": {k: _jsd(ref["pair"][k], p["pair"][k]) for k in PAIR_BINS},
+        "atom_type": _jsd(ref_listed, listed),
+    }
 
 
 def target_sdfs(root, targets):
@@ -261,51 +379,71 @@ def run_profiles(jobs, workers):
     return {name: merge(grouped[name]) for name in jobs}
 
 
-def print_tables(reference, arms):
-    names = list(BOND_TYPES)
-    print(f"\n  bond-distance JSD vs the {reference['n_mols']} CrossDocked test ligands")
-    print(f"  {'':18s}" + "".join(f"{n:>7s}" for n in names) + f"{'mean':>7s}")
-    for lab, a in arms.items():
-        j = a["jsd"]["bond"]
-        cells = "".join(f"{v:7.3f}" if v is not None else f"{'—':>7s}" for v in j.values())
-        mean = a["jsd"]["bond_mean"]
-        print(f"  {lab:18s}{cells}{mean:7.3f}" if mean is not None else f"  {lab:18s}{cells}")
-    print(f"  {'(reference bonds)':18s}" + "".join(f"{reference['bond_n'][n]:7d}" for n in names))
+def _cell(v, width, fmt=".3f"):
+    return f"{v:{width}{fmt}}" if v is not None else f"{'—':>{width}s}"
 
-    print(f"\n  {'':18s}{'mols':>7s}{'discon':>7s}{'All<12Å':>9s}{'C-C<2Å':>8s}"
-          f"{'atom':>7s}{'rings':>7s}")
+
+def print_tables(refs, arms):
+    names = list(BOND_TYPES)
+    for key, title in (("jsd", f"the CrossDocked train+test ligands ({refs['reference']['n_mols']:,.0f} "
+                                f"distinct, de-duplicated) — MAIN"),
+                       ("jsd_test", f"the {refs['reference_test']['n_mols']} CrossDocked test ligands "
+                                    f"(published protocol)")):
+        print(f"\n  bond-distance JSD vs {title}")
+        print(f"  {'':18s}" + "".join(f"{n:>7s}" for n in names) + f"{'mean':>7s}")
+        for lab, a in arms.items():
+            j = a[key]
+            print(f"  {lab:18s}" + "".join(_cell(v, 7) for v in j["bond"].values())
+                  + _cell(j["bond_mean"], 7))
+
+    print(f"\n  {'':18s}{'mols':>7s}{'discon':>7s}{'All<12Å':>9s}{'C-C<2Å':>8s}{'atom':>7s}"
+          f"{'rings':>7s}   | mean bond JSD: main / pose-weighted / test")
     for lab, a in arms.items():
         j = a["jsd"]
         print(f"  {lab:18s}{a['n_mols']:7d}{a['n_disconnected']:7d}"
-              f"{j['pair']['All_12A']:9.3f}{j['pair']['CC_2A']:8.3f}{j['atom_type']:7.3f}"
-              f"{a['mean_n_rings']:7.2f}")
+              f"{_cell(j['pair']['All_12A'], 9)}{_cell(j['pair']['CC_2A'], 8)}"
+              f"{_cell(j['atom_type'], 7)}{_cell(a['mean_n_rings'], 7, '.2f')}   |"
+              f"{_cell(j['bond_mean'], 7)}{_cell(a['jsd_pose_weighted']['bond_mean'], 7)}"
+              f"{_cell(a['jsd_test']['bond_mean'], 7)}")
 
     sizes = [str(s) for s in RING_TABLE_SIZES] + ["10+ of all"]
     print("\n  % of size-3-9 rings by size (TargetDiff Table 2); last column % of all rings")
-    print(f"  {'':18s}" + "".join(f"{s:>6s}" for s in sizes))
-    for lab, a in [("Reference ligand", reference)] + list(arms.items()):
-        print(f"  {lab:18s}" + "".join(f"{a['ring_size_pct'][s]:6.1f}" for s in sizes))
+    print(f"  {'':22s}" + "".join(f"{s:>6s}" for s in sizes))
+    rows = [("Reference (train+test)", refs["reference"]), ("Reference (test)", refs["reference_test"])]
+    for lab, a in rows + list(arms.items()):
+        print(f"  {lab:22s}" + "".join(f"{a['ring_size_pct'][s]:6.1f}" for s in sizes))
 
 
-def selfcheck(reference_profile, workers):
-    """TargetDiff's own samples over all 100 pockets against the published row. Returns
-    the report; the caller decides whether a miss fails the run."""
+def _shipped_histograms():
+    """TargetDiff's shipped bond-length histograms, read out of its config file without
+    importing its package; None where the checkout does not carry it."""
+    if not TARGETDIFF_CONFIG.exists():
+        return None
+    ns = {}
+    exec(TARGETDIFF_CONFIG.read_text(), {"np": np}, ns)
+    return {name: np.asarray(ns["EMPIRICAL_DISTRIBUTIONS"][bt], float)
+            for name, bt in BOND_TYPES.items()}
+
+
+def selfcheck(test_profile, pose_profile, workers):
+    """TargetDiff's own samples over all 100 pockets against the published row (the test
+    reference), plus the provenance check on the shipped histograms. Returns the report;
+    the caller decides whether a miss fails the run."""
     root = BASEDRUG / "eval" / "targetdiff"
     files = sorted(glob.glob(str(root / "target_*" / "samples.sdf")))
     if len(files) != 100:
         raise SystemExit(f"selfcheck: expected 100 TargetDiff pockets under {root}, "
                          f"found {len(files)}")
-    td = summarise(run_profiles({"TargetDiff": files}, workers)["TargetDiff"],
-                   reference_profile)
-    ref = summarise(reference_profile)
-    got = [td["jsd"]["bond"][k] for k in BOND_TYPES]
+    td_profile = run_profiles({"TargetDiff": files}, workers)["TargetDiff"]
+    td, ref = summarise(td_profile), summarise(test_profile)
+    got = [jsd_block(td_profile, test_profile)["bond"][k] for k in BOND_TYPES]
     d_jsd = max(abs(a - b) for a, b in zip(got, PUBLISHED_BOND_JSD["TargetDiff"]))
     sizes = [str(s) for s in RING_TABLE_SIZES]
     d_ring = max(max(abs(td["ring_size_pct"][s] - v)
                      for s, v in zip(sizes, PUBLISHED_RING_PCT["TargetDiff"])),
                  max(abs(ref["ring_size_pct"][s] - v)
                      for s, v in zip(sizes, PUBLISHED_RING_PCT["Reference ligand"])))
-    print("\n  SELFCHECK — TargetDiff, 100 pockets, against the published tables")
+    print("\n  SELFCHECK — TargetDiff, 100 pockets, against the published tables (test reference)")
     print("  bond JSD   ours " + " ".join(f"{v:.3f}" for v in got))
     print("        published " + " ".join(f"{v:.3f}" for v in PUBLISHED_BOND_JSD["TargetDiff"]))
     print("  ring %     ours " + " ".join(f"{td['ring_size_pct'][s]:5.1f}" for s in sizes))
@@ -315,9 +453,19 @@ def selfcheck(reference_profile, workers):
     ok = d_jsd <= SELFCHECK_TOL_JSD and d_ring <= SELFCHECK_TOL_RING
     print(f"  max |Δ| bond JSD {d_jsd:.4f} (tol {SELFCHECK_TOL_JSD}), "
           f"ring % {d_ring:.2f} (tol {SELFCHECK_TOL_RING}) -> {'PASS' if ok else 'FAIL'}")
-    return {"n_pockets": 100, "n_mols": td["n_mols"], "bond_jsd": dict(zip(BOND_TYPES, got)),
-            "ring_size_pct": td["ring_size_pct"], "reference_ring_size_pct": ref["ring_size_pct"],
-            "max_abs_diff_bond_jsd": d_jsd, "max_abs_diff_ring_pct": d_ring, "pass": ok}
+    report = {"n_pockets": 100, "n_mols": td["n_mols"], "bond_jsd": dict(zip(BOND_TYPES, got)),
+              "ring_size_pct": td["ring_size_pct"], "reference_ring_size_pct": ref["ring_size_pct"],
+              "max_abs_diff_bond_jsd": d_jsd, "max_abs_diff_ring_pct": d_ring, "pass": ok}
+
+    shipped = _shipped_histograms()
+    if shipped is not None:
+        # Not pass/fail: the shipped histograms carry no provenance, so this is how close
+        # "the training set" (as TargetDiff built it) sits to ours, bond type by bond type.
+        prov = {k: _jsd(shipped[k], pose_profile["bond"][k]) for k in BOND_TYPES}
+        print("  shipped eval_bond_length_config vs our pose-weighted train+test, bond JSD: "
+              + " ".join(f"{k} {v:.3f}" for k, v in prov.items()))
+        report["shipped_histograms_vs_pose_weighted_bond_jsd"] = prov
+    return report
 
 
 def main():
@@ -328,7 +476,11 @@ def main():
     ap.add_argument("--targets", default=str(P79_JSON),
                     help="JSON list of target_* dirs every arm is scored over "
                          "(default: the 79 electron-density pockets)")
-    ap.add_argument("--reference-dir", default=str(REFERENCE_DIR),
+    ap.add_argument("--split", default=str(SPLIT),
+                    help="split_by_name.pt whose train + test ligands form the main reference")
+    ap.add_argument("--crossdocked-root", default=str(CROSSDOCKED_ROOT),
+                    help="crossdocked_pocket10/, holding <pocket>/<ligand>.sdf for the split")
+    ap.add_argument("--test-dir", default=str(TEST_DIR),
                     help="CrossDocked test set: <pocket>/<ligand>.sdf, 100 ligands")
     ap.add_argument("--out", required=True)
     ap.add_argument("--workers", type=int, default=16)
@@ -341,12 +493,19 @@ def main():
 
     t0 = time.time()
     targets = json.load(open(args.targets))
-    ref_files = sorted(glob.glob(os.path.join(args.reference_dir, "*", "*.sdf")))
-    if len(ref_files) != 100:
+    test_files = sorted(glob.glob(os.path.join(args.test_dir, "*", "*.sdf")))
+    if len(test_files) != 100:
         raise SystemExit(f"expected the 100 CrossDocked test ligands under "
-                         f"{args.reference_dir}, found {len(ref_files)}")
+                         f"{args.test_dir}, found {len(test_files)}")
 
-    jobs = {"__reference__": ref_files}
+    print("profiling the CrossDocked train+test reference ...", flush=True)
+    uniq_profile, pose_profile, info = crossdocked_reference(args.split, args.crossdocked_root,
+                                                             args.workers)
+    print(f"  {info['n_files']:,} ligand files, {info['n_unique_ligands']:,} distinct molecules "
+          f"(up to {info['max_poses_per_ligand']} poses of one), "
+          f"{info['n_files_not_scored']} not scored  ({time.time() - t0:.0f}s)", flush=True)
+
+    jobs = {"__test__": test_files}
     arm_roots = {}
     for spec in args.run:
         label, root = spec.split("=", 1)
@@ -354,24 +513,40 @@ def main():
             ap.error(f"--run {label}: given twice")
         arm_roots[label] = os.path.abspath(root)
         jobs[label] = target_sdfs(arm_roots[label], targets)
-    print(f"profiling {len(jobs) - 1} arms over {len(targets)} pockets + "
-          f"{len(ref_files)} reference ligands ({sum(map(len, jobs.values()))} SDFs, "
-          f"{args.workers} workers)", flush=True)
+    print(f"profiling {len(jobs) - 1} arms over {len(targets)} pockets + {len(test_files)} "
+          f"test ligands ({sum(map(len, jobs.values()))} SDFs, {args.workers} workers)", flush=True)
     profiles = run_profiles(jobs, args.workers)
+    test_profile = profiles.pop("__test__")
 
-    ref_profile = profiles.pop("__reference__")
     arms = {}
     for label, prof in profiles.items():
-        arms[label] = {"root": arm_roots[label], "n_pockets": len(targets),
-                       **summarise(prof, ref_profile)}
-    reference = {"label": "Reference ligand", "source": os.path.abspath(args.reference_dir),
-                 "n_files": len(ref_files), **summarise(ref_profile)}
+        arms[label] = {"root": arm_roots[label], "n_pockets": len(targets), **summarise(prof),
+                       "jsd": jsd_block(prof, uniq_profile),
+                       "jsd_pose_weighted": jsd_block(prof, pose_profile),
+                       "jsd_test": jsd_block(prof, test_profile)}
+    refs = {
+        "reference": {
+            "label": "Reference ligand (CrossDocked train+test)", "short": "CrossDocked train+test",
+            "weighting": "each distinct molecule (canonical isomeric SMILES) weighs 1, "
+                         "averaged over its poses; n_mols and every count are weighted",
+            **info, **summarise(uniq_profile)},
+        "reference_pose_weighted": {
+            "label": "Reference ligand (CrossDocked train+test, pose-weighted)",
+            "short": "CrossDocked train+test, pose-weighted", "weighting": "every ligand file weighs 1",
+            **info, **summarise(pose_profile)},
+        "reference_test": {
+            "label": "Reference ligand (CrossDocked test)", "short": "CrossDocked test",
+            "source": os.path.abspath(args.test_dir), "n_files": len(test_files),
+            **summarise(test_profile)},
+    }
     if arms:
-        print_tables(reference, arms)
+        print_tables(refs, arms)
 
     result = {
         "protocol": {
-            "reference": "CrossDocked2020 test set, 100 ligands (TargetDiff/VoxBind protocol)",
+            "reference": "main: CrossDocked2020 train+test ligands of split_by_name.pt, each distinct "
+                         "molecule weighing 1 (arms' `jsd`); also pose-weighted (`jsd_pose_weighted`) "
+                         "and the 100 test ligands, the published protocol (`jsd_test`)",
             "pockets": os.path.abspath(args.targets),
             "molecules": "RDKit-sanitisable, single connected component",
             "jsd": "scipy.spatial.distance.jensenshannon (JS distance, natural log), "
@@ -381,17 +556,21 @@ def main():
             "pair_bins": {k: v.tolist() for k, v in PAIR_BINS.items()},
             "atom_types": list(ATOM_TYPES.values()),
             "arom_frac_edges": AROM_EDGES.tolist(),
-            "ring_size_pct": "percent of all rings (RDKit AtomRings), sizes 3-9 and 10+",
+            "arom_ring_frac": f"per molecule with >=1 ring: aromatic rings (every ring bond "
+                              f"aromatic) / rings, {AROM_RING_BINS} bins [k/{AROM_RING_BINS}, "
+                              f"(k+1)/{AROM_RING_BINS}), last bin closed",
+            "ring_size_pct": "sizes 3-9: percent of the size-3-9 rings (RDKit AtomRings), as "
+                             "TargetDiff Table 2; '10+ of all': percent of all rings",
         },
         "published": {"bond_jsd_columns": list(BOND_TYPES), "bond_jsd": PUBLISHED_BOND_JSD,
                       "ring_size_pct_columns": [str(s) for s in RING_TABLE_SIZES],
                       "ring_size_pct": PUBLISHED_RING_PCT},
-        "reference": reference,
+        **refs,
         "arms": arms,
     }
     ok = True
     if args.selfcheck:
-        result["selfcheck"] = selfcheck(ref_profile, args.workers)
+        result["selfcheck"] = selfcheck(test_profile, pose_profile, args.workers)
         ok = result["selfcheck"]["pass"]
 
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)

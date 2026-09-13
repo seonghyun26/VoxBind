@@ -1,0 +1,298 @@
+set,histogram,bin,pct
+Reference ligand (train+test),ring_size,3,1.476
+Reference ligand (train+test),ring_size,4,0.3
+Reference ligand (train+test),ring_size,5,27.127
+Reference ligand (train+test),ring_size,6,69.549
+Reference ligand (train+test),ring_size,7,0.812
+Reference ligand (train+test),ring_size,8,0.092
+Reference ligand (train+test),ring_size,9,0.004
+Reference ligand (train+test),ring_size,≥10,0.64
+Reference ligand (train+test),rings_per_molecule,0,6.818
+Reference ligand (train+test),rings_per_molecule,1,13.274
+Reference ligand (train+test),rings_per_molecule,2,21.871
+Reference ligand (train+test),rings_per_molecule,3,24.759
+Reference ligand (train+test),rings_per_molecule,4,19.946
+Reference ligand (train+test),rings_per_molecule,5,9.514
+Reference ligand (train+test),rings_per_molecule,6,2.73
+Reference ligand (train+test),rings_per_molecule,7,0.861
+Reference ligand (train+test),rings_per_molecule,≥8,0.227
+Reference ligand (train+test),aromatic_fraction,0.0-0.1,20.24
+Reference ligand (train+test),aromatic_fraction,0.1-0.2,2.775
+Reference ligand (train+test),aromatic_fraction,0.2-0.3,10.93
+Reference ligand (train+test),aromatic_fraction,0.3-0.4,12.516
+Reference ligand (train+test),aromatic_fraction,0.4-0.5,15.189
+Reference ligand (train+test),aromatic_fraction,0.5-0.6,15.868
+Reference ligand (train+test),aromatic_fraction,0.6-0.7,12.527
+Reference ligand (train+test),aromatic_fraction,0.7-0.8,6.105
+Reference ligand (train+test),aromatic_fraction,0.8-0.9,2.707
+Reference ligand (train+test),aromatic_fraction,0.9-1.0,1.144
+"Reference ligand (train+test, pose-weighted)",ring_size,3,1.311
+"Reference ligand (train+test, pose-weighted)",ring_size,4,0.203
+"Reference ligand (train+test, pose-weighted)",ring_size,5,29.117
+"Reference ligand (train+test, pose-weighted)",ring_size,6,67.995
+"Reference ligand (train+test, pose-weighted)",ring_size,7,0.904
+"Reference ligand (train+test, pose-weighted)",ring_size,8,0.043
+"Reference ligand (train+test, pose-weighted)",ring_size,9,0.001
+"Reference ligand (train+test, pose-weighted)",ring_size,≥10,0.427
+"Reference ligand (train+test, pose-weighted)",rings_per_molecule,0,7.343
+"Reference ligand (train+test, pose-weighted)",rings_per_molecule,1,12.815
+"Reference ligand (train+test, pose-weighted)",rings_per_molecule,2,22.658
+"Reference ligand (train+test, pose-weighted)",rings_per_molecule,3,28.241
+"Reference ligand (train+test, pose-weighted)",rings_per_molecule,4,17.858
+"Reference ligand (train+test, pose-weighted)",rings_per_molecule,5,8.217
+"Reference ligand (train+test, pose-weighted)",rings_per_molecule,6,2.065
+"Reference ligand (train+test, pose-weighted)",rings_per_molecule,7,0.585
+"Reference ligand (train+test, pose-weighted)",rings_per_molecule,≥8,0.218
+"Reference ligand (train+test, pose-weighted)",aromatic_fraction,0.0-0.1,18.806
+"Reference ligand (train+test, pose-weighted)",aromatic_fraction,0.1-0.2,1.865
+"Reference ligand (train+test, pose-weighted)",aromatic_fraction,0.2-0.3,11.36
+"Reference ligand (train+test, pose-weighted)",aromatic_fraction,0.3-0.4,15.401
+"Reference ligand (train+test, pose-weighted)",aromatic_fraction,0.4-0.5,13.914
+"Reference ligand (train+test, pose-weighted)",aromatic_fraction,0.5-0.6,15.433
+"Reference ligand (train+test, pose-weighted)",aromatic_fraction,0.6-0.7,12.676
+"Reference ligand (train+test, pose-weighted)",aromatic_fraction,0.7-0.8,6.56
+"Reference ligand (train+test, pose-weighted)",aromatic_fraction,0.8-0.9,2.914
+"Reference ligand (train+test, pose-weighted)",aromatic_fraction,0.9-1.0,1.071
+Reference ligand (test),ring_size,3,1.619
+Reference ligand (test),ring_size,4,0.0
+Reference ligand (test),ring_size,5,29.555
+Reference ligand (test),ring_size,6,65.992
+Reference ligand (test),ring_size,7,0.81
+Reference ligand (test),ring_size,8,0.0
+Reference ligand (test),ring_size,9,0.0
+Reference ligand (test),ring_size,≥10,2.024
+Reference ligand (test),rings_per_molecule,0,13.0
+Reference ligand (test),rings_per_molecule,1,13.0
+Reference ligand (test),rings_per_molecule,2,24.0
+Reference ligand (test),rings_per_molecule,3,30.0
+Reference ligand (test),rings_per_molecule,4,13.0
+Reference ligand (test),rings_per_molecule,5,2.0
+Reference ligand (test),rings_per_molecule,6,3.0
+Reference ligand (test),rings_per_molecule,7,0.0
+Reference ligand (test),rings_per_molecule,≥8,2.0
+Reference ligand (test),aromatic_fraction,0.0-0.1,34.0
+Reference ligand (test),aromatic_fraction,0.1-0.2,3.0
+Reference ligand (test),aromatic_fraction,0.2-0.3,15.0
+Reference ligand (test),aromatic_fraction,0.3-0.4,17.0
+Reference ligand (test),aromatic_fraction,0.4-0.5,7.0
+Reference ligand (test),aromatic_fraction,0.5-0.6,9.0
+Reference ligand (test),aromatic_fraction,0.6-0.7,5.0
+Reference ligand (test),aromatic_fraction,0.7-0.8,5.0
+Reference ligand (test),aromatic_fraction,0.8-0.9,3.0
+Reference ligand (test),aromatic_fraction,0.9-1.0,2.0
+AR,ring_size,3,29.529
+AR,ring_size,4,0.159
+AR,ring_size,5,13.72
+AR,ring_size,6,51.868
+AR,ring_size,7,2.35
+AR,ring_size,8,1.334
+AR,ring_size,9,0.196
+AR,ring_size,≥10,0.844
+AR,rings_per_molecule,0,9.262
+AR,rings_per_molecule,1,19.909
+AR,rings_per_molecule,2,21.502
+AR,rings_per_molecule,3,17.662
+AR,rings_per_molecule,4,13.076
+AR,rings_per_molecule,5,8.583
+AR,rings_per_molecule,6,5.251
+AR,rings_per_molecule,7,2.573
+AR,rings_per_molecule,≥8,2.182
+AR,aromatic_fraction,0.0-0.1,65.669
+AR,aromatic_fraction,0.1-0.2,2.116
+AR,aromatic_fraction,0.2-0.3,9.249
+AR,aromatic_fraction,0.3-0.4,7.133
+AR,aromatic_fraction,0.4-0.5,6.702
+AR,aromatic_fraction,0.5-0.6,4.311
+AR,aromatic_fraction,0.6-0.7,2.587
+AR,aromatic_fraction,0.7-0.8,1.123
+AR,aromatic_fraction,0.8-0.9,0.64
+AR,aromatic_fraction,0.9-1.0,0.47
+Pocket2Mol,ring_size,3,0.149
+Pocket2Mol,ring_size,4,0.013
+Pocket2Mol,ring_size,5,16.699
+Pocket2Mol,ring_size,6,77.536
+Pocket2Mol,ring_size,7,4.256
+Pocket2Mol,ring_size,8,0.674
+Pocket2Mol,ring_size,9,0.105
+Pocket2Mol,ring_size,≥10,0.569
+Pocket2Mol,rings_per_molecule,0,4.581
+Pocket2Mol,rings_per_molecule,1,23.585
+Pocket2Mol,rings_per_molecule,2,25.553
+Pocket2Mol,rings_per_molecule,3,14.192
+Pocket2Mol,rings_per_molecule,4,10.666
+Pocket2Mol,rings_per_molecule,5,7.733
+Pocket2Mol,rings_per_molecule,6,5.841
+Pocket2Mol,rings_per_molecule,7,4.516
+Pocket2Mol,rings_per_molecule,≥8,3.332
+Pocket2Mol,aromatic_fraction,0.0-0.1,20.87
+Pocket2Mol,aromatic_fraction,0.1-0.2,1.711
+Pocket2Mol,aromatic_fraction,0.2-0.3,5.34
+Pocket2Mol,aromatic_fraction,0.3-0.4,10.242
+Pocket2Mol,aromatic_fraction,0.4-0.5,14.295
+Pocket2Mol,aromatic_fraction,0.5-0.6,14.758
+Pocket2Mol,aromatic_fraction,0.6-0.7,14.72
+Pocket2Mol,aromatic_fraction,0.7-0.8,8.235
+Pocket2Mol,aromatic_fraction,0.8-0.9,5.353
+Pocket2Mol,aromatic_fraction,0.9-1.0,4.478
+DiffSBDD,ring_size,3,17.079
+DiffSBDD,ring_size,4,2.89
+DiffSBDD,ring_size,5,27.311
+DiffSBDD,ring_size,6,41.187
+DiffSBDD,ring_size,7,8.073
+DiffSBDD,ring_size,8,1.668
+DiffSBDD,ring_size,9,0.524
+DiffSBDD,ring_size,≥10,1.267
+DiffSBDD,rings_per_molecule,0,11.14
+DiffSBDD,rings_per_molecule,1,22.409
+DiffSBDD,rings_per_molecule,2,25.453
+DiffSBDD,rings_per_molecule,3,20.052
+DiffSBDD,rings_per_molecule,4,11.749
+DiffSBDD,rings_per_molecule,5,5.687
+DiffSBDD,rings_per_molecule,6,2.15
+DiffSBDD,rings_per_molecule,7,0.816
+DiffSBDD,rings_per_molecule,≥8,0.544
+DiffSBDD,aromatic_fraction,0.0-0.1,60.907
+DiffSBDD,aromatic_fraction,0.1-0.2,5.466
+DiffSBDD,aromatic_fraction,0.2-0.3,11.839
+DiffSBDD,aromatic_fraction,0.3-0.4,8.161
+DiffSBDD,aromatic_fraction,0.4-0.5,5.181
+DiffSBDD,aromatic_fraction,0.5-0.6,3.705
+DiffSBDD,aromatic_fraction,0.6-0.7,2.668
+DiffSBDD,aromatic_fraction,0.7-0.8,0.868
+DiffSBDD,aromatic_fraction,0.8-0.9,0.674
+DiffSBDD,aromatic_fraction,0.9-1.0,0.531
+DecompDiff,ring_size,3,2.627
+DecompDiff,ring_size,4,3.837
+DecompDiff,ring_size,5,35.043
+DecompDiff,ring_size,6,43.203
+DecompDiff,ring_size,7,11.009
+DecompDiff,ring_size,8,2.182
+DecompDiff,ring_size,9,0.639
+DecompDiff,ring_size,≥10,1.46
+DecompDiff,rings_per_molecule,0,13.941
+DecompDiff,rings_per_molecule,1,19.963
+DecompDiff,rings_per_molecule,2,24.319
+DecompDiff,rings_per_molecule,3,23.588
+DecompDiff,rings_per_molecule,4,10.814
+DecompDiff,rings_per_molecule,5,4.372
+DecompDiff,rings_per_molecule,6,2.007
+DecompDiff,rings_per_molecule,7,0.7
+DecompDiff,rings_per_molecule,≥8,0.296
+DecompDiff,aromatic_fraction,0.0-0.1,51.206
+DecompDiff,aromatic_fraction,0.1-0.2,5.275
+DecompDiff,aromatic_fraction,0.2-0.3,11.032
+DecompDiff,aromatic_fraction,0.3-0.4,11.732
+DecompDiff,aromatic_fraction,0.4-0.5,7.391
+DecompDiff,aromatic_fraction,0.5-0.6,7.609
+DecompDiff,aromatic_fraction,0.6-0.7,2.956
+DecompDiff,aromatic_fraction,0.7-0.8,1.4
+DecompDiff,aromatic_fraction,0.8-0.9,0.887
+DecompDiff,aromatic_fraction,0.9-1.0,0.513
+FuncBind,ring_size,3,0.0
+FuncBind,ring_size,4,0.392
+FuncBind,ring_size,5,16.092
+FuncBind,ring_size,6,82.696
+FuncBind,ring_size,7,0.441
+FuncBind,ring_size,8,0.056
+FuncBind,ring_size,9,0.118
+FuncBind,ring_size,≥10,0.205
+FuncBind,rings_per_molecule,0,14.11
+FuncBind,rings_per_molecule,1,25.877
+FuncBind,rings_per_molecule,2,24.37
+FuncBind,rings_per_molecule,3,20.722
+FuncBind,rings_per_molecule,4,9.348
+FuncBind,rings_per_molecule,5,4.091
+FuncBind,rings_per_molecule,6,1.279
+FuncBind,rings_per_molecule,7,0.165
+FuncBind,rings_per_molecule,≥8,0.038
+FuncBind,aromatic_fraction,0.0-0.1,71.78
+FuncBind,aromatic_fraction,0.1-0.2,2.837
+FuncBind,aromatic_fraction,0.2-0.3,11.21
+FuncBind,aromatic_fraction,0.3-0.4,5.13
+FuncBind,aromatic_fraction,0.4-0.5,3.521
+FuncBind,aromatic_fraction,0.5-0.6,2.014
+FuncBind,aromatic_fraction,0.6-0.7,2.052
+FuncBind,aromatic_fraction,0.7-0.8,0.722
+FuncBind,aromatic_fraction,0.8-0.9,0.456
+FuncBind,aromatic_fraction,0.9-1.0,0.279
+TargetDiff,ring_size,3,0.0
+TargetDiff,ring_size,4,2.462
+TargetDiff,ring_size,5,29.854
+TargetDiff,ring_size,6,50.092
+TargetDiff,ring_size,7,11.554
+TargetDiff,ring_size,8,2.314
+TargetDiff,ring_size,9,0.877
+TargetDiff,ring_size,≥10,2.847
+TargetDiff,rings_per_molecule,0,9.592
+TargetDiff,rings_per_molecule,1,20.461
+TargetDiff,rings_per_molecule,2,21.504
+TargetDiff,rings_per_molecule,3,20.351
+TargetDiff,rings_per_molecule,4,14.89
+TargetDiff,rings_per_molecule,5,7.246
+TargetDiff,rings_per_molecule,6,3.595
+TargetDiff,rings_per_molecule,7,1.537
+TargetDiff,rings_per_molecule,≥8,0.823
+TargetDiff,aromatic_fraction,0.0-0.1,61.534
+TargetDiff,aromatic_fraction,0.1-0.2,7.177
+TargetDiff,aromatic_fraction,0.2-0.3,13.641
+TargetDiff,aromatic_fraction,0.3-0.4,6.491
+TargetDiff,aromatic_fraction,0.4-0.5,4.323
+TargetDiff,aromatic_fraction,0.5-0.6,3.678
+TargetDiff,aromatic_fraction,0.6-0.7,1.99
+TargetDiff,aromatic_fraction,0.7-0.8,0.645
+TargetDiff,aromatic_fraction,0.8-0.9,0.371
+TargetDiff,aromatic_fraction,0.9-1.0,0.151
+VoxBind,ring_size,3,0.0
+VoxBind,ring_size,4,0.178
+VoxBind,ring_size,5,19.585
+VoxBind,ring_size,6,76.999
+VoxBind,ring_size,7,0.811
+VoxBind,ring_size,8,0.091
+VoxBind,ring_size,9,0.023
+VoxBind,ring_size,≥10,2.314
+VoxBind,rings_per_molecule,0,9.914
+VoxBind,rings_per_molecule,1,13.172
+VoxBind,rings_per_molecule,2,19.346
+VoxBind,rings_per_molecule,3,23.225
+VoxBind,rings_per_molecule,4,20.068
+VoxBind,rings_per_molecule,5,10.231
+VoxBind,rings_per_molecule,6,3.182
+VoxBind,rings_per_molecule,7,0.685
+VoxBind,rings_per_molecule,≥8,0.177
+VoxBind,aromatic_fraction,0.0-0.1,30.971
+VoxBind,aromatic_fraction,0.1-0.2,4.133
+VoxBind,aromatic_fraction,0.2-0.3,12.665
+VoxBind,aromatic_fraction,0.3-0.4,11.486
+VoxBind,aromatic_fraction,0.4-0.5,12.994
+VoxBind,aromatic_fraction,0.5-0.6,12.082
+VoxBind,aromatic_fraction,0.6-0.7,9.407
+VoxBind,aromatic_fraction,0.7-0.8,3.892
+VoxBind,aromatic_fraction,0.8-0.9,1.711
+VoxBind,aromatic_fraction,0.9-1.0,0.659
+CoDE,ring_size,3,0.0
+CoDE,ring_size,4,0.161
+CoDE,ring_size,5,19.047
+CoDE,ring_size,6,78.774
+CoDE,ring_size,7,0.792
+CoDE,ring_size,8,0.055
+CoDE,ring_size,9,0.035
+CoDE,ring_size,≥10,1.137
+CoDE,rings_per_molecule,0,6.567
+CoDE,rings_per_molecule,1,9.983
+CoDE,rings_per_molecule,2,18.722
+CoDE,rings_per_molecule,3,21.174
+CoDE,rings_per_molecule,4,21.313
+CoDE,rings_per_molecule,5,12.41
+CoDE,rings_per_molecule,6,5.728
+CoDE,rings_per_molecule,7,2.477
+CoDE,rings_per_molecule,≥8,1.626
+CoDE,aromatic_fraction,0.0-0.1,25.34
+CoDE,aromatic_fraction,0.1-0.2,6.262
+CoDE,aromatic_fraction,0.2-0.3,14.162
+CoDE,aromatic_fraction,0.3-0.4,14.531
+CoDE,aromatic_fraction,0.4-0.5,14.696
+CoDE,aromatic_fraction,0.5-0.6,11.762
+CoDE,aromatic_fraction,0.6-0.7,7.557
+CoDE,aromatic_fraction,0.7-0.8,3.264
+CoDE,aromatic_fraction,0.8-0.9,1.753
+CoDE,aromatic_fraction,0.9-1.0,0.673

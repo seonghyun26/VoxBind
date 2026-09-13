@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # 89_eval_crossdocked_jsd.sh — the TargetDiff / VoxBind distribution metrics for every arm
-# figures/draw.py draws: bond-distance, pair-distance and atom-type JSD against the 100
-# CrossDocked test ligands, the ring-size table, and the VoxBind Fig. 10 histograms.
+# figures/draw.py draws: bond-distance, pair-distance and atom-type JSD against the
+# CrossDocked ligands (train+test, de-duplicated -- the main reference -- and the 100 test
+# ligands of the published protocol beside it), the ring-size table, and the VoxBind
+# Fig. 10 histograms.
 #
 #   bash voxbind/scripts/89_eval_crossdocked_jsd.sh
 #   /opt/conda/envs/voxbind/bin/python figures/draw.py jsd
@@ -9,10 +11,12 @@
 # The arms and their roots are figures/_parts/00_core.py's ARMS, spelled out: the labels
 # ARE the keys the figures colour by, so a label changed here must change there too. The
 # molecules are the 79 electron-density pockets for every arm (TargetDiff and VoxBind hold
-# 100; the extra 21 are left out so every arm stands on the same pockets). The reference
-# stays the full 100 test ligands, because that is what the published numbers use --
-# see the docstring of tools/eval_crossdocked_jsd.py for why it is not TargetDiff's
-# shipped training-set histograms.
+# 100; the extra 21 are left out so every arm stands on the same pockets). The main
+# reference is every train+test ligand of split_by_name.pt with each distinct molecule
+# weighing 1; the 100 test ligands the published numbers use ride beside it (`jsd_test`),
+# and so does the pose-weighted set (`jsd_pose_weighted`). The docstring of
+# tools/eval_crossdocked_jsd.py says why, and why TargetDiff's shipped histograms are not
+# used directly.
 #
 # --selfcheck re-scores TargetDiff over all 100 pockets and fails the run if it drifts
 # from the published row, so the protocol claim is re-verified every time this runs.
