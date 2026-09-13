@@ -13,7 +13,8 @@ checkout can bootstrap the pull.
 ```
 results/
 ├── task1-affinity/     <method>/  representations/  metrics.json   (+ SOURCE.txt)
-├── task2-drugdesign/   <method>/  samples/          metrics.json   (+ SOURCE.txt)
+├── task2-drugdesign/   <method>/  samples/  eval/  metrics.json   (+ SOURCE.txt)
+│                       EVAL_STATUS.md · EVAL_STATUS.json  = the coverage matrix
 ├── task3-mcp/          <method>/  samples/          metrics.json
 │                       _shared/  = cross-method analysis artifacts (not a method)
 ├── reports/            results.html · results_drug_design.html · results_mcp.html
@@ -44,14 +45,97 @@ logits). Others carry a `SOURCE.txt` (re-extract from `base/<method>/`).
 
 ## task2-drugdesign  (CrossDocked)
 
-`metrics.json` = PoseCheck aggregate (strain/clash/heavy-atoms from the local
-per-method posecheck JSONs) and, for the voxel-diffusion models, Vina Dock over
-the 79 density pockets. Methods: AR, Pocket2Mol, DiffSBDD, DecompDiff, FuncBind,
-VoxBind (σ=0.9 vanilla), Ours-v2 (density-conditioned).
+`metrics.json` = the headline row as the reports read it: PoseCheck aggregate
+(strain/clash/heavy-atoms) and, for the voxel-diffusion models, Vina Dock over the
+79 density pockets. The full per-evaluation numbers live in `<method>/eval/` (below);
+`metrics.json` is left exactly as it was so nothing downstream shifts under it.
+
+Published baselines: AR, Pocket2Mol, DiffSBDD, DecompDiff, FuncBind.
+Reference = the deposited crystal ligand, re-scored through the same Vina protocol.
+Ours: VoxBind-Ours (= CoDE, density-conditioned) and Ours-v2; VoxBind / VoxBind-vanilla
+are the σ=0.9 vanilla rows (ep923 on the reporting box, published ckpt at 100/pocket here).
+svr12 8-GPU arms: VoxBind-base-ep350 (+ `-n100`, the same arm at 100 molecules/pocket),
+Fusion-v4-cdgv2-{warm-ep100,scratch-ep350}, Fusion-v4-cv2-scratch-ep350,
+Fusion-default-cv2-scratch-ep350.
 
 `samples/` present for DecompDiff (reproduced `.pt`), VoxBind + Ours-v2 (per-target
 viz `.sdf`). AR / Pocket2Mol / DiffSBDD / FuncBind carry `SOURCE.txt` — their
 generated samples live on the baselines server (`prj-denovo/baselines/`), not here.
+
+### `<method>/eval/` — one folder per evaluation
+
+task2 was evaluated on three different boxes and the numbers used to sit in four
+different shapes: per-molecule `target_*/metrics.json` trees for the svr12 arms,
+`_shared/baselines_eval/*.json` arrays for the published baselines, `_shared/260910_*`
+for the figure slices, and a CSV under `notebook/html` for rigid-fragment. Same arm,
+four names, and nothing said which evaluations a method actually had.
+
+`voxbind/scripts/tools/collect_task2_eval.py` reads every one of those sources and
+writes them out in one shape. It only ever **copies** — nothing moves out of
+`voxbind/exps/`, and no `<method>/metrics.json` is touched (the reports read those).
+
+```
+<method>/eval/
+├── index.json                    which evaluations exist, their source + host + counts
+├── vina_docking/                 Vina score_only / minimize / dock, high-affinity %
+├── sample_quality/               validity, uniqueness, diversity, QED, SA, logP, Lipinski
+├── posebusters/                  dock-mode validity + the 20 per-check pass rates
+├── posecheck/                    steric clashes, torsional strain, interaction profile
+└── rigid_fragment/               rigid-fragment RMSD vs. fragment size
+      each holding  results.json       the aggregate, per pocket set
+                    per_molecule.csv   one row per molecule  (per_fragment.csv for rigid)
+```
+
+**The per-molecule tables are the point** — ~330k rows, one per (pocket, generated ligand).
+Every table opens with the same four key columns:
+
+```
+target,pocket_index,in_density79,ligand_filename,mol_idx,smiles,n_atoms,<metric columns…>
+target_00,0,0,BSD_ASPTE_1_130_0/2z3h_A_rec_1wn6_bst_lig_tt_docked_3.sdf,0,OS(O)(O)O,5,-2.4,…
+```
+
+`ligand_filename` is the pocket's CrossDocked identity, so a row can be traced to the test
+set and to the receptor PDB without this bundle's `target_NN` ordinal. `smiles` and
+`n_atoms` are on every row of every table, PoseBusters included, so size-resolved questions
+work the same way everywhere. Joining on `target` + `mol_idx` gives one frame per method,
+which is what makes QED-against-Vina, the strain tail, or "which pocket did the PoseBusters
+failures come from" answerable without going back to the boxes. Two things had to be right
+for that join to be trustworthy:
+
+* **The index is the meta order, not the directory order.** The baselines' `_eval` dumps
+  are split across `<M>`, `<M>_part2` and `<M>_gap`; walking those in order gives a
+  different sequence from the one the pose scorers used, and joining on it pairs the wrong
+  molecules (measured before the fix: 1% SMILES agreement on DiffSBDD). The meta bundles in
+  `<method>/samples/meta/` are the canonical order — their totals *are* the published
+  scored counts — so they supply the index and the membership, and `_eval` supplies only
+  values, matched on `(SMILES, rounded-coordinate hash)`.
+* **The join is verified, not assumed.** Each `results.json` records
+  `per_molecule.cross_table_smiles_agreement`, the measured SMILES agreement between every
+  pair of tables, and `cross_table_join` says `safe` or `UNSAFE`. 12 of 13 methods are safe;
+  `VoxBind-Ours` is not — its docking pass and its pose pass were run months apart on
+  different orderings, so join that one on `(target, smiles)`.
+
+Missing values are written as empty cells, never `nan`: one `nan` string is enough to make
+every median a reader computes silently wrong.
+
+Every `results.json` carries the same envelope — `method`, `folder`, `evaluation`,
+`generated_on`, `evaluated_on`, `source`, `protocol`, then `pocket_sets` with an `all`
+and/or a `density79` slice. Two axes are always named apart: `qed_mean` pools molecules,
+`qed_mean_over_pockets` averages per-pocket means (they differ when pockets yield unequal
+counts), and PoseCheck's `strain_mean_UNRELIABLE` says in its name why not to quote it.
+
+```bash
+python3 voxbind/scripts/tools/collect_task2_eval.py            # write / refresh
+python3 voxbind/scripts/tools/collect_task2_eval.py --check    # re-derive & verify only
+python3 voxbind/scripts/tools/collect_task2_eval.py --dry-run  # show what would change
+```
+
+Run it under an interpreter with torch + rdkit (`~/miniforge3/envs/sbdd/bin/python`) or the
+baselines' per-molecule tables, which come out of `.pt` dumps, are skipped — loudly, not
+silently. Otherwise re-runnable on any box that has the bundle (no `/home1/irteam` paths),
+and a file whose payload has not changed keeps its mtime, so `dropbox_push.sh` skips it
+instead of re-uploading. `EVAL_STATUS.md` is the method x evaluation matrix, the
+per-molecule row counts, and the list of runs generated but never fully evaluated.
 
 ## task3-mcp  (FuncBind macrocyclic peptides, pilot)
 

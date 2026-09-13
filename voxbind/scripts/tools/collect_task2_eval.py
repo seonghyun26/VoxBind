@@ -896,8 +896,19 @@ def write_index(folder: Path, evals: dict, w: Writer):
             "pocket_sets": {k: {"n_pockets": v.get("n_pockets"),
                                 "n_molecules": v.get("n_molecules")}
                             for k, v in e["pocket_sets"].items()},
+            "per_molecule": e.get("per_molecule"),
         }
     w(folder / "eval" / "index.json", idx)
+
+
+def rows_cell(e):
+    pm = (e or {}).get("per_molecule")
+    if not pm:
+        return "—"
+    n = f"{pm['n_rows']:,}"
+    # Only an explicit UNSAFE earns the mark. A method with a single table (Reference has
+    # only rigid-fragment) has nothing to cross-check and must not read as a warning.
+    return f"{n}!" if (pm.get("cross_table_join") or "").startswith("UNSAFE") else n
 
 
 def cell(e, sl="all"):
@@ -954,6 +965,23 @@ def write_status(all_evals: dict, runs: list[dict], w: Writer):
         e = all_evals[f]
         L.append("| `" + f + "` | " + " | ".join(cell(e.get(k)) for k in EVALS) + " |")
     L.append("")
+    L.append("## Per-molecule rows\n")
+    L.append("Each `eval/<evaluation>/` also carries a `per_molecule.csv` (a `per_fragment.csv`\n"
+             "for rigid-fragment — that metric has no per-molecule value). One row per molecule,\n"
+             "keyed by `target` + `mol_idx` and carrying `smiles`, so the tables join. A `!` marks\n"
+             "a method where that join is NOT safe: its scorers indexed different molecule\n"
+             "orderings, so join those on `(target, smiles)` instead. The per-evaluation\n"
+             "`results.json` records the measured SMILES agreement under\n"
+             "`per_molecule.cross_table_smiles_agreement`.\n")
+    L.append("| method | vina docking | sample quality | posebusters | posecheck | rigid fragment |")
+    L.append("|---|---|---|---|---|---|")
+    total = 0
+    for f in folders:
+        e = all_evals[f]
+        for k in EVALS:
+            total += ((e.get(k) or {}).get("per_molecule") or {}).get("n_rows", 0)
+        L.append("| `" + f + "` | " + " | ".join(rows_cell(e.get(k)) for k in EVALS) + " |")
+    L.append(f"\n**{total:,} rows** in total.\n")
 
     missing = {f: [e for e in EVALS if e not in all_evals[f]] for f in folders}
     L.append("## What is missing, by evaluation\n")
@@ -1068,6 +1096,11 @@ def main() -> int:
     w = Writer(dry=a.dry_run or a.check)
 
     by_bin, per_size = read_rigid_csvs()
+    skipped: list[str] = []
+    if not HAVE_TORCH:
+        print(f"!! torch not importable -- the baselines' per-molecule chem/Vina/PoseCheck\n"
+              f"   tables come out of .pt dumps and will be SKIPPED. Re-run with:\n"
+              f"     {TORCH_HINT} {TOOL}\n")
     folders = sorted(p for p in T2.iterdir()
                      if p.is_dir() and not p.name.startswith((".", "_")))
     all_evals: dict[str, dict] = {}
@@ -1091,12 +1124,17 @@ def main() -> int:
             if e:
                 evals["rigid_fragment"] = e
 
+        # per-molecule BEFORE the results.json write: it annotates the envelopes
+        emit_per_molecule(folder, evals, w, skipped)
+
         for name, e in evals.items():
             w(folder / "eval" / name / "results.json", e)
         write_index(folder, evals, w)
         all_evals[folder.name] = evals
         cov = ", ".join(n for n in EVALS if n in evals) or "nothing"
-        print(f"{folder.name:<34} {cov}")
+        rows = per_molecule_note(folder.name, evals)
+        tot = f"   rows: {sum(rows.values()):,}" if rows else ""
+        print(f"{folder.name:<34} {cov}{tot}")
 
     # TargetDiff has no folder of its own; its rigid-fragment row still belongs in the bundle.
     e = rigid_envelope("_shared/260910_consistency", "TargetDiff", "TargetDiff", by_bin, per_size)
@@ -1108,6 +1146,10 @@ def main() -> int:
 
     print(f"\n{len(w.written)} file(s) {'would be ' if w.dry else ''}written, "
           f"{len(w.unchanged)} unchanged")
+    if skipped:
+        print("\nnot produced:")
+        for line in skipped:
+            print("   -", line)
     if a.dry_run:
         for p in w.written:
             print("   [dry]", rel(p))
@@ -1118,6 +1160,531 @@ def main() -> int:
         print(f"-- {len(CHECKS) - bad}/{len(CHECKS)} agree")
         return 1 if bad else 0
     return 0
+
+
+
+# ======================================================= per-molecule tables
+# The aggregates above answer "how did this arm do". They cannot answer "which molecule",
+# and every downstream question -- a scatter of QED against Vina, the tail of the strain
+# distribution, which pocket the PoseBusters failures came from -- needs the rows. They
+# exist, but scattered the same way the aggregates were:
+#
+#   native arms   samples[] inside <folder>/samples/target_*/metrics.json      (in bundle)
+#   VoxBind-Ours  per_target[].per_mol[] in eval_docking_results_full79.json   (in bundle)
+#   baselines     prj-denovo/baselines/_eval/<M>{,_part2,_gap}/eval_*.pt       (svr12 only)
+#                 prj-denovo/baselines/_posebusters/<M>/pb_*.json              (svr12 only)
+#                 <folder>/eval/posecheck/pc_*.pt                              (in bundle)
+#
+# So each eval/<evaluation>/ also gets a per_molecule.csv. One row per molecule, keyed by
+# (target, mol_idx) and carrying smiles, so the four tables join on that key and a baseline
+# joins to its own SDF. The baseline .pt files need torch + rdkit to unpickle; run this
+# under an interpreter that has them (see TORCH_HINT) or those tables are skipped, loudly.
+BASELINES_ROOT = Path("/home/shpark/prj-denovo/baselines")
+TORCH_HINT = "~/miniforge3/envs/sbdd/bin/python"
+try:
+    import numpy as _np  # noqa: F401
+    import torch as _torch
+    HAVE_TORCH = True
+except ImportError:
+    HAVE_TORCH = False
+
+PB_CHECKS = [
+    "sanitization", "inchi_convertible", "all_atoms_connected", "no_radicals",
+    "bond_lengths", "bond_angles", "internal_steric_clash", "aromatic_ring_flatness",
+    "non-aromatic_ring_non-flatness", "double_bond_flatness", "internal_energy",
+    "protein-ligand_maximum_distance", "minimum_distance_to_protein",
+    "minimum_distance_to_organic_cofactors", "minimum_distance_to_inorganic_cofactors",
+    "minimum_distance_to_waters", "volume_overlap_with_protein",
+    "volume_overlap_with_organic_cofactors", "volume_overlap_with_inorganic_cofactors",
+    "volume_overlap_with_waters",
+]
+
+
+def _cell(x):
+    """NaN/inf -> empty. A failed PoseCheck relaxation is a MISSING value, and writing it
+    as the string `nan` makes float() succeed and every downstream median wrong -- Python's
+    sort with a NaN in the list is not even self-consistent. Empty is the honest encoding
+    and pandas reads it back as NaN anyway."""
+    if isinstance(x, float) and not math.isfinite(x):
+        return ""
+    return x
+
+
+def csv_text(header, rows) -> str:
+    import io
+    buf = io.StringIO()
+    wr = csv.writer(buf, lineterminator="\n")
+    wr.writerow(header)
+    wr.writerows([_cell(c) for c in row] for row in rows)
+    return buf.getvalue()
+
+
+def write_table(w: Writer, path: Path, header, rows):
+    """Same unchanged-detection as write_json, so an untouched CSV keeps its mtime."""
+    if not rows:
+        return 0
+    text = csv_text(header, rows)
+    if path.exists():
+        try:
+            if path.read_text() == text:
+                w.unchanged.append(path)
+                return len(rows)
+        except OSError:
+            pass
+    w.written.append(path)
+    if not w.dry:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
+    return len(rows)
+
+
+def pocket_index(target: str):
+    tail = target.rsplit("_", 1)[-1]
+    return int(tail) if tail.isdigit() else None
+
+
+# target_NN is an ordinal into split_by_name.pt['test'] and means nothing outside this
+# bundle. The pocket's real name is its CrossDocked ligand path, so every row carries it:
+# without it a table cannot be cross-referenced to the test set, to the receptor PDB, or to
+# another arm's target dir. Normalised to the `SUBDIR/ligand.sdf` form the meta uses, since
+# the native arms spell the same thing with `__` in a flat filename.
+def key_cols(target, ligand=None):
+    return [target, pocket_index(target), int(target in P79), ligand]
+
+
+KEY_HEADER = ["target", "pocket_index", "in_density79", "ligand_filename"]
+
+
+def native_ligand_map(run_dir: Path) -> dict:
+    """{target: SUBDIR/ligand.sdf} from the reference ligand sitting in each target dir."""
+    out = {}
+    for t in sorted(run_dir.glob("target_*")):
+        for f in t.glob("*.sdf"):
+            if f.name == "samples.sdf":
+                continue
+            out[t.name] = f.stem.replace("__", "/") + ".sdf"
+            break
+    return out
+
+
+def native_tables(run, pose_run):
+    """Four row-lists out of one metrics.py tree (pose may come from a second tree)."""
+    qual, vina, pc, pb = [], [], [], []
+    inter_types: set[str] = set()
+    lig = native_ligand_map(run["dir"])
+    lig_pose = native_ligand_map((pose_run or run)["dir"]) or lig
+    for t in sorted(run["targets"]):
+        for i, s in enumerate(run["targets"][t]["rows"]):
+            k = key_cols(t, lig.get(t))
+            qual.append(k + [i, s.get("smiles"), s.get("n_atoms"), s.get("qed"), s.get("sa"),
+                             s.get("logp"), s.get("lipinski"), s.get("sim_to_ref")])
+            v = s.get("vina")
+            if isinstance(v, dict) and "error" not in v:
+                vina.append(k + [i, s.get("smiles"), s.get("n_atoms"),
+                                 v.get("score_only"), v.get("minimize"), v.get("dock")])
+    src = pose_run or run
+    for t in sorted(src["targets"]):
+        for s in src["targets"][t]["rows"]:
+            for key in (s.get("posecheck") or {}).get("interactions", {}) or {}:
+                inter_types.add(key)
+    itypes = sorted(inter_types)
+    for t in sorted(src["targets"]):
+        for i, s in enumerate(src["targets"][t]["rows"]):
+            k = key_cols(t, lig_pose.get(t) or lig.get(t))
+            p = s.get("posecheck")
+            if isinstance(p, dict) and "error" not in p:
+                ints = p.get("interactions") or {}
+                pc.append(k + [i, s.get("smiles"), s.get("n_atoms"), p.get("clashes"),
+                               p.get("strain"), p.get("n_interactions")]
+                          + [ints.get(x, 0) for x in itypes])
+            b = s.get("posebusters")
+            if isinstance(b, dict) and "error" not in b:
+                ch = b.get("checks") or {}
+                pb.append(k + [i, s.get("smiles"), s.get("n_atoms"),
+                               int(bool(b.get("valid"))),
+                               b.get("n_pass"), b.get("n_checks")]
+                          + [("" if ch.get(c) is None else int(bool(ch.get(c))))
+                             for c in PB_CHECKS])
+    return qual, vina, pc, pb, itypes
+
+
+QUAL_HEADER = KEY_HEADER + ["mol_idx", "smiles", "n_atoms", "qed", "sa", "logp",
+                            "lipinski", "sim_to_ref"]
+VINA_HEADER = KEY_HEADER + ["mol_idx", "smiles", "n_atoms", "vina_score", "vina_min",
+                            "vina_dock"]
+# n_atoms rides along here too: PoseBusters is pass/fail, and "which sizes fail" is the
+# first question anyone asks of it. Every table carries the same size column.
+PB_HEADER = (KEY_HEADER + ["mol_idx", "smiles", "n_atoms", "pb_valid", "n_pass", "n_checks"]
+             + PB_CHECKS)
+# the baselines' chunked dumps add provenance columns the native arms have no use for
+PB_HEADER_CHUNKED = PB_HEADER + ["chunk_id", "chunk_pos"]
+
+
+def _pocket_of(name: str):
+    """`eval_007_<ligand>.pt` / `pb_007_03.json` / `pc_007_03.pt` -> 7."""
+    parts = name.split("_")
+    return int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else None
+
+
+def _chunk_of(name: str):
+    parts = Path(name).stem.split("_")
+    return int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 0
+
+
+def _pos_hash(pos):
+    """md5 of the coordinates rounded to 2 dp -- the key baselines/_scripts/build_gap_meta.py
+    uses to decide whether two entries are the same generated pose."""
+    if pos is None:
+        return None
+    try:
+        import hashlib
+        return hashlib.md5(_np.round(_np.asarray(pos, dtype=float), 2).tobytes()).hexdigest()
+    except Exception:
+        return None
+
+
+def _aff(block):
+    """metrics.py stores Vina as [{'affinity': x, 'pose': ...}]; we want x."""
+    if isinstance(block, list) and block:
+        return block[0].get("affinity") if isinstance(block[0], dict) else block[0]
+    if isinstance(block, dict):
+        return block.get("affinity")
+    return block
+
+
+# THE CANONICAL MOLECULE ORDER IS THE META, NOT THE _eval DIRECTORY.
+# The _eval dumps are split across <M>, <M>_part2 and <M>_gap, and walking those three
+# directories in order produces a DIFFERENT sequence from the one the pose scorers used --
+# joining the tables on that index pairs the wrong molecules (measured: only 1% of DiffSBDD
+# rows and 62% of DecompDiff rows had matching SMILES across the two orderings). The meta
+# bundles in <folder>/samples/meta/ are the order the whole baseline pipeline ran in:
+# verified pocket-for-pocket against the PoseBusters chunk order (100/100, 98/98, 87/87
+# identical SMILES) and their totals ARE the published scored counts -- 9729 AR, 9872
+# Pocket2Mol, 9777 DiffSBDD, 8207 DecompDiff, 9992 FuncBind. So the meta supplies both the
+# index and the membership, and the _eval dumps are consulted only for values, looked up by
+# the same (SMILES, rounded-coordinate hash) identity build_gap_meta.py uses.
+def baseline_meta_order(folder: Path, meta_name: str):
+    """Canonical per-pocket sequence of (smiles, pos_hash, ligand_filename, n_atoms).
+
+    n_atoms comes off the stored rdkit Mol -- the baselines' _eval dumps record chem
+    results but not the heavy-atom count, and a size column that is empty for five of the
+    arms makes every size-resolved comparison in the bundle lopsided.
+    """
+    seq: dict[int, list] = {}
+    for suffix in ("", "_part2", "_gap"):
+        f = folder / "samples" / "meta" / f"{meta_name}{suffix}.pt"
+        if not f.exists():
+            continue
+        try:
+            meta = _torch.load(f, weights_only=False)
+        except Exception:
+            continue
+        for pocket, mols in enumerate(meta or []):
+            for e in mols or []:
+                if not isinstance(e, dict):
+                    continue
+                mol = e.get("mol")
+                try:
+                    n_at = mol.GetNumHeavyAtoms() if mol is not None else None
+                except Exception:
+                    n_at = None
+                if n_at is None:
+                    pos = e.get("pred_pos")
+                    n_at = len(pos) if pos is not None else None
+                seq.setdefault(pocket, []).append(
+                    (e.get("smiles"), _pos_hash(e.get("pred_pos")),
+                     e.get("ligand_filename"), n_at))
+    return seq
+
+
+def baseline_eval_index(meta_name: str):
+    """(pocket, smiles, pos_hash) -> the scored record, across all three _eval dirs."""
+    idx = {}
+    for suffix in ("", "_part2", "_gap"):
+        d = BASELINES_ROOT / "_eval" / f"{meta_name}{suffix}"
+        if not d.is_dir():
+            continue
+        for f in sorted(d.glob("eval_*.pt")):
+            pocket = _pocket_of(f.name)
+            if pocket is None:          # eval_all.pt and friends are not per-pocket
+                continue
+            try:
+                entries = _torch.load(f, weights_only=False)
+            except Exception:
+                continue
+            for e in entries or []:
+                if isinstance(e, dict):
+                    idx.setdefault((pocket, e.get("smiles"), _pos_hash(e.get("pred_pos"))), e)
+    return idx
+
+
+def baseline_chem_vina_rows(folder: Path, meta_name: str):
+    """Per-molecule chem + Vina, emitted in meta order so the four tables join on mol_idx."""
+    order = baseline_meta_order(folder, meta_name)
+    if not order:
+        return [], [], 0
+    idx = baseline_eval_index(meta_name)
+    qual, vina, missed = [], [], 0
+    for pocket in sorted(order):
+        for i, (smi, ph, ligf, n_at) in enumerate(order[pocket]):
+            k = key_cols(f"target_{pocket:02d}", ligf)
+            e = idx.get((pocket, smi, ph))
+            if e is None:
+                missed += 1
+                continue
+            chem = e.get("chem_results") or {}
+            lip = chem.get("lipinski")
+            qual.append(k + [i, smi, n_at, chem.get("qed"), chem.get("sa"),
+                             chem.get("logp"), None if lip is None else int(lip), None])
+            v = e.get("vina") or {}
+            vina.append(k + [i, smi, n_at, _aff(v.get("score_only")),
+                             _aff(v.get("minimize")), _aff(v.get("dock"))])
+    return qual, vina, missed
+
+
+def baseline_pb_rows(meta_name: str, order=None):
+    """Per-molecule PoseBusters from _posebusters/<M>/pb_<pocket>_<chunk>.json.
+
+    CAREFUL WITH `positions`. It looks like a molecule index and is not: it restarts at 0
+    in every chunk (pb_000_00, _01, _02 all carry 0..19), so using it directly gives every
+    pocket only 20 distinct keys and silently collapses 9,729 rows onto 2,000. The molecule
+    index is the running count through the chunks in order; `positions` is kept alongside
+    as chunk_pos so the original file is still addressable.
+    """
+    d = BASELINES_ROOT / "_posebusters" / meta_name
+    if not d.is_dir():
+        return []
+    rows, offset = [], {}
+    for f in sorted(d.glob("pb_*.json"),
+                    key=lambda q: (_pocket_of(q.name) or 0, _chunk_of(q.name))):
+        try:
+            j = json.loads(f.read_text())
+        except (json.JSONDecodeError, OSError):
+            continue
+        p = j.get("pocket_index")
+        if p is None:
+            continue
+        seq = (order or {}).get(p) or []
+        k = key_cols(f"target_{p:02d}", j.get("ligand_filename"))
+        smiles = j.get("smiles") or []
+        chunk = j.get("chunk_id")
+        base = offset.get(p, 0)
+        used = 0
+        for n, b in enumerate(j.get("posebusters") or []):
+            if not isinstance(b, dict):
+                continue
+            used += 1
+            ch = b.get("checks") or {}
+            j_idx = base + n
+            seq_e = seq[j_idx] if j_idx < len(seq) else None
+            rows.append(k + [j_idx, smiles[n] if n < len(smiles) else None,
+                             seq_e[3] if seq_e else None,
+                             int(bool(b.get("valid"))), b.get("n_pass"), b.get("n_checks")]
+                        + [("" if ch.get(c) is None else int(bool(ch.get(c))))
+                           for c in PB_CHECKS]
+                        + [chunk, n])
+        offset[p] = base + max(used, len(j.get("posebusters") or []))
+    return rows
+
+
+def baseline_pc_rows(folder: Path, order=None):
+    """Per-molecule PoseCheck from the pc_*.pt chunks already staged in the bundle.
+
+    These carry no smiles and no explicit positions -- only per-chunk arrays -- so the
+    index is the running count through the chunks in order. That ordering is the meta's,
+    the same one _posebusters walks, so `order` (the meta sequence) fills the smiles column
+    BY INDEX. That is not cosmetic: it is what lets the cross-table check actually verify
+    this table's alignment instead of assuming it. Without `order` the column stays empty
+    and the check simply skips PoseCheck rather than pretending to have confirmed it.
+    """
+    d = folder / "eval" / "posecheck"
+    if not d.is_dir():
+        return [], []
+    files = sorted(d.glob("pc_*.pt"),
+                   key=lambda p: (_pocket_of(p.name) or 0, _chunk_of(p.name)))
+    itypes: set[str] = set()
+    loaded = []
+    for f in files:
+        try:
+            obj = _torch.load(f, weights_only=False)
+        except Exception:
+            continue
+        loaded.append((f, obj))
+        itypes |= set((obj.get("interactions") or {}).keys())
+    itypes = sorted(itypes)
+    rows, seen = [], {}
+    for f, obj in loaded:
+        p = _pocket_of(f.name)
+        if p is None:
+            continue
+        k = key_cols(f"target_{p:02d}")
+        clashes = obj.get("clashes")
+        strain = obj.get("strain")
+        ints = obj.get("interactions") or {}
+        n = int(obj.get("n") or (len(clashes) if clashes is not None else 0))
+        for j in range(n):
+            i = seen.get(p, 0)
+            seen[p] = i + 1
+            seq = (order or {}).get(p) or []
+            smi = seq[i][0] if i < len(seq) else None
+            n_at = seq[i][3] if i < len(seq) else None
+            if i < len(seq) and seq[i][2]:
+                k = key_cols(f"target_{p:02d}", seq[i][2])
+            per = [ints[x][j] if x in ints and j < len(ints[x]) else 0 for x in itypes]
+            rows.append(k + [i, smi, n_at,
+                             None if clashes is None else float(clashes[j]),
+                             None if strain is None else float(strain[j]),
+                             sum(float(v) for v in per)] + [float(v) for v in per])
+    return rows, itypes
+
+
+def ours_vina_rows(folder: Path):
+    """VoxBind-Ours keeps its per-molecule Vina in its own docking JSON."""
+    f = folder / "samples" / "eval_docking_results_full79.json"
+    if not f.exists():
+        return []
+    d = json.loads(f.read_text())
+    lig = native_ligand_map(folder / "samples")
+    rows = []
+    for t in d.get("per_target") or []:
+        k = key_cols(t.get("target") or "", lig.get(t.get("target") or ""))
+        for m in t.get("per_mol") or []:
+            rows.append(k + [m.get("idx"), m.get("smiles"), m.get("n_atoms"),
+                             m.get("vina_score"), m.get("vina_min"), m.get("vina_dock")])
+    return rows
+
+
+def rigid_fragment_rows(folder: Path):
+    """One row per rigid FRAGMENT -- the metric has no per-molecule value."""
+    jf = RIGID_JSON.get(folder.name)
+    if not jf or not (T2 / jf[0]).exists():
+        return []
+    d = json.loads((T2 / jf[0]).read_text())
+    rows = []
+    for t in d.get("per_target") or []:
+        k = key_cols(t.get("target") or "")
+        for i, fr in enumerate(t.get("fragments") or []):
+            n_at, rmsd = (fr + [None, None])[:2] if isinstance(fr, list) else (None, None)
+            rows.append(k + [i, n_at, rmsd])
+    return rows
+
+
+PC_BASE = KEY_HEADER + ["mol_idx", "smiles", "n_atoms", "clashes", "strain", "n_interactions"]
+RIGID_HEADER = KEY_HEADER + ["fragment_idx", "fragment_atoms", "rmsd"]
+
+
+def emit_per_molecule(folder: Path, evals: dict, w: Writer, skipped: list):
+    """Write eval/<evaluation>/per_molecule.csv and record it in the results.json."""
+    qual = vina = []
+    pc, pb, itypes = [], [], []
+    src = {}
+
+    if folder.name in BASELINE_ROW:
+        meta = BASELINE_ROW[folder.name]
+        if HAVE_TORCH and (BASELINES_ROOT / "_eval").is_dir():
+            qual, vina, missed = baseline_chem_vina_rows(folder, meta)
+            src["sample_quality"] = src["vina_docking"] = (
+                f"{folder.name}/samples/meta/{meta}" + "{,_part2,_gap}.pt (order) + "
+                + rel(BASELINES_ROOT / "_eval" / meta) + "{,_part2,_gap}/eval_*.pt (values)")
+            if missed:
+                skipped.append(f"{folder.name}: {missed} meta molecules had no _eval record")
+        elif not HAVE_TORCH:
+            skipped.append(f"{folder.name}: chem+vina rows need torch ({TORCH_HINT})")
+        else:
+            skipped.append(f"{folder.name}: {BASELINES_ROOT}/_eval not on this box")
+        pb = baseline_pb_rows(meta, baseline_meta_order(folder, meta))
+        if pb:
+            src["posebusters"] = rel(BASELINES_ROOT / "_posebusters" / meta) + "/pb_*.json"
+        if HAVE_TORCH:
+            pc, itypes = baseline_pc_rows(folder, baseline_meta_order(folder, meta))
+            if pc:
+                src["posecheck"] = f"{folder.name}/eval/posecheck/pc_*.pt"
+        else:
+            skipped.append(f"{folder.name}: posecheck rows need torch ({TORCH_HINT})")
+    else:
+        run = load_run(folder / "samples")
+        if run:
+            pose_dir = folder / "pose_full"
+            pose_run = load_run(pose_dir) if pose_dir.is_dir() else None
+            qual, vina, pc, pb, itypes = native_tables(run, pose_run)
+            for k in ("sample_quality", "vina_docking"):
+                src[k] = rel(run["dir"]) + "/target_*/metrics.json"
+            for k in ("posecheck", "posebusters"):
+                src[k] = rel((pose_run or run)["dir"]) + "/target_*/metrics.json"
+        if not vina:
+            vina = ours_vina_rows(folder)
+            if vina:
+                src["vina_docking"] = f"{folder.name}/samples/eval_docking_results_full79.json"
+
+    tables = [
+        ("sample_quality", QUAL_HEADER, qual, "per_molecule.csv"),
+        ("vina_docking", VINA_HEADER, vina, "per_molecule.csv"),
+        ("posecheck", PC_BASE + itypes, pc, "per_molecule.csv"),
+        ("posebusters",
+         PB_HEADER_CHUNKED if (pb and len(pb[0]) == len(PB_HEADER_CHUNKED)) else PB_HEADER,
+         pb, "per_molecule.csv"),
+        ("rigid_fragment", RIGID_HEADER, rigid_fragment_rows(folder), "per_fragment.csv"),
+    ]
+    if "rigid_fragment" in evals:
+        src["rigid_fragment"] = RIGID_JSON.get(folder.name, ("(reporting box)",))[0]
+
+    # Is (target, mol_idx) actually a cross-table join key for THIS method? It is only a
+    # join key if the scorers indexed the same molecule sequence, which is a property of
+    # how the run was produced, not something to assume: the baselines needed re-keying
+    # off the meta to get there, and VoxBind-Ours' docking pass and pose pass turn out to
+    # have been run on different orderings months apart. Measure it, per method, and say so
+    # in the file -- a reader joining on a key that silently pairs the wrong molecules is
+    # exactly the failure this whole exercise is meant to prevent.
+    # Column layout is KEY_HEADER (4 cols) + mol_idx + smiles + ..., so smiles is index 5
+    # and the join key is (target, mol_idx) = (r[0], r[4]). Derived from KEY_HEADER rather
+    # than hard-coded, so adding another key column cannot silently misalign this check.
+    n_key = len(KEY_HEADER)
+    idx_mol, idx_smi = n_key, n_key + 1
+    maps = {}
+    for nm, rws in (("sample_quality", qual), ("vina_docking", vina),
+                    ("posecheck", pc), ("posebusters", pb)):
+        if rws:
+            maps[nm] = {(r[0], r[idx_mol]): r[idx_smi]
+                        for r in rws if len(r) > idx_smi and r[idx_smi]}
+    agree = {}
+    names = [n for n in maps if maps[n]]
+    for i, a in enumerate(names):
+        for b in names[i + 1:]:
+            shared = set(maps[a]) & set(maps[b])
+            if not shared:
+                continue
+            same = sum(1 for k in shared if maps[a][k] == maps[b][k])
+            agree[f"{a}~{b}"] = {"shared_keys": len(shared),
+                                 "smiles_identical": same,
+                                 "pct": r4(100 * same / len(shared), 2)}
+    join_ok = all(v["pct"] == 100.0 for v in agree.values()) if agree else None
+
+    for name, header, rows, fname in tables:
+        if not rows:
+            continue
+        n = write_table(w, folder / "eval" / name / fname, header, rows)
+        # An evaluation can have rows without an aggregate (or the reverse) -- say so in
+        # the file that owns the numbers rather than leaving a reader to discover it.
+        if name in evals:
+            evals[name]["per_molecule"] = {
+                "file": f"eval/{name}/{fname}",
+                "n_rows": n,
+                "key": "target + mol_idx (position in the generator's own output order)",
+                "source": src.get(name),
+                "cross_table_join": (
+                    None if join_ok is None else
+                    "safe: every table agrees on the SMILES at each (target, mol_idx)"
+                    if join_ok else
+                    "UNSAFE: the tables below disagree on the SMILES at the same "
+                    "(target, mol_idx) -- join on (target, smiles) instead"),
+                "cross_table_smiles_agreement": agree or None,
+            }
+        else:
+            skipped.append(f"{folder.name}/{name}: per-molecule rows written, no aggregate")
+
+
+def per_molecule_note(folder_name, evals):
+    return {k: v["per_molecule"]["n_rows"] for k, v in evals.items() if "per_molecule" in v}
 
 
 if __name__ == "__main__":

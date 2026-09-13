@@ -52,8 +52,11 @@ echo
 echo ">> consolidated evaluation JSONs in the payload:"
 n_eval=$(find "$HERE" -path '*/eval/*/results.json' -type f 2>/dev/null | wc -l)
 n_index=$(find "$HERE" -path '*/eval/index.json' -type f 2>/dev/null | wc -l)
+n_csv=$(find "$HERE" -path '*/eval/*/per_*.csv' -type f 2>/dev/null | wc -l)
+n_rows=$(find "$HERE" -path '*/eval/*/per_*.csv' -type f -exec cat {} + 2>/dev/null | wc -l)
 echo "     $n_eval  <task>/<method>/eval/<evaluation>/results.json"
 echo "     $n_index  <task>/<method>/eval/index.json"
+echo "     $n_csv  <task>/<method>/eval/<evaluation>/per_molecule.csv   ($n_rows rows incl. headers)"
 for st in "$HERE"/*/EVAL_STATUS.json; do
   [ -f "$st" ] || continue
   # Counted out of the JSON, not by grepping the table: the markdown has a second table
