@@ -18,6 +18,9 @@ results/
 ├── task3-mcp/          <method>/  samples/          metrics.json
 │                       _shared/  = cross-method analysis artifacts (not a method)
 ├── reports/            results.html · results_drug_design.html · results_mcp.html
+│                       table_drug_design.tex  ← build_table_drug_design.py (stdlib only)
+│                         reads table_drug_design_inputs/, writes the .tex + merged_baseline_protocol.json
+│                       pull just this folder:  bash results/dropbox_pull.sh --reports
 ├── docker/             Dockerfile · env.yaml · env.minimal.yaml
 ├── dropbox_push.sh · dropbox_pull.sh · dropbox_pull_baselines.sh · README.md
                                                           (all git-tracked)

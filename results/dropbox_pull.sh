@@ -12,6 +12,7 @@ RCLONE_ARGS=()
 TASK_FILTER=""
 DO_LIST=0
 DO_ALL=0
+DO_REPORTS=0
 EXCLUDES=(
   --exclude "/dropbox_push.sh"
   --exclude "/dropbox_pull.sh"
@@ -29,6 +30,9 @@ usage() {
     '--method MODEL            Same as a positional model; repeatable.' \
     '--model MODEL             Alias for --method.' \
     '--task TASK               Restrict to one task; without models, copy that task.' \
+    '-r, --reports             Download reports/ (results*.html, LaTeX tables and their' \
+    '                          build script + inputs). Alone, ONLY reports/ is copied;' \
+    '                          with MODEL/--task, those are copied as well.' \
     '-l, --list                List remote model folders without downloading.' \
     '-a, --all                 Explicitly request all models; cannot mix with MODEL.' \
     '-n, --dry-run             Preview without writing files.' \
@@ -36,6 +40,8 @@ usage() {
     '--                        Pass remaining arguments directly to rclone.' \
     '' \
     'Examples:' \
+    '  bash results/dropbox_pull.sh --reports' \
+    '  bash results/dropbox_pull.sh --reports VoxBind-Ours' \
     '  bash results/dropbox_pull.sh VoxBind-Ours' \
     '  bash results/dropbox_pull.sh VoxBind VoxBind-Ours' \
     '  bash results/dropbox_pull.sh --task task2-drugdesign --list' \
@@ -56,6 +62,7 @@ while (( $# )); do
     -h|--help) usage; exit 0 ;;
     -l|--list) DO_LIST=1; shift ;;
     -a|--all) DO_ALL=1; shift ;;
+    -r|--reports) DO_REPORTS=1; shift ;;
     -n|--dry-run) RCLONE_ARGS+=(--dry-run); shift ;;
     --method|--model|--task)
       (( $# >= 2 )) && [[ -n "$2" && "$2" != -* ]] || fail "$1 needs a value"
@@ -89,6 +96,18 @@ while IFS= read -r remote; do
   if [[ "$remote" == "dropbox:" ]]; then has_dropbox=1; fi
 done <<< "$remotes"
 (( has_dropbox )) || fail "rclone remote 'dropbox' is not configured; see notebook/html/dropbox-sync.md"
+
+# reports/ is not a model folder, so no model selector can reach it, and the no-selector
+# branch below would drag the whole ~3.8 GiB bundle along just to get a few HTML pages.
+if (( DO_REPORTS )); then
+  printf '>> downloading %s/reports/ -> %s/reports/\n' "$SRC" "$DEST"
+  rclone copy "$SRC/reports/" "$DEST/reports/" --exclude ".gitignore" \
+    --transfers 4 --checkers 8 --progress "${RCLONE_ARGS[@]}"
+  if (( ! DO_LIST && ! DO_ALL && ${#METHODS[@]} == 0 )) && [[ -z "$TASK_FILTER" ]]; then
+    printf '>> Finished (reports/ only).\n'
+    exit 0
+  fi
+fi
 
 # With no model selector, retain the full-bundle operation without a remote scan.
 if (( ! DO_LIST && ${#METHODS[@]} == 0 )); then
