@@ -453,11 +453,30 @@ def collect_native(folder: Path, out: dict):
         )
 
     # Ours' Vina lives in its own docking JSON, not in the per-target metrics.json tree.
+    # Aggregated the way the baselines' evaluate_from_meta.py rows are: Vina mean / median
+    # pooled over every molecule (the median used to be taken over the 79 per-target MEANS,
+    # which read 0.3-0.5 kcal/mol better than a molecule median), per-pocket means kept
+    # beside it. High affinity stays per pocket -- TargetDiff's compute_high_affinity takes
+    # each pocket's share of molecules with dock <= the reference, skips pockets with < 50
+    # docked molecules, then reports mean / median over pockets.
     if "vina_docking" not in out:
         dj = folder / "samples" / "eval_docking_results_full79.json"
         if dj.exists():
             d = json.loads(dj.read_text())
             s, per = d["summary"], d["per_target"]
+            mols = [m for t in per for m in t.get("per_mol") or [] if "error" not in m]
+            sets = {"n_pockets": s.get("n_targets"), "n_molecules": len(mols)}
+            for k in ("vina_score", "vina_min", "vina_dock"):
+                v = nums(m.get(k) for m in mols)
+                sets[k] = {"mean": mean(v), "median": median(v), "n": len(v)}
+            sets["per_pocket_mean"] = {k: r4(s.get(k))
+                                       for k in ("vina_score", "vina_min", "vina_dock")}
+            ha = nums(t.get("high_affinity") for t in per
+                      if sum(m.get("vina_dock") is not None
+                             for m in t.get("per_mol") or []) >= 50)
+            sets["high_affinity"] = mean(ha)
+            sets["high_affinity_median"] = median(ha)
+            sets["high_affinity_pockets"] = len(ha)
             out["vina_docking"] = envelope(
                 folder.name, label, "vina_docking",
                 source=rel(dj),
@@ -465,20 +484,14 @@ def collect_native(folder: Path, out: dict):
                 evaluated_on=OTHER_BOX,
                 protocol={"dock_receptor_scope": s.get("receptor_scope"),
                           "exhaustiveness": 32,
-                          "engine": "eval_docking (reporting box)"},
-                pocket_sets={"density79": {
-                    "n_pockets": s.get("n_targets"),
-                    "n_molecules": sum(t.get("n_valid") or 0 for t in per),
-                    "vina_score": {"mean": r4(s.get("vina_score")),
-                                   "median": median(t.get("vina_score") for t in per)},
-                    "vina_min": {"mean": r4(s.get("vina_min")),
-                                 "median": median(t.get("vina_min") for t in per)},
-                    "vina_dock": {"mean": r4(s.get("vina_dock")),
-                                  "median": median(t.get("vina_dock") for t in per)},
-                    "high_affinity": r4(s.get("high_affinity")),
-                }},
-                notes=["Means are unweighted over per-target means, the aggregation "
-                       "VoxBind-Ours/metrics.json documents; medians are over targets too.",
+                          "engine": "frozenenc_probes/run_docking_eval.py -> TargetDiff "
+                                    "VinaDockingTask (reporting box)"},
+                pocket_sets={"density79": sets},
+                notes=["Vina mean / median pool every molecule, as the baselines' "
+                       "evaluate_from_meta.py rows do; per_pocket_mean is the unweighted "
+                       "mean over per-target means that VoxBind-Ours/metrics.json documents.",
+                       "high_affinity is a per-pocket share (dock <= reference), then mean / "
+                       "median over pockets with >= 50 docked molecules, as in TargetDiff.",
                        "Cached Vina Dock scores do not imply docked coordinates -- the SDF "
                        "poses are as generated."],
             )
@@ -1053,7 +1066,7 @@ CHECKS = [
     ("Fusion-v4-cv2-scratch-ep350", "eval.pooled.dock.mean", "vina_docking.all.vina_dock.mean"),
     ("Fusion-v4-cv2-scratch-ep350", "eval.pb_valid_rate", "posebusters.all.pb_valid_rate"),
     ("Reference", "vina.density79.vina_dock_mean", "vina_docking.density79.vina_dock.mean"),
-    ("VoxBind-Ours", "summary.vina_dock", "vina_docking.density79.vina_dock.mean"),
+    ("VoxBind-Ours", "summary.vina_dock", "vina_docking.density79.per_pocket_mean.vina_dock"),
 ]
 
 
