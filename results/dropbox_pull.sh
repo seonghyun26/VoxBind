@@ -148,4 +148,22 @@ for entry in "${TARGETS[@]}"; do
   rclone copy "$SRC/$entry/" "$DEST/$entry/" \
     --exclude ".gitignore" --transfers 4 --checkers 8 --progress "${RCLONE_ARGS[@]}"
 done
+
+# EVAL_STATUS.{md,json} sit at the TASK level, not inside any model folder, so a
+# per-model pull would never bring them -- and they are the index that says which
+# evaluations each model actually has and which runs were never evaluated at all.
+# ~13 KB, so it rides along with any selective pull rather than being a flag.
+STATUS_TASKS=()
+for entry in "${TARGETS[@]}"; do
+  t="${entry%%/*}"
+  seen=0
+  for u in "${STATUS_TASKS[@]}"; do [[ "$u" != "$t" ]] || seen=1; done
+  (( seen )) || STATUS_TASKS+=("$t")
+done
+for t in "${STATUS_TASKS[@]}"; do
+  rclone copy "$SRC/$t/" "$DEST/$t/" \
+    --filter "+ /EVAL_STATUS.*" --filter "- **" \
+    --transfers 2 --checkers 4 "${RCLONE_ARGS[@]}" 2>/dev/null \
+    && printf '>> %s/EVAL_STATUS.{md,json}\n' "$t"
+done
 printf '>> Finished. Existing unrelated models were not changed.\n'

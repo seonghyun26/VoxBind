@@ -4,9 +4,14 @@
 # which pulls the whole 3.8 GiB bundle.
 #
 # Per method it takes:   samples/**  +  metrics.json  +  SOURCE.txt
+#                        +  eval/index.json, eval/*/results.json, eval/*/per_*.csv
+#   -- the consolidated evaluation: the aggregate per (method, evaluation) and one row
+#   per generated ligand carrying its pocket, SMILES, Vina, PoseCheck and PoseBusters.
+#   A few MB, and the numbers everything downstream reads.
 # and deliberately skips: run/ (cfg + hydra + train logs), representations/
-#   (task1 cached features), eval/ (per-pocket vina/posecheck/posebusters --
-#   add it with --with-eval) and -- unless --with-raw -- the raw generator dumps
+#   (task1 cached features), the RAW per-pocket eval caches under eval/ (the
+#   posecheck *.pt chunks -- add them with --with-eval) and -- unless --with-raw --
+#   the raw generator dumps
 #   under samples/outputs_*/. That last one is the whole point: DecompDiff is
 #   3.47 GiB of outputs_* against 12.7 MiB of samples/meta/*.pt, and the .pt is
 #   what every downstream analysis actually reads.
@@ -24,7 +29,7 @@
 #   bash results/dropbox_pull_baselines.sh                   # the 5 CrossDocked baselines
 #   bash results/dropbox_pull_baselines.sh AR DiffSBDD GET   # any number of methods
 #   bash results/dropbox_pull_baselines.sh -l                # what does the remote have?
-#   bash results/dropbox_pull_baselines.sh --with-eval       # samples + per-pocket eval
+#   bash results/dropbox_pull_baselines.sh --with-eval       # + the raw per-pocket .pt eval
 #   bash results/dropbox_pull_baselines.sh -n DecompDiff     # dry run
 #   bash results/dropbox_pull_baselines.sh -a --task task3-mcp
 #
@@ -32,8 +37,9 @@
 #   -l, --list          list every method on the remote, grouped by task, then exit
 #   -a, --all           every method of --task (of all tasks when --task is unset)
 #   -n, --dry-run       preview the transfer, write nothing
-#       --with-eval     also take eval/ -- the per-pocket vina / posecheck /
-#                       posebusters results behind each method's metrics.json
+#       --with-eval     also take the RAW per-pocket eval caches (eval/posecheck/*.pt
+#                       and friends). The consolidated results.json / per_molecule.csv
+#                       always come down -- this flag is only for the scratch files
 #       --with-raw      also take samples/outputs_*/  (DecompDiff: +3.45 GiB)
 #       --with-shared   also take each touched task's _shared/ aggregates
 #       --task <name>   restrict resolution to one task (task1-affinity |
@@ -140,6 +146,15 @@ fi
 #  outputs_*/ exclusion lose to the samples/** inclusion -- rclone warns about
 #  exactly this. --filter rules are applied strictly in the order given.)
 FILTERS=( --filter "+ /metrics.json" --filter "+ /SOURCE.txt" )
+# The CONSOLIDATED eval results are always taken. They are the smallest thing in the
+# bundle (a few MB per method: results.json + per_molecule.csv, one row per generated
+# ligand with its pocket, SMILES, Vina, PoseCheck and PoseBusters) and they are the reason
+# most people pull a baseline at all. They used to sit behind --with-eval, which also
+# drags down the raw per-pocket .pt caches -- so asking for "the numbers" cost you the
+# scratch files too, and not asking got you neither. Split: numbers always, raw on request.
+FILTERS+=( --filter "+ /eval/index.json"
+           --filter "+ /eval/*/results.json"
+           --filter "+ /eval/*/per_*.csv" )
 [[ "$WITH_RAW"  -eq 1 ]] || FILTERS+=( --filter "- /samples/outputs_*/**" )
 [[ "$WITH_EVAL" -ne 1 ]] || FILTERS+=( --filter "+ /eval/**" )
 FILTERS+=( --filter "+ /samples/**" --filter "- **" )
@@ -149,7 +164,7 @@ human() { awk -v b="$1" 'BEGIN{ split("B KiB MiB GiB TiB",u," "); i=1;
 
 echo ">> source  : $BASE"
 echo ">> dest    : $DEST"
-echo ">> filter  : samples/** + metrics.json + SOURCE.txt$([[ "$WITH_EVAL" -eq 1 ]] && echo " + eval/**")$([[ "$WITH_RAW" -eq 1 ]] && echo "  (INCLUDING raw samples/outputs_*/)" || echo "  (raw samples/outputs_*/ skipped)")"
+echo ">> filter  : samples/** + metrics.json + SOURCE.txt + eval/{index.json,*/results.json,*/per_*.csv}$([[ "$WITH_EVAL" -eq 1 ]] && echo " + raw eval/** (per-pocket .pt caches)")$([[ "$WITH_RAW" -eq 1 ]] && echo "  (INCLUDING raw samples/outputs_*/)" || echo "  (raw samples/outputs_*/ skipped)")"
 echo ">> methods : ${#TARGETS[@]}"
 echo
 
