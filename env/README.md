@@ -63,7 +63,7 @@ $ENV/bin/pip install --no-deps posecheck==1.3.1
 $ENV/bin/pip install -e .
 ```
 
-Roughly 12 GB and ~226 pip packages, against 7.1 GB / 117 for the VoxBind side alone.
+Roughly 7.8 GB and ~225 pip packages, against 7.1 GB / 117 for the VoxBind side alone.
 
 - **Docking here is 1.2.7 and must not be used.** Python 3.12 cannot have vina 1.2.2 by
   any route — no wheel past cp39, the PyPI sdist fails to build (`Could not find version
@@ -81,15 +81,17 @@ Roughly 12 GB and ~226 pip packages, against 7.1 GB / 117 for the VoxBind side a
   sampling calls it at runtime (`save_sdf_pdb` → `extract_sequences_from_pdb`), so it
   cannot be skipped. The compiler comes from the conda layer (`c-compiler`); this box has
   no system `cc`.
-- **pyrosetta comes from the conda layer, not pip.** FuncBind's pyproject points at
-  `graylab.jhu.edu`, which is unreachable from this box; `https://conda.graylab.jhu.edu`
-  is reachable and carries py312 builds (2026.34, ~2 GB download / 3.5 GB installed).
-  FuncBind's own env has 2024.39, so the builds differ — fine for imports, not for
-  comparing Rosetta numbers. **Commercial use requires a license** (the import says so).
-- **numpy is conda-owned here.** Installing pyrosetta drags in a conda numpy; left alone it
-  replaced the pip numpy 2.4.6 with 2.5.3 *while pip's metadata still read 2.4.6*. numpy is
-  therefore pinned in the conda lock and kept out of the pip lock. Do not `pip install
-  numpy` into this env.
+- **PyRosetta is not installed here, on purpose.** FuncBind reaches it only through
+  `metrics_ab` → `utils_rosetta.interface_energy` — the antibody metrics — and that import
+  is lazy since 2026-09-14, so MCP and CrossDocked work never touches it. Leaving it out
+  saves 4.2 GB and keeps a licence-gated package out of shared images. For antibody runs:
+  `mamba install -p $HOME/.conda/envs/voxel-bind -c https://conda.graylab.jhu.edu pyrosetta`
+  — that channel is reachable and carries py312 builds, while the wheel host in FuncBind's
+  pyproject (`graylab.jhu.edu`) is not. **Commercial use requires a licence.**
+- **numpy is conda-owned here.** A conda numpy arrived once as a dependency and replaced the
+  pip numpy 2.4.6 with 2.5.3 *while pip's metadata still read 2.4.6* — a mismatch
+  `importlib.metadata` cannot see. numpy is therefore pinned in the conda lock and kept out
+  of the pip lock, so exactly one tool owns it. Do not `pip install numpy` into this env.
 - **`mamba run -n voxel-bind` does not work here, `conda run -n` does.** mamba 2.x resolves
   a name only against `$MAMBA_ROOT_PREFIX/envs` (= `/opt/conda/envs`), so an env under
   `$HOME/.conda/envs` is nameless to it. Prefer the absolute interpreter,

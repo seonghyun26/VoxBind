@@ -21,9 +21,18 @@
 #
 #   docker run --rm -it --gpus all --shm-size=32g \
 #     -v /path/to/funcbind-data:/workspace/FuncBind/funcbind/dataset/data \
-#     -v /path/to/funcbind-exps:/workspace/FuncBind/funcbind/exps \
+#     -v /path/to/funcbind-exps:/workspace/FuncBind/exps \
 #     -v /path/to/voxbind-model-zoo:/workspace/VoxBind/voxbind/model_zoo \
 #     voxbind-funcbind:sb
+#
+# The exps mount is /workspace/FuncBind/exps, NOT .../funcbind/exps: `exp_dir` in the
+# training configs is `exps/funcbind` relative to the working directory, so runs land in
+# /workspace/FuncBind/exps/funcbind/<exp_name>. FUNCBIND_EXP_DIR (set below) overrides it
+# if you would rather mount somewhere else. Either way the two must agree, or a run writes
+# its checkpoints into the container layer and resume silently starts from scratch.
+#
+# FuncBind/scripts/00_link_or_fetch_paths.sh links or fetches both trees at runtime:
+#   FB_SRC_ROOT=/mnt/staged bash scripts/00_link_or_fetch_paths.sh
 
 ARG VOXBIND_BASE=voxbind:allinone
 FROM ${VOXBIND_BASE}
@@ -34,8 +43,15 @@ ENV ENV_NAME=funcbind
 # Create FuncBind's independent environment. ANARCI is installed through
 # bioconda as prescribed by FuncBind; the remaining dependencies come from the
 # repository's pinned requirements file.
+# cxx-compiler is not optional: the training config asks for torch.compile
+# (performance.compile_backend: inductor), and without a C++ compiler inductor raises
+# InvalidCxxCompiler and the run DIES -- it does not fall back to eager. The team measured
+# compiled at 1.20x eager on the 5.14B denoiser (16.42 vs 13.66 samples/s), so this is both
+# a correctness and a throughput fix. FuncBind's scripts/lib/dynamo_env.sh only exports
+# CC/CXX when it finds a .repro-env checkout, which does not exist in this image, so the
+# ENV below is what points inductor at the toolchain.
 RUN micromamba create -y -n funcbind -c conda-forge -c bioconda \
-        python=3.12.9 anarci pip \
+        python=3.12.9 anarci pip cxx-compiler \
  && micromamba clean --all --yes
 
 # Install the large, stable dependency layer before copying source. The first
@@ -59,8 +75,17 @@ COPY --chown=$MAMBA_USER:$MAMBA_USER FuncBind/ /workspace/FuncBind/
 WORKDIR /workspace/FuncBind
 RUN micromamba run -n funcbind python -m pip install --no-cache-dir --no-deps -e .
 
+# FUNCBIND_ROOT / VOXBIND_PYTHON_ROOT / FUNCBIND_EXP_DIR are read by FuncBind's configs
+# themselves (`${oc.env:VAR,<host default>}`), so the absolute /home1/irteam paths the
+# configs carry for the origin box resolve to this image's layout with no config edits.
+# CC/CXX point inductor at the env's toolchain (see the cxx-compiler note above).
 ENV FUNCBIND_ROOT=/workspace/FuncBind \
     VOXBIND_ROOT=/workspace/VoxBind \
+    VOXBIND_PYTHON_ROOT=/workspace/VoxBind \
+    FUNCBIND_EXP_DIR=/workspace/FuncBind/exps/funcbind \
+    CC=/opt/conda/envs/funcbind/bin/x86_64-conda-linux-gnu-gcc \
+    CXX=/opt/conda/envs/funcbind/bin/x86_64-conda-linux-gnu-g++ \
+    PY=/opt/conda/envs/funcbind/bin/python \
     PYTHON_BIN=/opt/conda/envs/funcbind/bin/python \
     PYTHONPATH=/workspace/FuncBind \
     PYTHONUNBUFFERED=1 \

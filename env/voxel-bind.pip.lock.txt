@@ -8,7 +8,8 @@
 # This is the VoxBind runtime as it runs on the H200 box (python 3.12, torch 2.5.1 +
 # cu124 wheels, numpy 2.4.6 from conda, rdkit 2025.3.6) PLUS everything FuncBind
 # imports: lightning 2.5.5, einops, biopandas, cpdb-protein, and the eight modules
-# `import funcbind.train_fb` pulls at module scope (pyrosetta is in the conda layer).
+# `import funcbind.train_fb` pulls at module scope. PyRosetta is NOT among them any more:
+# its only consumer is the antibody metrics, imported lazily since 2026-09-14.
 # It is NOT the paper env -- that one is voxbind.conda-lock.yml (py3.10, cu118).
 #
 # CC is load-bearing: cpdb-protein is source-only on PyPI (no wheel) and its

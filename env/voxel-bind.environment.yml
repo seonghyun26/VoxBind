@@ -18,14 +18,15 @@
 name: voxel-bind
 channels:
   - conda-forge
-  - https://conda.graylab.jhu.edu   # pyrosetta (py312 builds; graylab.jhu.edu itself is unreachable here)
 dependencies:
   - python=3.12
-  - numpy=2.4.6         # conda-owned; pyrosetta drags a conda numpy in, so pin it and keep pip out of it
+  - numpy=2.4.6         # conda-owned deliberately: a conda numpy once shadowed the pip one, so pin it here and keep it out of the pip lock
   - openbabel=3.1.1
   - c-compiler          # cpdb-protein is source-only; this box has no system cc
   - ipykernel           # notebook/probe work runs in this env
-  - pyrosetta           # 2026.34 py312, ~3.5 GB. COMMERCIAL USE NEEDS A LICENSE.
+  # PyRosetta is NOT here: only the antibody metrics reach it (metrics_ab ->
+  # utils_rosetta.interface_energy) and that import is lazy, so MCP/CrossDocked runs do not
+  # need it. For antibody work: -c https://conda.graylab.jhu.edu pyrosetta (~3.5 GB, licence).
   - pip
   - pip:
       # --- VoxBind runtime (heavy stack is pip here, matching the live env) ---

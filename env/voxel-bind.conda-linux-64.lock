@@ -11,14 +11,17 @@
 # openbabel, the jupyter kernel, the conda-forge gcc toolchain that builds
 # cpdb-protein (this box has no system compiler), and two things FuncBind needs:
 #
-#   pyrosetta 2026.34 (py312)  from https://conda.graylab.jhu.edu -- ~2 GB download,
-#     3.5 GB installed. The wheel URL in FuncBind's pyproject (graylab.jhu.edu) is
-#     NOT reachable from this box; the conda channel is, and it carries py312 builds.
-#     COMMERCIAL USE REQUIRES A LICENSE (the import prints the notice).
-#   numpy 2.4.6 + openblas  conda-owned ON PURPOSE. Installing pyrosetta pulls a
-#     conda numpy; left alone it silently replaced the pip numpy 2.4.6 with 2.5.3
-#     while pip's metadata still said 2.4.6. numpy is pinned here and kept OUT of
-#     the pip lock so one tool owns it. Do not `pip install numpy` into this env.
+#   numpy 2.4.6 + openblas  conda-owned ON PURPOSE. A conda numpy arrived here once as a
+#     dependency and silently replaced the pip numpy 2.4.6 with 2.5.3 while pip's metadata
+#     still read 2.4.6. numpy is therefore pinned in this file and kept OUT of the pip lock
+#     so exactly one tool owns it. Do not `pip install numpy` into this env.
+#
+# PyRosetta is deliberately ABSENT (removed 2026-09-14, -4.2 GB). FuncBind reaches it only
+# through metrics_ab -> utils_rosetta.interface_energy, i.e. the antibody metrics, and that
+# import is lazy now, so MCP/CrossDocked work never touches it. For antibody runs add it back:
+#   mamba install -p $HOME/.conda/envs/voxel-bind -c https://conda.graylab.jhu.edu pyrosetta
+# (py312 builds exist there; the wheel host graylab.jhu.edu is unreachable from this box.
+#  COMMERCIAL USE REQUIRES A LICENCE.)
 # platform: linux-64
 # created-by: conda 25.1.1
 @EXPLICIT
@@ -37,7 +40,6 @@ https://conda.anaconda.org/conda-forge/noarch/tzdata-2025c-hc9c84f9_1.conda#ad65
 https://conda.anaconda.org/conda-forge/linux-64/_openmp_mutex-4.5-20_gnu.conda#a9f577daf3de00bca7c3c76c0ecbd1de
 https://conda.anaconda.org/conda-forge/noarch/fonts-conda-forge-1-hc364b38_1.conda#a7970cd949a077b7cb9696379d338681
 https://conda.anaconda.org/conda-forge/noarch/sysroot_linux-64-2.34-h087de78_3.conda#b04e3a97151611d6a35c8c068b2a03a2
-https://conda.anaconda.org/conda-forge/linux-64/zlib-1.3.2-h25fd6f3_2.conda#c2a01a08fc991620a74b32420e97868a
 https://conda.anaconda.org/conda-forge/linux-64/zstd-1.5.7-hb78ec9c_6.conda#4a13eeac0b5c8e5b8ab496e6c4ddd829
 https://conda.anaconda.org/conda-forge/noarch/fonts-conda-ecosystem-1-0.tar.bz2#fee5683a3f04bd15cbd8318b096a27ab
 https://conda.anaconda.org/conda-forge/linux-64/ld_impl_linux-64-2.45.1-default_hbd61a6d_102.conda#18335a698559cdbcd86150a48bf54ba6
@@ -130,7 +132,6 @@ https://conda.anaconda.org/conda-forge/noarch/ipython-9.17.0-pyh53cf698_0.conda#
 https://conda.anaconda.org/conda-forge/linux-64/numpy-2.4.6-py312h33ff503_0.conda#6e31d55ee1110fda83b4f4045f4d73ff
 https://conda.anaconda.org/conda-forge/linux-64/openbabel-3.1.1-py312hbfe4552_9.conda#ee90095bf561ca94b55283643200bd9b
 https://conda.anaconda.org/conda-forge/noarch/pip-26.1.2-pyh8b19718_0.conda#511fbc2c63d2c73650ad1755e4d357ba
-https://conda.graylab.jhu.edu/linux-64/pyrosetta-2026.34+release.de92a3c0de-py312_0.conda#eeea6a267a71f177f82682e78d121fc5
 https://conda.anaconda.org/conda-forge/linux-64/pyzmq-27.2.0-py312h8a5ba0d_0.conda#ceffbc006d87e8f81e750cebd63fd8c4
 https://conda.anaconda.org/conda-forge/noarch/jupyter_client-8.10.0-pyhcf101f3_0.conda#85130259a26c023f53108dc9ab1cfb44
 https://conda.anaconda.org/conda-forge/noarch/ipykernel-7.3.0-pyha191276_0.conda#2b47a10e4d98334f8171ff60aea05ff3
