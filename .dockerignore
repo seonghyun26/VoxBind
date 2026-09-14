@@ -25,6 +25,10 @@ __pycache__/
 .venv/
 venv/
 .env
+FuncBind/.git
+FuncBind/.venv/
+FuncBind/venv/
+FuncBind/funcbind/.runtime/
 
 # --- Heavy data / weights / experiment outputs (correct NESTED paths) ---
 voxbind/dataset/data/
@@ -34,6 +38,11 @@ voxbind/logs/
 voxbind/wandb/
 voxbind/model_zoo/
 voxbind/notebook/
+FuncBind/funcbind/dataset/data/
+FuncBind/funcbind/exps/
+FuncBind/funcbind/logs/
+FuncBind/funcbind/results/
+FuncBind/logs/
 notebook/
 results/
 base/
@@ -60,3 +69,5 @@ multinodetraining.pdf
 
 # --- one-offs ---
 sync_to_svr7.sh
+FuncBind/funcbind/sample_combined.pdb
+FuncBind/funcbind/seed_combined.pdb

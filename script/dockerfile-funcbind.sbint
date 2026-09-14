@@ -1,0 +1,69 @@
+# syntax=docker/dockerfile:1.6
+#
+# FuncBind + VoxBind CDG image for the SBintuitions cluster.
+#
+# This image extends the already-built VoxBind SB image. It keeps VoxBind's
+# three environments intact and adds a separate `funcbind` environment because
+# FuncBind's Python/Torch/CUDA dependency set is not compatible with the
+# VoxBind environment.
+#
+# The FuncBind source is the `FuncBind` submodule of this repository. Build from
+# the VoxBind repository root after initializing submodules:
+#
+#   git submodule update --init --recursive FuncBind
+#   docker build --network=host \
+#     -f script/dockerfile-funcbind.sbint \
+#     --build-arg VOXBIND_BASE=voxbind:allinone \
+#     -t voxbind-funcbind:sb .
+#
+# Data and checkpoints are intentionally not baked into the image. Mount them
+# at runtime, for example:
+#
+#   docker run --rm -it --gpus all --shm-size=32g \
+#     -v /path/to/funcbind-data:/workspace/FuncBind/funcbind/dataset/data \
+#     -v /path/to/funcbind-exps:/workspace/FuncBind/funcbind/exps \
+#     -v /path/to/voxbind-model-zoo:/workspace/VoxBind/voxbind/model_zoo \
+#     voxbind-funcbind:sb
+
+ARG VOXBIND_BASE=voxbind:allinone
+FROM ${VOXBIND_BASE}
+
+# The micromamba entrypoint activates this environment for interactive runs.
+ENV ENV_NAME=funcbind
+
+# Create FuncBind's independent environment. ANARCI is installed through
+# bioconda as prescribed by FuncBind; the remaining dependencies come from the
+# repository's pinned requirements file.
+RUN micromamba create -y -n funcbind -c conda-forge -c bioconda \
+        python=3.12.9 anarci pip \
+ && micromamba clean --all --yes
+
+# Install the large, stable dependency layer before copying source. The first
+# line in requirements.txt is `-e .`; remove only that line here and install the
+# project itself after COPY below.
+COPY --chown=$MAMBA_USER:$MAMBA_USER FuncBind/requirements.txt /tmp/funcbind.requirements.txt
+RUN sed '/^-e[[:space:]]\+\.$/d' /tmp/funcbind.requirements.txt > /tmp/funcbind.dependencies.txt \
+ && micromamba run -n funcbind python -m pip install --no-cache-dir \
+        -r /tmp/funcbind.dependencies.txt \
+ && micromamba clean --all --yes \
+ && rm -f /tmp/funcbind.requirements.txt /tmp/funcbind.dependencies.txt
+
+# /workspace was created by the parent image and is root-owned. Prepare a
+# writable project directory before COPY and editable installation.
+USER root
+RUN mkdir -p /workspace/FuncBind \
+ && chown -R $MAMBA_USER:$MAMBA_USER /workspace/FuncBind
+USER $MAMBA_USER
+
+COPY --chown=$MAMBA_USER:$MAMBA_USER FuncBind/ /workspace/FuncBind/
+WORKDIR /workspace/FuncBind
+RUN micromamba run -n funcbind python -m pip install --no-cache-dir --no-deps -e .
+
+ENV FUNCBIND_ROOT=/workspace/FuncBind \
+    VOXBIND_ROOT=/workspace/VoxBind \
+    PYTHON_BIN=/opt/conda/envs/funcbind/bin/python \
+    PYTHONPATH=/workspace/FuncBind \
+    PYTHONUNBUFFERED=1 \
+    MPLBACKEND=Agg
+
+CMD ["bash"]

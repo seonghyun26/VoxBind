@@ -10,3 +10,7 @@
 [submodule "base/ipdiff"]
 	path = base/ipdiff
 	url = https://github.com/YangLing0818/IPDiff
+[submodule "FuncBind"]
+	path = FuncBind
+	url = https://github.com/seonghyun26/funcbind.git
+	branch = main
