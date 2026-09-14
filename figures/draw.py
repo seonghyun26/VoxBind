@@ -147,9 +147,9 @@ STEMS = {
     "strain_per_atom_mean_core": "per-atom-mean-core",
     "strain_per_atom_median_all": "per-atom-median-all",
     "strain_per_atom_median_core": "per-atom-median-core",
-    "clash_per_atom_mean_all": "clash-per-atom-mean-all",
+    # No `_all` stems: the clash per-atom figure is core-only (2026-09-14), and the whole
+    # field is clash_per_atom_all_methods_*.
     "clash_per_atom_mean_core": "clash-per-atom-mean-core",
-    "clash_per_atom_median_all": "clash-per-atom-median-all",
     "clash_per_atom_median_core": "clash-per-atom-median-core",
     "posecheck_per_atom": "per-atom",
     # the by-size set: the bin is the variant, so it reads as one family in a listing
@@ -198,10 +198,11 @@ STEMS = {
     # fig-posecheck, interaction fingerprints (ProLIF, via PoseCheck)
     "interaction_contacts_all": "interaction-contacts-all",
     "interaction_contacts_core": "interaction-contacts-core",
+    "interaction_contacts_pair_core": "interaction-contacts-pair-core",
     "interaction_hbonds_all": "interaction-hbonds-all",
     "interaction_hbonds_core": "interaction-hbonds-core",
-    "interaction_pair_contacts_core": "interaction-pair-contacts-core",
-    "interaction_pair_hbonds_core": "interaction-pair-hbonds-core",
+    "interaction_hbonds_pair_core": "interaction-hbonds-pair-core",
+    "interaction_legend": "interaction-legend",
     "interactions": "interactions",
     "interactions_pair": "interactions-pair",
     # fig-molweight
@@ -254,7 +255,7 @@ COLORS = {
     "Pocket2Mol":       "#E87BA4",   # pink
     "DiffSBDD":         "#E34948",   # red
     "DecompDiff":       "#3CB44B",   # green
-    "FuncBind":         "#A9744F",   # brown
+    "FuncBind":         "#9A8430",   # olive — the saturated step of SOFT's #C6B46A
     "TargetDiff":       "#B58FDB",   # violet
     "VoxBind":          "#F5B27E",   # sand
     "CoDE":             "#4363D8",   # blue — ours (LaTeX: \textsc{CoDE})
@@ -262,8 +263,17 @@ COLORS = {
 }
 
 # The MCP fine-tune arms are not four independent methods -- they are one model at four
-# amounts of receptor-ED fine-tuning -- so they take an ordinal ramp off the FuncBind brown
-# (they ARE FuncBind), darkening with training, rather than four categorical hues.
+# amounts of receptor-ED fine-tuning -- so they take an ordinal ramp darkening with training
+# rather than four categorical hues.
+#
+# THE RAMP NO LONGER STARTS AT FuncBind'S OWN COLOUR (2026-09-14). It used to: both were the
+# brown #A9744F, and the ramp read as "this IS FuncBind, trained further". FuncBind the
+# METHOD has since moved to olive so that COLORS and SOFT agree on its hue family -- the two
+# tables disagreed, and the eight-method figures draw through soft() while the interaction
+# family draws through color(), so the same method came out olive in one and brown in the
+# other. The ramp is left brown because it belongs to the macrocycle section, which is not
+# part of that set and was not re-coloured with it. If those figures should track FuncBind
+# again, re-base this ramp on #9A8430.
 MCP_RAMP = {
     "FuncBind vanilla":   "#A9744F",
     "FuncBind ft 3.17M":  "#86593A",
@@ -317,7 +327,29 @@ def display(label):
 #         eight-method strain figures, where the full #4363D8 was the one saturated hue.
 #   PALE  two steps lighter -- VoxBind sigma=1.0's tint in the similarity figure, and the two
 #         ends of the strain-grid colormap.
-SOFT = {"CoDE": "#8291E8"}
+# The eight-method figures draw EVERY series through soft(), so the five published baselines
+# now have tints of their own (2026-09-14): at full saturation they sat badly beside CoDE's and
+# VoxBind's tints and TargetDiff's violet, which are already pale. Each keeps its hue family --
+# teal, pink, red, green, brown -- so a method is the same colour across the paper, lifted to
+# the tints' lightness. COLORS still holds the saturated originals, which the three-arm, Vina
+# and PoseBusters figures draw; only soft() sees these.
+SOFT = {
+    "CoDE":       "#8291E8",
+    "AR":         "#7FC4D1",   # was #17A2B8 teal-cyan
+    "Pocket2Mol": "#F0A6C0",   # was #E87BA4 pink
+    "DiffSBDD":   "#EE9190",   # was #E34948 red
+    "DecompDiff": "#8DCB92",   # was #3CB44B green
+    # FuncBind LEAVES ITS HUE FAMILY here (2026-09-14), the one tint that does: as a tan it was
+    # the same warm family as VoxBind's sand and the two could only be told apart by weight.
+    # Olive-gold is the one family none of the other eight occupy -- teal, pink, coral, green,
+    # violet, sand, periwinkle, grey. COLORS keeps the brown, which is what the MCP fine-tune
+    # ramp darkens off, so FuncBind is brown in the macrocycle figures and olive in these.
+    # COLORS now carries the saturated olive #9A8430, so this is an ordinary lighter step of
+    # its own hue like every other entry here -- not a hue change of its own. It used to be
+    # the one tint that left its family, which put FuncBind in two colours depending on
+    # which table a figure read.
+    "FuncBind":   "#C6B46A",   # was #A9744F brown, then #C4A083 tan
+}
 PALE = {"CoDE": "#B4BEF0", "VoxBind": "#F8D3B0"}
 
 
@@ -342,6 +374,47 @@ INK, GRID, AXIS = "#514F52", "#c2c6cd", "#514F52"
 LEGEND_EDGE = "#b6bbc3"
 SOLID, DASH = (0, ()), (0, (4, 2.6))
 DOT = (0, (1, 2.6))
+
+# ── the dash a method is drawn with, everywhere it is drawn ──────────────────────
+# THE SECOND IDENTITY CHANNEL, and like the palette it is decided HERE and nowhere else.
+# Nine series on one axis cannot be told apart by hue alone, so every eight-method figure
+# carries dash as well -- and it only works if a method's dash is the same in all of them.
+# It was not. Two tables had drifted out of step: the ECDF family's (in PCSZ_BASELINES /
+# PCSZ_LOCAL) and the rotatable-bond family's (RB_BASE_DASH), and the rotatable-bond one was
+# shifted by a whole method -- its Pocket2Mol carried the ECDF's DiffSBDD pattern, its
+# DiffSBDD the ECDF's DecompDiff, and so on down the list. Worse, the standalone key
+# (fig-posecheck-strain-legend) read the rotatable-bond table while the ECDF drew the other,
+# so the legend was decoding the panel wrongly.
+#
+# AR AND POCKET2MOL USED TO SHARE (5, 2) in the ECDF, which left them separable by hue only
+# -- exactly what the dash channel exists to prevent. Pocket2Mol takes the pattern that was
+# spare, so all five baselines are now distinct.
+#
+# SOLID MEANS OURS. TargetDiff is dashed even though we run it locally: the rotatable-bond
+# family gave it a solid line because its helper keyed on provenance (RB_LOCAL_LABELS, "we
+# ran this") rather than on authorship, and solid reads as ours in every other figure.
+METHOD_DASH = {
+    "Reference ligand": SOLID,          # solid since 2026-09-14, as the ECDF draws it
+    "AR":               (0, (5, 2)),
+    "Pocket2Mol":       (0, (3, 1.4, 1, 1.4)),
+    "DiffSBDD":         (0, (1, 1.6)),
+    "DecompDiff":       (0, (6, 2, 1, 2)),
+    "FuncBind":         (0, (9, 3)),
+    "TargetDiff":       (0, (6, 2)),
+    "VoxBind":          SOLID,
+    "CoDE":             SOLID,
+}
+
+
+def dash(label):
+    """The dash pattern for `label`, through the alias table.
+
+    Raises rather than defaulting to solid: a method missing here is a rename to fix, and a
+    silent solid would hand it the channel that means ours."""
+    key = ALIASES.get(label, label)
+    if key not in METHOD_DASH:
+        raise KeyError(f"no dash for {label!r} (known: {', '.join(sorted(METHOD_DASH))})")
+    return METHOD_DASH[key]
 MODEL_LW, REF_LW = 2.35, 1.5
 AXIS_LW, GRID_LW = 1.35, 1.1
 DIST_LW, DIST_FILL = 1.7, 0.16
@@ -411,10 +484,13 @@ def legend(target, handles, loc="upper right", ncol=1, fontsize=12.5, **kw):
     return leg
 
 
-def arm_handles(arms, include_ref=True):
+def arm_handles(arms, include_ref=True, paint=None):
+    """`paint` maps a method to its colour: color() by default, soft() for the families
+    drawn in the tints."""
+    paint = paint or color
     h = [Line2D([], [], color=color(REF_LABEL), lw=REF_LW, ls=DASH, label=REF_LABEL)] \
         if include_ref else []
-    return h + [Line2D([], [], color=color(lab), lw=MODEL_LW, ls="-", label=display(lab))
+    return h + [Line2D([], [], color=paint(lab), lw=MODEL_LW, ls="-", label=display(lab))
                 for lab, _, _ in arms]
 
 
@@ -657,14 +733,14 @@ def rolled(values, xs):
     return [st.mean([values[index[n]] for n in xs if abs(n - a) <= REF_WIN]) for a in xs]
 
 
-def size_distribution(ax, xs, per_arm, ref_per, arms):
+def size_distribution(ax, xs, per_arm, ref_per, arms, paint=None):
     """Where each set puts its molecules, as a share of its own -- which is what makes the
     panel above it trustworthy, and is itself a finding, since the arms differ in the sizes
     they generate as much as in per-size pose quality. It counts the SAME molecules the
-    panel above plots."""
+    panel above plots. `paint` as in arm_handles."""
     for lab, key, _ in arms:
         pct, _ = share(per_arm[key], xs)
-        col = color(lab)
+        col = (paint or color)(lab)
         ax.step(xs, pct, where="mid", color=col, lw=DIST_LW, zorder=3)
         ax.fill_between(xs, pct, step="mid", color=col, alpha=DIST_FILL, lw=0, zorder=2)
     raw, _ = share(ref_per, xs)
@@ -2054,8 +2130,15 @@ IX_FIXED_FORMATTER = matplotlib.ticker.FixedFormatter
 IX_TYPES = [
     ("VdWContact",  "van der Waals contacts",         "violin"),
     ("Hydrophobic", "Hydrophobic contacts",           "violin"),
-    ("HBAcceptor",  "H-bonds accepted by the ligand", "boxen"),
-    ("HBDonor",     "H-bonds donated by the ligand",  "boxen"),
+    # SHORT NAMES (2026-09-14). "H-bonds accepted by the ligand" did not survive the axis
+    # name going to the ECDF's 16.1 pt: this family draws to a FIXED frame at dpi 220 with no
+    # crop to the ink, so the tail of a long name falls off the canvas rather than pushing it
+    # wider -- the rendered panels read "...by the liga" and "...by the ligar". The contacts
+    # names were short enough to survive, which is why only these two were cut.
+    # ONLY THE DISPLAY NAME CHANGES. The keys still drive IX_KINDS, the summary table and the
+    # `type` column of interactions.csv, so nothing downstream moves.
+    ("HBAcceptor",  "H-bonds acceptor",               "boxen"),
+    ("HBDonor",     "H-bonds donor",                  "boxen"),
 ]
 IX_TOTAL = "All interactions"
 IX_KINDS = [k for k, _, _ in IX_TYPES] + [IX_TOTAL]
@@ -2078,7 +2161,22 @@ IX_PARTS = [
 # ALIASES already resolves that spelling so neither the colour nor the drug-design row order
 # depends on it. IT RENDERS LITERALLY in the PNG and the PDF; the SVG keeps live text
 # (svg.fonttype: none) and is the copy that is typeset.
-IX_DISPLAY = {REF_LABEL: "Reference", "Ours": r"\textsc{CoDE}", "CoDE": r"\textsc{CoDE}"}
+# Only the crystal ligands get a name of this family's own; everything else goes through the
+# shared display(), so a method is spelled here exactly as the ECDF and the clash box spell
+# it. The entries that used to live here were r"\textsc{CoDE}" -- LaTeX that nothing in this
+# pipeline renders, so the legend printed the six characters \textsc literally. It was
+# invisible while the names lived only in a legend nobody re-read; it would have gone
+# straight onto the x axis the moment the names moved there.
+IX_DISPLAY = {REF_LABEL: "Reference"}
+# The method names on the x axis. Smaller than the ECDF's axis-name size: eight of them share
+# one panel here, where that figure spends its 16.1 on a single line of axis title.
+IX_NAME_FS = 12.5
+# WHICH FIGURE CARRIES THE NAMES (2026-09-14). Both figures draw the same methods in the same
+# order, so stacked -- contacts over hbonds -- one set of names underneath serves both, and
+# printing them twice is the same information twice. Only the bottom figure is named.
+# THIS MAKES contacts DEPENDENT ON ITS NEIGHBOUR: on its own, nothing in it says which
+# violin is which. If it is ever published alone, put "contacts" back in this tuple.
+IX_NAMED_PARTS = ("hbonds",)
 
 # The published baselines, when compute_baseline_interactions.py has written them. Their
 # fingerprints are not in posecheck_<Method>.json -- that export carries only strain and
@@ -2195,7 +2293,7 @@ def _interaction_counts(rows, kind):
 
 def _interaction_display(label):
     """The name this family's figures print for an arm. See IX_DISPLAY."""
-    return IX_DISPLAY.get(label, label)
+    return IX_DISPLAY.get(label) or display(label)
 
 
 def _interaction_cell_axis(ax, reach):
@@ -2237,9 +2335,10 @@ def _interaction_frame(ax, vals, ylabel, top, caption, cells=None):
         # full height -- a tick at two and a half contacts, beside a companion panel
         # stepping by whole ones.
         ax.yaxis.set_major_locator(MaxNLocator(integer=True))
-    # NO CATEGORY TICK LABELS. The legend beneath the figure is the key, and printing the
-    # same eight names under each of two panels as well is the same information three
-    # times -- which, rotated to fit, cost a third of the figure's height.
+    # Cleared here and PUT BACK BY THE CALLER (2026-09-14). This used to be the end of it:
+    # the legend under the figure was the key, so printing the names under the panels too
+    # was the same information twice. With the legend gone the names are the only way to
+    # tell one violin from another, so _interaction_ecdf_furniture sets them.
     ax.set_xticks([])
     ax.grid(False, axis="x")          # the x is categorical: a rule per slot is a fence
     # The per-category caption is dropped once there are eight of them: at that width
@@ -2257,6 +2356,10 @@ def _interaction_violin_panel(ax, vals, cols, ylabel, caption=True):
     parts = ax.violinplot(vals, showextrema=False, widths=IX_VIOLIN_W,
                           bw_method=lambda k: IX_KDE_BW / np.std(k.dataset))
     for body, col in zip(parts["bodies"], cols):
+        # THE PAIR FIGURE'S PAINTING (2026-09-14): the outline is the body's OWN colour, which
+        # is what _interaction_pair_bodies has always done. Briefly removed earlier the same
+        # day and put back so that all four interaction panels are painted by one rule --
+        # face a translucent tint, stroke the saturated hue of the same method.
         body.set(facecolor=col, alpha=IX_BODY_ALPHA, edgecolor=col, linewidth=1.2)
     for i, v in enumerate(vals, start=1):
         q1, med, q3 = np.percentile(v, [25, 50, 75])
@@ -2363,14 +2466,26 @@ def _interaction_boxen_panel(ax, vals, cols, ylabel, caption=True):
         for lo, hi, d in _interaction_letter_bands(v):
             w = IX_VIOLIN_W / 2 ** d  # the innermost band is as wide as a violin body
             # THE VIOLINS' SATURATION, so the two figures of this family read as one set:
-            # the alpha goes on the FACE only, as a fourth channel, rather than on the
-            # patch -- a patch alpha would take the outline down with it, and the outline
-            # is what makes a block a block.
+            # the alpha goes on the FACE only, as a fourth channel, rather than on the patch.
+            #
+            # THE OUTLINE STAYS, and it is not decoration: the outline is what makes a block
+            # a block. Taken off on 2026-09-14 and PUT BACK the same day, because the column
+            # collapsed into one stepped silhouette -- the bands are NON-OVERLAPPING and depth
+            # is carried by width and tint, but IX_BOXEN_LIGHT spreads only 0.46 over five
+            # depths, so without a rule between them the quartile box and the tail bands
+            # stopped being separable.
+            # IN THE METHOD'S OWN COLOUR, not the neutral AXIS grey it used to take: that is
+            # the rule the pair figure paints by, and all four panels of this family now
+            # share it -- face a translucent tint, stroke the saturated hue of the same
+            # method.
+            #
+            # The alpha rides on the FACE as a fourth channel rather than on the patch: a
+            # patch alpha would fade the outline with it.
             face = _interaction_tint(col, IX_BOXEN_LIGHT * d / (IX_BOXEN_K - 1)) \
                 + (IX_BODY_ALPHA,)
             ax.add_patch(IX_RECTANGLE((i - w / 2, lo), w, hi - lo, zorder=3 + d,
                                       facecolor=face,
-                                      edgecolor=AXIS, linewidth=IX_BOXEN_EDGE_LW))
+                                      edgecolor=col, linewidth=IX_BOXEN_EDGE_LW))
             reach = max(reach, hi)
         # The violins' white median dot, not boxenplot's median line: the two forms sit in
         # one figure and the mark for "here is the middle" must not change between panels.
@@ -2428,6 +2543,43 @@ def _interaction_legend(fig, names, cols, form):
     return leg
 
 
+def _interaction_ecdf_furniture(ax, names, show_names=True):
+    """The strain ECDF's axis weight and type, plus the method names back on the x axis.
+
+    `show_names` is False for the figure that sits ABOVE another carrying the same
+    categories -- see IX_NAMED_PARTS.
+
+    ONLY THE SPINES, TICKS AND AXIS NAME MOVE. Not _pcsz_style() wholesale: that turns the
+    major y grid back on, and the H-bond panel runs a deliberate minor-grid arrangement
+    (_interaction_cell_axis) that would lose. Not PCSZ_RC either -- it carries savefig.dpi
+    170 and a crop to the ink, and this family draws at 220 to its own frame.
+
+    PCSZ_* are read at CALL time: they live in a part assembled after this one."""
+    for side in ("left", "bottom"):
+        ax.spines[side].set_color(PCSZ_AXIS)
+        ax.spines[side].set_linewidth(1.1)
+    ax.tick_params(labelsize=11, direction="out", length=3.5, width=1.1, pad=4,
+                   colors=PCSZ_AXIS)
+    ax.yaxis.label.set_fontsize(PCSZ_LABEL_FS)
+    ax.yaxis.label.set_color(PCSZ_AXIS)
+    # The violins sit at 1..n, which is where _interaction_frame's xlim is built from.
+    ax.set_xticks(range(1, len(names) + 1))
+    labels = ax.set_xticklabels([_interaction_display(n) for n in names],
+                                fontsize=IX_NAME_FS, rotation=30, ha="right",
+                                rotation_mode="anchor")
+    if not show_names:
+        # DRAWN BUT INVISIBLE, rather than absent. tight_layout measures a text's extent
+        # whatever its colour, so colouring the names "none" reserves the exact band of
+        # height they would have taken -- which is what keeps this figure's axes the same
+        # height as the named one it sits above. Dropping the labels instead let fit() hand
+        # that band to the axes, and the two panels came out with their bottom spines 174 px
+        # apart inside a canvas they share, so stacked they would have carried different
+        # vertical scales for the same categories.
+        # The tick MARKS stay: they say where a category is without naming it.
+        for t in labels:
+            t.set_color("none")
+
+
 def _interaction_panels(out, part, kinds, rows_by_label, names, variant, caption):
     """One figure: a row of two panels of one form, with the key beneath them.
 
@@ -2442,11 +2594,10 @@ def _interaction_panels(out, part, kinds, rows_by_label, names, variant, caption
         ylabel, form = IX_TYPE[kind]
         vals = [_interaction_counts(rows_by_label[n], kind) for n in names]
         IX_PANELS[form](ax, vals, cols, ylabel, caption)
-    # The legend strip is RESERVED with tight_layout's rect and the legend drawn into it
-    # afterwards: tight_layout does not measure a figure-level legend, so laying the axes
-    # out first and adding it second would print it over the x spine.
-    fit(fig, pad=0.5, w_pad=2.2, rect=(0, IX_LEGEND_H / IX_FIG_H, 1, 1))
-    _interaction_legend(fig, names, cols, form)
+        _interaction_ecdf_furniture(ax, names, part in IX_NAMED_PARTS)
+    # NO LEGEND, and so no reserved strip: the names are on the x axis now, and the rect that
+    # used to hold the key back would leave an empty band under the panels.
+    fit(fig, pad=0.5, w_pad=2.2)
     save(fig, out, f"interaction_{part}_{variant}")
 
 
@@ -2660,8 +2811,16 @@ def _interaction_pair_blocks(ax, vals, cols, xs):
             w = IX_VIOLIN_W / 2 ** d
             face = _interaction_tint(col, IX_BOXEN_LIGHT * d / (IX_BOXEN_K - 1)) \
                 + (IX_BODY_ALPHA,)
+            # THE METHOD'S OWN COLOUR, as the violins beside it already use (2026-09-14):
+            # _interaction_pair_bodies strokes each body in `col`, so the blocks stroking in
+            # the neutral AXIS grey made the two panels of one figure look like two
+            # conventions. The face is a tint of the same hue, so the stroke reads as the
+            # saturated edge of its own block rather than as a foreign rule.
+            # IT ALSO FIXES THE HATCH. matplotlib draws a hatch in the patch's EDGE colour,
+            # so the redocked column's bars were grey here and method-coloured in the violin
+            # panel -- the same encoding drawn two ways in one figure.
             ax.add_patch(IX_RECTANGLE((x - w / 2, lo), w, hi - lo, zorder=3 + d,
-                                      facecolor=face, edgecolor=AXIS,
+                                      facecolor=face, edgecolor=col,
                                       linewidth=IX_BOXEN_EDGE_LW,
                                       hatch=IX_HATCH if i % 2 else None))
             reach = max(reach, hi)
@@ -2727,13 +2886,86 @@ def _interaction_pair_panels(out, part, kinds, rows):
     form = None
     for ax, kind in zip(axes, kinds):
         form = _interaction_pair_panel(ax, kind, rows, xs)
-    fit(fig, pad=0.5, w_pad=2.2, rect=(0, IX_LEGEND_H / IX_FIG_H, 1, 1))
-    _interaction_pair_legend(fig, form)
+    # NO LEGEND, and so no reserved strip (2026-09-14): the condition key moved out to
+    # fig-interaction-legend, which names the whole family in one image rather than each
+    # figure naming a part of it. The rect that used to hold the key back would leave an
+    # empty band under the panels.
+    fit(fig, pad=0.5, w_pad=2.2)
     # `core` is in the filename because it is the only variant this figure has and the
     # family's rule is that the variant is never only in the content: the redocking covers
     # the core three arms, since the published baselines' poses would each need their own
     # ~700 docks and the comparison this section is making is between ours and VoxBind's.
-    save(fig, out, f"interaction_pair_{part}_core")
+    # interaction_<part>_pair_core, not interaction_pair_<part>_core (2026-09-14): the part
+    # is what the figure draws and the pair is how it draws it, so the files of one part sort
+    # together -- contacts-all, contacts-core, contacts-pair-core, then the hbonds three.
+    save(fig, out, f"interaction_{part}_pair_core")
+
+
+# ══════════════════════════════════════════════════════════════════════════════════
+# fig-interaction-legend — the family's key, as its own image
+# ══════════════════════════════════════════════════════════════════════════════════
+# Every figure in this family has now given up its own key: the methods went onto the x axis
+# of the H-bond panel, the contacts panel carries them invisibly so it can stack under it,
+# and the pair figure's condition key came off. So nothing names the encoding any more, and
+# this draws it once to sit beside the panels.
+#
+# THREE SECTIONS, SEPARATED BY RULES, because the key carries three kinds of thing and a
+# reader should not have to work out which is which: the crystal ligands, which are the
+# benchmark and not a method; the eight methods; and the two POSE CONDITIONS, which are not
+# methods either and are drawn in a neutral grey for exactly that reason -- giving them a
+# method colour would say the opposite of what they mean.
+#
+# PAINTED BY THE PANELS' OWN RULE: a translucent face under a stroke of the same saturated
+# hue, and the redocked swatch hatched as its column is. A key that does not look like the
+# thing it names is a second key to learn.
+IX_LEG_SW_W = 0.30                # swatch width, as a share of the key's width
+IX_LEG_SW_H = 0.52                # swatch height, in row units
+IX_LEG_ROW_H = 0.33               # inches per row
+IX_LEG_W = 2.7                    # inches
+
+
+@figure("fig-interaction-legend", folder="fig-posecheck/interaction")
+def draw_interaction_legend(out):
+    """Reference, a rule, the eight methods, a rule, then generated and redocked."""
+    use_style()
+    methods = [m for m in IX_ORDER if m != REF_LABEL]
+    # THE TEXT IS RESOLVED HERE, not in the drawing loop. _interaction_display() is strict --
+    # it defers to the shared display(), which RAISES on a label the palette does not know --
+    # and that is right for a method name, where a typo should fail loudly rather than print
+    # itself. But the last two rows are POSE CONDITIONS, not methods, so they carry their own
+    # text and never reach it.
+    rows = ([(_interaction_display(REF_LABEL), color(REF_LABEL), None)]
+            + [(_interaction_display(m), color(m), None) for m in methods]
+            + [("Generated", IX_SWATCH, None), ("Redocked", IX_SWATCH, IX_HATCH)])
+    # A rule under the reference and under the last method: the two places the KIND of
+    # entry changes, which is the only thing a rule should ever mark here.
+    rules = {0, len(methods)}
+    with plt.rc_context({"hatch.linewidth": 0.8}):
+        fig, ax = plt.subplots(figsize=(IX_LEG_W, IX_LEG_ROW_H * len(rows) + 0.3), dpi=220)
+        fig.patch.set_facecolor("white")
+        ax.set_xlim(0, 1.0)
+        ax.set_ylim(-len(rows) + 0.5, 0.5)
+        ax.axis("off")
+        for i, (lab, col, hatch) in enumerate(rows):
+            y = -i
+            ax.add_patch(IX_RECTANGLE((0.05, y - IX_LEG_SW_H / 2), IX_LEG_SW_W,
+                                      IX_LEG_SW_H,
+                                      facecolor=IX_TO_RGB(col) + (IX_BODY_ALPHA,),
+                                      edgecolor=col, linewidth=1.2, hatch=hatch,
+                                      zorder=3))
+            ax.text(0.05 + IX_LEG_SW_W + 0.07, y, lab,
+                    ha="left", va="center", fontsize=IX_LEGEND_SIZE, color=INK)
+            if i in rules:
+                ax.plot([0.03, 0.97], [y - 0.5, y - 0.5], color=LEGEND_EDGE,
+                        lw=AXIS_LW, zorder=2)
+        # One frame round the whole key, as the house legend box draws it.
+        ax.add_patch(IX_RECTANGLE((0.0, -len(rows) + 0.5), 1.0, len(rows),
+                                  facecolor="none", edgecolor=LEGEND_EDGE,
+                                  linewidth=AXIS_LW, zorder=1))
+        fit(fig, pad=0.3)
+        save(fig, out, "interaction_legend")
+    print(f"  key: reference · {len(methods)} methods · {len(IX_SERIES)} pose conditions")
+    print(f"  wrote {out}")
 
 
 def _interaction_pair_row(arm, kind, rows):
@@ -2809,6 +3041,9 @@ def draw_interaction_pair(out):
 #
 # THE ARMS stand on the 79 electron-density pockets (TargetDiff and VoxBind hold 100). JSD
 # is scipy's JS DISTANCE, as both papers print it.
+#
+# EVERY METHOD IS DRAWN IN ITS soft() TINT (2026-09-14, on request), the colours of the
+# eight-method strain figures (ecdf-by-size-all), not COLORS' saturated originals.
 JSD_JSON = BUNDLE / "_shared" / "260913_crossdocked_jsd" / "crossdocked_jsd.json"
 JSD_NEEDS = ("crossdocked_jsd.json (voxbind/scripts/89_eval_crossdocked_jsd.sh)",)
 # Bond lengths are SCORED in 0.005 Å bins; they are DRAWN four bins at a time, so a
@@ -2818,6 +3053,28 @@ JSD_LEN_MERGE = 4
 JSD_CC_XLIM = (1.0, 2.0)        # C-C pairs under 2 Å are bonds; nothing sits below 1.0
 JSD_NRINGS_MAX = 8              # rings per molecule: the last bar pools 8 and more
 JSD_AROM_MERGE = 2              # 20 scored aromatic-fraction bins drawn as 10
+# Share panels (atom type, ring size) split into tiers: >= 50% gets a 0-100 axis, >= 5% a
+# middle axis, the rest a small one -- each tier on a linear axis scaled to itself. What is
+# measured against those thresholds is the TIER CRITERION, which is the tallest bar of the
+# category by default and the reference ligand's own share where a panel passes `tier_by`.
+JSD_TIER_PCT = (50.0, 5.0)
+JSD_KEY_NCOL = 4                # method columns of the all-arms key: 8 arms = 2 rows x 4
+# Ring-size panels, fixed (2026-09-14, on request): 6 | 3, 5, 7 | 4, 8, 9. The 5-ring shares
+# its panel with the 3- and 7-ring, which the arms push to 12-30%; 4/8/9 stay under 4% for
+# every set, so on a panel of their own they are not stubs under AR's 3-rings. Sizes run in
+# ascending order inside a panel, whatever order a tuple lists them in.
+JSD_RING_PANELS = (("6",), ("3", "5", "7"), ("4", "8", "9"))
+# HATCHING, for colour-blind readers (2026-09-14, trial on request): every grouped-bar chart
+# and its key give a method a pattern as well as its soft() tint, drawn in a darker step of
+# that tint. The reference stays plain grey and CoDE plain -- ours, and the one solid method
+# bar. Summary and rings are not hatched: each bar there already carries the method's name.
+# OFF (2026-09-14): tried and set aside on request -- the figures are drawn plain. Set True to
+# bring the patterns back.
+JSD_HATCH_ON = False
+JSD_HATCH = {"AR": "///", "Pocket2Mol": "\\\\\\", "DiffSBDD": "xxx", "DecompDiff": "...",
+             "FuncBind": "---", "TargetDiff": "|||", "VoxBind": "ooo"}
+JSD_HATCH_LW = 0.6               # points; matplotlib's 1.0 fills a 0.1-inch bar
+JSD_HATCH_INK = 0.55             # hatch = the bar's tint times this (toward black)
 JSD_SUMMARY = (
     ("Mean bond-distance JSD ↓", lambda j: j["bond_mean"]),
     ("All-atom pair JSD ↓", lambda j: j["pair"]["All_12A"]),
@@ -2890,30 +3147,72 @@ def _jsd_new(w, h):
 def _jsd_key_above(fig, handles, ncol, fontsize=11.5):
     """A figure-level key in a strip above every panel. Laid out AFTER fit(), because
     tight_layout does not know about figure legends: the panels are fitted first, then
-    pushed down by exactly the overlap the key makes with the tallest one."""
+    pushed down by exactly the overlap the key makes with the tallest one.
+
+    THE REFERENCE TAKES A CENTRED LINE OF ITS OWN over the method grid, one frame round both
+    -- the Vina per-atom v3 key's layout. As one more cell of a single-row grid, the
+    "Reference ligand (CrossDocked train+test), 8,829 molecules" entry made the key wider
+    than the figure and it was cut off at both edges (atom-type, 2026-09-14). The grid reads
+    across rows, and it loses a column at a time until it fits the figure's width."""
     fit(fig, pad=0.5)
-    leg = legend(fig, handles, loc="upper center", ncol=ncol, fontsize=fontsize,
-                 bbox_to_anchor=(0.5, 0.995))
+    ref_key = _jsd_ref_key()
+    ref = [h for h in handles if h.get_label() == ref_key]
+    methods = [h for h in handles if h.get_label() != ref_key]
+    inv = fig.transFigure.inverted()
+    ncol = max(1, min(ncol, len(methods)))
+    while True:
+        legs, top = [], 0.995
+        for group, cols in ((ref, 1), (methods, ncol)):
+            if not group:
+                continue
+            legs.append(legend(fig, _vpa_row_major(group, cols), loc="upper center", ncol=cols,
+                               fontsize=fontsize, bbox_to_anchor=(0.5, top)))
+            fig.canvas.draw()
+            top = legs[-1].get_window_extent(fig.canvas.get_renderer()).transformed(inv).y0 \
+                - VPA_KEY_ROW_GAP
+        rend = fig.canvas.get_renderer()
+        widest = max(l.get_window_extent(rend).transformed(inv).width for l in legs)
+        if widest <= 0.98 or ncol == 1:
+            break
+        for l in legs:
+            l.remove()
+        ncol -= 1
+    if len(legs) > 1:
+        _vpa_one_frame(fig, legs)
     fig.canvas.draw()
     rend = fig.canvas.get_renderer()
-    inv = fig.transFigure.inverted()
-    y0 = leg.get_window_extent(rend).transformed(inv).y0
+    y0 = min(l.get_window_extent(rend).transformed(inv).y0 for l in legs)
     y1 = max(ax.get_tightbbox(rend).transformed(inv).y1 for ax in fig.axes)
     if y1 > y0 - 0.012:
         fig.subplots_adjust(top=fig.subplotpars.top - (y1 - y0 + 0.012))
 
 
+def _jsd_hatch(label, col):
+    """(pattern, ink) for a method's bars, or (None, col) where it is drawn plain."""
+    pattern = JSD_HATCH.get(ALIASES.get(label, label)) if JSD_HATCH_ON else None
+    if not pattern:
+        return None, col
+    return pattern, tuple(JSD_HATCH_INK * c for c in matplotlib.colors.to_rgb(col))
+
+
 def _jsd_handles(arms, *, ref=True, patch=False):
-    def one(label, col, ls="-", lw=MODEL_LW):
+    def one(label, col, ls="-", lw=MODEL_LW, key=None):
         if patch:
-            return Patch(facecolor=col, edgecolor=col, label=label)
+            hatch, ink = _jsd_hatch(key, col)
+            h = Patch(facecolor=col, edgecolor=ink, hatch=hatch, lw=0, label=label)
+            h.set_hatch_linewidth(JSD_HATCH_LW)
+            return h
         return Line2D([], [], color=col, lw=lw, ls=ls, label=label)
-    hs = [one(_jsd_ref_key(), REF_COLOR, DASH, REF_LW)] if ref else []
-    return hs + [one(display(lab), color(lab)) for lab, _, _ in arms]
+    hs = [one(_jsd_ref_key(), REF_COLOR, DASH, REF_LW, key=REF_LABEL)] if ref else []
+    return hs + [one(display(lab), soft(lab), key=lab) for lab, _, _ in arms]
 
 
 def _jsd_key_cols(n, wide):
-    return n if n <= 3 else (5 if wide else 3)
+    """Method columns of the key. The reference always takes its own line above, so this only
+    shapes the methods: the eight arms read 2 x 4 (2026-09-14, on request; they were 5 + 3),
+    the same grid as the Vina per-atom v3 and strain keys. _jsd_key_above caps it at the
+    method count, so the core pair stays one row."""
+    return n if n <= 3 else (JSD_KEY_NCOL if wide else 3)
 
 
 def _jsd_grouped(ax, groups, series):
@@ -2922,13 +3221,72 @@ def _jsd_grouped(ax, groups, series):
     series count -- a fixed width overlaps neighbouring groups at nine series."""
     x = np.arange(len(groups))
     w = 0.84 / len(series)
-    for i, (_, vals, col) in enumerate(series):
+    for i, (lab, vals, col) in enumerate(series):
         vals = [np.nan if v is None else v for v in vals]
-        ax.bar(x + (i - (len(series) - 1) / 2) * w, vals, width=w, color=col,
-               edgecolor="white", lw=0.4 if len(series) > 4 else 0.8, zorder=3)
+        xs = x + (i - (len(series) - 1) / 2) * w
+        # A patch's hatch is drawn in its EDGE colour, so a hatched bar is two passes: the fill
+        # with the pattern in its ink and no outline, then the white spacer outline on top.
+        hatch, ink = _jsd_hatch(lab, col)
+        if hatch:
+            for bar in ax.bar(xs, vals, width=w, color=col, edgecolor=ink, hatch=hatch, lw=0,
+                              zorder=3):
+                bar.set_hatch_linewidth(JSD_HATCH_LW)
+            ax.bar(xs, vals, width=w, fill=False, edgecolor="white",
+                   lw=0.4 if len(series) > 4 else 0.8, zorder=3)
+        else:
+            ax.bar(xs, vals, width=w, color=col, edgecolor="white",
+                   lw=0.4 if len(series) > 4 else 0.8, zorder=3)
     ax.set_xticks(x)
     ax.set_xticklabels(groups)
     ax.set_xlim(-0.5, len(groups) - 0.5)
+
+
+def _jsd_tiered(fig, cats, names, series, ylabel, tier_by=None, panels=None):
+    """Grouped share bars (in %) on up to three side-by-side LINEAR axes, one per JSD_TIER_PCT
+    tier of a category -- so a category at ~1% is not a stub under one at ~70%, and nothing
+    needs a log axis. `series` is (label, {category: pct}, colour). The top tier is fixed at
+    0-100; the others scale to their own tallest bar. Panel width = category count, so a bar
+    is the same width in every panel; the y scales differ, so each keeps its ticks.
+    Categories keep their given order inside a panel; panels run tallest tier first.
+
+    WHICH TIER A CATEGORY LANDS IN is decided by `tier_by` -- {category: pct} -- and defaults
+    to the category's tallest bar. Passing the reference ligand's own shares instead groups
+    the panels by what a real ligand MAKES rather than by what the worst arm happens to do
+    with it, which is a statement about the categories and stays put when an arm is added or
+    dropped. The y limit is always the real tallest bar, so nothing is ever clipped: a tier
+    chosen against the reference can still hold a bar many times the reference's height, and
+    that is the finding, not a drawing error.
+
+    `panels` -- a sequence of category tuples -- overrides the tiers outright; a panel whose
+    every category reaches the top tier still gets the fixed 0-100 axis."""
+    peak = {c: max((vals[c] or 0) for _, vals, _ in series) for c in cats}
+    rank = peak if tier_by is None else {c: tier_by.get(c, 0) or 0 for c in cats}
+    hi, mid = JSD_TIER_PCT
+    if panels is not None:
+        tiers = [[c for c in cats if c in p] for p in panels]
+        leftover = [c for c in cats if not any(c in p for p in panels)]
+        if leftover:
+            raise ValueError(f"categories in no panel: {leftover}")
+        tiers = [(0 if all(rank[c] >= hi for c in t) else 1, t) for t in tiers if t]
+    else:
+        tiers = [[c for c in cats if rank[c] >= hi], [c for c in cats if mid <= rank[c] < hi],
+                 [c for c in cats if rank[c] < mid]]
+        tiers = [(i, t) for i, t in enumerate(tiers) if t]
+    gs = fig.add_gridspec(1, len(tiers), width_ratios=[len(t) for _, t in tiers])
+    for k, (level, tier) in enumerate(tiers):
+        ax = fig.add_subplot(gs[0, k])
+        ax.set_facecolor("white")
+        _jsd_grouped(ax, [names[c] for c in tier],
+                     [(lab, [vals[c] for c in tier], col) for lab, vals, col in series])
+        furniture(ax, ylabel=ylabel if k == 0 else None, xloc=None)
+        ax.grid(False, axis="x")
+        ax.tick_params(axis="x", length=0)
+        if level == 0:
+            ax.set_ylim(0, 100)
+            ax.yaxis.set_major_locator(MultipleLocator(25))
+        else:
+            ax.set_ylim(0, max(peak[c] for c in tier) * 1.1)
+    return [t for _, t in tiers]
 
 
 def _jsd_round(v, nd=4):
@@ -2955,7 +3313,7 @@ def draw_jsd_bond(out):
         ax = fig.add_subplot(111)
         ax.set_facecolor("white")
         series = [(lab, [d["arms"][lab]["jsd"]["bond"][t] for t in types]
-                   + [d["arms"][lab]["jsd"]["bond_mean"]], color(lab)) for lab, _, _ in arms]
+                   + [d["arms"][lab]["jsd"]["bond_mean"]], soft(lab)) for lab, _, _ in arms]
         _jsd_grouped(ax, types + ["mean"], series)
         top = max(v for _, vals, _ in series for v in vals if v is not None)
         furniture(ax, ylabel="JSD to CrossDocked\nligands ↓", xloc=None)
@@ -3003,8 +3361,8 @@ def _jsd_method_grid(out, d, arms, kinds, *, xlabel, stem):
             ax.set_facecolor("white")
             pct, edges = dist(d["arms"][lab])
             top = max(top, float(pct.max()))
-            ax.stairs(pct, edges, color=color(lab), fill=True, alpha=DIST_FILL + 0.14, lw=0, zorder=2)
-            ax.stairs(pct, edges, color=color(lab), lw=DIST_LW - 0.4, zorder=3)
+            ax.stairs(pct, edges, color=soft(lab), fill=True, alpha=DIST_FILL + 0.14, lw=0, zorder=2)
+            ax.stairs(pct, edges, color=soft(lab), lw=DIST_LW - 0.4, zorder=3)
             ax.stairs(ref_pct, edges, color=REF_COLOR, lw=REF_LW - 0.2, ls=DASH, zorder=4)
             furniture(ax, xloc=xstep, xlim=xlim, xlabel=xlabel if i == n - 1 else None)
             ax.tick_params(labelsize=9.5, length=2.5)
@@ -3066,8 +3424,8 @@ def draw_jsd_bond_length(out):
             ax.set_facecolor("white")
             for lab, _, _ in arms:
                 pct, edges = drawn(d["arms"][lab]["bond_counts"][t])
-                ax.stairs(pct, edges, color=color(lab), lw=DIST_LW, zorder=3)
-                ax.stairs(pct, edges, color=color(lab), fill=True, alpha=DIST_FILL, lw=0, zorder=2)
+                ax.stairs(pct, edges, color=soft(lab), lw=DIST_LW, zorder=3)
+                ax.stairs(pct, edges, color=soft(lab), fill=True, alpha=DIST_FILL, lw=0, zorder=2)
             pct, edges = drawn(d["reference"]["bond_counts"][t])
             ax.stairs(pct, edges, color=REF_COLOR, lw=REF_LW, ls=DASH, zorder=4)
             furniture(ax, xloc=0.2, xlim=(bins[0], bins[0] + step * 120),
@@ -3126,7 +3484,7 @@ def draw_jsd_pair(out):
             edges = np.asarray(d["protocol"]["pair_bins"][key])
             for lab, _, _ in arms:
                 ax.stairs(_jsd_pct(d["arms"][lab]["pair_counts"][key])[1:-1], edges,
-                          color=color(lab), lw=DIST_LW, zorder=3)
+                          color=soft(lab), lw=DIST_LW, zorder=3)
             ax.stairs(_jsd_pct(d["reference"]["pair_counts"][key])[1:-1], edges,
                       color=REF_COLOR, lw=REF_LW, ls=DASH, zorder=4)
             furniture(ax, xlabel=xlabel, xloc=None, xlim=xlim or (edges[0], edges[-1]),
@@ -3151,27 +3509,18 @@ def draw_jsd_pair(out):
 # ── atom types and the headline numbers ─────────────────────────────────────────
 @figure("fig-jsd-atom-type", needs=JSD_NEEDS)
 def draw_jsd_atom_type(out):
-    """Heavy-atom element shares against the CrossDocked ligands, log scale."""
+    """Heavy-atom element shares against the CrossDocked ligands: C | N, O | F, P, S, Cl."""
     d, all_arms = _jsd_data()
     use_style()
     elems = d["protocol"]["atom_types"]
     for variant, arms in _jsd_variants(all_arms):
         wide = variant == "all"
         fig = _jsd_new(FIG_W * (1.3 if wide else 1.0), PANEL_H)
-        ax = fig.add_subplot(111)
-        ax.set_facecolor("white")
-        # Log, because C sits at ~70% and Cl at ~0.5%: on a linear axis everything past O
-        # is a stub. An exact zero cannot sit on a log axis and is left as no bar.
-        ax.set_yscale("log")
-        series = [(REF_LABEL, [100 * d["reference"]["atom_frac"][e] or None for e in elems], REF_COLOR)]
-        series += [(lab, [100 * d["arms"][lab]["atom_frac"][e] or None for e in elems], color(lab))
+        # C | N, O | F, P, S, Cl on three linear axes (2026-09-14, on request; it was one log axis)
+        series = [(REF_LABEL, {e: 100 * d["reference"]["atom_frac"][e] for e in elems}, REF_COLOR)]
+        series += [(lab, {e: 100 * d["arms"][lab]["atom_frac"][e] for e in elems}, soft(lab))
                    for lab, _, _ in arms]
-        _jsd_grouped(ax, elems, series)
-        furniture(ax, ylabel="% of heavy atoms\n(log scale)", xloc=None)
-        ax.grid(False, axis="x")
-        ax.tick_params(axis="x", length=0)
-        ax.set_ylim(0.05, 100)
-        ax.yaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda v, _: f"{v:g}"))
+        _jsd_tiered(fig, elems, {e: e for e in elems}, series, "% of heavy atoms")
         _jsd_key_above(fig, _jsd_handles(arms, patch=True), _jsd_key_cols(len(arms) + 1, wide))
         save(fig, out, f"atom_type_{variant}")
 
@@ -3198,7 +3547,7 @@ def draw_jsd_summary(out):
             ax.set_facecolor("white")
             vals = [get(d["arms"][lab]["jsd"]) for lab, _, _ in arms]
             ax.barh(ys, [np.nan if v is None else v for v in vals], height=0.66,
-                    color=[color(lab) for lab, _, _ in arms], zorder=3)
+                    color=[soft(lab) for lab, _, _ in arms], zorder=3)
             top = max([v for v in vals if v is not None], default=1.0)
             # every value is labelled: this figure IS the table, drawn. A None is a JSD with
             # nothing to compare and says so, rather than drawing as a zero-length "best"
@@ -3235,23 +3584,22 @@ def draw_jsd_ring_size(out):
     for variant, arms in _jsd_variants(all_arms):
         wide = variant == "all"
         fig = _jsd_new(FIG_W * (1.3 if wide else 1.0), PANEL_H)
-        ax = fig.add_subplot(111)
-        ax.set_facecolor("white")
-        series = [(REF_LABEL, [d["reference"]["ring_size_pct"][s] for s in sizes], REF_COLOR)]
-        series += [(lab, [d["arms"][lab]["ring_size_pct"][s] for s in sizes], color(lab))
+        series = [(REF_LABEL, {s: d["reference"]["ring_size_pct"][s] for s in sizes}, REF_COLOR)]
+        series += [(lab, {s: d["arms"][lab]["ring_size_pct"][s] for s in sizes}, soft(lab))
                    for lab, _, _ in arms]
-        # Log, because the shares span three decades -- 6-rings at 50-83%, 7/8/9-rings and the
-        # reference's 3-rings at 0.1-2% -- and on a linear axis every size but 5 and 6 was a
-        # stub. A share of exactly zero has no place on a log axis and draws no bar.
-        ax.set_yscale("log")
-        _jsd_grouped(ax, [f"{s}-ring" for s in sizes],
-                     [(lab, [v or None for v in vals], col) for lab, vals, col in series])
-        furniture(ax, ylabel="% of rings, sizes 3–9\n(log scale)", xloc=None)
-        ax.grid(False, axis="x")
-        ax.tick_params(axis="x", length=0)
-        # floor at 0.01%: a 0.05% floor swallowed the 0.05-0.06% eight-rings of CoDE and FuncBind
-        ax.set_ylim(0.01, 100)
-        ax.yaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda v, _: f"{v:g}"))
+        # Tiered linear axes (2026-09-14, on request; it was one log axis over 0.01-100%).
+        # TIERED BY THE CRYSTAL LIGANDS, NOT BY THE TALLEST BAR (2026-09-14, on request): the
+        # panels then read 6-ring | 5-ring | the sizes a real ligand barely makes, and 3- and
+        # 7-rings sit in that third panel where the reference puts them (1.5% and 0.8%)
+        # instead of being lifted into the middle one by AR's 30% 3-rings and TargetDiff's 12%
+        # 7-rings. Those two bars are still drawn at full height -- the panel scales to its
+        # tallest bar, so the third panel says "sizes the reference avoids, and by how far the
+        # arms overshoot them". The grouping no longer moves when an arm is added or dropped:
+        # `core` and `all` now split the same way.
+        # Then FIXED PANELS (2026-09-14, on request): 6 | 3, 5, 7 | 4, 8, 9 -- see
+        # JSD_RING_PANELS. tier_by still decides which panel is the 0-100 one.
+        _jsd_tiered(fig, sizes, {s: f"{s}-ring" for s in sizes}, series, "% of rings, sizes 3–9",
+                    tier_by=d["reference"]["ring_size_pct"], panels=JSD_RING_PANELS)
         _jsd_key_above(fig, _jsd_handles(arms, patch=True), _jsd_key_cols(len(arms) + 1, wide))
         save(fig, out, f"ring_size_{variant}")
 
@@ -3278,7 +3626,7 @@ def draw_jsd_n_rings(out):
         ax = fig.add_subplot(111)
         ax.set_facecolor("white")
         series = [(REF_LABEL, _jsd_ring_rows(d["reference"])[1], REF_COLOR)]
-        series += [(lab, _jsd_ring_rows(d["arms"][lab])[1], color(lab)) for lab, _, _ in arms]
+        series += [(lab, _jsd_ring_rows(d["arms"][lab])[1], soft(lab)) for lab, _, _ in arms]
         _jsd_grouped(ax, labels, series)
         furniture(ax, ylabel="% of molecules", xlabel="Rings per molecule", xloc=None)
         ax.grid(False, axis="x")
@@ -3316,7 +3664,7 @@ def draw_jsd_aromatic(out):
         for ax, (xlabel, get, _, ylabel) in zip(axes, panels):
             ax.set_facecolor("white")
             series = [(REF_LABEL, get(d["reference"]), REF_COLOR)]
-            series += [(lab, get(d["arms"][lab]), color(lab)) for lab, _, _ in arms]
+            series += [(lab, get(d["arms"][lab]), soft(lab)) for lab, _, _ in arms]
             _jsd_grouped(ax, labels, series)
             furniture(ax, ylabel=ylabel, xlabel=xlabel, xloc=None)
             ax.tick_params(axis="x", length=0, labelsize=11 if wide else 10)
@@ -3382,7 +3730,7 @@ def draw_jsd_rings(out):
                     x = np.arange(len(rows[r]))
                     edges = np.arange(len(rows[r]) + 1) - 0.5
                     width = 0.78
-                ax.bar(x, rows[r], width=width, color=color(lab), lw=0, zorder=3)
+                ax.bar(x, rows[r], width=width, color=soft(lab), lw=0, zorder=3)
                 ax.stairs(ref_rows[r], edges, color=REF_COLOR, lw=REF_LW, ls=DASH,
                           baseline=None, zorder=4)
                 furniture(ax, xloc=None, ylabel=ylabel if c == 0 else None)
@@ -3932,10 +4280,96 @@ def draw_ensemble_vs_alone(out):
         _misc_savefig(fig2, out, [f"fig2_ensemble_vs_alone.{ext}" for ext in ("png", "pdf")],
                       dpi=150, bbox_inches="tight")
     print("  wrote fig2")
+# ══════════════════════════════════════════════════════════════════════════════════════
+# fig-palette-methods — the shared method palette, drawn and exported
+#
+# THE PALETTE IS DEFINED ONCE, IN 00_core.py: COLORS (the saturated hue every method owns),
+# SOFT (the lighter tint the eight-method figures draw through soft()) and PALE (the fill
+# tints). This figure does not define anything -- it READS those three tables, so the sheet
+# and the CSV cannot drift from what the figures actually draw. Regenerate it after any
+# palette change and the CSV is the file to hand to a co-author, a slide deck or a notebook
+# that has to match these figures without importing draw.py.
+#
+# WHY THREE TABLES AND NOT ONE. A method is one hue everywhere, but the same hue cannot do
+# every job: nine series on one axis need the light end (soft), a box fill under a dark
+# median needs lighter still (pale), and a three-line panel wants the saturated original.
+# Reading the sheet left to right is reading those three jobs.
+# ══════════════════════════════════════════════════════════════════════════════════════
+
+# The nine series of the eight-method PoseCheck figures, in the drawn order, then everything
+# else COLORS registers -- our v2 arm and the MCP fine-tune ramp, which are the same FuncBind
+# brown darkening with training rather than four categorical hues.
+PAL_ORDER = ["Reference ligand", "AR", "Pocket2Mol", "DiffSBDD", "DecompDiff", "FuncBind",
+             "TargetDiff", "VoxBind", "CoDE"]
+PAL_EXTRA = ["Ours v2", "FuncBind vanilla", "FuncBind ft 3.17M", "FuncBind ft 8.21M",
+             "FuncBind ft 26.1M"]
+PAL_COLS = ["COLORS · color()", "SOFT · soft()", "PALE · pale()"]
+PAL_SW_W, PAL_SW_H = 0.88, 0.66      # swatch, in the one-unit-per-column grid
+PAL_ROW_H = 0.42                     # inches per row
+
+
+def _pal_ink(hexv):
+    """Black or white for text ON a swatch, by that swatch's luminance."""
+    r, g, b = (int(hexv[k:k + 2], 16) / 255 for k in (1, 3, 5))
+    return "#ffffff" if 0.299 * r + 0.587 * g + 0.114 * b < 0.55 else INK
+
+
+def _pal_rows():
+    """(canonical key, palette, soft-or-None, pale-or-None, drawn label) per method.
+
+    SOFT and PALE are read with .get: most methods have no entry, and that is information --
+    soft() falls back to the palette colour for them, which is what the sheet shows."""
+    rows = []
+    for lab in PAL_ORDER + PAL_EXTRA:
+        key = ALIASES.get(lab, lab)
+        rows.append((key, COLORS[key], SOFT.get(key), PALE.get(key), DISPLAY.get(key, key)))
+    return rows
+
+
+@figure("fig-palette-methods", folder="palette")
+def draw_palette_methods(out):
+    """Every method's registered tints, as a swatch sheet and a CSV."""
+    rows = _pal_rows()
+    with plt.rc_context(RC):
+        fig, ax = plt.subplots(figsize=(8.4, PAL_ROW_H * len(rows) + 1.25), dpi=220)
+        fig.patch.set_facecolor("white")
+        ax.set_xlim(-2.35, len(PAL_COLS) + 0.05)
+        # The bottom edge clears the last row AND the footnote under it.
+        ax.set_ylim(-len(rows) - 0.3, 1.45)
+        ax.axis("off")
+        for j, name in enumerate(PAL_COLS):
+            ax.text(j + PAL_SW_W / 2, 0.72, name, ha="center", va="center", fontsize=11.5,
+                    color=INK)
+        for i, (key, c, s, p, disp) in enumerate(rows):
+            y = -i
+            ax.text(-0.16, y, disp, ha="right", va="center", fontsize=12, color=INK)
+            for j, hexv in enumerate((c, s, p)):
+                if not hexv:
+                    # No entry: soft()/pale() do not invent one, and neither does this sheet.
+                    ax.text(j + PAL_SW_W / 2, y, "—", ha="center", va="center", fontsize=11,
+                            color=AXIS)
+                    continue
+                ax.add_patch(matplotlib.patches.Rectangle(
+                    (j, y - PAL_SW_H / 2), PAL_SW_W, PAL_SW_H, facecolor=hexv,
+                    edgecolor=LEGEND_EDGE, linewidth=0.6))
+                ax.text(j + PAL_SW_W / 2, y, hexv.upper(), ha="center", va="center",
+                        fontsize=9, color=_pal_ink(hexv))
+        ax.text(-2.3, -len(rows) + 0.1,
+                "soft() falls back to the palette colour where SOFT has no entry; "
+                "pale() raises instead.",
+                ha="left", va="center", fontsize=9.5, color=AXIS)
+        fit(fig, pad=0.4)
+        save(fig, out, "palette_methods")
+    write_csv(out, "palette_methods",
+              ["method", "palette_hex", "soft_hex", "pale_hex", "legend_label"],
+              [[k, c, s or "", p or "", d] for k, c, s, p, d in rows])
+    print(f"  {len(rows)} methods · {sum(1 for r in rows if r[2])} with a soft tint · "
+          f"{sum(1 for r in rows if r[3])} with a pale tint")
+    print(f"  wrote {out}")
 
 
 # ════════════════════════════════════════════════════════════════════════════════
-# fig-posebusters-{valid-per-atom,check-failures,sucos-ecdf,sucos-per-atom}
+# fig-posebusters-{valid-per-atom,valid-heatmap,check-failures,sucos-ecdf,sucos-per-atom}
 # ════════════════════════════════════════════════════════════════════════════════
 # SIZE IS THE CONFOUND, SO SIZE IS THE X AXIS. Every PoseBusters check gets harder as the
 # molecule grows -- more rings to pucker, more angles to strain, more atoms to reach the
@@ -3967,10 +4401,80 @@ PB_VALID_WIN = 2
 # writes. The filter stays a RATE even though the bars are counts -- it asks "is this row
 # informative", and the arms hold different numbers of molecules.
 PB_MIN_FAIL_PCT = 0.5
-# Where the symlog x axis stops being linear and starts being logarithmic. 0.1% is ~8 of
-# the ~7,900 molecules an arm holds: below it the difference between two arms is a handful
-# of molecules and belongs in the JSON, above it the decades do the work.
-PB_LINTHRESH = 0.1
+# The check-failure breakdown, split into stacked panels by how often a check fails, each on
+# a linear axis scaled to itself (2026-09-14, on request; it was one symlog axis). The median
+# rate over the eight arms puts them in three decades:
+#   ~10%   bond angles 9.7, min distance 7.0, steric clash 5.7, ring non-flatness 5.4,
+#          bond lengths 3.2
+#   ~1%    internal energy 1.6, volume overlap 0.36
+#   <=0.1% double bond flatness 0.26, aromatic ring flatness 0.02 -- zero for most sets
+# Fixed rather than recomputed, so `core` and `all` split the same way; inside a panel the
+# checks keep the figure's order (worst first). A check shown but in no panel is an error.
+PB_FAIL_PANELS = (
+    ("bond_lengths", "bond_angles", "non-aromatic_ring_non-flatness",
+     "minimum_distance_to_protein", "internal_steric_clash"),
+    ("volume_overlap_with_protein", "internal_energy"),
+    ("aromatic_ring_flatness", "double_bond_flatness"),
+)
+# THE HEAT MAP'S GROUPS. The 20 scored dock-mode checks partitioned into what each one is
+# actually asking about, so `valid` can be read as "passes all five" instead of as one
+# number. EVERY CHECK IS IN EXACTLY ONE GROUP and the partition is asserted against the
+# data: a PoseBusters release that adds a check breaks the build rather than quietly
+# dropping it out of the picture, and no check can be double-counted into two groups.
+#
+# Six of the nine in `Protein clash & overlap` are VACUOUS HERE and pass by construction:
+# the receptor every arm is scored against is the pocket10 crop, which carries no HETATM
+# and no HOH, so the cofactor and water checks have nothing to measure. They stay in the
+# group because the group is a partition of `valid` and dropping them would make the
+# columns stop multiplying out to it -- not because they carry information.
+#
+# `Ring pucker & internal strain` is not one of the four groups this was asked for, and it
+# exists because the partition has to be complete: `non-aromatic_ring_non-flatness` is the
+# single worst check for the voxel arms (21-23%), and a breakdown that left it out would
+# show CoDE passing every column it draws while failing 33% of molecules.
+PB_GROUPS = (
+    ("Bond geometry", ("bond_lengths", "bond_angles")),
+    ("Aromatic ring flatness", ("aromatic_ring_flatness",)),
+    ("Valence & connectivity", ("sanitization", "all_atoms_connected", "inchi_convertible",
+                                "no_radicals")),
+    ("Protein clash & overlap", ("minimum_distance_to_protein", "volume_overlap_with_protein",
+                                 "protein-ligand_maximum_distance",
+                                 "minimum_distance_to_organic_cofactors",
+                                 "minimum_distance_to_inorganic_cofactors",
+                                 "minimum_distance_to_waters",
+                                 "volume_overlap_with_organic_cofactors",
+                                 "volume_overlap_with_inorganic_cofactors",
+                                 "volume_overlap_with_waters")),
+    ("Ring pucker & internal strain", ("non-aromatic_ring_non-flatness",
+                                       "internal_steric_clash", "internal_energy",
+                                       "double_bond_flatness")),
+)
+PB_HEAT_COL0 = "PoseBusters valid"
+# THE RAMP IS THE DATA'S OWN RANGE: it ends at 100, a rate's ceiling, and starts at the
+# WORST CELL DRAWN (2026-09-14, on request) -- FuncBind's 50.1% valid. A 0-100 ramp would
+# spend half its range on ground no method stands on and paint the whole map one shade,
+# which is the failure mode of a heat map whose numbers all sit near the top.
+#
+# Both variants take the range of the ALL-ARMS map, so a cell is the same colour in `core`
+# as in `all`. Scaling `core` to its own worst cell (CoDE's 67.5) would make our two arms
+# look as far apart as the eight are.
+PB_HEAT_VMAX = 100.0
+# THE COLOURBAR IS THE PER-ROTBOND GRID'S (2026-09-14, on request): vertical on the right,
+# shrink 0.92, aspect 38, RB_GRID_CBAR_PAD off the panel, numbers turned a quarter turn so
+# they read along the bar, no outline. Those constants are READ FROM THE ROTBOND FAMILY at
+# call time rather than copied here -- a part is pasted into draw.py above posecheck_rotbond,
+# so the names do not exist while this module executes, but they do by the time a figure is
+# drawn, and reading them is what keeps the two bars from drifting apart.
+# The colourmap is that grid's coolwarm REVERSED. In the strain grid warm means more strain,
+# i.e. worse; this cell is a PASS rate, so without the reversal the same red would mean good
+# here and bad there in two heat maps of the same eight methods.
+PB_HEAT_CMAP = "coolwarm_r"
+# Point sizes are NOT copied from the rotbond grid: that figure is three rows of nine panels
+# and carries 18 pt numbers, which on this 8.4 x 6.2 in map would tower over the 12.5 pt in
+# the cells. Same bar, this figure's scale.
+PB_HEAT_CBAR_FS, PB_HEAT_CBAR_TICK_FS = 13, 11.5
+PB_HEAT_ROW_H = 0.44             # inches per method row
+PB_HEAT_WRAP = 12                # characters per line of a column heading
 PB_SUCOS_THRESHOLD = 0.4         # gen.yml's own value
 PB_BIN_COLS = ["n_molecules", "atoms_mean", "n_posebusters", "pb_valid_rate",
                "pb_valid_rate_size_standardized"]
@@ -4034,12 +4538,12 @@ def _posebusters_valid_panel(out, arms, variant, p79_rows, refrows):
              lw=REF_LW, ls=DASH, zorder=4, dash_capstyle="round")
     for lab, key, _ in arms:
         top.plot(xs, model_curve(per[key], xs, rate100, win=PB_VALID_WIN),
-                 color=color(lab), lw=MODEL_LW, zorder=5, solid_capstyle="round")
+                 color=soft(lab), lw=MODEL_LW, zorder=5, solid_capstyle="round")
     furniture(top, ylabel="PoseBusters valid (%)", xlim=(xs[0] - 0.6, xs[-1] + 0.6))
     top.set_ylim(0, 102)
-    legend(top, arm_handles(arms), loc="lower left", fontsize=11.5)
+    legend(top, arm_handles(arms, paint=soft), loc="lower left", fontsize=11.5)
 
-    size_distribution(bot, xs, per, ref_per, arms)
+    size_distribution(bot, xs, per, ref_per, arms, paint=soft)
     furniture(bot, ylabel="% of ligands", xlabel=X_LABEL,
               xlim=(xs[0] - 0.6, xs[-1] + 0.6))
     fig.align_ylabels((top, bot))
@@ -4113,45 +4617,41 @@ def _posebusters_failures_panel(out, arms, variant, fails):
     leg_rows = -(-len(series) // ncol)
     # Row pitch: enough that nine thin bars stay readable, without turning a 7.6 in wide
     # figure into a 10 in tall one. Plus the strip the key needs at the bottom.
-    fig, ax = plt.subplots(
-        figsize=(FIG_W, (0.40 if len(arms) <= 3 else 0.62) * len(names)
-                 + 1.6 + 0.30 * leg_rows + 0.2), dpi=220)
+    # STACKED PANELS, LINEAR X (2026-09-14, on request; it was one symlog axis). The rates run
+    # 0.01% to 23%, and on one linear axis everything under ~2% was a stub against FuncBind's
+    # 23%; symlog fixed that but made every bar's length a log reading. Three panels -- see
+    # PB_FAIL_PANELS -- each give a decade of checks its own linear scale, so a length is a
+    # rate again, and a zero is still a bar of nothing. Panel height = its check count, so
+    # the bars are the same thickness in every panel; the x scales differ, so each keeps
+    # its own tick labels.
+    panels = [[k for k in names if k in p] for p in PB_FAIL_PANELS]
+    leftover = [k for k in names if not any(k in p for p in PB_FAIL_PANELS)]
+    if leftover:
+        raise ValueError(f"PoseBusters checks in no PB_FAIL_PANELS panel: {leftover}")
+    panels = [p for p in panels if p]
+    fig = plt.figure(figsize=(FIG_W, (0.40 if len(arms) <= 3 else 0.62) * len(names)
+                              + 1.6 + 0.45 * (len(panels) - 1) + 0.30 * leg_rows + 0.2),
+                     dpi=220)
     fig.patch.set_facecolor("white")
-    ax.set_facecolor("white")
-    ys = np.arange(len(names))[::-1]
-    for i, (lab, key) in enumerate(series):
-        # top of the group downwards, so the key's order IS the order of the bars
-        ax.barh(ys + ((len(series) - 1) / 2 - i) * h,
-                [fails[key]["rates"].get(k, 0.0) for k in names],
-                height=h, color=color(lab), edgecolor=color(lab), lw=0.8, zorder=3)
-
-    top = max(g["rates"].get(k, 0.0) for g in shown for k in names)
-    # LOG X, AND SYMLOG RATHER THAN LOG. The rates that matter run 0.09% to 23%, and on a
-    # linear axis everything under ~2% -- volume overlap, internal energy, the reference's
-    # own two rows -- was a stub against FuncBind's 23%. But 13 of the 81 cells here are an
-    # exact zero and 5 more are a single-digit molecule count, and a plain log axis cannot
-    # draw a bar that starts at zero: it would clip them all to whatever floor the axis was
-    # given, making "never fails this" and "fails it 5 times" the same picture. symlog is
-    # linear below PB_LINTHRESH and logarithmic above, so the bars still start at a true
-    # zero, a 1-molecule cell still looks like 1 molecule, and nothing is hidden or invented.
-    ax.set_xscale("symlog", linthresh=PB_LINTHRESH, linscale=0.35)
-    furniture(ax, ylabel=None, xlabel="Molecules failing the check (%, log scale)",
-              xlim=(0, top * 1.25), xloc=None)
-    symlog = matplotlib.ticker.SymmetricalLogLocator
-    ax.xaxis.set_major_locator(symlog(base=10, linthresh=PB_LINTHRESH))
-    # "0.1" and "10", not matplotlib's 10^-1 and 10^1: two decades of percentages read as
-    # numbers, and the zero tick has to be a zero.
-    ax.xaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda v, _: f"{v:g}"))
-    ax.xaxis.set_minor_locator(symlog(base=10, linthresh=PB_LINTHRESH,
-                                      subs=tuple(range(2, 10))))
-    ax.xaxis.set_minor_formatter(matplotlib.ticker.NullFormatter())
-    ax.grid(True, axis="x", which="minor", color=GRID, lw=GRID_LW * 0.7,
-            ls=(0, (1, 4)), alpha=0.6)
-    ax.grid(False, axis="y")
-    ax.set_yticks(ys)
-    ax.set_yticklabels([_posebusters_wrap_check(k) for k in names], fontsize=12)
-    ax.set_ylim(-0.6, len(names) - 0.4)
-    handles = [Patch(facecolor=color(lab), edgecolor=color(lab),
+    gs = fig.add_gridspec(len(panels), 1, height_ratios=[len(p) for p in panels])
+    for j, panel in enumerate(panels):
+        ax = fig.add_subplot(gs[j, 0])
+        ax.set_facecolor("white")
+        ys = np.arange(len(panel))[::-1]
+        for i, (lab, key) in enumerate(series):
+            # top of the group downwards, so the key's order IS the order of the bars
+            ax.barh(ys + ((len(series) - 1) / 2 - i) * h,
+                    [fails[key]["rates"].get(k, 0.0) for k in panel],
+                    height=h, color=soft(lab), edgecolor=soft(lab), lw=0.8, zorder=3)
+        top = max(g["rates"].get(k, 0.0) for g in shown for k in panel)
+        furniture(ax, ylabel=None, xlim=(0, top * 1.08), xloc=None,
+                  xlabel="Molecules failing the check (%)" if j == len(panels) - 1 else None)
+        ax.grid(False, axis="y")
+        ax.set_yticks(ys)
+        ax.set_yticklabels([_posebusters_wrap_check(k) for k in panel], fontsize=12)
+        ax.set_ylim(-0.6, len(panel) - 0.4)
+    # soft() tints, the eight-method figures' colours (2026-09-14, on request)
+    handles = [Patch(facecolor=soft(lab), edgecolor=soft(lab),
                      label=display(lab) + ("  (n=79)" if key == "reference" else ""))
                for lab, key in series]
     fit(fig, pad=0.5)
@@ -4228,6 +4728,136 @@ def draw_posebusters_check_failures(out):
         _posebusters_failures_panel(out, arms, variant, fails)
 
 
+# ── validity heat map ───────────────────────────────────────────────────────────
+def _posebusters_group_rates(rows, checked):
+    """(% passing each group, % valid, n scored) for one set of molecules.
+
+    A GROUP IS PASSED WHEN THE MOLECULE FAILS NOTHING IN IT, which is per-molecule and not
+    recoverable from the per-check rates: two checks each failing 5% of molecules are one
+    column at 90% if they fail different molecules and at 95% if they fail the same ones.
+    That is also why the group columns do not multiply out to the `valid` column."""
+    scored = [r for r in rows if r["v"] is not None]
+    n = len(scored)
+    if not n:
+        return {}, float("nan"), 0
+    seen = {c for r in scored for c in r["f"]}
+    if not seen <= checked:
+        raise KeyError(f"PoseBusters check outside PB_GROUPS: {sorted(seen - checked)} -- "
+                       "add it to a group, or the heat map stops being a partition of `valid`")
+    out = {}
+    for name, checks in PB_GROUPS:
+        want = set(checks)
+        out[name] = 100 * sum(not (want & set(r["f"])) for r in scored) / n
+    return out, 100 * sum(bool(r["v"]) for r in scored) / n, n
+
+
+def _posebusters_heatmap_grid(arms, p79_rows, refrows):
+    """(column names, row labels, the rates, n per row) -- the map, before it is drawn."""
+    series = [(REF_LABEL, refrows)] + [(lab, p79_rows[key]) for lab, key, _ in arms]
+    checked = {c for _, checks in PB_GROUPS for c in checks}
+    cols = [PB_HEAT_COL0] + [name for name, _ in PB_GROUPS]
+    grid, ns = [], []
+    for lab, rows in series:
+        groups, valid, n = _posebusters_group_rates(rows, checked)
+        grid.append([valid] + [groups[name] for name, _ in PB_GROUPS])
+        ns.append(n)
+    return cols, [lab for lab, _ in series], np.array(grid, float), ns
+
+
+def _posebusters_heatmap_panel(out, variant, built, norm):
+    cols, labels, grid, ns = built
+    series = list(zip(labels, ns))
+
+    # The constant was 2.25 while the bar lay along the bottom; with it now on the right it
+    # only has to buy the three-line column headings. The floor is for `core`: three rows
+    # leave a vertical bar at aspect 38 too short for its own name and tick numbers.
+    # CONSTRAINED LAYOUT, as the rotbond grid uses -- tight_layout does not see a colourbar's
+    # label, and fit()'s overrun correction moves the main axes, not the bar's, so the name
+    # came out sliced off the right edge of the core map.
+    fig, ax = plt.subplots(figsize=(FIG_W * 1.16,
+                                    max(PB_HEAT_ROW_H * len(series) + 1.3, 3.3)),
+                           dpi=220, layout="constrained")
+    fig.patch.set_facecolor("white")
+    cmap = matplotlib.colormaps[PB_HEAT_CMAP]
+    ax.imshow(grid, cmap=cmap, norm=norm, aspect="auto")
+    for i in range(len(series)):
+        for j in range(len(cols)):
+            v = grid[i, j]
+            # White on a dark cell, ink on a light one, off the fill's own luminance: a
+            # diverging map is dark at BOTH ends, so a single threshold on the value would
+            # put ink on the dark red of a 50% cell and white on the pale middle.
+            r, g, b, _ = cmap(norm(v))
+            dark = 0.2126 * r + 0.7152 * g + 0.0722 * b < 0.55
+            ax.text(j, i, f"{v:.1f}", ha="center", va="center", fontsize=12.5,
+                    color="white" if dark else INK, zorder=3)
+    # The first column is the aggregate, not a sixth category, and the groups do not multiply
+    # out to it (see _posebusters_group_rates) -- a rule wide enough to read as a break says so.
+    ax.axvline(0.5, color="white", lw=5, zorder=4)
+    ax.set_xticks(np.arange(len(cols)))
+    # Wrapped at PB_HEAT_WRAP, not at the 18 the check-failure tick labels use: a column here
+    # is ~1.2 in wide, and at 18 the group names ran into each other across the header.
+    ax.set_xticklabels(["\n".join(__import__("textwrap").wrap(c, PB_HEAT_WRAP))
+                        for c in cols], fontsize=12.5)
+    ax.xaxis.set_ticks_position("top")
+    ax.set_yticks(np.arange(len(series)))
+    ax.set_yticklabels([f"{display(lab)}  ({n:,})" for lab, n in series], fontsize=13)
+    ax.tick_params(length=0, colors=INK, pad=6)
+    for sp in ax.spines.values():
+        sp.set_visible(False)
+    # White rules on the cell boundaries rather than a frame: the cells are the figure.
+    ax.set_xticks(np.arange(-0.5, len(cols), 1), minor=True)
+    ax.set_yticks(np.arange(-0.5, len(series), 1), minor=True)
+    ax.grid(which="minor", color="white", lw=1.6)
+    ax.grid(which="major", visible=False)
+    ax.tick_params(which="minor", length=0)
+    cb = fig.colorbar(plt.cm.ScalarMappable(norm=norm, cmap=cmap), ax=ax,
+                      shrink=0.92, aspect=38, pad=RB_GRID_CBAR_PAD)
+    cb.set_label("% of molecules passing", fontsize=PB_HEAT_CBAR_FS, color=INK,
+                 labelpad=RB_GRID_CBAR_LABELPAD)
+    cb.ax.tick_params(labelsize=PB_HEAT_CBAR_TICK_FS, colors=AXIS, width=AXIS_LW)
+    plt.setp(cb.ax.get_yticklabels(), rotation=90, va="center", ha="left")
+    cb.outline.set_visible(False)
+    save(fig, out, f"pb_valid_heatmap_{variant}")
+
+
+@figure("fig-posebusters-valid-heatmap", needs=("metrics.json (posebusters block)",))
+def draw_posebusters_valid_heatmap(out):
+    """PoseBusters validity as a method x check-group heat map, with the per-check table."""
+    data, p79_rows, refrows = pose_data()
+    use_style()
+    drawn = {variant: _posebusters_heatmap_grid(arms, p79_rows, refrows)
+             for variant, arms in variants("v", data)}
+    # One ramp for both maps, floored at the worst cell of the widest one.
+    norm = matplotlib.colors.Normalize(float(drawn["all"][2].min()), PB_HEAT_VMAX)
+    for variant, built in drawn.items():
+        _posebusters_heatmap_panel(out, variant, built, norm)
+
+    cols, labels, grid, ns = drawn["all"]
+    worst = np.unravel_index(np.argmin(grid), grid.shape)
+    print(f"  colour ramp {norm.vmin:.1f}-{norm.vmax:.0f}%, floored at the worst cell: "
+          f"{labels[worst[0]]} / {cols[worst[1]]}")
+    print(f"  {'method':16s} {'n':>7s} " + " ".join(f"{c.split(' ')[0][:9]:>9s}" for c in cols))
+    for lab, row, n in zip(labels, grid, ns):
+        print(f"  {lab:16s} {n:7,d} " + " ".join(f"{v:8.1f}%" for v in row))
+    write_csv(out, "posebusters_valid_heatmap",
+              ["method", "n_molecules"] + [f"pct_pass_{c}" for c in cols],
+              [[lab, n] + [round(float(v), 2) for v in row]
+               for lab, row, n in zip(labels, grid, ns)])
+
+    # The per-check table the groups are built from -- a group at 99.9% can be one check at
+    # 99.9% or four at 100 and one at 99.9, and only this says which.
+    checks = [c for _, cs in PB_GROUPS for c in cs]
+    group_of = {c: name for name, cs in PB_GROUPS for c in cs}
+    fails = _posebusters_check_failures(data, p79_rows, refrows)
+    rows = []
+    for lab, key, _ in [(REF_LABEL, "reference", None)] + list(arms_for("v", data)):
+        g = fails[key]
+        rows += [[lab, g["n_mols"], group_of[c], c, g["counts"].get(c, 0),
+                  round(100 - g["rates"].get(c, 0.0), 3)] for c in checks]
+    write_csv(out, "posebusters_check_pass_rates",
+              ["method", "n_molecules", "group", "check", "n_failed", "pct_pass"], rows)
+
+
 # ── SuCOS ───────────────────────────────────────────────────────────────────────
 _PB_SUCOS_CACHE = {}
 
@@ -4299,7 +4929,7 @@ def draw_posebusters_sucos_ecdf(out):
         ax.set_facecolor("white")
         for lab, key, _ in arms:
             v = np.sort([r["sucos"] for r in p79_rows[key]])
-            ax.plot(v, np.arange(1, len(v) + 1) / len(v), color=color(lab),
+            ax.plot(v, np.arange(1, len(v) + 1) / len(v), color=soft(lab),
                     lw=MODEL_LW, zorder=5, solid_capstyle="round")
         # gen.yml would call everything left of this line invalid.
         ax.axvline(PB_SUCOS_THRESHOLD, color=INK, lw=1.2, ls=(0, (1, 2.6)), zorder=3)
@@ -4310,7 +4940,8 @@ def draw_posebusters_sucos_ecdf(out):
                   xlabel="SuCOS vs the pocket's crystal ligand", xloc=None)
         ax.set_xlim(0, 1)
         ax.set_ylim(0, 1)
-        legend(ax, arm_handles(arms, include_ref=False), loc="upper left", fontsize=11.5)
+        legend(ax, arm_handles(arms, include_ref=False, paint=soft), loc="upper left",
+               fontsize=11.5)
         fit(fig, pad=0.5)
         save(fig, out, f"sucos_ecdf_{variant}")
 
@@ -4372,13 +5003,13 @@ def draw_posebusters_sucos_per_atom(out):
             fig.patch.set_facecolor("white")
             ax.set_facecolor("white")
             for lab, key, _ in arms:
-                ax.plot(xs, model_curve(per[key], xs, f), color=color(lab),
+                ax.plot(xs, model_curve(per[key], xs, f), color=soft(lab),
                         lw=MODEL_LW, zorder=5, solid_capstyle="round")
             ax.axhline(PB_SUCOS_THRESHOLD, color=INK, lw=1.2, ls=(0, (1, 2.6)), zorder=3)
             furniture(ax, ylabel=f"SuCOS {stat}", xlabel=X_LABEL,
                       xlim=(xs[0] - 0.6, xs[-1] + 0.6))
             ax.set_ylim(0, 1)
-            legend(ax, arm_handles(arms, include_ref=False), loc="upper left",
+            legend(ax, arm_handles(arms, include_ref=False, paint=soft), loc="upper left",
                    fontsize=11.5)
             fit(fig, pad=0.5)
             save(fig, out, f"sucos_per_atom_{stat}_{variant}")
@@ -4446,27 +5077,39 @@ def draw_posebusters_sucos_per_atom(out):
 # key -> (label, linewidth, linestyle). Dash is a second identity channel for the five
 # published baselines: they are drawn thin, five at a time, and colour alone is not enough
 # at that weight.
+# The dashes come from METHOD_DASH in 00_core.py now (2026-09-14), so this family and the
+# rotatable-bond one cannot drift apart again. AR and Pocket2Mol both carried (5, 2) here,
+# which left them separable by hue alone; dash() gives Pocket2Mol its own pattern.
 PCSZ_BASELINES = [
-    ("AR",         "AR",         1.6, "-"),
-    ("Pocket2Mol", "Pocket2Mol", 1.6, (0, (5, 2))),
-    ("DiffSBDD",   "DiffSBDD",   1.6, (0, (1, 1.6))),
-    ("DecompDiff", "DecompDiff", 1.6, (0, (6, 2, 1, 2))),
-    ("FuncBind",   "FuncBind",   1.6, (0, (9, 3))),
+    ("AR",         "AR",         1.6, dash("AR")),
+    ("Pocket2Mol", "Pocket2Mol", 1.6, dash("Pocket2Mol")),
+    ("DiffSBDD",   "DiffSBDD",   1.6, dash("DiffSBDD")),
+    ("DecompDiff", "DecompDiff", 1.6, dash("DecompDiff")),
+    ("FuncBind",   "FuncBind",   1.6, dash("FuncBind")),
 ]
 # TargetDiff is violet and still dashed: it used to be orange, which put two BASELINES in
 # the same hue family as each other, and the dash costs nothing now that the collision is
 # gone. These labels are the drawn labels, not the ARMS keys -- they reach color() through
 # the alias table.
 PCSZ_LOCAL = [
-    ("TargetDiff",    f"{E}/frozenenc_probes/posecheck_full/targetdiff", 2.4, (0, (6, 2))),
-    ("VoxBind σ=0.9", f"{E}/frozenenc_probes/posecheck_full/vanilla",    3.0, "-"),
-    ("CoDE",          f"{E}/frozenenc_probes/posecheck_full/ours_v1",    3.4, "-"),
+    ("TargetDiff",    f"{E}/frozenenc_probes/posecheck_full/targetdiff", 1.6,
+     dash("TargetDiff")),
+    ("VoxBind σ=0.9", f"{E}/frozenenc_probes/posecheck_full/vanilla",    3.4,
+     dash("VoxBind σ=0.9")),
+    ("CoDE",          f"{E}/frozenenc_probes/posecheck_full/ours_v1",    3.8, dash("CoDE")),
 ]
 # Weight per METHOD, keyed by the canonical name so the other family can read it: the two
 # figures are a pair and a series that is thicker in one of them reads as a different series
 # (2026-09-13). NOT one flat weight -- our two arms are the subject and the five published
 # baselines are context, which is the same reason they are dashed and these are solid.
-PCSZ_REF_LW = 2.0
+# ONE WEIGHT FOR EVERY SERIES THAT IS NOT OURS (2026-09-14): the five published baselines,
+# TargetDiff and the crystal ligands all draw at 1.6, and dash alone tells them apart. Only
+# VoxBind (3.4) and CoDE (3.8) are heavier, which is the whole point of the weight channel.
+PCSZ_REF_LW = 1.6
+# What the crystal ligands are CALLED in this family's key (2026-09-14). The shared REF_LABEL
+# ("Reference ligand") still names them everywhere else; only the drawn key is shortened, and
+# _pcsz_key splits the key on this name.
+PCSZ_REF_NAME = "Reference"
 PCSZ_LINE_LW = {**{ALIASES.get(lab, lab): lw for _, lab, lw, _ in PCSZ_BASELINES},
                 **{ALIASES.get(lab, lab): lw for lab, _, lw, _ in PCSZ_LOCAL}}
 
@@ -4482,6 +5125,9 @@ PCSZ_BG, PCSZ_INK, PCSZ_AXIS = "#ffffff", "#000000", "#000000"
 # decades of width on it pushed the region where the methods separate into the right half.
 # Values under the floor are clipped onto it, so the curve enters the axis at its true share.
 PCSZ_XFLOOR, PCSZ_XTOP = 1e1, 3e3
+# The clash axis is log10(x+1), so it can hold the zero-clash poses; these are the labels put
+# back on it in real counts (2026-09-14).
+PCSZ_CLASH_TICKS = [0, 1, 10, 100]
 # 80 % of the original 8.6 x 5.6 in canvas both ways, then 1.2x wider again so the lower-right
 # key leaves room for the curves' long right tails, then 0.9x both ways (2026-09-13). The
 # per-atom all-methods figure reads its aspect from this, so keep scaling both sides together
@@ -4493,10 +5139,15 @@ PCSZ_XFLOOR, PCSZ_XTOP = 1e1, 3e3
 # (2026-09-13): the lower-right key and the curves' right tails were tight against each other
 # once the canvas came in.
 PCSZ_SHRINK, PCSZ_LW_SCALE = 0.85, 1.3
-PCSZ_ECDF_SIZE = (8.6 * 0.8 * 1.2 * 0.9 * PCSZ_SHRINK * 1.1, 5.6 * 0.8 * 0.9 * PCSZ_SHRINK)
+PCSZ_ECDF_SIZE = (8.6 * 0.8 * 1.2 * 0.9 * PCSZ_SHRINK * 1.1,
+                  5.6 * 0.8 * 0.9 * PCSZ_SHRINK * 0.9)   # trailing 0.9 is HEIGHT only
 # Axis-name size for the ECDF, and for the per-atom all-methods figure drawn in its style.
 # 1.4x the family's original 11.5 pt (2026-09-13).
 PCSZ_LABEL_FS = 11.5 * 1.4
+# The y name's gap off its tick labels, DOUBLED (2026-09-14). Measured off the drawn PNGs the
+# matplotlib default (labelpad 4.0) buys 5.5 pt here and 6.8 pt on the per-atom panel; a pad of
+# 10 is twice that on both. Shared, so the pair keeps one left margin.
+PCSZ_YPAD = 10
 PCSZ_RC = {
     "font.family": "DejaVu Sans", "font.size": 12,
     "text.color": PCSZ_INK, "axes.labelcolor": PCSZ_INK,
@@ -4678,7 +5329,9 @@ def _pcsz_style(ax, *, grid_axis="both"):
 
 
 PCSZ_KEY_NCOL = 2
-PCSZ_KEY_KW = dict(fontsize=9.5, handlelength=1.6, handletextpad=0.5, labelspacing=0.32,
+# handlelength 1.6 showed barely one repeat of a dash pattern, so the five baselines' second
+# identity channel was unreadable in the key; 2.8 fits two to three repeats of every pattern.
+PCSZ_KEY_KW = dict(fontsize=9.5, handlelength=2.8, handletextpad=0.5, labelspacing=0.32,
                    borderpad=0.4, columnspacing=1.2)
 # The frame's face, translucent so a curve running under the key is still followable, still
 # opaque enough to keep the dotted grid out of the text (2026-09-13). Set on the FACE, not as
@@ -4700,8 +5353,8 @@ def _pcsz_key(fig, ax):
     drawn round their union. Call AFTER the layout is final: positions are axes fractions of
     the axes as laid out when this runs."""
     pairs = list(zip(*ax.get_legend_handles_labels()))
-    ref = [p for p in pairs if p[1] == REF_LABEL]
-    methods = [p for p in pairs if p[1] != REF_LABEL]
+    ref = [p for p in pairs if p[1] == PCSZ_REF_NAME]
+    methods = [p for p in pairs if p[1] != PCSZ_REF_NAME]
     rows = -(-len(methods) // PCSZ_KEY_NCOL)
     # matplotlib fills a legend column by column; interleave so the grid reads across.
     methods = [methods[r * PCSZ_KEY_NCOL + c] for c in range(PCSZ_KEY_NCOL)
@@ -4759,20 +5412,29 @@ def draw_posecheck_strain_ecdf_by_size(out):
                 x = np.sort(np.clip(v, PCSZ_XFLOOR, None))
                 # soft(): CoDE in its lighter tint, as in the eight-method strain line figures
                 # (2026-09-13). The clash violin below still draws the palette colour.
+                # display(): the key carries VoxBind's sigma as a subscript (2026-09-14). It is
+                # the ONLY name DISPLAY overrides, so every other entry is unchanged, and the
+                # series keeps its plain label everywhere else -- CSV, violin ticks, data keys.
                 ax.plot(x, np.arange(1, x.size + 1) / x.size, color=soft(label),
                         lw=lw * PCSZ_LW_SCALE, ls=ls,
-                        label=label, solid_capstyle="round")
+                        label=display(label), solid_capstyle="round")
             r = np.asarray(ref[b]["strain"], dtype=float)
             if r.size >= 3:
                 x = np.sort(np.clip(r, PCSZ_XFLOOR, None))
                 ax.plot(x, np.arange(1, x.size + 1) / x.size, color=REF_COLOR,
-                        lw=PCSZ_REF_LW * PCSZ_LW_SCALE, ls=(0, (3, 2)),
-                        label=REF_LABEL)
+                        # SOLID, and AR took its dash (2026-09-14): solid was the one style no
+                        # baseline had, so it now marks the crystal ligands and our two arms --
+                        # the series a reader returns to -- and every baseline carries a dash.
+                        lw=PCSZ_REF_LW * PCSZ_LW_SCALE, ls="-",
+                        label=PCSZ_REF_NAME, solid_capstyle="round")
             ax.set_xscale("log")
             ax.set_xlim(PCSZ_XFLOOR, PCSZ_XTOP)
             ax.set_ylim(0, 1.0)
-            ax.set_xlabel("UFF strain energy (kcal mol⁻¹) · log scale", fontsize=PCSZ_LABEL_FS)
-            ax.set_ylabel("Cumulative probability", fontsize=PCSZ_LABEL_FS)
+            # "· log scale" dropped (2026-09-14); the decade ticks say it.
+            ax.set_xlabel("UFF strain energy (kcal mol⁻¹)", fontsize=PCSZ_LABEL_FS)
+            # Two lines (2026-09-14), as on the per-atom panel it pairs with.
+            ax.set_ylabel("Cumulative\nprobability", fontsize=PCSZ_LABEL_FS,
+                          labelpad=PCSZ_YPAD)
             # No title (removed on request 2026-09-13): the size bin is carried by the file
             # name (`ecdf-by-size-<bin>`) and by whatever caption places the figure.
             # Nine series; the legend names them only -- the medians and n are in the CSV and
@@ -4794,7 +5456,9 @@ def draw_posecheck_clash_violin_by_size(out):
     data_by_label, series, _ref, methods = _pcsz_data()
     with plt.rc_context(PCSZ_RC):
         for b, (lab, slug) in enumerate(zip(PCSZ_LABELS, PCSZ_SLUGS)):
-            fig, ax = plt.subplots(figsize=(10.6, 5.6))
+            # The strain ECDF's canvas (2026-09-14), so the two PoseCheck measurements are the
+            # same shape on a page; its rc is already in force for the whole family.
+            fig, ax = plt.subplots(figsize=PCSZ_ECDF_SIZE)
             fig.patch.set_facecolor(PCSZ_BG)
             _pcsz_style(ax, grid_axis="y")
             vals, cols, ticks = [], [], []
@@ -4803,8 +5467,11 @@ def draw_posecheck_clash_violin_by_size(out):
                 if len(v) < 20:
                     continue
                 vals.append(v)
-                cols.append(colour)
-                ticks.append(label.replace(" · ", "\n").replace(" σ", "\nσ"))
+                # soft(), as every other eight-method figure draws (2026-09-14). `colour` off
+                # the series table is the saturated palette entry, which now only the
+                # three-arm and docking figures use.
+                cols.append(soft(label))
+                ticks.append(display(label))
             # KDE fitted on log10(x+1) and the ticks relabelled with real counts: a plain
             # log axis is impossible because a few percent of poses have zero clashes, and
             # symlog would warp only the display while the KDE stayed in data space.
@@ -4820,23 +5487,379 @@ def draw_posecheck_clash_violin_by_size(out):
                 ax.vlines(i, tf(q1), tf(q3), color="#14181f", lw=5, zorder=3)
                 ax.plot(i, tf(med), "o", color="white", ms=5.5, zorder=4)
             hi = max(max(v) for v in vals)
-            ticks_at = [t for t in (0, 1, 2, 5, 10, 20, 50, 100, 200) if t <= hi * 1.6]
+            # DECADES ONLY (2026-09-14): zero, then 1, 10, 100. The nine intermediate ticks the
+            # axis used to carry were reading aids for numbers that are now in the CSV.
+            ticks_at = [t for t in PCSZ_CLASH_TICKS if t <= hi * 1.6]
             ax.set_yticks(tf(ticks_at))
             ax.set_yticklabels([str(t) for t in ticks_at])
-            ax.set_ylim(tf(0) - 0.04, tf(hi) + 0.20)
-            for i, v in enumerate(vals, start=1):
-                ax.text(i, ax.get_ylim()[1],
-                        f"mean {np.mean(v):.2f}\nmed {np.median(v):.0f}",
-                        ha="center", va="top", fontsize=8.5, color="#3a4352",
-                        linespacing=1.35)
+            # The headroom the per-violin mean/median strip needed is gone with it.
+            ax.set_ylim(tf(0) - 0.04, tf(hi) + 0.06)
+            # TURNED (2026-09-14): on the ECDF's narrower canvas eight names laid flat ran
+            # into each other -- Pocket2Mol into DiffSBDD into DecompDiff. Anchored at the
+            # right so each name ends under its own violin.
             ax.set_xticks(range(1, len(vals) + 1))
-            ax.set_xticklabels(ticks, fontsize=9)
-            ax.set_ylabel("steric clashes per pose  ·  log-spaced", fontsize=11.5)
-            ax.set_title(f"Steric clashes — {lab} heavy atoms", fontsize=14,
-                         fontweight="620", loc="left", pad=10)
+            ax.set_xticklabels(ticks, fontsize=9.5, rotation=30, ha="right")
+            ax.set_ylabel("Steric clashes\nper pose", fontsize=PCSZ_LABEL_FS,
+                          labelpad=PCSZ_YPAD)
+            # NO TITLE and NO per-violin mean/med strip (2026-09-14), as on the strain ECDF:
+            # the bin is in the file name (`clash-violin-by-size-<bin>`) and every number the
+            # strip carried is a column of the CSV written beside the figure.
             fig.tight_layout(pad=0.5)
             save(fig, out, f"clash_violin_{slug}")
     _pcsz_csv(out, methods)
+    print(f"  wrote {out}")
+
+
+# ── fig-posecheck-clash-box-by-method ──────────────────────────────────────────────────
+# The rotatable-bond grid's box format on ONE panel: method along x, clashes up y. There is
+# nothing to facet here -- this is every pose the method made, at every ligand size -- so the
+# 3x3 block collapses to a single axes and the bins live in the violin above.
+# THE FILL IS THE METHOD, not its median (2026-09-14). The grid needed a colourmap because a
+# method owns nine panels there and the fill was the only place its median could be read; on
+# one axes the eight medians are side by side already, so the fill goes back to carrying
+# identity -- the same soft() tint the violin and the ECDF give that method -- and the
+# colourbar that encoded the median comes off.
+# 0.8x the grid's 2.0 (2026-09-14): a box here is far wider than one in a nine-panel grid,
+# and the same weight read heavier across it.
+PCSZ_CBOX_MED_LW = 2.0 * 0.8
+# Wider again (2026-09-14), on top of the width the colourbar gave back. TALL is its own
+# factor because the x names went up to the y name's size: nine of them at 30 degrees eat
+# height that the boxes used to have.
+PCSZ_CBOX_WIDE, PCSZ_CBOX_TALL = 1.15, 1.2
+# ROTATED (2026-09-14): the methods run DOWN the y axis and the clashes across x. Nine rows
+# want height rather than width, and the names stop needing their 30-degree tilt -- upright
+# against a y axis is the main thing rotating buys. Kept as its own pair rather than swapping
+# the two above, so going back to the upright panel stays one edit.
+# Width at 0.6x (2026-09-14), back up from 0.4. The method names sit OUTSIDE the axes but
+# INSIDE the figure, and constrained layout fits everything within figsize -- so a cut here
+# comes out of the drawing area alone, the names keeping their full width. At 0.4 that left
+# the nine boxes about 285 px of a 492 px image to share, with the labels taking 42 % of it,
+# and the median spread the panel exists to show (4 against 8) stopped being legible.
+PCSZ_CBOX_WIDE_V, PCSZ_CBOX_TALL_V = 0.5, 1.55
+# The method names' tilt. A rotated label's horizontal footprint is w*cos(t) + h*sin(t), so
+# for names this long against this type size the saving is modest until the angle is steep:
+# roughly 5 % at 30 degrees, 17 % at 45, 36 % at 60. Level is easier to read, so this is the
+# smallest angle that buys anything rather than the one that buys most.
+PCSZ_CBOX_NAME_ROT = 30
+# Minor ticks, as a fraction of the frame's weight. They SUBDIVIDE a decade rather than bound
+# the panel, and carrying the frame's full 2.0 made the eight of them between each pair of
+# decades read as more axis lines instead of as gradations on one.
+PCSZ_CBOX_MINOR_LW = 0.5
+# WHERE THE VALUE AXIS STOPS (2026-09-14). Left to itself it runs to the largest flier any
+# method produced -- DiffSBDD's 333 -- which spends the right third of the panel on a handful
+# of points and squeezes all nine boxes into the left half. DiffSBDD is the ONLY method that
+# reaches past this: the next largest maximum is TargetDiff's 167, and every other method
+# tops out between 26 and 97, so the cap costs one method's extreme tail and nothing else.
+PCSZ_CBOX_HI = 200.0
+# HOW MUCH WHITE GOES INTO A FILL (2026-09-14). The fills already carry EXACTLY the soft()
+# hexes the ECDF and the per-atom panel draw their lines in -- checked on the rendered
+# pixels, #EE9190 / #F0A6C0 / #8DCB92 / #C6B46A / #8291E8 / #7FC4D1 match byte for byte
+# across the two files. They still read more saturated, and that is an area effect, not a
+# palette drift: a filled box is ~100x the ink of a 3 px line of the same colour. So the
+# FILL, and only the fill, is mixed toward white. The line palette is untouched, which is
+# what keeps a method the same colour everywhere. This is the step the rotatable-bond grid
+# gets for free by running its colourmap through pale().
+# NO WHITE AT ALL (2026-09-14): the fills are the soft() hexes exactly as the ECDF and the
+# per-atom panel draw their lines, so a method is literally one colour across the three
+# figures. 0.42 read washed out and 0.2 was still a second colour for the same method; the
+# area effect that motivated the blend is worth living with. This stays a knob rather than
+# being deleted -- one number brings the tint back if the solid blocks prove too heavy.
+PCSZ_CBOX_TINT = 0.0
+# The frame's weight, up from this family's 1.1 to the rotatable-bond grid's (2026-09-14):
+# the panel carries the grid's boxes and now type at 14 pt, and 1.1 read thin under both.
+# The rule between the crystal ligands and the methods takes the SAME weight, because it is
+# frame and not data -- 79 poses against ~7,500 is a different population, not a ninth method.
+PCSZ_CBOX_AXIS_LW = 2.0
+# The method names, two points off the y name (2026-09-14).
+PCSZ_CBOX_NAME_FS = PCSZ_LABEL_FS - 2
+# AIR ON EITHER SIDE OF THE RULE (2026-09-14). Boxes are 0.66 wide on a 1.0 pitch, so two
+# neighbours are 0.34 apart; at a 2 pt frame weight the rule ate most of that, leaving less
+# air between the reference box and AR's than between the reference box and the left spine.
+# The methods slide right by this much so the rule sits in a margin of its own.
+PCSZ_CBOX_GAP = 0.5
+# The x padding past the outermost box centre, at each end.
+PCSZ_CBOX_PAD = 0.7
+# ONE SCALE OVER BOTH OF THE ABOVE (2026-09-14), so "tighten the whitespace" stays a single
+# number instead of two that drift apart. 0.8 puts the rule's air at 0.40 and the end padding
+# at 0.56. The box width and the 1.0 pitch are untouched: only air moves, so the boxes keep
+# their size and the panel just stops carrying as much empty space.
+PCSZ_CBOX_MARGIN = 0.8
+
+
+def _pcsz_tint(hexv, f=PCSZ_CBOX_TINT):
+    """`hexv` mixed f of the way to white, as an rgb triple."""
+    r, g, b = (int(hexv[k:k + 2], 16) / 255 for k in (1, 3, 5))
+    return tuple(c + (1.0 - c) * f for c in (r, g, b))
+# WHERE THE CRYSTAL LIGANDS' CLASHES COME FROM, and why not from REF_ROOT like their strain.
+# REF_ROOT's run pose-scored against the 10 A crop, which deletes protein a pose could clash
+# with and so under-counts; every method on this axis is scored against the whole receptor.
+# This root pose-scored with scope="full", so its reference is on the same footing. Nothing
+# was recomputed for it: three independent full-scope runs (this one, reproduction/
+# res_test_100 and 260827 base) carry the reference clash for all 79 pockets and agree on
+# every one of them, as they must -- counting clashes is deterministic, unlike strain.
+PCSZ_REF_CLASH_ROOT = (f"{E}/260908_fusion_default_cv2_scratch_8gpu/samples/"
+                       "samples_ep350_test79_n100")
+
+
+@figure("fig-posecheck-clash-box-by-method", folder="fig-posecheck/clash",
+        needs=("posecheck_<Method>.json", "frozenenc_probes/posecheck_full/"))
+def draw_posecheck_clash_box_by_method(out):
+    """Steric clashes per pose, every method, all ligand sizes pooled."""
+    data_by_label, series, _ref, methods = _pcsz_data()
+    labels = [label for label, *_ in series
+              if len(data_by_label[label][PCSZ_POOLED]["clash"]) >= 20]
+    vals = [np.asarray(data_by_label[l][PCSZ_POOLED]["clash"], dtype=float) for l in labels]
+    # THE CRYSTAL LIGANDS LEAD (2026-09-14), from the whole-receptor run named above. They are
+    # the benchmark every method is read against, so they are the leftmost box, and n=79 here
+    # against ~7,500 a method: one crystal pose per pocket is all there is.
+    keep = set(json.load(open(legacy("fig-posecheck", "posecheck_AR.json"),
+                              encoding="utf-8"))["density79_pockets"])
+    for _, root, *_ in PCSZ_LOCAL:
+        keep &= _pcsz_pockets_of(root)
+    ref_full, _ = _pcsz_load_local(PCSZ_REF_CLASH_ROOT, keep, reference=True)
+    labels = [PCSZ_REF_NAME] + labels
+    vals = [np.asarray(ref_full[PCSZ_POOLED]["clash"], dtype=float)] + vals
+    meds = [float(np.median(v)) for v in vals]
+    # PROPER log10, not log10(x+1) (2026-09-14). The +1 existed so a zero-clash pose had
+    # somewhere to sit on the axis -- but the floor is 10^0 now and those poses fall below it
+    # either way, so all the +1 still bought was a compressed bottom decade: it doubles 1
+    # while leaving 100 untouched. Measured on the drawn panel, 10^0->10^1 spanned 130 px
+    # against 169 px for 10^1->10^2, a ratio of 1.30 under tick labels that promise 1.00.
+    # Zeros clamp to 0.5, below the floor, and are clipped exactly as before -- so nothing
+    # visible changes except that the decades are finally even.
+    # THE VIOLIN KEEPS ITS +1 and must: its axis carries a real 0 tick, so a zero-clash pose
+    # has a place to land there and the transform is still doing work.
+    tf = lambda v: np.log10(np.maximum(np.asarray(v, dtype=float), 0.5))
+    with plt.rc_context(PCSZ_RC):
+        fig, ax = plt.subplots(figsize=(PCSZ_ECDF_SIZE[0] * PCSZ_CBOX_WIDE_V,
+                                        PCSZ_ECDF_SIZE[1] * PCSZ_CBOX_TALL_V),
+                               layout="constrained")
+        fig.patch.set_facecolor(PCSZ_BG)
+        # The grid follows the VALUE axis, which rotating moved to x. A rule through every
+        # category centre is a picket fence rather than a reading aid -- which is the whole
+        # reason _pcsz_style takes the axis as an argument.
+        _pcsz_style(ax, grid_axis="x")
+        for side in ("left", "bottom"):
+            ax.spines[side].set_linewidth(PCSZ_CBOX_AXIS_LW)
+        ax.tick_params(which="major", width=PCSZ_CBOX_AXIS_LW)
+        # THE GRID'S WHISKERS (2026-09-14): 1.5 x IQR on the RAW counts, the way the
+        # rotatable-bond grid gets them by handing raw values to a log axes. Handing this one
+        # tf(v) instead put the fences 1.5 IQR out in LOG space, which ran AR's whisker to 33
+        # where the raw fence is 14 -- the two "same format" figures were quoting different
+        # statistics. Quartiles are order statistics and do not care which space they are
+        # found in; the fences do. So the box is computed on the counts and only its
+        # POSITIONS are transformed for drawing.
+        stats = [{k: tf(s[k]) for k in ("med", "q1", "q3", "whislo", "whishi", "fliers")}
+                 for s in (matplotlib.cbook.boxplot_stats(v, whis=1.5)[0] for v in vals)]
+        # The reference holds position 0; the methods start one full pitch plus the gap out.
+        gap = PCSZ_CBOX_GAP * PCSZ_CBOX_MARGIN
+        pos = [0.0] + [i + gap for i in range(1, len(stats))]
+        bp = ax.bxp(stats, positions=pos, widths=0.66, orientation="horizontal",
+                    showfliers=True, patch_artist=True, manage_ticks=False, zorder=5,
+                    # The house grey the whiskers already wear (INK, #514F52), not this
+                    # family's pure black. Rotating the panel turned each method's outliers
+                    # from a short spike above its box into a long band beside it, and at
+                    # black they read as the loudest thing in the figure -- louder than the
+                    # boxes whose comparison is the point. At 0.45 over white this lands
+                    # near #B0B0B0 against the black version's #8C8C8C.
+                    flierprops=dict(marker="d", markersize=2.4, markerfacecolor=INK,
+                                    markeredgecolor="none", alpha=0.45))
+        for box, label in zip(bp["boxes"], labels):
+            # The method's own tint, the one it wears in the violin and the ECDF beside it.
+            # soft() is keyed on the palette's "Reference ligand", not on the drawn name.
+            box.set(facecolor=_pcsz_tint(REF_COLOR if label == PCSZ_REF_NAME
+                                         else soft(label)),
+                    edgecolor="none", linewidth=0)
+        for part in ("whiskers", "caps"):
+            for art in bp[part]:
+                # THE GRID'S WHISKER INK (2026-09-14), not this family's. The rotatable-bond
+                # grid draws whiskers and caps in the house INK -- #514F52, a warm grey --
+                # while this family overrides its furniture to pure black; at the same 0.9
+                # weight that black read as a harder, heavier line than the grid's. Only the
+                # box's own furniture moves: the spines, ticks and names stay black.
+                art.set(color=INK, linewidth=0.9)
+        for m in bp["medians"]:
+            m.set(color=RB_GRID_MED_COLOR, linewidth=PCSZ_CBOX_MED_LW, solid_capstyle="butt")
+        # Tens of thousands of flier markers as vector paths make the PDF unplaceable.
+        for fl in bp["fliers"]:
+            fl.set_rasterized(True)
+        # Capped: fliers past PCSZ_CBOX_HI fall OFF the panel rather than being clipped onto
+        # its edge, because piling them on the edge would draw a spike at 200 that no method
+        # actually has. The run log below still prints each method's true maximum.
+        hi = min(max(float(v.max()) for v in vals), PCSZ_CBOX_HI)
+        # THE VALUE AXIS IS X NOW (2026-09-14, rotated): decade names as powers of ten with
+        # the log minor ticks between them, as the per-atom panel has them, so the two still
+        # read as a pair of log axes -- evenly, now that tf is a true log10. The floor is
+        # 10^0, so there is no 0 tick and the poses AT zero (1.6% of TargetDiff's, 10.9% of
+        # AR's) sit below it, their whisker running off the LEFT edge. That those poses are
+        # invisible is worth saying in the caption: a tenth of AR's poses clash with nothing
+        # at all, which is the best thing about it and the panel cannot show it.
+        decades = [t for t in PCSZ_CLASH_TICKS if t and t <= hi * 1.6]
+        ax.set_xticks(tf(decades))
+        ax.set_xticklabels([f"$10^{{{round(math.log10(t))}}}$" for t in decades])
+        ax.set_xticks(tf([k * t for t in decades for k in range(2, 10) if k * t <= hi]),
+                      minor=True)
+        ax.tick_params(axis="x", which="minor", direction="out", length=2.0,
+                       width=PCSZ_CBOX_AXIS_LW * PCSZ_CBOX_MINOR_LW, colors=PCSZ_AXIS)
+        ax.set_xlim(tf(1), tf(hi) + 0.06)
+        # INVERTED, so position 0 -- the crystal ligands -- is the TOP row. A stack of rows is
+        # read downward and matplotlib puts 0 at the bottom, which would have buried the
+        # benchmark under the eight methods it exists to be compared against.
+        ax.set_ylim(pos[-1] + PCSZ_CBOX_PAD * PCSZ_CBOX_MARGIN,
+                    pos[0] - PCSZ_CBOX_PAD * PCSZ_CBOX_MARGIN)
+        # The crystal ligands are the benchmark the methods are read against, so a rule
+        # separates them rather than leaving them to look like a ninth method. It takes the
+        # frame's colour AND weight exactly, with no alpha: at 0.45 the same black rendered as
+        # a mid grey that read as a third kind of line -- neither the black spines it belongs
+        # with nor the grey whiskers inside the panel.
+        ax.axhline((pos[0] + pos[1]) / 2.0, color=PCSZ_AXIS, lw=PCSZ_CBOX_AXIS_LW, zorder=4)
+        ax.set_yticks(pos)
+        # TILTED, ANCHORED WHERE THE NAME ENDS (2026-09-14). rotation_mode="anchor" pins the
+        # label's right end to its tick and rotates about that point, so the tick sits
+        # exactly where the name stops and each name points at its own row.
+        # Measured, this puts a label's bounding-box CENTRE a median 40 px below its tick
+        # (54 px for the longest) -- but that is the geometry of an anchored rotation, not a
+        # misalignment, because the eye follows a tilted name to its END. Centring the
+        # rotated box on the tick instead scores 0 px by that measure and reads WORSE: no
+        # part of the name then touches its tick and it floats between two rows.
+        ax.set_yticklabels([l if l == PCSZ_REF_NAME else display(l) for l in labels],
+                           fontsize=PCSZ_CBOX_NAME_FS, rotation=PCSZ_CBOX_NAME_ROT,
+                           ha="right", va="center", rotation_mode="anchor")
+        ax.set_xlabel("Steric clashes", fontsize=PCSZ_LABEL_FS, labelpad=PCSZ_YPAD)
+        save(fig, out, "clash_box_by_method")
+    write_csv(out, "clash_box_by_method",
+              ["method", "n_clash", "clash_mean", "clash_median", "q25", "q75", "zero_frac"],
+              [[l, len(v), round(float(v.mean()), 2), round(float(np.median(v)), 1),
+                round(float(np.percentile(v, 25)), 1), round(float(np.percentile(v, 75)), 1),
+                round(float((v == 0).mean()), 4)]
+               for l, v in zip(labels, vals)])
+    for l, v, m in zip(labels, vals, meds):
+        print(f"    {l:16s} n={len(v):5d}  median {m:4.1f}  mean {v.mean():5.2f}  "
+              f"zero-clash {100 * (v == 0).mean():4.1f}%  max {v.max():.0f}")
+    print(f"  wrote {out}")
+
+
+# ── fig-posecheck-clash-per-atom-all-methods ───────────────────────────────────────────
+# The strain per-atom all-methods panel's twin, for clashes (2026-09-14).
+#
+# WHY THE EXISTING clash_per_atom_* FIGURES COULD NOT SIMPLY GAIN FIVE MORE LINES. They draw
+# out of the ARMS run trees, and those trees cannot answer this question for eight methods:
+#   1. THE FIVE BASELINES HAVE NO PER-MOLECULE POSECHECK THERE AT ALL -- 0 of ~37,000 samples
+#      under baselines_pose/* carry posecheck.clashes. Their per-molecule counts exist only in
+#      the svr12 exports, which is where the violin, the ECDF and the box already read them.
+#   2. THE RECEPTOR SCOPE DIFFERS. The ARMS roots pose-scored against the 10 A crop
+#      (pose_receptor_scope "crop", or absent, which metrics.py reads as crop); every other
+#      clash figure in this family scores against the whole receptor. On the SAME arm and the
+#      same 79 pockets the crop reads CoDE at median 5.0 / mean 6.44 / max 39 where the whole
+#      receptor reads 6.0 / 7.48 / 97 -- the crop deletes protein the pose could clash with,
+#      so it under-counts, and it truncates the tail hardest.
+# So this figure takes its five baselines from the exports, its three local arms from
+# PCSZ_LOCAL (scope "full") and its reference from PCSZ_REF_CLASH_ROOT, and never from ARMS.
+# It keeps the strain twin's windowing (+-RB_WIN atoms, drawn where >= MIN_N molecules pool)
+# so the two panels are read the same way, and its house is the ECDF's, like every panel here.
+PCSZ_CATOM_STATS = {"median": lambda v: float(np.median(v)),
+                    "mean": lambda v: float(np.mean(v))}
+# Dash per method, keyed as PCSZ_LINE_LW is: both tables are (.., lw, ls) last-two.
+PCSZ_LINE_LS = {**{ALIASES.get(lab, lab): ls for _, lab, _, ls in PCSZ_BASELINES},
+                **{ALIASES.get(lab, lab): ls for lab, _, _, ls in PCSZ_LOCAL}}
+
+
+def _pcsz_atom_rows(root, keep, reference=False):
+    """[{n, c}] per molecule for one whole-receptor run tree, over the pockets in `keep`."""
+    rows = []
+    for path in _pcsz_metrics(root):
+        idx = int(os.path.basename(os.path.dirname(path)).split("_")[1])
+        if idx not in keep:
+            continue
+        j = json.load(open(path, encoding="utf-8"))
+        items = [j.get("reference")] if reference else (j.get("samples") or [])
+        for m in items:
+            if not m or not m.get("n_atoms"):
+                continue
+            c = (m.get("posecheck") or {}).get("clashes")
+            if c is not None:
+                rows.append({"n": m["n_atoms"], "c": float(c)})
+    return rows
+
+
+def _pcsz_atom_keep():
+    """The pockets every arm on this axis has: the baselines' 79, narrowed by ours."""
+    keep = set(json.load(open(legacy("fig-posecheck", "posecheck_AR.json"),
+                              encoding="utf-8"))["density79_pockets"])
+    for _, root, *_ in PCSZ_LOCAL:
+        keep &= _pcsz_pockets_of(root)
+    return keep
+
+
+@figure("fig-posecheck-clash-per-atom-all-methods", folder="fig-posecheck/clash",
+        needs=("posecheck_<Method>.json", "frozenenc_probes/posecheck_full/"))
+def draw_posecheck_clash_per_atom_all_methods(out):
+    """Steric clashes against ligand size, all eight methods and the crystal ligands."""
+    keep = _pcsz_atom_keep()
+    series = {}
+    for key, label, *_ in PCSZ_BASELINES:
+        # The exports' rows are already {n, s, c}; this reads the same file the violin does.
+        series[label], _ = _rb_atom_baseline_rows(key, keep)
+    for label, root, *_ in PCSZ_LOCAL:
+        series[label] = _pcsz_atom_rows(root, keep)
+    refrows = _pcsz_atom_rows(PCSZ_REF_CLASH_ROOT, keep, reference=True)
+
+    labels = [label for _, label, *_ in PCSZ_BASELINES] + [lab for lab, *_ in PCSZ_LOCAL]
+    per = {lab: by_size(series[lab], "c") for lab in labels}
+    ref_per = by_size(refrows, "c")
+    xs = list(range(RB_X_LO, RB_X_HI + 1))
+
+    for stat, f in PCSZ_CATOM_STATS.items():
+        with plt.rc_context(PCSZ_RC):
+            fig, ax = plt.subplots(figsize=PCSZ_ECDF_SIZE)
+            fig.patch.set_facecolor(PCSZ_BG)
+            _pcsz_style(ax)
+            ax.plot(xs, reference_curve(ref_per, xs, f), color=REF_COLOR,
+                    lw=PCSZ_REF_LW * PCSZ_LW_SCALE, ls=SOLID, zorder=4,
+                    solid_capstyle="round")
+            for lab in labels:
+                key = ALIASES.get(lab, lab)
+                ax.plot(xs, _rb_curve(per[lab], xs, f), color=soft(lab),
+                        lw=PCSZ_LINE_LW[key] * PCSZ_LW_SCALE, ls=PCSZ_LINE_LS[key],
+                        zorder=5, solid_capstyle="round")
+            ax.set_ylim(bottom=0)
+            ax.set_xlim(xs[0] - 0.6, xs[-1] + 0.6)
+            ax.xaxis.set_major_locator(MultipleLocator(XTICK_STEP))
+            ax.set_xlabel(X_LABEL, fontsize=PCSZ_LABEL_FS)
+            ax.set_ylabel(f"Clashes {stat}\nper pose", fontsize=PCSZ_LABEL_FS,
+                          labelpad=PCSZ_YPAD)
+            fig.tight_layout(pad=0.5)
+            save(fig, out, f"clash_per_atom_all_methods_{stat}")
+
+    rows = []
+    for lab in labels + [PCSZ_REF_NAME]:
+        p = ref_per if lab == PCSZ_REF_NAME else per[lab]
+        cur = {s: (reference_curve(p, xs, f) if lab == PCSZ_REF_NAME
+                   else _rb_curve(p, xs, f)) for s, f in PCSZ_CATOM_STATS.items()}
+        for i, a in enumerate(xs):
+            rows.append([lab, a, len(p.get(a, ()))]
+                        + ["" if cur[s][i] is None else round(cur[s][i], 2)
+                           for s in ("median", "mean")])
+    write_csv(out, "clash_per_atom_all_methods",
+              ["arm", "heavy_atoms", "n", "clash_median", "clash_mean"], rows)
+
+    print(f"  {len(keep)} pockets · {len(labels)} methods + reference · whole-receptor "
+          f"scope · x = {RB_X_LO}-{RB_X_HI} heavy atoms · ±{RB_WIN}-atom window, drawn "
+          f"where it pools ≥{MIN_N} molecules")
+    heads = (10, 15, 20, 25, 30, 35, 40)
+    print(f"  {'method':16s} {'mols':>6s} {'atoms':>6s} "
+          + " ".join(f"{a:>6d}" for a in heads) + f" {'drawn':>9s}   (clash median at n)")
+    for lab in labels + [PCSZ_REF_NAME]:
+        p = ref_per if lab == PCSZ_REF_NAME else per[lab]
+        med = (reference_curve(p, xs, PCSZ_CATOM_STATS["median"]) if lab == PCSZ_REF_NAME
+               else _rb_curve(p, xs, PCSZ_CATOM_STATS["median"]))
+        cells = [(f"{med[xs.index(a)]:6.1f}" if med[xs.index(a)] is not None
+                  else f"{'—':>6s}") for a in heads]
+        drawn = [a for a, v in zip(xs, med) if v is not None]
+        span = f"{drawn[0]}-{drawn[-1]}" if drawn else "—"
+        n_mol = sum(len(v) for v in p.values())
+        mean_at = np.mean([n for n, v in p.items() for _ in v]) if n_mol else float("nan")
+        print(f"  {lab:16s} {n_mol:6d} {mean_at:6.1f} " + " ".join(cells) + f" {span:>9s}")
     print(f"  wrote {out}")
 
 
@@ -4850,11 +5873,14 @@ def draw_posecheck_clash_violin_by_size(out):
 # the reference is the section's own crystal ligands, and the panel itself says nothing
 # about counts.
 #
-# THE SWATCHES ARE THE PANEL'S, not the rotatable-bond figures' or the ECDF's -- the three
-# strain families do not draw a method identically. The per-atom panel takes its dash from
-# the rotatable-bond family (RB_BASE_DASH, solid for the local arms), its WEIGHT from the
-# ECDF family (PCSZ_LINE_LW x PCSZ_LW_SCALE) and its colour through soft(), in RB_ORDER.
-# Every one of those is read at call time: they live in parts assembled after this one.
+# THE SWATCHES ARE THE PANEL'S. The dash comes from the shared METHOD_DASH table through
+# dash(), the WEIGHT from the ECDF family (PCSZ_LINE_LW x PCSZ_LW_SCALE) and the colour
+# through soft(), in RB_ORDER. PCSZ_LINE_LW is read at call time: it lives in a part
+# assembled after this one.
+#
+# THIS KEY USED TO LIE. It read the rotatable-bond family's own dash table, which had drifted
+# a whole method out of step with the ECDF's -- so the legend told a reader that Pocket2Mol
+# was the dotted line when the panel drew DiffSBDD that way. One table now feeds both.
 PLEG_NCOL = 4
 # SWATCH LENGTH, in font sizes. The shared legend() fixes 1.9, and at the panel's weights that
 # is shorter than one period of DecompDiff's (9, 3) dash -- its swatch read as a solid line,
@@ -4866,7 +5892,7 @@ PLEG_HANDLE_LEN = 3.6
 def _pleg_method_handles():
     out = []
     for lab in RB_ORDER:
-        out.append(Line2D([], [], color=soft(lab), ls=RB_BASE_DASH.get(lab, "-"),
+        out.append(Line2D([], [], color=soft(lab), ls=dash(lab),
                           lw=PCSZ_LINE_LW[ALIASES.get(lab, lab)] * PCSZ_LW_SCALE,
                           solid_capstyle="round", label=display(lab)))
     return out
@@ -4891,7 +5917,13 @@ def _pleg_legend(fig, handles, **kw):
 def draw_posecheck_strain_legend(out):
     """The key the per-atom all-methods strain panels dropped: reference on top, methods 2x4."""
     use_style()
-    ref = [Line2D([], [], color=REF_COLOR, ls=DASH, lw=PCSZ_REF_LW * PCSZ_LW_SCALE,
+    # THE REFERENCE TAKES ITS LINE FROM THE SAME TABLE (2026-09-14). It used to hardcode
+    # DASH, which made this key show a dashed crystal-ligand swatch while both panels it
+    # describes draw that series SOLID -- the reference went solid on 2026-09-14 and the key
+    # was never told. It is built here rather than in _pleg_method_handles because it sits on
+    # its own centred line, which is exactly how it escaped the earlier repointing.
+    ref = [Line2D([], [], color=REF_COLOR, ls=dash(REF_LABEL),
+                  lw=PCSZ_REF_LW * PCSZ_LW_SCALE,
                   dash_capstyle="round", label=REF_LABEL)]
     # PCSZ_RC for the panel's 170 dpi and its crop to the ink, so the key and the panels it
     # sits beside are rasterised the same way.
@@ -4910,7 +5942,7 @@ def draw_posecheck_strain_legend(out):
                                  bbox_to_anchor=(0.5, 0.05 + h + VPA_KEY_ROW_GAP)))
         _vpa_one_frame(fig, legs)
         print(f"  key: {REF_LABEL} over {len(RB_ORDER)} methods in {PLEG_NCOL} columns · "
-              f"dash from RB_BASE_DASH, weight from PCSZ_LINE_LW, colour soft()")
+              f"dash from METHOD_DASH, weight from PCSZ_LINE_LW, colour soft()")
         save(fig, out, "strain_per_atom_all_methods_legend")
 
 
@@ -4964,10 +5996,16 @@ def _pc_ranges():
 
 
 def _pc_per_atom_stat(out, field, xs, arms, variant, name, unit, stat, f, *, log,
-                      clip=None, stem, legend_loc="upper left"):
+                      clip=None, stem, legend_loc="upper left", rows=None, ref=None):
     """One statistic, one panel, one file. Which statistic you are looking at is carried by
-    the filename and by the y-axis name, exactly as the 3-line figures carry it."""
+    the filename and by the y-axis name, exactly as the 3-line figures carry it.
+
+    `rows`/`ref` override where the molecules come from. Strain passes neither and reads
+    pose_data() as it always has; CLASHES pass the whole-receptor trees, because the
+    pose_data() rows are crop-scored and a crop under-counts clashes."""
     _, p79_rows, refrows = pose_data()
+    p79_rows = p79_rows if rows is None else rows
+    refrows = refrows if ref is None else ref
     per = {key: by_size(p79_rows[key], field) for _, key, _ in arms}
     ref_per = by_size(refrows, field)
     fig, ax = plt.subplots(figsize=(FIG_W, PANEL_H), dpi=220)
@@ -5086,22 +6124,56 @@ def draw_posecheck_strain_per_atom(out):
     _pc_curve_csv(out, all_xs)
 
 
-@figure("fig-posecheck-clash-per-atom", folder="fig-posecheck/clash", needs=("metrics.json (posecheck.clashes)",))
+@figure("fig-posecheck-clash-per-atom", folder="fig-posecheck/clash",
+        needs=("frozenenc_probes/posecheck_full/",))
 def draw_posecheck_clash_per_atom(out):
     """PoseCheck steric clashes against heavy-atom count — mean and median, core only.
 
-    No `all`: it was core plus TargetDiff, because only those three carry a per-molecule
-    clash count here. The whole field is clash_violin_by_size, which reads the svr12
-    PoseCheck exports and draws all eight methods. See core_only()."""
+    WHOLE-RECEPTOR SCOPE (2026-09-14). This used to read pose_data(), i.e. the ARMS run
+    trees, and those pose-scored against the 10 A crop: on the same arm over the same 79
+    pockets the crop reads CoDE at median 5.0 / mean 6.44 / max 39 where the whole receptor
+    reads 6.0 / 7.48 / 97, and VoxBind 4.0 / 5.23 / 42 against 5.0 / 6.23 / 78. A crop
+    deletes protein the pose could clash with, so it under-counts and truncates the tail
+    hardest. Every other clash figure in this family scores against the whole receptor, so
+    this one reads the same posecheck_full trees the violin and the box do.
+
+    No `all`: see core_only(). The five published baselines carry NO per-molecule PoseCheck
+    in the ARMS trees at all -- 0 of ~37,000 samples -- so `all` here was only ever core plus
+    TargetDiff, which is neither the two-arm comparison nor the whole field. The whole field
+    (seven published baselines, ours, and the crystal ligands) is
+    clash_per_atom_all_methods, which reads the svr12 exports for the five."""
     use_style()
-    all_xs = None
-    for variant, arms, xs in _pc_ranges():
-        for stat, f in PC_STATS:
-            _pc_per_atom_stat(out, "c", xs, arms, variant, "Clashes", "", stat, f,
-                              log=False, stem=f"clash_per_atom_{stat}",
-                              legend_loc="upper left")
-        all_xs = xs
-    _pc_curve_csv(out, all_xs)
+    keep = _pcsz_atom_keep()
+    # The run roots are keyed by the ARMS key itself: posecheck_full/<key>.
+    rows = {os.path.basename(root): _pcsz_atom_rows(root, keep)
+            for _, root, *_ in PCSZ_LOCAL}
+    refrows = _pcsz_atom_rows(PCSZ_REF_CLASH_ROOT, keep, reference=True)
+    arms = [a for a in ARMS if a[1] in CORE and a[1] in rows]
+    per = {key: by_size(rows[key], "c") for _, key, _ in arms}
+    # The x range is the CLASH range now, not the strain range _pc_ranges() derives. That
+    # sharing existed because both panels read one molecule set; this figure no longer does,
+    # so registering the two count for count would be a coincidence, not a property.
+    xs = x_range(per, arms)
+    for stat, f in PC_STATS:
+        _pc_per_atom_stat(out, "c", xs, arms, "core", "Clashes", "", stat, f,
+                          log=False, stem=f"clash_per_atom_{stat}",
+                          legend_loc="upper left", rows=rows, ref=refrows)
+    # Its own CSV: _pc_curve_csv writes strain AND clashes out of pose_data(), whose clash
+    # columns are the crop-scored ones this figure just stopped drawing.
+    ref_per = by_size(refrows, "c")
+    csv_rows = []
+    for lab, key, _ in arms:
+        cur = {s: model_curve(per[key], xs, fn) for s, fn in PC_STATS}
+        csv_rows += [[lab, a, len(per[key].get(a, ()))]
+                     + ["" if cur[s][i] is None else round(cur[s][i], 3)
+                        for s, _ in PC_STATS] for i, a in enumerate(xs)]
+    cur = {s: reference_curve(ref_per, xs, fn) for s, fn in PC_STATS}
+    csv_rows += [[REF_LABEL, a, ""] + ["" if cur[s][i] is None else round(cur[s][i], 3)
+                                       for s, _ in PC_STATS] for i, a in enumerate(xs)]
+    write_csv(out, "clash_per_atom",
+              ["arm", "heavy_atoms", "n", "clash_mean", "clash_median"], csv_rows)
+    print(f"  {len(keep)} pockets · whole-receptor scope · "
+          f"{', '.join(l for l, *_ in arms)} + reference · x = {xs[0]}-{xs[-1]}")
 
 
 
@@ -5230,9 +6302,9 @@ RB_BASELINES = [
 # local arms are the subject while these are context. Same channel split the nine-series
 # by-atom-range figures already use.
 RB_BASE_LW = 1.6
-RB_BASE_DASH = {"AR": (0, (5, 2)), "Pocket2Mol": (0, (1, 1.6)),
-                "DiffSBDD": (0, (6, 2, 1, 2)), "DecompDiff": (0, (9, 3)),
-                "FuncBind": (0, (3, 1.4, 1, 1.4))}
+# The per-method dashes that used to live here are now METHOD_DASH in 00_core.py, read
+# through dash(). This table had drifted a whole method out of step with the ECDF family's,
+# so the same baseline was drawn with two different patterns depending on the figure.
 # The eight-method figures draw every method through soft(): CoDE's lighter tint, the one the
 # Vina per-atom family (dock-per-atom-v*) carries, and the palette colour for everyone else.
 # The shared #4363D8 was the only saturated hue among nine series (changed 2026-09-13). The
@@ -5284,6 +6356,9 @@ RB_BIN_LABELS = ["0", "1–2", "3–4", "5–6", "7–9", "10+"]
 RB_LOCAL_KEYS = ("targetdiff", "vanilla", "ours_v1")
 RB_LOCAL_LABELS = []         # filled by the loaders from ARMS, in RB_LOCAL_KEYS order
 RB_RELABEL = {"ours_v1": "CoDE"}
+# What the crystal ligands are CALLED in the eight-method keys (2026-09-14), matching the
+# strain ECDF. The shared REF_LABEL still names them in the data and in every other family.
+RB_REF_NAME = "Reference"
 # THE ROW ORDER OF 260827/table_drug_design.tex, which is canonical for this section, except
 # that VoxBind is pulled down next to CoDE so the model our arm modifies sits immediately
 # before it and the two read as a pair. Legends, panels and exports all read from this, so a
@@ -5634,7 +6709,14 @@ def _rb_order(labels):
 
 
 def _rb_style_of(label):
-    return (MODEL_LW, "-") if label in RB_LOCAL_LABELS else (RB_BASE_LW, RB_BASE_DASH[label])
+    """Weight from provenance, DASH FROM THE SHARED TABLE.
+
+    The weight still keys on RB_LOCAL_LABELS: the three arms we run locally are drawn heavier
+    in this family. The dash no longer does. It used to return solid for every local arm,
+    which handed TargetDiff -- a published baseline we happen to run ourselves -- the solid
+    line that means OURS in every other figure. dash() knows the difference."""
+    lw = MODEL_LW if label in RB_LOCAL_LABELS else RB_BASE_LW
+    return lw, dash(label)
 
 def _rb_panel_order(labels):
     """Same order as `_rb_order`, with the crystal ligands FIRST -- they are the table's
@@ -5644,13 +6726,15 @@ def _rb_panel_order(labels):
 
 def _rb_handles(labels, solid=False):
     """`solid` for the box figure: nothing in it is a dashed line, so a dashed swatch in the
-    key advertises an encoding the panel does not use. The crystal ligands keep their dash
-    either way -- there they really are a dashed line."""
-    h = [Line2D([], [], color=REF_COLOR, lw=REF_LW, ls=DASH, label=REF_LABEL)]
+    key advertises an encoding the panel does not use. The crystal ligands are SOLID in both
+    (2026-09-14), named "Reference" and drawn through display(), so this family's keys read
+    like the strain ECDF's and the per-atom panel's -- solid marks the series a reader returns
+    to, every baseline carries a dash, and VoxBind shows its sigma as a subscript."""
+    h = [Line2D([], [], color=REF_COLOR, lw=REF_LW, ls=SOLID, label=RB_REF_NAME)]
     for lab in labels:
         lw, ls = _rb_style_of(lab)
         h.append(Line2D([], [], color=soft(lab), lw=MODEL_LW if solid else lw,
-                        ls="-" if solid else ls, label=lab))
+                        ls="-" if solid else ls, label=display(lab)))
     return h
 
 
@@ -5679,8 +6763,11 @@ def _rb_lines(out, xs, per, ref_per, labels, stat):
     fig.patch.set_facecolor("white")
     ax.set_facecolor("white")
     key.axis("off")
+    # Solid, like the key's swatch and like the ECDF's crystal ligands (2026-09-14). The
+    # three-arm core figures above keep the dash -- there the reference is one of three lines,
+    # not one of nine, and nothing else in those panels competes for solid.
     ax.plot(xs, _rb_reference_curve(ref_per, xs, f), color=REF_COLOR, lw=REF_LW,
-            ls=DASH, zorder=4, dash_capstyle="round")
+            ls=SOLID, zorder=4, solid_capstyle="round")
     for lab in labels:
         lw, ls = _rb_style_of(lab)
         ax.plot(xs, _rb_line_curve(per[lab], xs, f), color=soft(lab), lw=lw, ls=ls,
@@ -5759,7 +6846,7 @@ def _rb_all_boxes(out, series, refrows, labels):
             for med in bp["medians"]:
                 med.set(color=INK, linewidth=1.1, solid_capstyle="butt")
         ax.plot(band, [ref_line.get(x) for x in band], color=REF_COLOR, lw=REF_LW,
-                ls=DASH, zorder=6, dash_capstyle="round")
+                ls=SOLID, zorder=6, solid_capstyle="round")
         ax.set_yscale("log")
         # A FIXED FIVE DECADES, AND THE TAIL IS ALLOWED TO RUN OFF THE TOP. FuncBind's
         # 95th percentile at 6 rotatable bonds reaches ~1e11; autoscaling to it stretched
@@ -5990,8 +7077,10 @@ def _rb_atom_lines(out, xs, per, ref_per, labels, stat):
         fig, ax = plt.subplots(figsize=PCSZ_ECDF_SIZE)
         fig.patch.set_facecolor(PCSZ_BG)
         _pcsz_style(ax)
+        # Solid here too, matching the ECDF it pairs with (2026-09-14); AR is already dashed
+        # on this axis through RB_BASE_DASH.
         ax.plot(xs, reference_curve(ref_per, xs, f), color=REF_COLOR,
-                lw=PCSZ_REF_LW * PCSZ_LW_SCALE, ls=DASH, zorder=4, dash_capstyle="round")
+                lw=PCSZ_REF_LW * PCSZ_LW_SCALE, ls=SOLID, zorder=4, solid_capstyle="round")
         dropped = []
         for lab in labels:
             y = _rb_curve(per[lab], xs, f)
@@ -6012,7 +7101,10 @@ def _rb_atom_lines(out, xs, per, ref_per, labels, stat):
         ax.set_xlim(xs[0] - 0.6, xs[-1] + 0.6)
         ax.xaxis.set_major_locator(MultipleLocator(XTICK_STEP))
         ax.set_xlabel(X_LABEL, fontsize=PCSZ_LABEL_FS)
-        ax.set_ylabel(f"Strain {stat} (kcal mol⁻¹)", fontsize=PCSZ_LABEL_FS)
+        # Two lines again (2026-09-14): it was pulled onto one on 2026-09-13, and the unit now
+        # goes back under the name, matching the ECDF's y name beside it.
+        ax.set_ylabel(f"Strain {stat}\n(kcal mol⁻¹)", fontsize=PCSZ_LABEL_FS,
+                      labelpad=PCSZ_YPAD)
         fig.tight_layout(pad=0.5)
         save(fig, out, f"strain_per_atom_all_methods_{stat}")
     return dropped
@@ -6125,20 +7217,47 @@ RB_GRID_COLS = 3
 # RB_GRID_MIN_N most of their boxes would vanish. Three is the least that gives a box a median
 # and quartiles that are not the same point, and the CSV carries n for every box.
 RB_GRID_REF_MIN_N = 3
-# (position, colour) stops, all from the shared tables (2026-09-13): CoDE's SOFT blue at 0,
-# through its PALE tint and VoxBind's PALE tint, to VoxBind's palette sand at the top -- the
-# ends carry the colour, the middle stays light enough for the dark median bars and fliers.
-RB_GRID_CMAP_STOPS = [(0.0, soft("CoDE")), (1 / 3, pale("CoDE")), (2 / 3, pale("VoxBind")),
-                      (1.0, color("VoxBind"))]
+# THE PAPER'S OWN SCALE (2026-09-14). VoxBind Fig. 12/13 colours each box by its median on
+# matplotlib's coolwarm, and this used to be a house-built lookalike assembled out of the
+# SHARED PALETTE: CoDE's soft blue at 0, through both pale tints, to VoxBind's sand at the
+# top. That made the magnitude channel collide with the identity one -- a periwinkle box
+# meant "low median" here and "CoDE" in every other figure, a sand one "high median" here
+# and "VoxBind" there -- and a reader carrying the palette between figures reads it wrong.
+# coolwarm keeps what the house version was reaching for, a light middle so the dark median
+# bars and the fliers stay legible, while being far more saturated at both ends than any
+# pastel in SOFT, so it cannot be mistaken for a method.
+#
+# IT IS DIVERGING AND THE QUANTITY IS NOT: median strain runs 0-800 with no meaningful
+# midpoint at 400, so the white band is an artefact of the map rather than a feature of the
+# data. That is the paper's choice and matching it is the point here, but a sequential map
+# would be the more honest encoding if we ever stop matching.
+RB_GRID_CMAP = "coolwarm"
 RB_GRID_NORM, RB_GRID_CTICK = (0.0, 800.0), 200.0
-RB_GRID_TALL = 0.9975        # per row, as a share of PANEL_H
+RB_GRID_TALL = 0.9975 * 1.1  # per row, as a share of PANEL_H
 # 0.8x the width the three-arm box figures use (2026-09-13). The nine panels keep their type
 # and line weights, so pulling the canvas in is what makes the block read fuller; the boxes
 # narrow with the axes, the colourbar keeps its share of the figure.
-RB_GRID_WIDE = 0.8 * 1.2
+RB_GRID_WIDE = 0.8 * 1.2 * 1.15
 # The outer names are a step above the house 15.5 pt, and the y name sits further off its
 # tick labels -- on a 3x3 block the house sizes read as small.
-RB_GRID_LABEL_FS, RB_GRID_YPAD = 17, 16
+RB_GRID_LABEL_FS, RB_GRID_YPAD = 27, 18
+# Everything else in the block moves with the names (2026-09-14), so it reads like the strain
+# ECDF, which spends 16 pt on a canvas half this wide. Panel names, the tick numbers under and
+# beside every panel, and the colourbar's own ticks -- left at the house 14/14/12 they turned
+# into fine print as soon as the axis names went to 22.
+RB_GRID_TITLE_FS, RB_GRID_TICK_FS = 22, 18
+RB_GRID_CBAR_TICK_FS = RB_GRID_TICK_FS   # one size for every number in the figure
+# SET AGAINST THE STRAIN ECDF (2026-09-14, user's call): that figure spends 16.1 pt of type
+# and a 1.1 pt spine on a 6.95 in canvas; this one is 14.45 in, so matching it at equal placed
+# width would mean 33 pt and 2.5, and matching it per PANEL -- a grid panel is 2.8 x 2.6 in
+# against the ECDF axes' 6.0 x 2.8 -- would mean 16 pt and 1.1. These are the geometric mean of
+# the two, for a block placed wider than the ECDF but not twice as wide.
+# THE PANEL TICK NUMBERS ARE SMALLER THAN THE BAR'S (2026-09-14) even though both were set to
+# 20: measured off the PNG the two render at the same 48 px, but the bar's are turned a quarter
+# turn and a vertical string of digits reads smaller than a horizontal one. They came down to
+# 16 to match what the bar LOOKS like, the bar's own numbers followed them down, and both then
+# settled at 18 -- one number size for the whole figure, a step under the panel names.
+RB_GRID_MED_COLOR = "#323232"   # the median bar, a touch lighter than INK
 # The x name's gap above it, DOUBLED (2026-09-13): measured off the drawn PNG it was 27 px at
 # 220 dpi, i.e. 8.8 pt from the tick labels; a labelpad of 15 measures back as 17.7 pt, which
 # is that doubled (the pad is spent from the axes bbox, so it is ~3 pt more than the gap it
@@ -6151,9 +7270,12 @@ RB_GRID_CBAR_FS = RB_GRID_LABEL_FS
 # Gap from the panel block to the bar, doubled from 0.012 (2026-09-13) -- a share of the
 # figure width, which is what colorbar(pad=) takes.
 RB_GRID_CBAR_PAD = 0.024
+# The caption's gap off the bar's numbers, DOUBLED (2026-09-14): measured off the PNG it was
+# 19 px at 220 dpi, i.e. 6.2 pt on matplotlib's default labelpad of 4, so 10.5 buys about 12.4.
+RB_GRID_CBAR_LABELPAD = 10.5
 # Spines and MAJOR tick marks 1.2x the house weight: nine small panels read as washed out at
 # 1.35, and 1.6x was too heavy. Minor ticks (the log decades' 2-9) keep their own weight.
-RB_GRID_AXIS_LW = AXIS_LW * 1.2
+RB_GRID_AXIS_LW = 2.0
 # stage -> (row field, y-axis qualifier)
 RB_GRID_STAGES = {"generated": ("s", "generated pose")}
 
@@ -6175,7 +7297,7 @@ def _rb_grid(out, series, refrows, labels, stage):
 
     all_meds = [float(np.median(v)) for lab in panels for _, v in boxes[lab]]
     norm = matplotlib.colors.Normalize(*RB_GRID_NORM)
-    cmap = matplotlib.colors.LinearSegmentedColormap.from_list("rb_grid", RB_GRID_CMAP_STOPS)
+    cmap = matplotlib.colormaps[RB_GRID_CMAP]
     extend = {(False, False): "neither", (True, False): "min", (False, True): "max",
               (True, True): "both"}[(min(all_meds) < norm.vmin, max(all_meds) > norm.vmax)]
 
@@ -6196,13 +7318,18 @@ def _rb_grid(out, series, refrows, labels, stage):
                             flierprops=dict(marker="d", markersize=2.6, markerfacecolor=INK,
                                             markeredgecolor="none", alpha=0.5))
             for box, (_, v) in zip(bp["boxes"], drawn):
-                box.set(facecolor=cmap(norm(float(np.median(v)))), edgecolor=INK,
-                        linewidth=0.9)
+                # No outline (2026-09-14): the fill IS the median through the colourmap, and a
+                # dark edge on nine panels of eight boxes read as a grid of frames.
+                box.set(facecolor=cmap(norm(float(np.median(v)))), edgecolor="none",
+                        linewidth=0)
             for part in ("whiskers", "caps"):
                 for art in bp[part]:
                     art.set(color=INK, linewidth=0.9)
             for med in bp["medians"]:
-                med.set(color=INK, linewidth=1.3, solid_capstyle="butt")
+                # Up from 1.3, settled at 2.0 (2026-09-14; 2.6 was heavy): with the box outline
+                # gone this is the only dark mark on the fill, and it is the number the colour
+                # encodes.
+                med.set(color=RB_GRID_MED_COLOR, linewidth=2.0, solid_capstyle="butt")
             # Tens of thousands of flier markers as vector paths make the PDF/SVG unplaceable;
             # the points are rasterised inside an otherwise vector figure.
             for fl in bp["fliers"]:
@@ -6214,11 +7341,18 @@ def _rb_grid(out, series, refrows, labels, stage):
         for sp in ("left", "bottom"):
             ax.spines[sp].set_linewidth(RB_GRID_AXIS_LW)
         ax.tick_params(which="major", width=RB_GRID_AXIS_LW)
+        ax.tick_params(labelsize=RB_GRID_TICK_FS)   # after furniture(), which sets the house 14
+        # EVERY decade keeps its label. At 16 pt the default log locator decided 10^0..10^5 no
+        # longer fit and thinned them to every second one, dropping 10^5 -- the axis top -- with
+        # them. numticks high enough that the thinning never triggers on this range.
+        ax.yaxis.set_major_locator(matplotlib.ticker.LogLocator(base=10.0, numticks=99))
         # An unlabelled tick where the axes meet, matching the y axis's 10^0 in that corner:
         # the first bond count sits 0.6 in, so without it the x axis looks cut short.
         counts = list(range(0, RB_GRID_X_MAX + 1))
         ax.set_xticks([xlo] + counts, [""] + [str(x) for x in counts])
-        ax.set_title(display(lab), fontsize=14, color=INK, pad=5)
+        # "Reference", not the shared REF_LABEL, and the gap to the panel doubled (2026-09-14).
+        ax.set_title("Reference" if lab == REF_LABEL else display(lab),
+                     fontsize=RB_GRID_TITLE_FS, color=INK, pad=10)
     for ax in flat[len(panels):]:
         ax.set_visible(False)
 
@@ -6231,17 +7365,29 @@ def _rb_grid(out, series, refrows, labels, stage):
     # The y name goes on the MIDDLE row's left axes rather than fig.supylabel, because only an
     # axes label takes a labelpad -- supylabel sits flush against the tick labels. With three
     # rows the middle axes' centre is the block's centre.
-    axes[nrow // 2, 0].set_ylabel(f"UFF strain energy (kcal mol⁻¹), {qualifier}",
+    # TWO LINES (2026-09-14), broken at the comma the sentence already has: the unit stays
+    # with the name it belongs to and the stage qualifier gets its own line, which is how the
+    # ECDF and the per-atom panel set their y names.
+    # THE PAD IS UNCHANGED ON PURPOSE. labelpad is measured to the NEAREST edge of the label,
+    # so the 63 px it buys between the tick numbers and the name survives the second line;
+    # what grows is the label block itself (~81 px wide to ~170), and under layout=
+    # "constrained" that width comes out of the panels rather than out of the canvas.
+    axes[nrow // 2, 0].set_ylabel(f"UFF strain energy (kcal mol⁻¹),\n{qualifier}",
                                   fontsize=RB_GRID_LABEL_FS, color=INK,
                                   labelpad=RB_GRID_YPAD)
     cb = fig.colorbar(plt.cm.ScalarMappable(norm=norm, cmap=cmap), ax=axes, extend=extend,
                       shrink=0.92, aspect=38, pad=RB_GRID_CBAR_PAD,
                       ticks=np.arange(RB_GRID_NORM[0], RB_GRID_NORM[1] + RB_GRID_CTICK,
                                       RB_GRID_CTICK))
-    cb.set_label("Median strain energy (kcal mol⁻¹)", fontsize=RB_GRID_CBAR_FS, color=INK)
-    cb.ax.tick_params(labelsize=12, colors=AXIS, width=AXIS_LW)
-    cb.outline.set_edgecolor(AXIS)
-    cb.outline.set_linewidth(AXIS_LW)
+    cb.set_label("Median strain energy (kcal mol⁻¹)", fontsize=RB_GRID_CBAR_FS, color=INK,
+                 labelpad=RB_GRID_CBAR_LABELPAD)
+    cb.ax.tick_params(labelsize=RB_GRID_CBAR_TICK_FS, colors=AXIS, width=AXIS_LW)
+    # The bar's numbers turned a quarter turn anticlockwise (2026-09-14), so they read along the
+    # bar like its name. Anchored left and centred on the tick, which is where they sat upright.
+    plt.setp(cb.ax.get_yticklabels(), rotation=90, va="center", ha="left")
+    # No frame round the bar (2026-09-14), as the boxes it keys lost theirs. The extend arrow
+    # is part of that same outline path, so it loses its edge with it and reads as pure fill.
+    cb.outline.set_visible(False)
     save(fig, out, f"strain_box_per_rotbond_grid_{stage}")
 
     csv_rows = []

@@ -115,6 +115,11 @@ def create_model(cfg, device="cuda") -> VoxBind:
         adapter_hidden=(int(adapter_cfg["hidden"]) if adapter_cfg.get("hidden", None) else None),
         adapter_mask_basis=str(adapter_cfg.get("mask_basis", "protein_vdw")),
         adapter_mask_thresh=float(adapter_cfg.get("mask_thresh", 0.2)),
+        # decoder="gsplat" swaps the 3x3x3 conv output head for the Gaussian-splat
+        # rasterizer (models/gsplat_head.py). Everything upstream is untouched, so a
+        # density-conditioned checkpoint still warm-starts its encoder + U-Net.
+        decoder=str(cfg.model.get("decoder", "conv")),
+        gsplat=dict(cfg.model.get("gsplat", {}) or {}),
     )
 
     # Optionally load + freeze the pretrained density encoder

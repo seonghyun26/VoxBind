@@ -1,7 +1,7 @@
 
 
 # ════════════════════════════════════════════════════════════════════════════════
-# fig-posebusters-{valid-per-atom,check-failures,sucos-ecdf,sucos-per-atom}
+# fig-posebusters-{valid-per-atom,valid-heatmap,check-failures,sucos-ecdf,sucos-per-atom}
 # ════════════════════════════════════════════════════════════════════════════════
 # SIZE IS THE CONFOUND, SO SIZE IS THE X AXIS. Every PoseBusters check gets harder as the
 # molecule grows -- more rings to pucker, more angles to strain, more atoms to reach the
@@ -33,10 +33,80 @@ PB_VALID_WIN = 2
 # writes. The filter stays a RATE even though the bars are counts -- it asks "is this row
 # informative", and the arms hold different numbers of molecules.
 PB_MIN_FAIL_PCT = 0.5
-# Where the symlog x axis stops being linear and starts being logarithmic. 0.1% is ~8 of
-# the ~7,900 molecules an arm holds: below it the difference between two arms is a handful
-# of molecules and belongs in the JSON, above it the decades do the work.
-PB_LINTHRESH = 0.1
+# The check-failure breakdown, split into stacked panels by how often a check fails, each on
+# a linear axis scaled to itself (2026-09-14, on request; it was one symlog axis). The median
+# rate over the eight arms puts them in three decades:
+#   ~10%   bond angles 9.7, min distance 7.0, steric clash 5.7, ring non-flatness 5.4,
+#          bond lengths 3.2
+#   ~1%    internal energy 1.6, volume overlap 0.36
+#   <=0.1% double bond flatness 0.26, aromatic ring flatness 0.02 -- zero for most sets
+# Fixed rather than recomputed, so `core` and `all` split the same way; inside a panel the
+# checks keep the figure's order (worst first). A check shown but in no panel is an error.
+PB_FAIL_PANELS = (
+    ("bond_lengths", "bond_angles", "non-aromatic_ring_non-flatness",
+     "minimum_distance_to_protein", "internal_steric_clash"),
+    ("volume_overlap_with_protein", "internal_energy"),
+    ("aromatic_ring_flatness", "double_bond_flatness"),
+)
+# THE HEAT MAP'S GROUPS. The 20 scored dock-mode checks partitioned into what each one is
+# actually asking about, so `valid` can be read as "passes all five" instead of as one
+# number. EVERY CHECK IS IN EXACTLY ONE GROUP and the partition is asserted against the
+# data: a PoseBusters release that adds a check breaks the build rather than quietly
+# dropping it out of the picture, and no check can be double-counted into two groups.
+#
+# Six of the nine in `Protein clash & overlap` are VACUOUS HERE and pass by construction:
+# the receptor every arm is scored against is the pocket10 crop, which carries no HETATM
+# and no HOH, so the cofactor and water checks have nothing to measure. They stay in the
+# group because the group is a partition of `valid` and dropping them would make the
+# columns stop multiplying out to it -- not because they carry information.
+#
+# `Ring pucker & internal strain` is not one of the four groups this was asked for, and it
+# exists because the partition has to be complete: `non-aromatic_ring_non-flatness` is the
+# single worst check for the voxel arms (21-23%), and a breakdown that left it out would
+# show CoDE passing every column it draws while failing 33% of molecules.
+PB_GROUPS = (
+    ("Bond geometry", ("bond_lengths", "bond_angles")),
+    ("Aromatic ring flatness", ("aromatic_ring_flatness",)),
+    ("Valence & connectivity", ("sanitization", "all_atoms_connected", "inchi_convertible",
+                                "no_radicals")),
+    ("Protein clash & overlap", ("minimum_distance_to_protein", "volume_overlap_with_protein",
+                                 "protein-ligand_maximum_distance",
+                                 "minimum_distance_to_organic_cofactors",
+                                 "minimum_distance_to_inorganic_cofactors",
+                                 "minimum_distance_to_waters",
+                                 "volume_overlap_with_organic_cofactors",
+                                 "volume_overlap_with_inorganic_cofactors",
+                                 "volume_overlap_with_waters")),
+    ("Ring pucker & internal strain", ("non-aromatic_ring_non-flatness",
+                                       "internal_steric_clash", "internal_energy",
+                                       "double_bond_flatness")),
+)
+PB_HEAT_COL0 = "PoseBusters valid"
+# THE RAMP IS THE DATA'S OWN RANGE: it ends at 100, a rate's ceiling, and starts at the
+# WORST CELL DRAWN (2026-09-14, on request) -- FuncBind's 50.1% valid. A 0-100 ramp would
+# spend half its range on ground no method stands on and paint the whole map one shade,
+# which is the failure mode of a heat map whose numbers all sit near the top.
+#
+# Both variants take the range of the ALL-ARMS map, so a cell is the same colour in `core`
+# as in `all`. Scaling `core` to its own worst cell (CoDE's 67.5) would make our two arms
+# look as far apart as the eight are.
+PB_HEAT_VMAX = 100.0
+# THE COLOURBAR IS THE PER-ROTBOND GRID'S (2026-09-14, on request): vertical on the right,
+# shrink 0.92, aspect 38, RB_GRID_CBAR_PAD off the panel, numbers turned a quarter turn so
+# they read along the bar, no outline. Those constants are READ FROM THE ROTBOND FAMILY at
+# call time rather than copied here -- a part is pasted into draw.py above posecheck_rotbond,
+# so the names do not exist while this module executes, but they do by the time a figure is
+# drawn, and reading them is what keeps the two bars from drifting apart.
+# The colourmap is that grid's coolwarm REVERSED. In the strain grid warm means more strain,
+# i.e. worse; this cell is a PASS rate, so without the reversal the same red would mean good
+# here and bad there in two heat maps of the same eight methods.
+PB_HEAT_CMAP = "coolwarm_r"
+# Point sizes are NOT copied from the rotbond grid: that figure is three rows of nine panels
+# and carries 18 pt numbers, which on this 8.4 x 6.2 in map would tower over the 12.5 pt in
+# the cells. Same bar, this figure's scale.
+PB_HEAT_CBAR_FS, PB_HEAT_CBAR_TICK_FS = 13, 11.5
+PB_HEAT_ROW_H = 0.44             # inches per method row
+PB_HEAT_WRAP = 12                # characters per line of a column heading
 PB_SUCOS_THRESHOLD = 0.4         # gen.yml's own value
 PB_BIN_COLS = ["n_molecules", "atoms_mean", "n_posebusters", "pb_valid_rate",
                "pb_valid_rate_size_standardized"]
@@ -100,12 +170,12 @@ def _posebusters_valid_panel(out, arms, variant, p79_rows, refrows):
              lw=REF_LW, ls=DASH, zorder=4, dash_capstyle="round")
     for lab, key, _ in arms:
         top.plot(xs, model_curve(per[key], xs, rate100, win=PB_VALID_WIN),
-                 color=color(lab), lw=MODEL_LW, zorder=5, solid_capstyle="round")
+                 color=soft(lab), lw=MODEL_LW, zorder=5, solid_capstyle="round")
     furniture(top, ylabel="PoseBusters valid (%)", xlim=(xs[0] - 0.6, xs[-1] + 0.6))
     top.set_ylim(0, 102)
-    legend(top, arm_handles(arms), loc="lower left", fontsize=11.5)
+    legend(top, arm_handles(arms, paint=soft), loc="lower left", fontsize=11.5)
 
-    size_distribution(bot, xs, per, ref_per, arms)
+    size_distribution(bot, xs, per, ref_per, arms, paint=soft)
     furniture(bot, ylabel="% of ligands", xlabel=X_LABEL,
               xlim=(xs[0] - 0.6, xs[-1] + 0.6))
     fig.align_ylabels((top, bot))
@@ -179,45 +249,41 @@ def _posebusters_failures_panel(out, arms, variant, fails):
     leg_rows = -(-len(series) // ncol)
     # Row pitch: enough that nine thin bars stay readable, without turning a 7.6 in wide
     # figure into a 10 in tall one. Plus the strip the key needs at the bottom.
-    fig, ax = plt.subplots(
-        figsize=(FIG_W, (0.40 if len(arms) <= 3 else 0.62) * len(names)
-                 + 1.6 + 0.30 * leg_rows + 0.2), dpi=220)
+    # STACKED PANELS, LINEAR X (2026-09-14, on request; it was one symlog axis). The rates run
+    # 0.01% to 23%, and on one linear axis everything under ~2% was a stub against FuncBind's
+    # 23%; symlog fixed that but made every bar's length a log reading. Three panels -- see
+    # PB_FAIL_PANELS -- each give a decade of checks its own linear scale, so a length is a
+    # rate again, and a zero is still a bar of nothing. Panel height = its check count, so
+    # the bars are the same thickness in every panel; the x scales differ, so each keeps
+    # its own tick labels.
+    panels = [[k for k in names if k in p] for p in PB_FAIL_PANELS]
+    leftover = [k for k in names if not any(k in p for p in PB_FAIL_PANELS)]
+    if leftover:
+        raise ValueError(f"PoseBusters checks in no PB_FAIL_PANELS panel: {leftover}")
+    panels = [p for p in panels if p]
+    fig = plt.figure(figsize=(FIG_W, (0.40 if len(arms) <= 3 else 0.62) * len(names)
+                              + 1.6 + 0.45 * (len(panels) - 1) + 0.30 * leg_rows + 0.2),
+                     dpi=220)
     fig.patch.set_facecolor("white")
-    ax.set_facecolor("white")
-    ys = np.arange(len(names))[::-1]
-    for i, (lab, key) in enumerate(series):
-        # top of the group downwards, so the key's order IS the order of the bars
-        ax.barh(ys + ((len(series) - 1) / 2 - i) * h,
-                [fails[key]["rates"].get(k, 0.0) for k in names],
-                height=h, color=color(lab), edgecolor=color(lab), lw=0.8, zorder=3)
-
-    top = max(g["rates"].get(k, 0.0) for g in shown for k in names)
-    # LOG X, AND SYMLOG RATHER THAN LOG. The rates that matter run 0.09% to 23%, and on a
-    # linear axis everything under ~2% -- volume overlap, internal energy, the reference's
-    # own two rows -- was a stub against FuncBind's 23%. But 13 of the 81 cells here are an
-    # exact zero and 5 more are a single-digit molecule count, and a plain log axis cannot
-    # draw a bar that starts at zero: it would clip them all to whatever floor the axis was
-    # given, making "never fails this" and "fails it 5 times" the same picture. symlog is
-    # linear below PB_LINTHRESH and logarithmic above, so the bars still start at a true
-    # zero, a 1-molecule cell still looks like 1 molecule, and nothing is hidden or invented.
-    ax.set_xscale("symlog", linthresh=PB_LINTHRESH, linscale=0.35)
-    furniture(ax, ylabel=None, xlabel="Molecules failing the check (%, log scale)",
-              xlim=(0, top * 1.25), xloc=None)
-    symlog = matplotlib.ticker.SymmetricalLogLocator
-    ax.xaxis.set_major_locator(symlog(base=10, linthresh=PB_LINTHRESH))
-    # "0.1" and "10", not matplotlib's 10^-1 and 10^1: two decades of percentages read as
-    # numbers, and the zero tick has to be a zero.
-    ax.xaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda v, _: f"{v:g}"))
-    ax.xaxis.set_minor_locator(symlog(base=10, linthresh=PB_LINTHRESH,
-                                      subs=tuple(range(2, 10))))
-    ax.xaxis.set_minor_formatter(matplotlib.ticker.NullFormatter())
-    ax.grid(True, axis="x", which="minor", color=GRID, lw=GRID_LW * 0.7,
-            ls=(0, (1, 4)), alpha=0.6)
-    ax.grid(False, axis="y")
-    ax.set_yticks(ys)
-    ax.set_yticklabels([_posebusters_wrap_check(k) for k in names], fontsize=12)
-    ax.set_ylim(-0.6, len(names) - 0.4)
-    handles = [Patch(facecolor=color(lab), edgecolor=color(lab),
+    gs = fig.add_gridspec(len(panels), 1, height_ratios=[len(p) for p in panels])
+    for j, panel in enumerate(panels):
+        ax = fig.add_subplot(gs[j, 0])
+        ax.set_facecolor("white")
+        ys = np.arange(len(panel))[::-1]
+        for i, (lab, key) in enumerate(series):
+            # top of the group downwards, so the key's order IS the order of the bars
+            ax.barh(ys + ((len(series) - 1) / 2 - i) * h,
+                    [fails[key]["rates"].get(k, 0.0) for k in panel],
+                    height=h, color=soft(lab), edgecolor=soft(lab), lw=0.8, zorder=3)
+        top = max(g["rates"].get(k, 0.0) for g in shown for k in panel)
+        furniture(ax, ylabel=None, xlim=(0, top * 1.08), xloc=None,
+                  xlabel="Molecules failing the check (%)" if j == len(panels) - 1 else None)
+        ax.grid(False, axis="y")
+        ax.set_yticks(ys)
+        ax.set_yticklabels([_posebusters_wrap_check(k) for k in panel], fontsize=12)
+        ax.set_ylim(-0.6, len(panel) - 0.4)
+    # soft() tints, the eight-method figures' colours (2026-09-14, on request)
+    handles = [Patch(facecolor=soft(lab), edgecolor=soft(lab),
                      label=display(lab) + ("  (n=79)" if key == "reference" else ""))
                for lab, key in series]
     fit(fig, pad=0.5)
@@ -294,6 +360,136 @@ def draw_posebusters_check_failures(out):
         _posebusters_failures_panel(out, arms, variant, fails)
 
 
+# ── validity heat map ───────────────────────────────────────────────────────────
+def _posebusters_group_rates(rows, checked):
+    """(% passing each group, % valid, n scored) for one set of molecules.
+
+    A GROUP IS PASSED WHEN THE MOLECULE FAILS NOTHING IN IT, which is per-molecule and not
+    recoverable from the per-check rates: two checks each failing 5% of molecules are one
+    column at 90% if they fail different molecules and at 95% if they fail the same ones.
+    That is also why the group columns do not multiply out to the `valid` column."""
+    scored = [r for r in rows if r["v"] is not None]
+    n = len(scored)
+    if not n:
+        return {}, float("nan"), 0
+    seen = {c for r in scored for c in r["f"]}
+    if not seen <= checked:
+        raise KeyError(f"PoseBusters check outside PB_GROUPS: {sorted(seen - checked)} -- "
+                       "add it to a group, or the heat map stops being a partition of `valid`")
+    out = {}
+    for name, checks in PB_GROUPS:
+        want = set(checks)
+        out[name] = 100 * sum(not (want & set(r["f"])) for r in scored) / n
+    return out, 100 * sum(bool(r["v"]) for r in scored) / n, n
+
+
+def _posebusters_heatmap_grid(arms, p79_rows, refrows):
+    """(column names, row labels, the rates, n per row) -- the map, before it is drawn."""
+    series = [(REF_LABEL, refrows)] + [(lab, p79_rows[key]) for lab, key, _ in arms]
+    checked = {c for _, checks in PB_GROUPS for c in checks}
+    cols = [PB_HEAT_COL0] + [name for name, _ in PB_GROUPS]
+    grid, ns = [], []
+    for lab, rows in series:
+        groups, valid, n = _posebusters_group_rates(rows, checked)
+        grid.append([valid] + [groups[name] for name, _ in PB_GROUPS])
+        ns.append(n)
+    return cols, [lab for lab, _ in series], np.array(grid, float), ns
+
+
+def _posebusters_heatmap_panel(out, variant, built, norm):
+    cols, labels, grid, ns = built
+    series = list(zip(labels, ns))
+
+    # The constant was 2.25 while the bar lay along the bottom; with it now on the right it
+    # only has to buy the three-line column headings. The floor is for `core`: three rows
+    # leave a vertical bar at aspect 38 too short for its own name and tick numbers.
+    # CONSTRAINED LAYOUT, as the rotbond grid uses -- tight_layout does not see a colourbar's
+    # label, and fit()'s overrun correction moves the main axes, not the bar's, so the name
+    # came out sliced off the right edge of the core map.
+    fig, ax = plt.subplots(figsize=(FIG_W * 1.16,
+                                    max(PB_HEAT_ROW_H * len(series) + 1.3, 3.3)),
+                           dpi=220, layout="constrained")
+    fig.patch.set_facecolor("white")
+    cmap = matplotlib.colormaps[PB_HEAT_CMAP]
+    ax.imshow(grid, cmap=cmap, norm=norm, aspect="auto")
+    for i in range(len(series)):
+        for j in range(len(cols)):
+            v = grid[i, j]
+            # White on a dark cell, ink on a light one, off the fill's own luminance: a
+            # diverging map is dark at BOTH ends, so a single threshold on the value would
+            # put ink on the dark red of a 50% cell and white on the pale middle.
+            r, g, b, _ = cmap(norm(v))
+            dark = 0.2126 * r + 0.7152 * g + 0.0722 * b < 0.55
+            ax.text(j, i, f"{v:.1f}", ha="center", va="center", fontsize=12.5,
+                    color="white" if dark else INK, zorder=3)
+    # The first column is the aggregate, not a sixth category, and the groups do not multiply
+    # out to it (see _posebusters_group_rates) -- a rule wide enough to read as a break says so.
+    ax.axvline(0.5, color="white", lw=5, zorder=4)
+    ax.set_xticks(np.arange(len(cols)))
+    # Wrapped at PB_HEAT_WRAP, not at the 18 the check-failure tick labels use: a column here
+    # is ~1.2 in wide, and at 18 the group names ran into each other across the header.
+    ax.set_xticklabels(["\n".join(__import__("textwrap").wrap(c, PB_HEAT_WRAP))
+                        for c in cols], fontsize=12.5)
+    ax.xaxis.set_ticks_position("top")
+    ax.set_yticks(np.arange(len(series)))
+    ax.set_yticklabels([f"{display(lab)}  ({n:,})" for lab, n in series], fontsize=13)
+    ax.tick_params(length=0, colors=INK, pad=6)
+    for sp in ax.spines.values():
+        sp.set_visible(False)
+    # White rules on the cell boundaries rather than a frame: the cells are the figure.
+    ax.set_xticks(np.arange(-0.5, len(cols), 1), minor=True)
+    ax.set_yticks(np.arange(-0.5, len(series), 1), minor=True)
+    ax.grid(which="minor", color="white", lw=1.6)
+    ax.grid(which="major", visible=False)
+    ax.tick_params(which="minor", length=0)
+    cb = fig.colorbar(plt.cm.ScalarMappable(norm=norm, cmap=cmap), ax=ax,
+                      shrink=0.92, aspect=38, pad=RB_GRID_CBAR_PAD)
+    cb.set_label("% of molecules passing", fontsize=PB_HEAT_CBAR_FS, color=INK,
+                 labelpad=RB_GRID_CBAR_LABELPAD)
+    cb.ax.tick_params(labelsize=PB_HEAT_CBAR_TICK_FS, colors=AXIS, width=AXIS_LW)
+    plt.setp(cb.ax.get_yticklabels(), rotation=90, va="center", ha="left")
+    cb.outline.set_visible(False)
+    save(fig, out, f"pb_valid_heatmap_{variant}")
+
+
+@figure("fig-posebusters-valid-heatmap", needs=("metrics.json (posebusters block)",))
+def draw_posebusters_valid_heatmap(out):
+    """PoseBusters validity as a method x check-group heat map, with the per-check table."""
+    data, p79_rows, refrows = pose_data()
+    use_style()
+    drawn = {variant: _posebusters_heatmap_grid(arms, p79_rows, refrows)
+             for variant, arms in variants("v", data)}
+    # One ramp for both maps, floored at the worst cell of the widest one.
+    norm = matplotlib.colors.Normalize(float(drawn["all"][2].min()), PB_HEAT_VMAX)
+    for variant, built in drawn.items():
+        _posebusters_heatmap_panel(out, variant, built, norm)
+
+    cols, labels, grid, ns = drawn["all"]
+    worst = np.unravel_index(np.argmin(grid), grid.shape)
+    print(f"  colour ramp {norm.vmin:.1f}-{norm.vmax:.0f}%, floored at the worst cell: "
+          f"{labels[worst[0]]} / {cols[worst[1]]}")
+    print(f"  {'method':16s} {'n':>7s} " + " ".join(f"{c.split(' ')[0][:9]:>9s}" for c in cols))
+    for lab, row, n in zip(labels, grid, ns):
+        print(f"  {lab:16s} {n:7,d} " + " ".join(f"{v:8.1f}%" for v in row))
+    write_csv(out, "posebusters_valid_heatmap",
+              ["method", "n_molecules"] + [f"pct_pass_{c}" for c in cols],
+              [[lab, n] + [round(float(v), 2) for v in row]
+               for lab, row, n in zip(labels, grid, ns)])
+
+    # The per-check table the groups are built from -- a group at 99.9% can be one check at
+    # 99.9% or four at 100 and one at 99.9, and only this says which.
+    checks = [c for _, cs in PB_GROUPS for c in cs]
+    group_of = {c: name for name, cs in PB_GROUPS for c in cs}
+    fails = _posebusters_check_failures(data, p79_rows, refrows)
+    rows = []
+    for lab, key, _ in [(REF_LABEL, "reference", None)] + list(arms_for("v", data)):
+        g = fails[key]
+        rows += [[lab, g["n_mols"], group_of[c], c, g["counts"].get(c, 0),
+                  round(100 - g["rates"].get(c, 0.0), 3)] for c in checks]
+    write_csv(out, "posebusters_check_pass_rates",
+              ["method", "n_molecules", "group", "check", "n_failed", "pct_pass"], rows)
+
+
 # ── SuCOS ───────────────────────────────────────────────────────────────────────
 _PB_SUCOS_CACHE = {}
 
@@ -365,7 +561,7 @@ def draw_posebusters_sucos_ecdf(out):
         ax.set_facecolor("white")
         for lab, key, _ in arms:
             v = np.sort([r["sucos"] for r in p79_rows[key]])
-            ax.plot(v, np.arange(1, len(v) + 1) / len(v), color=color(lab),
+            ax.plot(v, np.arange(1, len(v) + 1) / len(v), color=soft(lab),
                     lw=MODEL_LW, zorder=5, solid_capstyle="round")
         # gen.yml would call everything left of this line invalid.
         ax.axvline(PB_SUCOS_THRESHOLD, color=INK, lw=1.2, ls=(0, (1, 2.6)), zorder=3)
@@ -376,7 +572,8 @@ def draw_posebusters_sucos_ecdf(out):
                   xlabel="SuCOS vs the pocket's crystal ligand", xloc=None)
         ax.set_xlim(0, 1)
         ax.set_ylim(0, 1)
-        legend(ax, arm_handles(arms, include_ref=False), loc="upper left", fontsize=11.5)
+        legend(ax, arm_handles(arms, include_ref=False, paint=soft), loc="upper left",
+               fontsize=11.5)
         fit(fig, pad=0.5)
         save(fig, out, f"sucos_ecdf_{variant}")
 
@@ -438,13 +635,13 @@ def draw_posebusters_sucos_per_atom(out):
             fig.patch.set_facecolor("white")
             ax.set_facecolor("white")
             for lab, key, _ in arms:
-                ax.plot(xs, model_curve(per[key], xs, f), color=color(lab),
+                ax.plot(xs, model_curve(per[key], xs, f), color=soft(lab),
                         lw=MODEL_LW, zorder=5, solid_capstyle="round")
             ax.axhline(PB_SUCOS_THRESHOLD, color=INK, lw=1.2, ls=(0, (1, 2.6)), zorder=3)
             furniture(ax, ylabel=f"SuCOS {stat}", xlabel=X_LABEL,
                       xlim=(xs[0] - 0.6, xs[-1] + 0.6))
             ax.set_ylim(0, 1)
-            legend(ax, arm_handles(arms, include_ref=False), loc="upper left",
+            legend(ax, arm_handles(arms, include_ref=False, paint=soft), loc="upper left",
                    fontsize=11.5)
             fit(fig, pad=0.5)
             save(fig, out, f"sucos_per_atom_{stat}_{variant}")

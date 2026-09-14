@@ -119,10 +119,12 @@ build_moleval() {
     log "moleval ready"
 }
 
-# voxel-bind — VoxBind runtime + FuncBind density-branch extras in ONE env, so
-# FuncBind can import voxbind.models.density_vit directly. Built from the explicit
-# lock PAIR (byte-exact, no solver, no conda-lock tool needed); order matters, the
-# pip layer compiles cpdb-protein with the gcc the conda layer installs.
+# voxel-bind — VoxBind runtime + ALL of FuncBind in ONE env, so FuncBind can import
+# voxbind.models.density_vit directly; `import funcbind.train_fb` works here with no
+# FuncBind source changes. Built from the explicit lock PAIR (byte-exact, no solver, no
+# conda-lock tool needed); order matters, the pip layer compiles cpdb-protein with the gcc
+# the conda layer installs. The conda layer also carries pyrosetta (py312, from
+# conda.graylab.jhu.edu, ~2 GB download; commercial use needs a license). ~12 GB total.
 #
 # VOXELBIND_PREFIX installs by path instead of by name — use it where the default
 # envs dir is a container overlay that a restart wipes (on the H200 box:
@@ -170,9 +172,20 @@ build_voxelbind() {
     log "installing the pip layer (cpdb-protein compiles here)"
     PATH="$prefix/bin:$PATH" CC="$prefix/bin/gcc" "$prefix/bin/pip" install --no-cache-dir -r "$pip_lock" \
         || die "voxel-bind pip layer failed"
+    # posecheck pins pandas==2.0.0, which has no cp312 wheel and does not build. Its real
+    # runtime deps are in the pip lock, so --no-deps lands in a working env (same trick as
+    # build_moleval). FuncBind imports it via metrics_crossdocked.
+    log "installing posecheck (--no-deps; its pandas pin is unsatisfiable on py3.12)"
+    "$prefix/bin/pip" install --no-cache-dir --no-deps posecheck==1.3.1 \
+        || die "voxel-bind posecheck install failed"
     log "installing VoxBind (editable) into '$env'"
     ( cd "$REPO_ROOT" && "$prefix/bin/pip" install --no-cache-dir -e . ) || die "pip install -e . failed"
     log "voxel-bind ready at $prefix"
+    # vina here is 1.2.7 and exists ONLY so FuncBind's import chain resolves. py3.12 cannot
+    # have 1.2.2 (no wheel past cp39, sdist does not build, conda-forge starts at 1.2.7).
+    local vv; vv="$("$prefix/bin/python" -c 'import importlib.metadata as m; print(m.version("vina"))' 2>/dev/null || true)"
+    log "NOTE: vina in this env is ${vv:-unknown} — IMPORT ONLY. Dock in '$VOXDOCK_ENV' (vina 1.2.2);"
+    log "      05_evaluate.sh and FuncBind's chain_dock_mcp_run.sh already call that env by path."
     log "verify it end-to-end with FuncBind's own smoke test, e.g.:"
     log "    CUDA_VISIBLE_DEVICES=<free gpu> $prefix/bin/python <funcbind>/test/mcp_default_fusion_smoke.py"
 }

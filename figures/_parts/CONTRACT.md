@@ -26,6 +26,15 @@ Paths: `HERE` (= VoxBind/figures), `REPO`, `OUT_ROOT` (= figures/260910), `LEGAC
 
 Palette: `COLORS ALIASES DISPLAY color(label) display(label)`, and the lighter steps
 `SOFT PALE soft(label) pale(label)`. Use these rather than writing a tint's hex in a part.
+The three tables are the ONLY place a colour is decided; `fig-palette-methods` reads them and
+writes the swatch sheet and `figures/palette/palette-methods.csv` (method, palette, soft, pale,
+legend label), which is what to hand to a notebook, a co-author or a slide deck that has to
+match these figures. Redraw that figure after any palette change so the sheet cannot drift.
+
+Dash: `METHOD_DASH dash(label)` — the SECOND identity channel, decided in 00_core.py exactly
+as the palette is. A method's dash must be the same in every figure that draws it; do not
+write a per-method dash table in a part. `dash()` raises on an unknown label rather than
+defaulting to solid, because solid is the channel that means ours.
 
 Style: `INK GRID AXIS LEGEND_EDGE SOLID DASH DOT MODEL_LW REF_LW AXIS_LW GRID_LW DIST_LW
 DIST_FILL WIDE TALL FIG_W PANEL_H STACK_H HEIGHT_RATIOS H_PAD XTICK_STEP X_LABEL RC

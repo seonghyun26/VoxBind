@@ -1,0 +1,181 @@
+method,n_molecules,group,check,n_failed,pct_pass
+Reference ligand,79,Bond geometry,bond_lengths,0,100.0
+Reference ligand,79,Bond geometry,bond_angles,0,100.0
+Reference ligand,79,Aromatic ring flatness,aromatic_ring_flatness,0,100.0
+Reference ligand,79,Valence & connectivity,sanitization,0,100.0
+Reference ligand,79,Valence & connectivity,all_atoms_connected,0,100.0
+Reference ligand,79,Valence & connectivity,inchi_convertible,0,100.0
+Reference ligand,79,Valence & connectivity,no_radicals,0,100.0
+Reference ligand,79,Protein clash & overlap,minimum_distance_to_protein,2,97.468
+Reference ligand,79,Protein clash & overlap,volume_overlap_with_protein,0,100.0
+Reference ligand,79,Protein clash & overlap,protein-ligand_maximum_distance,0,100.0
+Reference ligand,79,Protein clash & overlap,minimum_distance_to_organic_cofactors,0,100.0
+Reference ligand,79,Protein clash & overlap,minimum_distance_to_inorganic_cofactors,0,100.0
+Reference ligand,79,Protein clash & overlap,minimum_distance_to_waters,0,100.0
+Reference ligand,79,Protein clash & overlap,volume_overlap_with_organic_cofactors,0,100.0
+Reference ligand,79,Protein clash & overlap,volume_overlap_with_inorganic_cofactors,0,100.0
+Reference ligand,79,Protein clash & overlap,volume_overlap_with_waters,0,100.0
+Reference ligand,79,Ring pucker & internal strain,non-aromatic_ring_non-flatness,1,98.734
+Reference ligand,79,Ring pucker & internal strain,internal_steric_clash,0,100.0
+Reference ligand,79,Ring pucker & internal strain,internal_energy,0,100.0
+Reference ligand,79,Ring pucker & internal strain,double_bond_flatness,0,100.0
+AR,7615,Bond geometry,bond_lengths,152,98.004
+AR,7615,Bond geometry,bond_angles,1022,86.579
+AR,7615,Aromatic ring flatness,aromatic_ring_flatness,645,91.53
+AR,7615,Valence & connectivity,sanitization,0,100.0
+AR,7615,Valence & connectivity,all_atoms_connected,0,100.0
+AR,7615,Valence & connectivity,inchi_convertible,0,100.0
+AR,7615,Valence & connectivity,no_radicals,0,100.0
+AR,7615,Protein clash & overlap,minimum_distance_to_protein,296,96.113
+AR,7615,Protein clash & overlap,volume_overlap_with_protein,30,99.606
+AR,7615,Protein clash & overlap,protein-ligand_maximum_distance,0,100.0
+AR,7615,Protein clash & overlap,minimum_distance_to_organic_cofactors,0,100.0
+AR,7615,Protein clash & overlap,minimum_distance_to_inorganic_cofactors,0,100.0
+AR,7615,Protein clash & overlap,minimum_distance_to_waters,0,100.0
+AR,7615,Protein clash & overlap,volume_overlap_with_organic_cofactors,0,100.0
+AR,7615,Protein clash & overlap,volume_overlap_with_inorganic_cofactors,0,100.0
+AR,7615,Protein clash & overlap,volume_overlap_with_waters,0,100.0
+AR,7615,Ring pucker & internal strain,non-aromatic_ring_non-flatness,4,99.947
+AR,7615,Ring pucker & internal strain,internal_steric_clash,768,89.915
+AR,7615,Ring pucker & internal strain,internal_energy,68,99.107
+AR,7615,Ring pucker & internal strain,double_bond_flatness,238,96.875
+Pocket2Mol,7772,Bond geometry,bond_lengths,805,89.642
+Pocket2Mol,7772,Bond geometry,bond_angles,158,97.967
+Pocket2Mol,7772,Aromatic ring flatness,aromatic_ring_flatness,36,99.537
+Pocket2Mol,7772,Valence & connectivity,sanitization,0,100.0
+Pocket2Mol,7772,Valence & connectivity,all_atoms_connected,0,100.0
+Pocket2Mol,7772,Valence & connectivity,inchi_convertible,0,100.0
+Pocket2Mol,7772,Valence & connectivity,no_radicals,0,100.0
+Pocket2Mol,7772,Protein clash & overlap,minimum_distance_to_protein,1305,83.209
+Pocket2Mol,7772,Protein clash & overlap,volume_overlap_with_protein,45,99.421
+Pocket2Mol,7772,Protein clash & overlap,protein-ligand_maximum_distance,0,100.0
+Pocket2Mol,7772,Protein clash & overlap,minimum_distance_to_organic_cofactors,0,100.0
+Pocket2Mol,7772,Protein clash & overlap,minimum_distance_to_inorganic_cofactors,0,100.0
+Pocket2Mol,7772,Protein clash & overlap,minimum_distance_to_waters,0,100.0
+Pocket2Mol,7772,Protein clash & overlap,volume_overlap_with_organic_cofactors,0,100.0
+Pocket2Mol,7772,Protein clash & overlap,volume_overlap_with_inorganic_cofactors,0,100.0
+Pocket2Mol,7772,Protein clash & overlap,volume_overlap_with_waters,0,100.0
+Pocket2Mol,7772,Ring pucker & internal strain,non-aromatic_ring_non-flatness,70,99.099
+Pocket2Mol,7772,Ring pucker & internal strain,internal_steric_clash,59,99.241
+Pocket2Mol,7772,Ring pucker & internal strain,internal_energy,14,99.82
+Pocket2Mol,7772,Ring pucker & internal strain,double_bond_flatness,109,98.598
+DiffSBDD,7700,Bond geometry,bond_lengths,1461,81.026
+DiffSBDD,7700,Bond geometry,bond_angles,1634,78.779
+DiffSBDD,7700,Aromatic ring flatness,aromatic_ring_flatness,8,99.896
+DiffSBDD,7700,Valence & connectivity,sanitization,0,100.0
+DiffSBDD,7700,Valence & connectivity,all_atoms_connected,0,100.0
+DiffSBDD,7700,Valence & connectivity,inchi_convertible,0,100.0
+DiffSBDD,7700,Valence & connectivity,no_radicals,0,100.0
+DiffSBDD,7700,Protein clash & overlap,minimum_distance_to_protein,1614,79.039
+DiffSBDD,7700,Protein clash & overlap,volume_overlap_with_protein,435,94.351
+DiffSBDD,7700,Protein clash & overlap,protein-ligand_maximum_distance,1,99.987
+DiffSBDD,7700,Protein clash & overlap,minimum_distance_to_organic_cofactors,0,100.0
+DiffSBDD,7700,Protein clash & overlap,minimum_distance_to_inorganic_cofactors,0,100.0
+DiffSBDD,7700,Protein clash & overlap,minimum_distance_to_waters,0,100.0
+DiffSBDD,7700,Protein clash & overlap,volume_overlap_with_organic_cofactors,0,100.0
+DiffSBDD,7700,Protein clash & overlap,volume_overlap_with_inorganic_cofactors,0,100.0
+DiffSBDD,7700,Protein clash & overlap,volume_overlap_with_waters,0,100.0
+DiffSBDD,7700,Ring pucker & internal strain,non-aromatic_ring_non-flatness,89,98.844
+DiffSBDD,7700,Ring pucker & internal strain,internal_steric_clash,498,93.532
+DiffSBDD,7700,Ring pucker & internal strain,internal_energy,108,98.597
+DiffSBDD,7700,Ring pucker & internal strain,double_bond_flatness,39,99.494
+DecompDiff,6427,Bond geometry,bond_lengths,139,97.837
+DecompDiff,6427,Bond geometry,bond_angles,248,96.141
+DecompDiff,6427,Aromatic ring flatness,aromatic_ring_flatness,0,100.0
+DecompDiff,6427,Valence & connectivity,sanitization,0,100.0
+DecompDiff,6427,Valence & connectivity,all_atoms_connected,0,100.0
+DecompDiff,6427,Valence & connectivity,inchi_convertible,1,99.984
+DecompDiff,6427,Valence & connectivity,no_radicals,0,100.0
+DecompDiff,6427,Protein clash & overlap,minimum_distance_to_protein,635,90.12
+DecompDiff,6427,Protein clash & overlap,volume_overlap_with_protein,22,99.658
+DecompDiff,6427,Protein clash & overlap,protein-ligand_maximum_distance,0,100.0
+DecompDiff,6427,Protein clash & overlap,minimum_distance_to_organic_cofactors,0,100.0
+DecompDiff,6427,Protein clash & overlap,minimum_distance_to_inorganic_cofactors,0,100.0
+DecompDiff,6427,Protein clash & overlap,minimum_distance_to_waters,0,100.0
+DecompDiff,6427,Protein clash & overlap,volume_overlap_with_organic_cofactors,0,100.0
+DecompDiff,6427,Protein clash & overlap,volume_overlap_with_inorganic_cofactors,0,100.0
+DecompDiff,6427,Protein clash & overlap,volume_overlap_with_waters,0,100.0
+DecompDiff,6427,Ring pucker & internal strain,non-aromatic_ring_non-flatness,121,98.117
+DecompDiff,6427,Ring pucker & internal strain,internal_steric_clash,206,96.795
+DecompDiff,6427,Ring pucker & internal strain,internal_energy,42,99.347
+DecompDiff,6427,Ring pucker & internal strain,double_bond_flatness,118,98.164
+FuncBind,7895,Bond geometry,bond_lengths,1822,76.922
+FuncBind,7895,Bond geometry,bond_angles,1147,85.472
+FuncBind,7895,Aromatic ring flatness,aromatic_ring_flatness,0,100.0
+FuncBind,7895,Valence & connectivity,sanitization,0,100.0
+FuncBind,7895,Valence & connectivity,all_atoms_connected,0,100.0
+FuncBind,7895,Valence & connectivity,inchi_convertible,0,100.0
+FuncBind,7895,Valence & connectivity,no_radicals,0,100.0
+FuncBind,7895,Protein clash & overlap,minimum_distance_to_protein,322,95.921
+FuncBind,7895,Protein clash & overlap,volume_overlap_with_protein,29,99.633
+FuncBind,7895,Protein clash & overlap,protein-ligand_maximum_distance,0,100.0
+FuncBind,7895,Protein clash & overlap,minimum_distance_to_organic_cofactors,0,100.0
+FuncBind,7895,Protein clash & overlap,minimum_distance_to_inorganic_cofactors,0,100.0
+FuncBind,7895,Protein clash & overlap,minimum_distance_to_waters,0,100.0
+FuncBind,7895,Protein clash & overlap,volume_overlap_with_organic_cofactors,0,100.0
+FuncBind,7895,Protein clash & overlap,volume_overlap_with_inorganic_cofactors,0,100.0
+FuncBind,7895,Protein clash & overlap,volume_overlap_with_waters,0,100.0
+FuncBind,7895,Ring pucker & internal strain,non-aromatic_ring_non-flatness,1773,77.543
+FuncBind,7895,Ring pucker & internal strain,internal_steric_clash,550,93.034
+FuncBind,7895,Ring pucker & internal strain,internal_energy,403,94.896
+FuncBind,7895,Ring pucker & internal strain,double_bond_flatness,0,100.0
+TargetDiff,7287,Bond geometry,bond_lengths,83,98.861
+TargetDiff,7287,Bond geometry,bond_angles,1643,77.453
+TargetDiff,7287,Aromatic ring flatness,aromatic_ring_flatness,2,99.973
+TargetDiff,7287,Valence & connectivity,sanitization,0,100.0
+TargetDiff,7287,Valence & connectivity,all_atoms_connected,0,100.0
+TargetDiff,7287,Valence & connectivity,inchi_convertible,0,100.0
+TargetDiff,7287,Valence & connectivity,no_radicals,0,100.0
+TargetDiff,7287,Protein clash & overlap,minimum_distance_to_protein,735,89.914
+TargetDiff,7287,Protein clash & overlap,volume_overlap_with_protein,26,99.643
+TargetDiff,7287,Protein clash & overlap,protein-ligand_maximum_distance,0,100.0
+TargetDiff,7287,Protein clash & overlap,minimum_distance_to_organic_cofactors,0,100.0
+TargetDiff,7287,Protein clash & overlap,minimum_distance_to_inorganic_cofactors,0,100.0
+TargetDiff,7287,Protein clash & overlap,minimum_distance_to_waters,0,100.0
+TargetDiff,7287,Protein clash & overlap,volume_overlap_with_organic_cofactors,0,100.0
+TargetDiff,7287,Protein clash & overlap,volume_overlap_with_inorganic_cofactors,0,100.0
+TargetDiff,7287,Protein clash & overlap,volume_overlap_with_waters,0,100.0
+TargetDiff,7287,Ring pucker & internal strain,non-aromatic_ring_non-flatness,652,91.053
+TargetDiff,7287,Ring pucker & internal strain,internal_steric_clash,447,93.866
+TargetDiff,7287,Ring pucker & internal strain,internal_energy,127,98.257
+TargetDiff,7287,Ring pucker & internal strain,double_bond_flatness,1,99.986
+VoxBind,7888,Bond geometry,bond_lengths,229,97.097
+VoxBind,7888,Bond geometry,bond_angles,435,94.485
+VoxBind,7888,Aromatic ring flatness,aromatic_ring_flatness,1,99.987
+VoxBind,7888,Valence & connectivity,sanitization,0,100.0
+VoxBind,7888,Valence & connectivity,all_atoms_connected,0,100.0
+VoxBind,7888,Valence & connectivity,inchi_convertible,0,100.0
+VoxBind,7888,Valence & connectivity,no_radicals,0,100.0
+VoxBind,7888,Protein clash & overlap,minimum_distance_to_protein,99,98.745
+VoxBind,7888,Protein clash & overlap,volume_overlap_with_protein,14,99.823
+VoxBind,7888,Protein clash & overlap,protein-ligand_maximum_distance,0,100.0
+VoxBind,7888,Protein clash & overlap,minimum_distance_to_organic_cofactors,0,100.0
+VoxBind,7888,Protein clash & overlap,minimum_distance_to_inorganic_cofactors,0,100.0
+VoxBind,7888,Protein clash & overlap,minimum_distance_to_waters,0,100.0
+VoxBind,7888,Protein clash & overlap,volume_overlap_with_organic_cofactors,0,100.0
+VoxBind,7888,Protein clash & overlap,volume_overlap_with_inorganic_cofactors,0,100.0
+VoxBind,7888,Protein clash & overlap,volume_overlap_with_waters,0,100.0
+VoxBind,7888,Ring pucker & internal strain,non-aromatic_ring_non-flatness,1666,78.879
+VoxBind,7888,Ring pucker & internal strain,internal_steric_clash,322,95.918
+VoxBind,7888,Ring pucker & internal strain,internal_energy,198,97.49
+VoxBind,7888,Ring pucker & internal strain,double_bond_flatness,0,100.0
+CoDE,7873,Bond geometry,bond_lengths,281,96.431
+CoDE,7873,Bond geometry,bond_angles,466,94.081
+CoDE,7873,Aromatic ring flatness,aromatic_ring_flatness,0,100.0
+CoDE,7873,Valence & connectivity,sanitization,0,100.0
+CoDE,7873,Valence & connectivity,all_atoms_connected,0,100.0
+CoDE,7873,Valence & connectivity,inchi_convertible,0,100.0
+CoDE,7873,Valence & connectivity,no_radicals,0,100.0
+CoDE,7873,Protein clash & overlap,minimum_distance_to_protein,129,98.361
+CoDE,7873,Protein clash & overlap,volume_overlap_with_protein,7,99.911
+CoDE,7873,Protein clash & overlap,protein-ligand_maximum_distance,0,100.0
+CoDE,7873,Protein clash & overlap,minimum_distance_to_organic_cofactors,0,100.0
+CoDE,7873,Protein clash & overlap,minimum_distance_to_inorganic_cofactors,0,100.0
+CoDE,7873,Protein clash & overlap,minimum_distance_to_waters,0,100.0
+CoDE,7873,Protein clash & overlap,volume_overlap_with_organic_cofactors,0,100.0
+CoDE,7873,Protein clash & overlap,volume_overlap_with_inorganic_cofactors,0,100.0
+CoDE,7873,Protein clash & overlap,volume_overlap_with_waters,0,100.0
+CoDE,7873,Ring pucker & internal strain,non-aromatic_ring_non-flatness,1769,77.531
+CoDE,7873,Ring pucker & internal strain,internal_steric_clash,416,94.716
+CoDE,7873,Ring pucker & internal strain,internal_energy,203,97.422
+CoDE,7873,Ring pucker & internal strain,double_bond_flatness,0,100.0

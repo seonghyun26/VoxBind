@@ -94,6 +94,12 @@ ARMS = [
     ("CoDE",      f"{E}/voxbind_frozenenc_atomblob7_v2p1_sig0.9/samples/full_eval_ep350"),
 ]
 REF_ROOT = ARMS[0][1]
+# The five published baselines, staged to SDF by stage_baseline_poses.py and added with
+# --staged. Their poses come out of a torch bundle rather than a sampling run, so they reach
+# pick() through the flat <root>/<target>.sdf layout it falls back to. They are NOT in ARMS
+# above: a run that does not ask for them has to stay byte-identical to the one that produced
+# the existing pair figure.
+STAGED_BASELINES = ["AR", "Pocket2Mol", "DiffSBDD", "DecompDiff", "FuncBind"]
 P79 = json.load(open(f"{E}/frozenenc_probes/p79_targets.json"))
 EXHAUSTIVENESS = 16               # the protocol the Vina table was produced with
 ATOM = re.compile(r"^(?:ATOM|HETATM)")
@@ -125,6 +131,12 @@ def pick(root, target, label, per_pocket):
         path = ligand_sdf(root, target)
     else:
         path = os.path.join(root, target, "samples.sdf")
+        if not os.path.exists(path):
+            # THE STAGED LAYOUT IS FLAT. A run tree keeps one directory per pocket with a
+            # samples.sdf inside it; stage_baseline_poses.py writes one FILE per pocket,
+            # <root>/target_NN.sdf, because the published baselines' poses come out of a
+            # torch bundle rather than out of a sampling run. Same molecules either way.
+            path = os.path.join(root, f"{target}.sdf")
     if not os.path.exists(path):
         return []
     mols = [m for m in Chem.SDMolSupplier(path, sanitize=True) if m is not None]
@@ -246,8 +258,20 @@ def main():
     ap.add_argument("--exhaustiveness", type=int, default=EXHAUSTIVENESS)
     ap.add_argument("--pockets", type=int, default=0,
                     help="first N pockets only; for smoke tests, 0 for the whole set")
+    ap.add_argument("--staged", default="",
+                    help="directory of staged baseline poses (<Method>/target_NN.sdf) from "
+                         "stage_baseline_poses.py; adds the five published baselines")
+    ap.add_argument("--with-targetdiff", action="store_true",
+                    help="also dock TargetDiff, whose run tree already has pick()'s layout")
     args = ap.parse_args()
     targets = P79[:args.pockets] if args.pockets else P79
+    # EXTENDED HERE rather than in the module-level table, so a run that asks for neither is
+    # the same run that produced the existing pair figure. ARMS[0] stays Reference: REF_ROOT
+    # reads it for the pocket crops, and every arm is docked against those.
+    if args.with_targetdiff:
+        ARMS.append(("TargetDiff", f"{E}/frozenenc_probes/posecheck_full/targetdiff"))
+    if args.staged:
+        ARMS.extend((m, os.path.join(args.staged, m)) for m in STAGED_BASELINES)
 
     os.makedirs(args.out, exist_ok=True)
     tmp_root = os.path.join(args.out, "_tmp")

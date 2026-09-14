@@ -50,10 +50,16 @@ def _pc_ranges():
 
 
 def _pc_per_atom_stat(out, field, xs, arms, variant, name, unit, stat, f, *, log,
-                      clip=None, stem, legend_loc="upper left"):
+                      clip=None, stem, legend_loc="upper left", rows=None, ref=None):
     """One statistic, one panel, one file. Which statistic you are looking at is carried by
-    the filename and by the y-axis name, exactly as the 3-line figures carry it."""
+    the filename and by the y-axis name, exactly as the 3-line figures carry it.
+
+    `rows`/`ref` override where the molecules come from. Strain passes neither and reads
+    pose_data() as it always has; CLASHES pass the whole-receptor trees, because the
+    pose_data() rows are crop-scored and a crop under-counts clashes."""
     _, p79_rows, refrows = pose_data()
+    p79_rows = p79_rows if rows is None else rows
+    refrows = refrows if ref is None else ref
     per = {key: by_size(p79_rows[key], field) for _, key, _ in arms}
     ref_per = by_size(refrows, field)
     fig, ax = plt.subplots(figsize=(FIG_W, PANEL_H), dpi=220)
@@ -172,21 +178,55 @@ def draw_posecheck_strain_per_atom(out):
     _pc_curve_csv(out, all_xs)
 
 
-@figure("fig-posecheck-clash-per-atom", folder="fig-posecheck/clash", needs=("metrics.json (posecheck.clashes)",))
+@figure("fig-posecheck-clash-per-atom", folder="fig-posecheck/clash",
+        needs=("frozenenc_probes/posecheck_full/",))
 def draw_posecheck_clash_per_atom(out):
     """PoseCheck steric clashes against heavy-atom count — mean and median, core only.
 
-    No `all`: it was core plus TargetDiff, because only those three carry a per-molecule
-    clash count here. The whole field is clash_violin_by_size, which reads the svr12
-    PoseCheck exports and draws all eight methods. See core_only()."""
+    WHOLE-RECEPTOR SCOPE (2026-09-14). This used to read pose_data(), i.e. the ARMS run
+    trees, and those pose-scored against the 10 A crop: on the same arm over the same 79
+    pockets the crop reads CoDE at median 5.0 / mean 6.44 / max 39 where the whole receptor
+    reads 6.0 / 7.48 / 97, and VoxBind 4.0 / 5.23 / 42 against 5.0 / 6.23 / 78. A crop
+    deletes protein the pose could clash with, so it under-counts and truncates the tail
+    hardest. Every other clash figure in this family scores against the whole receptor, so
+    this one reads the same posecheck_full trees the violin and the box do.
+
+    No `all`: see core_only(). The five published baselines carry NO per-molecule PoseCheck
+    in the ARMS trees at all -- 0 of ~37,000 samples -- so `all` here was only ever core plus
+    TargetDiff, which is neither the two-arm comparison nor the whole field. The whole field
+    (seven published baselines, ours, and the crystal ligands) is
+    clash_per_atom_all_methods, which reads the svr12 exports for the five."""
     use_style()
-    all_xs = None
-    for variant, arms, xs in _pc_ranges():
-        for stat, f in PC_STATS:
-            _pc_per_atom_stat(out, "c", xs, arms, variant, "Clashes", "", stat, f,
-                              log=False, stem=f"clash_per_atom_{stat}",
-                              legend_loc="upper left")
-        all_xs = xs
-    _pc_curve_csv(out, all_xs)
+    keep = _pcsz_atom_keep()
+    # The run roots are keyed by the ARMS key itself: posecheck_full/<key>.
+    rows = {os.path.basename(root): _pcsz_atom_rows(root, keep)
+            for _, root, *_ in PCSZ_LOCAL}
+    refrows = _pcsz_atom_rows(PCSZ_REF_CLASH_ROOT, keep, reference=True)
+    arms = [a for a in ARMS if a[1] in CORE and a[1] in rows]
+    per = {key: by_size(rows[key], "c") for _, key, _ in arms}
+    # The x range is the CLASH range now, not the strain range _pc_ranges() derives. That
+    # sharing existed because both panels read one molecule set; this figure no longer does,
+    # so registering the two count for count would be a coincidence, not a property.
+    xs = x_range(per, arms)
+    for stat, f in PC_STATS:
+        _pc_per_atom_stat(out, "c", xs, arms, "core", "Clashes", "", stat, f,
+                          log=False, stem=f"clash_per_atom_{stat}",
+                          legend_loc="upper left", rows=rows, ref=refrows)
+    # Its own CSV: _pc_curve_csv writes strain AND clashes out of pose_data(), whose clash
+    # columns are the crop-scored ones this figure just stopped drawing.
+    ref_per = by_size(refrows, "c")
+    csv_rows = []
+    for lab, key, _ in arms:
+        cur = {s: model_curve(per[key], xs, fn) for s, fn in PC_STATS}
+        csv_rows += [[lab, a, len(per[key].get(a, ()))]
+                     + ["" if cur[s][i] is None else round(cur[s][i], 3)
+                        for s, _ in PC_STATS] for i, a in enumerate(xs)]
+    cur = {s: reference_curve(ref_per, xs, fn) for s, fn in PC_STATS}
+    csv_rows += [[REF_LABEL, a, ""] + ["" if cur[s][i] is None else round(cur[s][i], 3)
+                                       for s, _ in PC_STATS] for i, a in enumerate(xs)]
+    write_csv(out, "clash_per_atom",
+              ["arm", "heavy_atoms", "n", "clash_mean", "clash_median"], csv_rows)
+    print(f"  {len(keep)} pockets · whole-receptor scope · "
+          f"{', '.join(l for l, *_ in arms)} + reference · x = {xs[0]}-{xs[-1]}")
 
 

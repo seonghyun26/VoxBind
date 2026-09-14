@@ -147,9 +147,9 @@ STEMS = {
     "strain_per_atom_mean_core": "per-atom-mean-core",
     "strain_per_atom_median_all": "per-atom-median-all",
     "strain_per_atom_median_core": "per-atom-median-core",
-    "clash_per_atom_mean_all": "clash-per-atom-mean-all",
+    # No `_all` stems: the clash per-atom figure is core-only (2026-09-14), and the whole
+    # field is clash_per_atom_all_methods_*.
     "clash_per_atom_mean_core": "clash-per-atom-mean-core",
-    "clash_per_atom_median_all": "clash-per-atom-median-all",
     "clash_per_atom_median_core": "clash-per-atom-median-core",
     "posecheck_per_atom": "per-atom",
     # the by-size set: the bin is the variant, so it reads as one family in a listing
@@ -198,10 +198,11 @@ STEMS = {
     # fig-posecheck, interaction fingerprints (ProLIF, via PoseCheck)
     "interaction_contacts_all": "interaction-contacts-all",
     "interaction_contacts_core": "interaction-contacts-core",
+    "interaction_contacts_pair_core": "interaction-contacts-pair-core",
     "interaction_hbonds_all": "interaction-hbonds-all",
     "interaction_hbonds_core": "interaction-hbonds-core",
-    "interaction_pair_contacts_core": "interaction-pair-contacts-core",
-    "interaction_pair_hbonds_core": "interaction-pair-hbonds-core",
+    "interaction_hbonds_pair_core": "interaction-hbonds-pair-core",
+    "interaction_legend": "interaction-legend",
     "interactions": "interactions",
     "interactions_pair": "interactions-pair",
     # fig-molweight
@@ -254,7 +255,7 @@ COLORS = {
     "Pocket2Mol":       "#E87BA4",   # pink
     "DiffSBDD":         "#E34948",   # red
     "DecompDiff":       "#3CB44B",   # green
-    "FuncBind":         "#A9744F",   # brown
+    "FuncBind":         "#9A8430",   # olive — the saturated step of SOFT's #C6B46A
     "TargetDiff":       "#B58FDB",   # violet
     "VoxBind":          "#F5B27E",   # sand
     "CoDE":             "#4363D8",   # blue — ours (LaTeX: \textsc{CoDE})
@@ -262,8 +263,17 @@ COLORS = {
 }
 
 # The MCP fine-tune arms are not four independent methods -- they are one model at four
-# amounts of receptor-ED fine-tuning -- so they take an ordinal ramp off the FuncBind brown
-# (they ARE FuncBind), darkening with training, rather than four categorical hues.
+# amounts of receptor-ED fine-tuning -- so they take an ordinal ramp darkening with training
+# rather than four categorical hues.
+#
+# THE RAMP NO LONGER STARTS AT FuncBind'S OWN COLOUR (2026-09-14). It used to: both were the
+# brown #A9744F, and the ramp read as "this IS FuncBind, trained further". FuncBind the
+# METHOD has since moved to olive so that COLORS and SOFT agree on its hue family -- the two
+# tables disagreed, and the eight-method figures draw through soft() while the interaction
+# family draws through color(), so the same method came out olive in one and brown in the
+# other. The ramp is left brown because it belongs to the macrocycle section, which is not
+# part of that set and was not re-coloured with it. If those figures should track FuncBind
+# again, re-base this ramp on #9A8430.
 MCP_RAMP = {
     "FuncBind vanilla":   "#A9744F",
     "FuncBind ft 3.17M":  "#86593A",
@@ -317,7 +327,29 @@ def display(label):
 #         eight-method strain figures, where the full #4363D8 was the one saturated hue.
 #   PALE  two steps lighter -- VoxBind sigma=1.0's tint in the similarity figure, and the two
 #         ends of the strain-grid colormap.
-SOFT = {"CoDE": "#8291E8"}
+# The eight-method figures draw EVERY series through soft(), so the five published baselines
+# now have tints of their own (2026-09-14): at full saturation they sat badly beside CoDE's and
+# VoxBind's tints and TargetDiff's violet, which are already pale. Each keeps its hue family --
+# teal, pink, red, green, brown -- so a method is the same colour across the paper, lifted to
+# the tints' lightness. COLORS still holds the saturated originals, which the three-arm, Vina
+# and PoseBusters figures draw; only soft() sees these.
+SOFT = {
+    "CoDE":       "#8291E8",
+    "AR":         "#7FC4D1",   # was #17A2B8 teal-cyan
+    "Pocket2Mol": "#F0A6C0",   # was #E87BA4 pink
+    "DiffSBDD":   "#EE9190",   # was #E34948 red
+    "DecompDiff": "#8DCB92",   # was #3CB44B green
+    # FuncBind LEAVES ITS HUE FAMILY here (2026-09-14), the one tint that does: as a tan it was
+    # the same warm family as VoxBind's sand and the two could only be told apart by weight.
+    # Olive-gold is the one family none of the other eight occupy -- teal, pink, coral, green,
+    # violet, sand, periwinkle, grey. COLORS keeps the brown, which is what the MCP fine-tune
+    # ramp darkens off, so FuncBind is brown in the macrocycle figures and olive in these.
+    # COLORS now carries the saturated olive #9A8430, so this is an ordinary lighter step of
+    # its own hue like every other entry here -- not a hue change of its own. It used to be
+    # the one tint that left its family, which put FuncBind in two colours depending on
+    # which table a figure read.
+    "FuncBind":   "#C6B46A",   # was #A9744F brown, then #C4A083 tan
+}
 PALE = {"CoDE": "#B4BEF0", "VoxBind": "#F8D3B0"}
 
 
@@ -342,6 +374,47 @@ INK, GRID, AXIS = "#514F52", "#c2c6cd", "#514F52"
 LEGEND_EDGE = "#b6bbc3"
 SOLID, DASH = (0, ()), (0, (4, 2.6))
 DOT = (0, (1, 2.6))
+
+# ── the dash a method is drawn with, everywhere it is drawn ──────────────────────
+# THE SECOND IDENTITY CHANNEL, and like the palette it is decided HERE and nowhere else.
+# Nine series on one axis cannot be told apart by hue alone, so every eight-method figure
+# carries dash as well -- and it only works if a method's dash is the same in all of them.
+# It was not. Two tables had drifted out of step: the ECDF family's (in PCSZ_BASELINES /
+# PCSZ_LOCAL) and the rotatable-bond family's (RB_BASE_DASH), and the rotatable-bond one was
+# shifted by a whole method -- its Pocket2Mol carried the ECDF's DiffSBDD pattern, its
+# DiffSBDD the ECDF's DecompDiff, and so on down the list. Worse, the standalone key
+# (fig-posecheck-strain-legend) read the rotatable-bond table while the ECDF drew the other,
+# so the legend was decoding the panel wrongly.
+#
+# AR AND POCKET2MOL USED TO SHARE (5, 2) in the ECDF, which left them separable by hue only
+# -- exactly what the dash channel exists to prevent. Pocket2Mol takes the pattern that was
+# spare, so all five baselines are now distinct.
+#
+# SOLID MEANS OURS. TargetDiff is dashed even though we run it locally: the rotatable-bond
+# family gave it a solid line because its helper keyed on provenance (RB_LOCAL_LABELS, "we
+# ran this") rather than on authorship, and solid reads as ours in every other figure.
+METHOD_DASH = {
+    "Reference ligand": SOLID,          # solid since 2026-09-14, as the ECDF draws it
+    "AR":               (0, (5, 2)),
+    "Pocket2Mol":       (0, (3, 1.4, 1, 1.4)),
+    "DiffSBDD":         (0, (1, 1.6)),
+    "DecompDiff":       (0, (6, 2, 1, 2)),
+    "FuncBind":         (0, (9, 3)),
+    "TargetDiff":       (0, (6, 2)),
+    "VoxBind":          SOLID,
+    "CoDE":             SOLID,
+}
+
+
+def dash(label):
+    """The dash pattern for `label`, through the alias table.
+
+    Raises rather than defaulting to solid: a method missing here is a rename to fix, and a
+    silent solid would hand it the channel that means ours."""
+    key = ALIASES.get(label, label)
+    if key not in METHOD_DASH:
+        raise KeyError(f"no dash for {label!r} (known: {', '.join(sorted(METHOD_DASH))})")
+    return METHOD_DASH[key]
 MODEL_LW, REF_LW = 2.35, 1.5
 AXIS_LW, GRID_LW = 1.35, 1.1
 DIST_LW, DIST_FILL = 1.7, 0.16
@@ -411,10 +484,13 @@ def legend(target, handles, loc="upper right", ncol=1, fontsize=12.5, **kw):
     return leg
 
 
-def arm_handles(arms, include_ref=True):
+def arm_handles(arms, include_ref=True, paint=None):
+    """`paint` maps a method to its colour: color() by default, soft() for the families
+    drawn in the tints."""
+    paint = paint or color
     h = [Line2D([], [], color=color(REF_LABEL), lw=REF_LW, ls=DASH, label=REF_LABEL)] \
         if include_ref else []
-    return h + [Line2D([], [], color=color(lab), lw=MODEL_LW, ls="-", label=display(lab))
+    return h + [Line2D([], [], color=paint(lab), lw=MODEL_LW, ls="-", label=display(lab))
                 for lab, _, _ in arms]
 
 
@@ -657,14 +733,14 @@ def rolled(values, xs):
     return [st.mean([values[index[n]] for n in xs if abs(n - a) <= REF_WIN]) for a in xs]
 
 
-def size_distribution(ax, xs, per_arm, ref_per, arms):
+def size_distribution(ax, xs, per_arm, ref_per, arms, paint=None):
     """Where each set puts its molecules, as a share of its own -- which is what makes the
     panel above it trustworthy, and is itself a finding, since the arms differ in the sizes
     they generate as much as in per-size pose quality. It counts the SAME molecules the
-    panel above plots."""
+    panel above plots. `paint` as in arm_handles."""
     for lab, key, _ in arms:
         pct, _ = share(per_arm[key], xs)
-        col = color(lab)
+        col = (paint or color)(lab)
         ax.step(xs, pct, where="mid", color=col, lw=DIST_LW, zorder=3)
         ax.fill_between(xs, pct, step="mid", color=col, alpha=DIST_FILL, lw=0, zorder=2)
     raw, _ = share(ref_per, xs)

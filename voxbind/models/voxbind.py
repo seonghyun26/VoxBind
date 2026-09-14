@@ -128,6 +128,8 @@ class VoxBind(torch.nn.Module):
         adapter_hidden: int = None,
         adapter_mask_basis: str = "protein_vdw",
         adapter_mask_thresh: float = 0.2,
+        decoder: str = "conv",
+        gsplat: dict = None,
         verbose: bool = False
     ):
         """
@@ -511,6 +513,31 @@ class VoxBind(torch.nn.Module):
             n_channels, n_channels_ligand, kernel_size=(3, 3, 3), padding=(1, 1, 1)
         )
 
+        # decoder="gsplat": the ligand grid is rendered from predicted Gaussians instead of
+        # painted by final_ligand. final_ligand is still BUILT so a conv-head checkpoint
+        # loads with no unexpected keys, but it is frozen and never called -- an unused
+        # trainable parameter would make DDP hang waiting for its gradient.
+        self.decoder = str(decoder)
+        if self.decoder == "gsplat":
+            from voxbind.models.gsplat_head import GaussianSplatHead
+            gs = dict(gsplat or {})
+            self.gsplat_head = GaussianSplatHead(
+                in_channels=n_channels,
+                n_out_channels=n_channels_ligand,
+                grid_dim=int(density_grid_dim),
+                stride=int(gs.get("stride", 4)),
+                gaussians_per_anchor=int(gs.get("gaussians_per_anchor", 2)),
+                hidden=int(gs.get("hidden", 256)),
+                sigmas=tuple(float(s) for s in gs.get("sigmas", (1.2, 2.0, 3.0))),
+                offset_bound=float(gs.get("offset_bound", 3.0)),
+                cutoff_sigma=float(gs.get("cutoff_sigma", 3.0)),
+                init_amplitude=float(gs.get("init_amplitude", 0.05)),
+            )
+            for p in self.final_ligand.parameters():
+                p.requires_grad = False
+        elif self.decoder != "conv":
+            raise ValueError(f"unknown decoder {self.decoder!r} (expected 'conv' or 'gsplat')")
+
         if verbose:
             n_params = sum(p.numel() for p in self.parameters() if p.requires_grad)
             print(f">> model has {(n_params/1e6):.02f}M parameters")
@@ -799,7 +826,7 @@ class VoxBind(torch.nn.Module):
                 dens_ctx = None
             x = self.unet3d(x, None, ctx=dens_ctx)
             x = self.unet3d.act(x)
-            return self.final_ligand(x)
+            return self.gsplat_head(x) if self.decoder == "gsplat" else self.final_ligand(x)
         elif self.fusion == "v4":
             # Token fusion at FULL resolution: each voxel is concatenated with its own patch's
             # token (channel-reduced) plus its position inside that patch, and a trainable
@@ -847,7 +874,7 @@ class VoxBind(torch.nn.Module):
 
         x = self.unet3d(x, None)
         x = self.unet3d.act(x)
-        x = self.final_ligand(x)
+        x = self.gsplat_head(x) if self.decoder == "gsplat" else self.final_ligand(x)
 
         return x
 

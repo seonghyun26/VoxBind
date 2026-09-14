@@ -73,8 +73,15 @@ IX_FIXED_FORMATTER = matplotlib.ticker.FixedFormatter
 IX_TYPES = [
     ("VdWContact",  "van der Waals contacts",         "violin"),
     ("Hydrophobic", "Hydrophobic contacts",           "violin"),
-    ("HBAcceptor",  "H-bonds accepted by the ligand", "boxen"),
-    ("HBDonor",     "H-bonds donated by the ligand",  "boxen"),
+    # SHORT NAMES (2026-09-14). "H-bonds accepted by the ligand" did not survive the axis
+    # name going to the ECDF's 16.1 pt: this family draws to a FIXED frame at dpi 220 with no
+    # crop to the ink, so the tail of a long name falls off the canvas rather than pushing it
+    # wider -- the rendered panels read "...by the liga" and "...by the ligar". The contacts
+    # names were short enough to survive, which is why only these two were cut.
+    # ONLY THE DISPLAY NAME CHANGES. The keys still drive IX_KINDS, the summary table and the
+    # `type` column of interactions.csv, so nothing downstream moves.
+    ("HBAcceptor",  "H-bonds acceptor",               "boxen"),
+    ("HBDonor",     "H-bonds donor",                  "boxen"),
 ]
 IX_TOTAL = "All interactions"
 IX_KINDS = [k for k, _, _ in IX_TYPES] + [IX_TOTAL]
@@ -97,7 +104,22 @@ IX_PARTS = [
 # ALIASES already resolves that spelling so neither the colour nor the drug-design row order
 # depends on it. IT RENDERS LITERALLY in the PNG and the PDF; the SVG keeps live text
 # (svg.fonttype: none) and is the copy that is typeset.
-IX_DISPLAY = {REF_LABEL: "Reference", "Ours": r"\textsc{CoDE}", "CoDE": r"\textsc{CoDE}"}
+# Only the crystal ligands get a name of this family's own; everything else goes through the
+# shared display(), so a method is spelled here exactly as the ECDF and the clash box spell
+# it. The entries that used to live here were r"\textsc{CoDE}" -- LaTeX that nothing in this
+# pipeline renders, so the legend printed the six characters \textsc literally. It was
+# invisible while the names lived only in a legend nobody re-read; it would have gone
+# straight onto the x axis the moment the names moved there.
+IX_DISPLAY = {REF_LABEL: "Reference"}
+# The method names on the x axis. Smaller than the ECDF's axis-name size: eight of them share
+# one panel here, where that figure spends its 16.1 on a single line of axis title.
+IX_NAME_FS = 12.5
+# WHICH FIGURE CARRIES THE NAMES (2026-09-14). Both figures draw the same methods in the same
+# order, so stacked -- contacts over hbonds -- one set of names underneath serves both, and
+# printing them twice is the same information twice. Only the bottom figure is named.
+# THIS MAKES contacts DEPENDENT ON ITS NEIGHBOUR: on its own, nothing in it says which
+# violin is which. If it is ever published alone, put "contacts" back in this tuple.
+IX_NAMED_PARTS = ("hbonds",)
 
 # The published baselines, when compute_baseline_interactions.py has written them. Their
 # fingerprints are not in posecheck_<Method>.json -- that export carries only strain and
@@ -214,7 +236,7 @@ def _interaction_counts(rows, kind):
 
 def _interaction_display(label):
     """The name this family's figures print for an arm. See IX_DISPLAY."""
-    return IX_DISPLAY.get(label, label)
+    return IX_DISPLAY.get(label) or display(label)
 
 
 def _interaction_cell_axis(ax, reach):
@@ -256,9 +278,10 @@ def _interaction_frame(ax, vals, ylabel, top, caption, cells=None):
         # full height -- a tick at two and a half contacts, beside a companion panel
         # stepping by whole ones.
         ax.yaxis.set_major_locator(MaxNLocator(integer=True))
-    # NO CATEGORY TICK LABELS. The legend beneath the figure is the key, and printing the
-    # same eight names under each of two panels as well is the same information three
-    # times -- which, rotated to fit, cost a third of the figure's height.
+    # Cleared here and PUT BACK BY THE CALLER (2026-09-14). This used to be the end of it:
+    # the legend under the figure was the key, so printing the names under the panels too
+    # was the same information twice. With the legend gone the names are the only way to
+    # tell one violin from another, so _interaction_ecdf_furniture sets them.
     ax.set_xticks([])
     ax.grid(False, axis="x")          # the x is categorical: a rule per slot is a fence
     # The per-category caption is dropped once there are eight of them: at that width
@@ -276,6 +299,10 @@ def _interaction_violin_panel(ax, vals, cols, ylabel, caption=True):
     parts = ax.violinplot(vals, showextrema=False, widths=IX_VIOLIN_W,
                           bw_method=lambda k: IX_KDE_BW / np.std(k.dataset))
     for body, col in zip(parts["bodies"], cols):
+        # THE PAIR FIGURE'S PAINTING (2026-09-14): the outline is the body's OWN colour, which
+        # is what _interaction_pair_bodies has always done. Briefly removed earlier the same
+        # day and put back so that all four interaction panels are painted by one rule --
+        # face a translucent tint, stroke the saturated hue of the same method.
         body.set(facecolor=col, alpha=IX_BODY_ALPHA, edgecolor=col, linewidth=1.2)
     for i, v in enumerate(vals, start=1):
         q1, med, q3 = np.percentile(v, [25, 50, 75])
@@ -382,14 +409,26 @@ def _interaction_boxen_panel(ax, vals, cols, ylabel, caption=True):
         for lo, hi, d in _interaction_letter_bands(v):
             w = IX_VIOLIN_W / 2 ** d  # the innermost band is as wide as a violin body
             # THE VIOLINS' SATURATION, so the two figures of this family read as one set:
-            # the alpha goes on the FACE only, as a fourth channel, rather than on the
-            # patch -- a patch alpha would take the outline down with it, and the outline
-            # is what makes a block a block.
+            # the alpha goes on the FACE only, as a fourth channel, rather than on the patch.
+            #
+            # THE OUTLINE STAYS, and it is not decoration: the outline is what makes a block
+            # a block. Taken off on 2026-09-14 and PUT BACK the same day, because the column
+            # collapsed into one stepped silhouette -- the bands are NON-OVERLAPPING and depth
+            # is carried by width and tint, but IX_BOXEN_LIGHT spreads only 0.46 over five
+            # depths, so without a rule between them the quartile box and the tail bands
+            # stopped being separable.
+            # IN THE METHOD'S OWN COLOUR, not the neutral AXIS grey it used to take: that is
+            # the rule the pair figure paints by, and all four panels of this family now
+            # share it -- face a translucent tint, stroke the saturated hue of the same
+            # method.
+            #
+            # The alpha rides on the FACE as a fourth channel rather than on the patch: a
+            # patch alpha would fade the outline with it.
             face = _interaction_tint(col, IX_BOXEN_LIGHT * d / (IX_BOXEN_K - 1)) \
                 + (IX_BODY_ALPHA,)
             ax.add_patch(IX_RECTANGLE((i - w / 2, lo), w, hi - lo, zorder=3 + d,
                                       facecolor=face,
-                                      edgecolor=AXIS, linewidth=IX_BOXEN_EDGE_LW))
+                                      edgecolor=col, linewidth=IX_BOXEN_EDGE_LW))
             reach = max(reach, hi)
         # The violins' white median dot, not boxenplot's median line: the two forms sit in
         # one figure and the mark for "here is the middle" must not change between panels.
@@ -447,6 +486,43 @@ def _interaction_legend(fig, names, cols, form):
     return leg
 
 
+def _interaction_ecdf_furniture(ax, names, show_names=True):
+    """The strain ECDF's axis weight and type, plus the method names back on the x axis.
+
+    `show_names` is False for the figure that sits ABOVE another carrying the same
+    categories -- see IX_NAMED_PARTS.
+
+    ONLY THE SPINES, TICKS AND AXIS NAME MOVE. Not _pcsz_style() wholesale: that turns the
+    major y grid back on, and the H-bond panel runs a deliberate minor-grid arrangement
+    (_interaction_cell_axis) that would lose. Not PCSZ_RC either -- it carries savefig.dpi
+    170 and a crop to the ink, and this family draws at 220 to its own frame.
+
+    PCSZ_* are read at CALL time: they live in a part assembled after this one."""
+    for side in ("left", "bottom"):
+        ax.spines[side].set_color(PCSZ_AXIS)
+        ax.spines[side].set_linewidth(1.1)
+    ax.tick_params(labelsize=11, direction="out", length=3.5, width=1.1, pad=4,
+                   colors=PCSZ_AXIS)
+    ax.yaxis.label.set_fontsize(PCSZ_LABEL_FS)
+    ax.yaxis.label.set_color(PCSZ_AXIS)
+    # The violins sit at 1..n, which is where _interaction_frame's xlim is built from.
+    ax.set_xticks(range(1, len(names) + 1))
+    labels = ax.set_xticklabels([_interaction_display(n) for n in names],
+                                fontsize=IX_NAME_FS, rotation=30, ha="right",
+                                rotation_mode="anchor")
+    if not show_names:
+        # DRAWN BUT INVISIBLE, rather than absent. tight_layout measures a text's extent
+        # whatever its colour, so colouring the names "none" reserves the exact band of
+        # height they would have taken -- which is what keeps this figure's axes the same
+        # height as the named one it sits above. Dropping the labels instead let fit() hand
+        # that band to the axes, and the two panels came out with their bottom spines 174 px
+        # apart inside a canvas they share, so stacked they would have carried different
+        # vertical scales for the same categories.
+        # The tick MARKS stay: they say where a category is without naming it.
+        for t in labels:
+            t.set_color("none")
+
+
 def _interaction_panels(out, part, kinds, rows_by_label, names, variant, caption):
     """One figure: a row of two panels of one form, with the key beneath them.
 
@@ -461,11 +537,10 @@ def _interaction_panels(out, part, kinds, rows_by_label, names, variant, caption
         ylabel, form = IX_TYPE[kind]
         vals = [_interaction_counts(rows_by_label[n], kind) for n in names]
         IX_PANELS[form](ax, vals, cols, ylabel, caption)
-    # The legend strip is RESERVED with tight_layout's rect and the legend drawn into it
-    # afterwards: tight_layout does not measure a figure-level legend, so laying the axes
-    # out first and adding it second would print it over the x spine.
-    fit(fig, pad=0.5, w_pad=2.2, rect=(0, IX_LEGEND_H / IX_FIG_H, 1, 1))
-    _interaction_legend(fig, names, cols, form)
+        _interaction_ecdf_furniture(ax, names, part in IX_NAMED_PARTS)
+    # NO LEGEND, and so no reserved strip: the names are on the x axis now, and the rect that
+    # used to hold the key back would leave an empty band under the panels.
+    fit(fig, pad=0.5, w_pad=2.2)
     save(fig, out, f"interaction_{part}_{variant}")
 
 
@@ -679,8 +754,16 @@ def _interaction_pair_blocks(ax, vals, cols, xs):
             w = IX_VIOLIN_W / 2 ** d
             face = _interaction_tint(col, IX_BOXEN_LIGHT * d / (IX_BOXEN_K - 1)) \
                 + (IX_BODY_ALPHA,)
+            # THE METHOD'S OWN COLOUR, as the violins beside it already use (2026-09-14):
+            # _interaction_pair_bodies strokes each body in `col`, so the blocks stroking in
+            # the neutral AXIS grey made the two panels of one figure look like two
+            # conventions. The face is a tint of the same hue, so the stroke reads as the
+            # saturated edge of its own block rather than as a foreign rule.
+            # IT ALSO FIXES THE HATCH. matplotlib draws a hatch in the patch's EDGE colour,
+            # so the redocked column's bars were grey here and method-coloured in the violin
+            # panel -- the same encoding drawn two ways in one figure.
             ax.add_patch(IX_RECTANGLE((x - w / 2, lo), w, hi - lo, zorder=3 + d,
-                                      facecolor=face, edgecolor=AXIS,
+                                      facecolor=face, edgecolor=col,
                                       linewidth=IX_BOXEN_EDGE_LW,
                                       hatch=IX_HATCH if i % 2 else None))
             reach = max(reach, hi)
@@ -746,13 +829,86 @@ def _interaction_pair_panels(out, part, kinds, rows):
     form = None
     for ax, kind in zip(axes, kinds):
         form = _interaction_pair_panel(ax, kind, rows, xs)
-    fit(fig, pad=0.5, w_pad=2.2, rect=(0, IX_LEGEND_H / IX_FIG_H, 1, 1))
-    _interaction_pair_legend(fig, form)
+    # NO LEGEND, and so no reserved strip (2026-09-14): the condition key moved out to
+    # fig-interaction-legend, which names the whole family in one image rather than each
+    # figure naming a part of it. The rect that used to hold the key back would leave an
+    # empty band under the panels.
+    fit(fig, pad=0.5, w_pad=2.2)
     # `core` is in the filename because it is the only variant this figure has and the
     # family's rule is that the variant is never only in the content: the redocking covers
     # the core three arms, since the published baselines' poses would each need their own
     # ~700 docks and the comparison this section is making is between ours and VoxBind's.
-    save(fig, out, f"interaction_pair_{part}_core")
+    # interaction_<part>_pair_core, not interaction_pair_<part>_core (2026-09-14): the part
+    # is what the figure draws and the pair is how it draws it, so the files of one part sort
+    # together -- contacts-all, contacts-core, contacts-pair-core, then the hbonds three.
+    save(fig, out, f"interaction_{part}_pair_core")
+
+
+# ══════════════════════════════════════════════════════════════════════════════════
+# fig-interaction-legend — the family's key, as its own image
+# ══════════════════════════════════════════════════════════════════════════════════
+# Every figure in this family has now given up its own key: the methods went onto the x axis
+# of the H-bond panel, the contacts panel carries them invisibly so it can stack under it,
+# and the pair figure's condition key came off. So nothing names the encoding any more, and
+# this draws it once to sit beside the panels.
+#
+# THREE SECTIONS, SEPARATED BY RULES, because the key carries three kinds of thing and a
+# reader should not have to work out which is which: the crystal ligands, which are the
+# benchmark and not a method; the eight methods; and the two POSE CONDITIONS, which are not
+# methods either and are drawn in a neutral grey for exactly that reason -- giving them a
+# method colour would say the opposite of what they mean.
+#
+# PAINTED BY THE PANELS' OWN RULE: a translucent face under a stroke of the same saturated
+# hue, and the redocked swatch hatched as its column is. A key that does not look like the
+# thing it names is a second key to learn.
+IX_LEG_SW_W = 0.30                # swatch width, as a share of the key's width
+IX_LEG_SW_H = 0.52                # swatch height, in row units
+IX_LEG_ROW_H = 0.33               # inches per row
+IX_LEG_W = 2.7                    # inches
+
+
+@figure("fig-interaction-legend", folder="fig-posecheck/interaction")
+def draw_interaction_legend(out):
+    """Reference, a rule, the eight methods, a rule, then generated and redocked."""
+    use_style()
+    methods = [m for m in IX_ORDER if m != REF_LABEL]
+    # THE TEXT IS RESOLVED HERE, not in the drawing loop. _interaction_display() is strict --
+    # it defers to the shared display(), which RAISES on a label the palette does not know --
+    # and that is right for a method name, where a typo should fail loudly rather than print
+    # itself. But the last two rows are POSE CONDITIONS, not methods, so they carry their own
+    # text and never reach it.
+    rows = ([(_interaction_display(REF_LABEL), color(REF_LABEL), None)]
+            + [(_interaction_display(m), color(m), None) for m in methods]
+            + [("Generated", IX_SWATCH, None), ("Redocked", IX_SWATCH, IX_HATCH)])
+    # A rule under the reference and under the last method: the two places the KIND of
+    # entry changes, which is the only thing a rule should ever mark here.
+    rules = {0, len(methods)}
+    with plt.rc_context({"hatch.linewidth": 0.8}):
+        fig, ax = plt.subplots(figsize=(IX_LEG_W, IX_LEG_ROW_H * len(rows) + 0.3), dpi=220)
+        fig.patch.set_facecolor("white")
+        ax.set_xlim(0, 1.0)
+        ax.set_ylim(-len(rows) + 0.5, 0.5)
+        ax.axis("off")
+        for i, (lab, col, hatch) in enumerate(rows):
+            y = -i
+            ax.add_patch(IX_RECTANGLE((0.05, y - IX_LEG_SW_H / 2), IX_LEG_SW_W,
+                                      IX_LEG_SW_H,
+                                      facecolor=IX_TO_RGB(col) + (IX_BODY_ALPHA,),
+                                      edgecolor=col, linewidth=1.2, hatch=hatch,
+                                      zorder=3))
+            ax.text(0.05 + IX_LEG_SW_W + 0.07, y, lab,
+                    ha="left", va="center", fontsize=IX_LEGEND_SIZE, color=INK)
+            if i in rules:
+                ax.plot([0.03, 0.97], [y - 0.5, y - 0.5], color=LEGEND_EDGE,
+                        lw=AXIS_LW, zorder=2)
+        # One frame round the whole key, as the house legend box draws it.
+        ax.add_patch(IX_RECTANGLE((0.0, -len(rows) + 0.5), 1.0, len(rows),
+                                  facecolor="none", edgecolor=LEGEND_EDGE,
+                                  linewidth=AXIS_LW, zorder=1))
+        fit(fig, pad=0.3)
+        save(fig, out, "interaction_legend")
+    print(f"  key: reference · {len(methods)} methods · {len(IX_SERIES)} pose conditions")
+    print(f"  wrote {out}")
 
 
 def _interaction_pair_row(arm, kind, rows):

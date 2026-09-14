@@ -47,7 +47,11 @@ BUNDLE = next((os.path.join(d, "results/task2-drugdesign")
 
 BASELINES = [("AR", "AR", "AR"), ("Pocket2Mol", "Pocket2Mol", "Pocket2Mol"),
              ("DiffSBDD", "DiffSBDD", "DiffSBDD"),
-             ("DecompDiff", "DecompDiff", "DecompDiff_ref_prior")]
+             ("DecompDiff", "DecompDiff", "DecompDiff_ref_prior"),
+             # FuncBind was never staged here: the interaction figures carried it in their
+             # order but never had a fingerprint for it. Its meta and its posecheck export
+             # both exist, which is all the heavy-atom join needs (2026-09-14).
+             ("FuncBind", "FuncBind", "FuncBind")]
 
 
 def load_meta(folder, stem):

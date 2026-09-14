@@ -124,9 +124,9 @@ RB_BASELINES = [
 # local arms are the subject while these are context. Same channel split the nine-series
 # by-atom-range figures already use.
 RB_BASE_LW = 1.6
-RB_BASE_DASH = {"AR": (0, (5, 2)), "Pocket2Mol": (0, (1, 1.6)),
-                "DiffSBDD": (0, (6, 2, 1, 2)), "DecompDiff": (0, (9, 3)),
-                "FuncBind": (0, (3, 1.4, 1, 1.4))}
+# The per-method dashes that used to live here are now METHOD_DASH in 00_core.py, read
+# through dash(). This table had drifted a whole method out of step with the ECDF family's,
+# so the same baseline was drawn with two different patterns depending on the figure.
 # The eight-method figures draw every method through soft(): CoDE's lighter tint, the one the
 # Vina per-atom family (dock-per-atom-v*) carries, and the palette colour for everyone else.
 # The shared #4363D8 was the only saturated hue among nine series (changed 2026-09-13). The
@@ -178,6 +178,9 @@ RB_BIN_LABELS = ["0", "1–2", "3–4", "5–6", "7–9", "10+"]
 RB_LOCAL_KEYS = ("targetdiff", "vanilla", "ours_v1")
 RB_LOCAL_LABELS = []         # filled by the loaders from ARMS, in RB_LOCAL_KEYS order
 RB_RELABEL = {"ours_v1": "CoDE"}
+# What the crystal ligands are CALLED in the eight-method keys (2026-09-14), matching the
+# strain ECDF. The shared REF_LABEL still names them in the data and in every other family.
+RB_REF_NAME = "Reference"
 # THE ROW ORDER OF 260827/table_drug_design.tex, which is canonical for this section, except
 # that VoxBind is pulled down next to CoDE so the model our arm modifies sits immediately
 # before it and the two read as a pair. Legends, panels and exports all read from this, so a
@@ -528,7 +531,14 @@ def _rb_order(labels):
 
 
 def _rb_style_of(label):
-    return (MODEL_LW, "-") if label in RB_LOCAL_LABELS else (RB_BASE_LW, RB_BASE_DASH[label])
+    """Weight from provenance, DASH FROM THE SHARED TABLE.
+
+    The weight still keys on RB_LOCAL_LABELS: the three arms we run locally are drawn heavier
+    in this family. The dash no longer does. It used to return solid for every local arm,
+    which handed TargetDiff -- a published baseline we happen to run ourselves -- the solid
+    line that means OURS in every other figure. dash() knows the difference."""
+    lw = MODEL_LW if label in RB_LOCAL_LABELS else RB_BASE_LW
+    return lw, dash(label)
 
 def _rb_panel_order(labels):
     """Same order as `_rb_order`, with the crystal ligands FIRST -- they are the table's
@@ -538,13 +548,15 @@ def _rb_panel_order(labels):
 
 def _rb_handles(labels, solid=False):
     """`solid` for the box figure: nothing in it is a dashed line, so a dashed swatch in the
-    key advertises an encoding the panel does not use. The crystal ligands keep their dash
-    either way -- there they really are a dashed line."""
-    h = [Line2D([], [], color=REF_COLOR, lw=REF_LW, ls=DASH, label=REF_LABEL)]
+    key advertises an encoding the panel does not use. The crystal ligands are SOLID in both
+    (2026-09-14), named "Reference" and drawn through display(), so this family's keys read
+    like the strain ECDF's and the per-atom panel's -- solid marks the series a reader returns
+    to, every baseline carries a dash, and VoxBind shows its sigma as a subscript."""
+    h = [Line2D([], [], color=REF_COLOR, lw=REF_LW, ls=SOLID, label=RB_REF_NAME)]
     for lab in labels:
         lw, ls = _rb_style_of(lab)
         h.append(Line2D([], [], color=soft(lab), lw=MODEL_LW if solid else lw,
-                        ls="-" if solid else ls, label=lab))
+                        ls="-" if solid else ls, label=display(lab)))
     return h
 
 
@@ -573,8 +585,11 @@ def _rb_lines(out, xs, per, ref_per, labels, stat):
     fig.patch.set_facecolor("white")
     ax.set_facecolor("white")
     key.axis("off")
+    # Solid, like the key's swatch and like the ECDF's crystal ligands (2026-09-14). The
+    # three-arm core figures above keep the dash -- there the reference is one of three lines,
+    # not one of nine, and nothing else in those panels competes for solid.
     ax.plot(xs, _rb_reference_curve(ref_per, xs, f), color=REF_COLOR, lw=REF_LW,
-            ls=DASH, zorder=4, dash_capstyle="round")
+            ls=SOLID, zorder=4, solid_capstyle="round")
     for lab in labels:
         lw, ls = _rb_style_of(lab)
         ax.plot(xs, _rb_line_curve(per[lab], xs, f), color=soft(lab), lw=lw, ls=ls,
@@ -653,7 +668,7 @@ def _rb_all_boxes(out, series, refrows, labels):
             for med in bp["medians"]:
                 med.set(color=INK, linewidth=1.1, solid_capstyle="butt")
         ax.plot(band, [ref_line.get(x) for x in band], color=REF_COLOR, lw=REF_LW,
-                ls=DASH, zorder=6, dash_capstyle="round")
+                ls=SOLID, zorder=6, solid_capstyle="round")
         ax.set_yscale("log")
         # A FIXED FIVE DECADES, AND THE TAIL IS ALLOWED TO RUN OFF THE TOP. FuncBind's
         # 95th percentile at 6 rotatable bonds reaches ~1e11; autoscaling to it stretched
@@ -884,8 +899,10 @@ def _rb_atom_lines(out, xs, per, ref_per, labels, stat):
         fig, ax = plt.subplots(figsize=PCSZ_ECDF_SIZE)
         fig.patch.set_facecolor(PCSZ_BG)
         _pcsz_style(ax)
+        # Solid here too, matching the ECDF it pairs with (2026-09-14); AR is already dashed
+        # on this axis through RB_BASE_DASH.
         ax.plot(xs, reference_curve(ref_per, xs, f), color=REF_COLOR,
-                lw=PCSZ_REF_LW * PCSZ_LW_SCALE, ls=DASH, zorder=4, dash_capstyle="round")
+                lw=PCSZ_REF_LW * PCSZ_LW_SCALE, ls=SOLID, zorder=4, solid_capstyle="round")
         dropped = []
         for lab in labels:
             y = _rb_curve(per[lab], xs, f)
@@ -906,7 +923,10 @@ def _rb_atom_lines(out, xs, per, ref_per, labels, stat):
         ax.set_xlim(xs[0] - 0.6, xs[-1] + 0.6)
         ax.xaxis.set_major_locator(MultipleLocator(XTICK_STEP))
         ax.set_xlabel(X_LABEL, fontsize=PCSZ_LABEL_FS)
-        ax.set_ylabel(f"Strain {stat} (kcal mol⁻¹)", fontsize=PCSZ_LABEL_FS)
+        # Two lines again (2026-09-14): it was pulled onto one on 2026-09-13, and the unit now
+        # goes back under the name, matching the ECDF's y name beside it.
+        ax.set_ylabel(f"Strain {stat}\n(kcal mol⁻¹)", fontsize=PCSZ_LABEL_FS,
+                      labelpad=PCSZ_YPAD)
         fig.tight_layout(pad=0.5)
         save(fig, out, f"strain_per_atom_all_methods_{stat}")
     return dropped
@@ -1019,20 +1039,47 @@ RB_GRID_COLS = 3
 # RB_GRID_MIN_N most of their boxes would vanish. Three is the least that gives a box a median
 # and quartiles that are not the same point, and the CSV carries n for every box.
 RB_GRID_REF_MIN_N = 3
-# (position, colour) stops, all from the shared tables (2026-09-13): CoDE's SOFT blue at 0,
-# through its PALE tint and VoxBind's PALE tint, to VoxBind's palette sand at the top -- the
-# ends carry the colour, the middle stays light enough for the dark median bars and fliers.
-RB_GRID_CMAP_STOPS = [(0.0, soft("CoDE")), (1 / 3, pale("CoDE")), (2 / 3, pale("VoxBind")),
-                      (1.0, color("VoxBind"))]
+# THE PAPER'S OWN SCALE (2026-09-14). VoxBind Fig. 12/13 colours each box by its median on
+# matplotlib's coolwarm, and this used to be a house-built lookalike assembled out of the
+# SHARED PALETTE: CoDE's soft blue at 0, through both pale tints, to VoxBind's sand at the
+# top. That made the magnitude channel collide with the identity one -- a periwinkle box
+# meant "low median" here and "CoDE" in every other figure, a sand one "high median" here
+# and "VoxBind" there -- and a reader carrying the palette between figures reads it wrong.
+# coolwarm keeps what the house version was reaching for, a light middle so the dark median
+# bars and the fliers stay legible, while being far more saturated at both ends than any
+# pastel in SOFT, so it cannot be mistaken for a method.
+#
+# IT IS DIVERGING AND THE QUANTITY IS NOT: median strain runs 0-800 with no meaningful
+# midpoint at 400, so the white band is an artefact of the map rather than a feature of the
+# data. That is the paper's choice and matching it is the point here, but a sequential map
+# would be the more honest encoding if we ever stop matching.
+RB_GRID_CMAP = "coolwarm"
 RB_GRID_NORM, RB_GRID_CTICK = (0.0, 800.0), 200.0
-RB_GRID_TALL = 0.9975        # per row, as a share of PANEL_H
+RB_GRID_TALL = 0.9975 * 1.1  # per row, as a share of PANEL_H
 # 0.8x the width the three-arm box figures use (2026-09-13). The nine panels keep their type
 # and line weights, so pulling the canvas in is what makes the block read fuller; the boxes
 # narrow with the axes, the colourbar keeps its share of the figure.
-RB_GRID_WIDE = 0.8 * 1.2
+RB_GRID_WIDE = 0.8 * 1.2 * 1.15
 # The outer names are a step above the house 15.5 pt, and the y name sits further off its
 # tick labels -- on a 3x3 block the house sizes read as small.
-RB_GRID_LABEL_FS, RB_GRID_YPAD = 17, 16
+RB_GRID_LABEL_FS, RB_GRID_YPAD = 27, 18
+# Everything else in the block moves with the names (2026-09-14), so it reads like the strain
+# ECDF, which spends 16 pt on a canvas half this wide. Panel names, the tick numbers under and
+# beside every panel, and the colourbar's own ticks -- left at the house 14/14/12 they turned
+# into fine print as soon as the axis names went to 22.
+RB_GRID_TITLE_FS, RB_GRID_TICK_FS = 22, 18
+RB_GRID_CBAR_TICK_FS = RB_GRID_TICK_FS   # one size for every number in the figure
+# SET AGAINST THE STRAIN ECDF (2026-09-14, user's call): that figure spends 16.1 pt of type
+# and a 1.1 pt spine on a 6.95 in canvas; this one is 14.45 in, so matching it at equal placed
+# width would mean 33 pt and 2.5, and matching it per PANEL -- a grid panel is 2.8 x 2.6 in
+# against the ECDF axes' 6.0 x 2.8 -- would mean 16 pt and 1.1. These are the geometric mean of
+# the two, for a block placed wider than the ECDF but not twice as wide.
+# THE PANEL TICK NUMBERS ARE SMALLER THAN THE BAR'S (2026-09-14) even though both were set to
+# 20: measured off the PNG the two render at the same 48 px, but the bar's are turned a quarter
+# turn and a vertical string of digits reads smaller than a horizontal one. They came down to
+# 16 to match what the bar LOOKS like, the bar's own numbers followed them down, and both then
+# settled at 18 -- one number size for the whole figure, a step under the panel names.
+RB_GRID_MED_COLOR = "#323232"   # the median bar, a touch lighter than INK
 # The x name's gap above it, DOUBLED (2026-09-13): measured off the drawn PNG it was 27 px at
 # 220 dpi, i.e. 8.8 pt from the tick labels; a labelpad of 15 measures back as 17.7 pt, which
 # is that doubled (the pad is spent from the axes bbox, so it is ~3 pt more than the gap it
@@ -1045,9 +1092,12 @@ RB_GRID_CBAR_FS = RB_GRID_LABEL_FS
 # Gap from the panel block to the bar, doubled from 0.012 (2026-09-13) -- a share of the
 # figure width, which is what colorbar(pad=) takes.
 RB_GRID_CBAR_PAD = 0.024
+# The caption's gap off the bar's numbers, DOUBLED (2026-09-14): measured off the PNG it was
+# 19 px at 220 dpi, i.e. 6.2 pt on matplotlib's default labelpad of 4, so 10.5 buys about 12.4.
+RB_GRID_CBAR_LABELPAD = 10.5
 # Spines and MAJOR tick marks 1.2x the house weight: nine small panels read as washed out at
 # 1.35, and 1.6x was too heavy. Minor ticks (the log decades' 2-9) keep their own weight.
-RB_GRID_AXIS_LW = AXIS_LW * 1.2
+RB_GRID_AXIS_LW = 2.0
 # stage -> (row field, y-axis qualifier)
 RB_GRID_STAGES = {"generated": ("s", "generated pose")}
 
@@ -1069,7 +1119,7 @@ def _rb_grid(out, series, refrows, labels, stage):
 
     all_meds = [float(np.median(v)) for lab in panels for _, v in boxes[lab]]
     norm = matplotlib.colors.Normalize(*RB_GRID_NORM)
-    cmap = matplotlib.colors.LinearSegmentedColormap.from_list("rb_grid", RB_GRID_CMAP_STOPS)
+    cmap = matplotlib.colormaps[RB_GRID_CMAP]
     extend = {(False, False): "neither", (True, False): "min", (False, True): "max",
               (True, True): "both"}[(min(all_meds) < norm.vmin, max(all_meds) > norm.vmax)]
 
@@ -1090,13 +1140,18 @@ def _rb_grid(out, series, refrows, labels, stage):
                             flierprops=dict(marker="d", markersize=2.6, markerfacecolor=INK,
                                             markeredgecolor="none", alpha=0.5))
             for box, (_, v) in zip(bp["boxes"], drawn):
-                box.set(facecolor=cmap(norm(float(np.median(v)))), edgecolor=INK,
-                        linewidth=0.9)
+                # No outline (2026-09-14): the fill IS the median through the colourmap, and a
+                # dark edge on nine panels of eight boxes read as a grid of frames.
+                box.set(facecolor=cmap(norm(float(np.median(v)))), edgecolor="none",
+                        linewidth=0)
             for part in ("whiskers", "caps"):
                 for art in bp[part]:
                     art.set(color=INK, linewidth=0.9)
             for med in bp["medians"]:
-                med.set(color=INK, linewidth=1.3, solid_capstyle="butt")
+                # Up from 1.3, settled at 2.0 (2026-09-14; 2.6 was heavy): with the box outline
+                # gone this is the only dark mark on the fill, and it is the number the colour
+                # encodes.
+                med.set(color=RB_GRID_MED_COLOR, linewidth=2.0, solid_capstyle="butt")
             # Tens of thousands of flier markers as vector paths make the PDF/SVG unplaceable;
             # the points are rasterised inside an otherwise vector figure.
             for fl in bp["fliers"]:
@@ -1108,11 +1163,18 @@ def _rb_grid(out, series, refrows, labels, stage):
         for sp in ("left", "bottom"):
             ax.spines[sp].set_linewidth(RB_GRID_AXIS_LW)
         ax.tick_params(which="major", width=RB_GRID_AXIS_LW)
+        ax.tick_params(labelsize=RB_GRID_TICK_FS)   # after furniture(), which sets the house 14
+        # EVERY decade keeps its label. At 16 pt the default log locator decided 10^0..10^5 no
+        # longer fit and thinned them to every second one, dropping 10^5 -- the axis top -- with
+        # them. numticks high enough that the thinning never triggers on this range.
+        ax.yaxis.set_major_locator(matplotlib.ticker.LogLocator(base=10.0, numticks=99))
         # An unlabelled tick where the axes meet, matching the y axis's 10^0 in that corner:
         # the first bond count sits 0.6 in, so without it the x axis looks cut short.
         counts = list(range(0, RB_GRID_X_MAX + 1))
         ax.set_xticks([xlo] + counts, [""] + [str(x) for x in counts])
-        ax.set_title(display(lab), fontsize=14, color=INK, pad=5)
+        # "Reference", not the shared REF_LABEL, and the gap to the panel doubled (2026-09-14).
+        ax.set_title("Reference" if lab == REF_LABEL else display(lab),
+                     fontsize=RB_GRID_TITLE_FS, color=INK, pad=10)
     for ax in flat[len(panels):]:
         ax.set_visible(False)
 
@@ -1125,17 +1187,29 @@ def _rb_grid(out, series, refrows, labels, stage):
     # The y name goes on the MIDDLE row's left axes rather than fig.supylabel, because only an
     # axes label takes a labelpad -- supylabel sits flush against the tick labels. With three
     # rows the middle axes' centre is the block's centre.
-    axes[nrow // 2, 0].set_ylabel(f"UFF strain energy (kcal mol⁻¹), {qualifier}",
+    # TWO LINES (2026-09-14), broken at the comma the sentence already has: the unit stays
+    # with the name it belongs to and the stage qualifier gets its own line, which is how the
+    # ECDF and the per-atom panel set their y names.
+    # THE PAD IS UNCHANGED ON PURPOSE. labelpad is measured to the NEAREST edge of the label,
+    # so the 63 px it buys between the tick numbers and the name survives the second line;
+    # what grows is the label block itself (~81 px wide to ~170), and under layout=
+    # "constrained" that width comes out of the panels rather than out of the canvas.
+    axes[nrow // 2, 0].set_ylabel(f"UFF strain energy (kcal mol⁻¹),\n{qualifier}",
                                   fontsize=RB_GRID_LABEL_FS, color=INK,
                                   labelpad=RB_GRID_YPAD)
     cb = fig.colorbar(plt.cm.ScalarMappable(norm=norm, cmap=cmap), ax=axes, extend=extend,
                       shrink=0.92, aspect=38, pad=RB_GRID_CBAR_PAD,
                       ticks=np.arange(RB_GRID_NORM[0], RB_GRID_NORM[1] + RB_GRID_CTICK,
                                       RB_GRID_CTICK))
-    cb.set_label("Median strain energy (kcal mol⁻¹)", fontsize=RB_GRID_CBAR_FS, color=INK)
-    cb.ax.tick_params(labelsize=12, colors=AXIS, width=AXIS_LW)
-    cb.outline.set_edgecolor(AXIS)
-    cb.outline.set_linewidth(AXIS_LW)
+    cb.set_label("Median strain energy (kcal mol⁻¹)", fontsize=RB_GRID_CBAR_FS, color=INK,
+                 labelpad=RB_GRID_CBAR_LABELPAD)
+    cb.ax.tick_params(labelsize=RB_GRID_CBAR_TICK_FS, colors=AXIS, width=AXIS_LW)
+    # The bar's numbers turned a quarter turn anticlockwise (2026-09-14), so they read along the
+    # bar like its name. Anchored left and centred on the tick, which is where they sat upright.
+    plt.setp(cb.ax.get_yticklabels(), rotation=90, va="center", ha="left")
+    # No frame round the bar (2026-09-14), as the boxes it keys lost theirs. The extend arrow
+    # is part of that same outline path, so it loses its edge with it and reads as pure fill.
+    cb.outline.set_visible(False)
     save(fig, out, f"strain_box_per_rotbond_grid_{stage}")
 
     csv_rows = []

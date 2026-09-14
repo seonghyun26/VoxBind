@@ -30,6 +30,9 @@
 #
 # THE ARMS stand on the 79 electron-density pockets (TargetDiff and VoxBind hold 100). JSD
 # is scipy's JS DISTANCE, as both papers print it.
+#
+# EVERY METHOD IS DRAWN IN ITS soft() TINT (2026-09-14, on request), the colours of the
+# eight-method strain figures (ecdf-by-size-all), not COLORS' saturated originals.
 JSD_JSON = BUNDLE / "_shared" / "260913_crossdocked_jsd" / "crossdocked_jsd.json"
 JSD_NEEDS = ("crossdocked_jsd.json (voxbind/scripts/89_eval_crossdocked_jsd.sh)",)
 # Bond lengths are SCORED in 0.005 Å bins; they are DRAWN four bins at a time, so a
@@ -39,6 +42,28 @@ JSD_LEN_MERGE = 4
 JSD_CC_XLIM = (1.0, 2.0)        # C-C pairs under 2 Å are bonds; nothing sits below 1.0
 JSD_NRINGS_MAX = 8              # rings per molecule: the last bar pools 8 and more
 JSD_AROM_MERGE = 2              # 20 scored aromatic-fraction bins drawn as 10
+# Share panels (atom type, ring size) split into tiers: >= 50% gets a 0-100 axis, >= 5% a
+# middle axis, the rest a small one -- each tier on a linear axis scaled to itself. What is
+# measured against those thresholds is the TIER CRITERION, which is the tallest bar of the
+# category by default and the reference ligand's own share where a panel passes `tier_by`.
+JSD_TIER_PCT = (50.0, 5.0)
+JSD_KEY_NCOL = 4                # method columns of the all-arms key: 8 arms = 2 rows x 4
+# Ring-size panels, fixed (2026-09-14, on request): 6 | 3, 5, 7 | 4, 8, 9. The 5-ring shares
+# its panel with the 3- and 7-ring, which the arms push to 12-30%; 4/8/9 stay under 4% for
+# every set, so on a panel of their own they are not stubs under AR's 3-rings. Sizes run in
+# ascending order inside a panel, whatever order a tuple lists them in.
+JSD_RING_PANELS = (("6",), ("3", "5", "7"), ("4", "8", "9"))
+# HATCHING, for colour-blind readers (2026-09-14, trial on request): every grouped-bar chart
+# and its key give a method a pattern as well as its soft() tint, drawn in a darker step of
+# that tint. The reference stays plain grey and CoDE plain -- ours, and the one solid method
+# bar. Summary and rings are not hatched: each bar there already carries the method's name.
+# OFF (2026-09-14): tried and set aside on request -- the figures are drawn plain. Set True to
+# bring the patterns back.
+JSD_HATCH_ON = False
+JSD_HATCH = {"AR": "///", "Pocket2Mol": "\\\\\\", "DiffSBDD": "xxx", "DecompDiff": "...",
+             "FuncBind": "---", "TargetDiff": "|||", "VoxBind": "ooo"}
+JSD_HATCH_LW = 0.6               # points; matplotlib's 1.0 fills a 0.1-inch bar
+JSD_HATCH_INK = 0.55             # hatch = the bar's tint times this (toward black)
 JSD_SUMMARY = (
     ("Mean bond-distance JSD ↓", lambda j: j["bond_mean"]),
     ("All-atom pair JSD ↓", lambda j: j["pair"]["All_12A"]),
@@ -111,30 +136,72 @@ def _jsd_new(w, h):
 def _jsd_key_above(fig, handles, ncol, fontsize=11.5):
     """A figure-level key in a strip above every panel. Laid out AFTER fit(), because
     tight_layout does not know about figure legends: the panels are fitted first, then
-    pushed down by exactly the overlap the key makes with the tallest one."""
+    pushed down by exactly the overlap the key makes with the tallest one.
+
+    THE REFERENCE TAKES A CENTRED LINE OF ITS OWN over the method grid, one frame round both
+    -- the Vina per-atom v3 key's layout. As one more cell of a single-row grid, the
+    "Reference ligand (CrossDocked train+test), 8,829 molecules" entry made the key wider
+    than the figure and it was cut off at both edges (atom-type, 2026-09-14). The grid reads
+    across rows, and it loses a column at a time until it fits the figure's width."""
     fit(fig, pad=0.5)
-    leg = legend(fig, handles, loc="upper center", ncol=ncol, fontsize=fontsize,
-                 bbox_to_anchor=(0.5, 0.995))
+    ref_key = _jsd_ref_key()
+    ref = [h for h in handles if h.get_label() == ref_key]
+    methods = [h for h in handles if h.get_label() != ref_key]
+    inv = fig.transFigure.inverted()
+    ncol = max(1, min(ncol, len(methods)))
+    while True:
+        legs, top = [], 0.995
+        for group, cols in ((ref, 1), (methods, ncol)):
+            if not group:
+                continue
+            legs.append(legend(fig, _vpa_row_major(group, cols), loc="upper center", ncol=cols,
+                               fontsize=fontsize, bbox_to_anchor=(0.5, top)))
+            fig.canvas.draw()
+            top = legs[-1].get_window_extent(fig.canvas.get_renderer()).transformed(inv).y0 \
+                - VPA_KEY_ROW_GAP
+        rend = fig.canvas.get_renderer()
+        widest = max(l.get_window_extent(rend).transformed(inv).width for l in legs)
+        if widest <= 0.98 or ncol == 1:
+            break
+        for l in legs:
+            l.remove()
+        ncol -= 1
+    if len(legs) > 1:
+        _vpa_one_frame(fig, legs)
     fig.canvas.draw()
     rend = fig.canvas.get_renderer()
-    inv = fig.transFigure.inverted()
-    y0 = leg.get_window_extent(rend).transformed(inv).y0
+    y0 = min(l.get_window_extent(rend).transformed(inv).y0 for l in legs)
     y1 = max(ax.get_tightbbox(rend).transformed(inv).y1 for ax in fig.axes)
     if y1 > y0 - 0.012:
         fig.subplots_adjust(top=fig.subplotpars.top - (y1 - y0 + 0.012))
 
 
+def _jsd_hatch(label, col):
+    """(pattern, ink) for a method's bars, or (None, col) where it is drawn plain."""
+    pattern = JSD_HATCH.get(ALIASES.get(label, label)) if JSD_HATCH_ON else None
+    if not pattern:
+        return None, col
+    return pattern, tuple(JSD_HATCH_INK * c for c in matplotlib.colors.to_rgb(col))
+
+
 def _jsd_handles(arms, *, ref=True, patch=False):
-    def one(label, col, ls="-", lw=MODEL_LW):
+    def one(label, col, ls="-", lw=MODEL_LW, key=None):
         if patch:
-            return Patch(facecolor=col, edgecolor=col, label=label)
+            hatch, ink = _jsd_hatch(key, col)
+            h = Patch(facecolor=col, edgecolor=ink, hatch=hatch, lw=0, label=label)
+            h.set_hatch_linewidth(JSD_HATCH_LW)
+            return h
         return Line2D([], [], color=col, lw=lw, ls=ls, label=label)
-    hs = [one(_jsd_ref_key(), REF_COLOR, DASH, REF_LW)] if ref else []
-    return hs + [one(display(lab), color(lab)) for lab, _, _ in arms]
+    hs = [one(_jsd_ref_key(), REF_COLOR, DASH, REF_LW, key=REF_LABEL)] if ref else []
+    return hs + [one(display(lab), soft(lab), key=lab) for lab, _, _ in arms]
 
 
 def _jsd_key_cols(n, wide):
-    return n if n <= 3 else (5 if wide else 3)
+    """Method columns of the key. The reference always takes its own line above, so this only
+    shapes the methods: the eight arms read 2 x 4 (2026-09-14, on request; they were 5 + 3),
+    the same grid as the Vina per-atom v3 and strain keys. _jsd_key_above caps it at the
+    method count, so the core pair stays one row."""
+    return n if n <= 3 else (JSD_KEY_NCOL if wide else 3)
 
 
 def _jsd_grouped(ax, groups, series):
@@ -143,13 +210,72 @@ def _jsd_grouped(ax, groups, series):
     series count -- a fixed width overlaps neighbouring groups at nine series."""
     x = np.arange(len(groups))
     w = 0.84 / len(series)
-    for i, (_, vals, col) in enumerate(series):
+    for i, (lab, vals, col) in enumerate(series):
         vals = [np.nan if v is None else v for v in vals]
-        ax.bar(x + (i - (len(series) - 1) / 2) * w, vals, width=w, color=col,
-               edgecolor="white", lw=0.4 if len(series) > 4 else 0.8, zorder=3)
+        xs = x + (i - (len(series) - 1) / 2) * w
+        # A patch's hatch is drawn in its EDGE colour, so a hatched bar is two passes: the fill
+        # with the pattern in its ink and no outline, then the white spacer outline on top.
+        hatch, ink = _jsd_hatch(lab, col)
+        if hatch:
+            for bar in ax.bar(xs, vals, width=w, color=col, edgecolor=ink, hatch=hatch, lw=0,
+                              zorder=3):
+                bar.set_hatch_linewidth(JSD_HATCH_LW)
+            ax.bar(xs, vals, width=w, fill=False, edgecolor="white",
+                   lw=0.4 if len(series) > 4 else 0.8, zorder=3)
+        else:
+            ax.bar(xs, vals, width=w, color=col, edgecolor="white",
+                   lw=0.4 if len(series) > 4 else 0.8, zorder=3)
     ax.set_xticks(x)
     ax.set_xticklabels(groups)
     ax.set_xlim(-0.5, len(groups) - 0.5)
+
+
+def _jsd_tiered(fig, cats, names, series, ylabel, tier_by=None, panels=None):
+    """Grouped share bars (in %) on up to three side-by-side LINEAR axes, one per JSD_TIER_PCT
+    tier of a category -- so a category at ~1% is not a stub under one at ~70%, and nothing
+    needs a log axis. `series` is (label, {category: pct}, colour). The top tier is fixed at
+    0-100; the others scale to their own tallest bar. Panel width = category count, so a bar
+    is the same width in every panel; the y scales differ, so each keeps its ticks.
+    Categories keep their given order inside a panel; panels run tallest tier first.
+
+    WHICH TIER A CATEGORY LANDS IN is decided by `tier_by` -- {category: pct} -- and defaults
+    to the category's tallest bar. Passing the reference ligand's own shares instead groups
+    the panels by what a real ligand MAKES rather than by what the worst arm happens to do
+    with it, which is a statement about the categories and stays put when an arm is added or
+    dropped. The y limit is always the real tallest bar, so nothing is ever clipped: a tier
+    chosen against the reference can still hold a bar many times the reference's height, and
+    that is the finding, not a drawing error.
+
+    `panels` -- a sequence of category tuples -- overrides the tiers outright; a panel whose
+    every category reaches the top tier still gets the fixed 0-100 axis."""
+    peak = {c: max((vals[c] or 0) for _, vals, _ in series) for c in cats}
+    rank = peak if tier_by is None else {c: tier_by.get(c, 0) or 0 for c in cats}
+    hi, mid = JSD_TIER_PCT
+    if panels is not None:
+        tiers = [[c for c in cats if c in p] for p in panels]
+        leftover = [c for c in cats if not any(c in p for p in panels)]
+        if leftover:
+            raise ValueError(f"categories in no panel: {leftover}")
+        tiers = [(0 if all(rank[c] >= hi for c in t) else 1, t) for t in tiers if t]
+    else:
+        tiers = [[c for c in cats if rank[c] >= hi], [c for c in cats if mid <= rank[c] < hi],
+                 [c for c in cats if rank[c] < mid]]
+        tiers = [(i, t) for i, t in enumerate(tiers) if t]
+    gs = fig.add_gridspec(1, len(tiers), width_ratios=[len(t) for _, t in tiers])
+    for k, (level, tier) in enumerate(tiers):
+        ax = fig.add_subplot(gs[0, k])
+        ax.set_facecolor("white")
+        _jsd_grouped(ax, [names[c] for c in tier],
+                     [(lab, [vals[c] for c in tier], col) for lab, vals, col in series])
+        furniture(ax, ylabel=ylabel if k == 0 else None, xloc=None)
+        ax.grid(False, axis="x")
+        ax.tick_params(axis="x", length=0)
+        if level == 0:
+            ax.set_ylim(0, 100)
+            ax.yaxis.set_major_locator(MultipleLocator(25))
+        else:
+            ax.set_ylim(0, max(peak[c] for c in tier) * 1.1)
+    return [t for _, t in tiers]
 
 
 def _jsd_round(v, nd=4):
@@ -176,7 +302,7 @@ def draw_jsd_bond(out):
         ax = fig.add_subplot(111)
         ax.set_facecolor("white")
         series = [(lab, [d["arms"][lab]["jsd"]["bond"][t] for t in types]
-                   + [d["arms"][lab]["jsd"]["bond_mean"]], color(lab)) for lab, _, _ in arms]
+                   + [d["arms"][lab]["jsd"]["bond_mean"]], soft(lab)) for lab, _, _ in arms]
         _jsd_grouped(ax, types + ["mean"], series)
         top = max(v for _, vals, _ in series for v in vals if v is not None)
         furniture(ax, ylabel="JSD to CrossDocked\nligands ↓", xloc=None)
@@ -224,8 +350,8 @@ def _jsd_method_grid(out, d, arms, kinds, *, xlabel, stem):
             ax.set_facecolor("white")
             pct, edges = dist(d["arms"][lab])
             top = max(top, float(pct.max()))
-            ax.stairs(pct, edges, color=color(lab), fill=True, alpha=DIST_FILL + 0.14, lw=0, zorder=2)
-            ax.stairs(pct, edges, color=color(lab), lw=DIST_LW - 0.4, zorder=3)
+            ax.stairs(pct, edges, color=soft(lab), fill=True, alpha=DIST_FILL + 0.14, lw=0, zorder=2)
+            ax.stairs(pct, edges, color=soft(lab), lw=DIST_LW - 0.4, zorder=3)
             ax.stairs(ref_pct, edges, color=REF_COLOR, lw=REF_LW - 0.2, ls=DASH, zorder=4)
             furniture(ax, xloc=xstep, xlim=xlim, xlabel=xlabel if i == n - 1 else None)
             ax.tick_params(labelsize=9.5, length=2.5)
@@ -287,8 +413,8 @@ def draw_jsd_bond_length(out):
             ax.set_facecolor("white")
             for lab, _, _ in arms:
                 pct, edges = drawn(d["arms"][lab]["bond_counts"][t])
-                ax.stairs(pct, edges, color=color(lab), lw=DIST_LW, zorder=3)
-                ax.stairs(pct, edges, color=color(lab), fill=True, alpha=DIST_FILL, lw=0, zorder=2)
+                ax.stairs(pct, edges, color=soft(lab), lw=DIST_LW, zorder=3)
+                ax.stairs(pct, edges, color=soft(lab), fill=True, alpha=DIST_FILL, lw=0, zorder=2)
             pct, edges = drawn(d["reference"]["bond_counts"][t])
             ax.stairs(pct, edges, color=REF_COLOR, lw=REF_LW, ls=DASH, zorder=4)
             furniture(ax, xloc=0.2, xlim=(bins[0], bins[0] + step * 120),
@@ -347,7 +473,7 @@ def draw_jsd_pair(out):
             edges = np.asarray(d["protocol"]["pair_bins"][key])
             for lab, _, _ in arms:
                 ax.stairs(_jsd_pct(d["arms"][lab]["pair_counts"][key])[1:-1], edges,
-                          color=color(lab), lw=DIST_LW, zorder=3)
+                          color=soft(lab), lw=DIST_LW, zorder=3)
             ax.stairs(_jsd_pct(d["reference"]["pair_counts"][key])[1:-1], edges,
                       color=REF_COLOR, lw=REF_LW, ls=DASH, zorder=4)
             furniture(ax, xlabel=xlabel, xloc=None, xlim=xlim or (edges[0], edges[-1]),
@@ -372,27 +498,18 @@ def draw_jsd_pair(out):
 # ── atom types and the headline numbers ─────────────────────────────────────────
 @figure("fig-jsd-atom-type", needs=JSD_NEEDS)
 def draw_jsd_atom_type(out):
-    """Heavy-atom element shares against the CrossDocked ligands, log scale."""
+    """Heavy-atom element shares against the CrossDocked ligands: C | N, O | F, P, S, Cl."""
     d, all_arms = _jsd_data()
     use_style()
     elems = d["protocol"]["atom_types"]
     for variant, arms in _jsd_variants(all_arms):
         wide = variant == "all"
         fig = _jsd_new(FIG_W * (1.3 if wide else 1.0), PANEL_H)
-        ax = fig.add_subplot(111)
-        ax.set_facecolor("white")
-        # Log, because C sits at ~70% and Cl at ~0.5%: on a linear axis everything past O
-        # is a stub. An exact zero cannot sit on a log axis and is left as no bar.
-        ax.set_yscale("log")
-        series = [(REF_LABEL, [100 * d["reference"]["atom_frac"][e] or None for e in elems], REF_COLOR)]
-        series += [(lab, [100 * d["arms"][lab]["atom_frac"][e] or None for e in elems], color(lab))
+        # C | N, O | F, P, S, Cl on three linear axes (2026-09-14, on request; it was one log axis)
+        series = [(REF_LABEL, {e: 100 * d["reference"]["atom_frac"][e] for e in elems}, REF_COLOR)]
+        series += [(lab, {e: 100 * d["arms"][lab]["atom_frac"][e] for e in elems}, soft(lab))
                    for lab, _, _ in arms]
-        _jsd_grouped(ax, elems, series)
-        furniture(ax, ylabel="% of heavy atoms\n(log scale)", xloc=None)
-        ax.grid(False, axis="x")
-        ax.tick_params(axis="x", length=0)
-        ax.set_ylim(0.05, 100)
-        ax.yaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda v, _: f"{v:g}"))
+        _jsd_tiered(fig, elems, {e: e for e in elems}, series, "% of heavy atoms")
         _jsd_key_above(fig, _jsd_handles(arms, patch=True), _jsd_key_cols(len(arms) + 1, wide))
         save(fig, out, f"atom_type_{variant}")
 
@@ -419,7 +536,7 @@ def draw_jsd_summary(out):
             ax.set_facecolor("white")
             vals = [get(d["arms"][lab]["jsd"]) for lab, _, _ in arms]
             ax.barh(ys, [np.nan if v is None else v for v in vals], height=0.66,
-                    color=[color(lab) for lab, _, _ in arms], zorder=3)
+                    color=[soft(lab) for lab, _, _ in arms], zorder=3)
             top = max([v for v in vals if v is not None], default=1.0)
             # every value is labelled: this figure IS the table, drawn. A None is a JSD with
             # nothing to compare and says so, rather than drawing as a zero-length "best"
@@ -456,23 +573,22 @@ def draw_jsd_ring_size(out):
     for variant, arms in _jsd_variants(all_arms):
         wide = variant == "all"
         fig = _jsd_new(FIG_W * (1.3 if wide else 1.0), PANEL_H)
-        ax = fig.add_subplot(111)
-        ax.set_facecolor("white")
-        series = [(REF_LABEL, [d["reference"]["ring_size_pct"][s] for s in sizes], REF_COLOR)]
-        series += [(lab, [d["arms"][lab]["ring_size_pct"][s] for s in sizes], color(lab))
+        series = [(REF_LABEL, {s: d["reference"]["ring_size_pct"][s] for s in sizes}, REF_COLOR)]
+        series += [(lab, {s: d["arms"][lab]["ring_size_pct"][s] for s in sizes}, soft(lab))
                    for lab, _, _ in arms]
-        # Log, because the shares span three decades -- 6-rings at 50-83%, 7/8/9-rings and the
-        # reference's 3-rings at 0.1-2% -- and on a linear axis every size but 5 and 6 was a
-        # stub. A share of exactly zero has no place on a log axis and draws no bar.
-        ax.set_yscale("log")
-        _jsd_grouped(ax, [f"{s}-ring" for s in sizes],
-                     [(lab, [v or None for v in vals], col) for lab, vals, col in series])
-        furniture(ax, ylabel="% of rings, sizes 3–9\n(log scale)", xloc=None)
-        ax.grid(False, axis="x")
-        ax.tick_params(axis="x", length=0)
-        # floor at 0.01%: a 0.05% floor swallowed the 0.05-0.06% eight-rings of CoDE and FuncBind
-        ax.set_ylim(0.01, 100)
-        ax.yaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda v, _: f"{v:g}"))
+        # Tiered linear axes (2026-09-14, on request; it was one log axis over 0.01-100%).
+        # TIERED BY THE CRYSTAL LIGANDS, NOT BY THE TALLEST BAR (2026-09-14, on request): the
+        # panels then read 6-ring | 5-ring | the sizes a real ligand barely makes, and 3- and
+        # 7-rings sit in that third panel where the reference puts them (1.5% and 0.8%)
+        # instead of being lifted into the middle one by AR's 30% 3-rings and TargetDiff's 12%
+        # 7-rings. Those two bars are still drawn at full height -- the panel scales to its
+        # tallest bar, so the third panel says "sizes the reference avoids, and by how far the
+        # arms overshoot them". The grouping no longer moves when an arm is added or dropped:
+        # `core` and `all` now split the same way.
+        # Then FIXED PANELS (2026-09-14, on request): 6 | 3, 5, 7 | 4, 8, 9 -- see
+        # JSD_RING_PANELS. tier_by still decides which panel is the 0-100 one.
+        _jsd_tiered(fig, sizes, {s: f"{s}-ring" for s in sizes}, series, "% of rings, sizes 3–9",
+                    tier_by=d["reference"]["ring_size_pct"], panels=JSD_RING_PANELS)
         _jsd_key_above(fig, _jsd_handles(arms, patch=True), _jsd_key_cols(len(arms) + 1, wide))
         save(fig, out, f"ring_size_{variant}")
 
@@ -499,7 +615,7 @@ def draw_jsd_n_rings(out):
         ax = fig.add_subplot(111)
         ax.set_facecolor("white")
         series = [(REF_LABEL, _jsd_ring_rows(d["reference"])[1], REF_COLOR)]
-        series += [(lab, _jsd_ring_rows(d["arms"][lab])[1], color(lab)) for lab, _, _ in arms]
+        series += [(lab, _jsd_ring_rows(d["arms"][lab])[1], soft(lab)) for lab, _, _ in arms]
         _jsd_grouped(ax, labels, series)
         furniture(ax, ylabel="% of molecules", xlabel="Rings per molecule", xloc=None)
         ax.grid(False, axis="x")
@@ -537,7 +653,7 @@ def draw_jsd_aromatic(out):
         for ax, (xlabel, get, _, ylabel) in zip(axes, panels):
             ax.set_facecolor("white")
             series = [(REF_LABEL, get(d["reference"]), REF_COLOR)]
-            series += [(lab, get(d["arms"][lab]), color(lab)) for lab, _, _ in arms]
+            series += [(lab, get(d["arms"][lab]), soft(lab)) for lab, _, _ in arms]
             _jsd_grouped(ax, labels, series)
             furniture(ax, ylabel=ylabel, xlabel=xlabel, xloc=None)
             ax.tick_params(axis="x", length=0, labelsize=11 if wide else 10)
@@ -603,7 +719,7 @@ def draw_jsd_rings(out):
                     x = np.arange(len(rows[r]))
                     edges = np.arange(len(rows[r]) + 1) - 0.5
                     width = 0.78
-                ax.bar(x, rows[r], width=width, color=color(lab), lw=0, zorder=3)
+                ax.bar(x, rows[r], width=width, color=soft(lab), lw=0, zorder=3)
                 ax.stairs(ref_rows[r], edges, color=REF_COLOR, lw=REF_LW, ls=DASH,
                           baseline=None, zorder=4)
                 furniture(ax, xloc=None, ylabel=ylabel if c == 0 else None)

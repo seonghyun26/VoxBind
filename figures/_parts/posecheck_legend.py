@@ -10,11 +10,14 @@
 # the reference is the section's own crystal ligands, and the panel itself says nothing
 # about counts.
 #
-# THE SWATCHES ARE THE PANEL'S, not the rotatable-bond figures' or the ECDF's -- the three
-# strain families do not draw a method identically. The per-atom panel takes its dash from
-# the rotatable-bond family (RB_BASE_DASH, solid for the local arms), its WEIGHT from the
-# ECDF family (PCSZ_LINE_LW x PCSZ_LW_SCALE) and its colour through soft(), in RB_ORDER.
-# Every one of those is read at call time: they live in parts assembled after this one.
+# THE SWATCHES ARE THE PANEL'S. The dash comes from the shared METHOD_DASH table through
+# dash(), the WEIGHT from the ECDF family (PCSZ_LINE_LW x PCSZ_LW_SCALE) and the colour
+# through soft(), in RB_ORDER. PCSZ_LINE_LW is read at call time: it lives in a part
+# assembled after this one.
+#
+# THIS KEY USED TO LIE. It read the rotatable-bond family's own dash table, which had drifted
+# a whole method out of step with the ECDF's -- so the legend told a reader that Pocket2Mol
+# was the dotted line when the panel drew DiffSBDD that way. One table now feeds both.
 PLEG_NCOL = 4
 # SWATCH LENGTH, in font sizes. The shared legend() fixes 1.9, and at the panel's weights that
 # is shorter than one period of DecompDiff's (9, 3) dash -- its swatch read as a solid line,
@@ -26,7 +29,7 @@ PLEG_HANDLE_LEN = 3.6
 def _pleg_method_handles():
     out = []
     for lab in RB_ORDER:
-        out.append(Line2D([], [], color=soft(lab), ls=RB_BASE_DASH.get(lab, "-"),
+        out.append(Line2D([], [], color=soft(lab), ls=dash(lab),
                           lw=PCSZ_LINE_LW[ALIASES.get(lab, lab)] * PCSZ_LW_SCALE,
                           solid_capstyle="round", label=display(lab)))
     return out
@@ -51,7 +54,13 @@ def _pleg_legend(fig, handles, **kw):
 def draw_posecheck_strain_legend(out):
     """The key the per-atom all-methods strain panels dropped: reference on top, methods 2x4."""
     use_style()
-    ref = [Line2D([], [], color=REF_COLOR, ls=DASH, lw=PCSZ_REF_LW * PCSZ_LW_SCALE,
+    # THE REFERENCE TAKES ITS LINE FROM THE SAME TABLE (2026-09-14). It used to hardcode
+    # DASH, which made this key show a dashed crystal-ligand swatch while both panels it
+    # describes draw that series SOLID -- the reference went solid on 2026-09-14 and the key
+    # was never told. It is built here rather than in _pleg_method_handles because it sits on
+    # its own centred line, which is exactly how it escaped the earlier repointing.
+    ref = [Line2D([], [], color=REF_COLOR, ls=dash(REF_LABEL),
+                  lw=PCSZ_REF_LW * PCSZ_LW_SCALE,
                   dash_capstyle="round", label=REF_LABEL)]
     # PCSZ_RC for the panel's 170 dpi and its crop to the ink, so the key and the panels it
     # sits beside are rasterised the same way.
@@ -70,5 +79,5 @@ def draw_posecheck_strain_legend(out):
                                  bbox_to_anchor=(0.5, 0.05 + h + VPA_KEY_ROW_GAP)))
         _vpa_one_frame(fig, legs)
         print(f"  key: {REF_LABEL} over {len(RB_ORDER)} methods in {PLEG_NCOL} columns · "
-              f"dash from RB_BASE_DASH, weight from PCSZ_LINE_LW, colour soft()")
+              f"dash from METHOD_DASH, weight from PCSZ_LINE_LW, colour soft()")
         save(fig, out, "strain_per_atom_all_methods_legend")

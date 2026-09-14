@@ -310,8 +310,12 @@ def main(cfg: DictConfig) -> None:
             # token_trunk/token_proj are fusion='v4' (frozen-encoder patch tokens fused per
             # voxel); like density_proj they are absent from every vanilla checkpoint and
             # token_proj is zero-init, so step 0 still reproduces the warm-start source.
+            # gsplat_head is the decoder swap (model.decoder=gsplat): absent from every
+            # conv-head checkpoint by construction, so it belongs on this list too. Unlike
+            # density_proj it is NOT zero-init -- a replaced decoder cannot reproduce the
+            # source model at step 0, which is the point of the experiment.
             _density_branch = ("density_encoder.", "density_proj.", "context_proj.",
-                               "token_trunk.", "token_proj.")
+                               "token_trunk.", "token_proj.", "gsplat_head.")
             _stray = [k for k in _missing if not k.startswith(_density_branch)]
             _stray_unexpected = [k for k in _unexpected if not k.startswith(_density_branch)]
             if _stray_unexpected or _stray:
@@ -364,7 +368,22 @@ def main(cfg: DictConfig) -> None:
                 f"| L_align = {ucfg.get('repa_weight', 0.0)}*REPA + {ucfg.get('ml_weight', 1.0)}*manifold"
             )
 
-    if align is None:
+    _gs_head = getattr(model, "gsplat_head", None)
+    if align is None and _gs_head is not None:
+        # The splat head starts from init under a warm-started body, so it gets its own
+        # (higher) lr; the body keeps cfg.lr. Frozen params (encoder, the unused
+        # final_ligand) ride along in the body group with requires_grad=False, as before.
+        _head_ids = {id(p) for p in _gs_head.parameters()}
+        _mult = float((cfg.model.get("gsplat", {}) or {}).get("lr_mult", 1.0))
+        optimizer = AdamW([
+            {"params": [p for p in model.parameters() if id(p) not in _head_ids],
+             "name": "body", "lr": float(cfg.lr)},
+            {"params": list(_gs_head.parameters()), "name": "gsplat_head",
+             "lr": float(cfg.lr) * _mult},
+        ], lr=cfg.lr, weight_decay=cfg.wd)
+        if is_main:
+            logger.info(f">> gsplat head lr = {float(cfg.lr) * _mult:g} (x{_mult:g}), body lr = {cfg.lr}")
+    elif align is None:
         optimizer = AdamW(model.parameters(), lr=cfg.lr, weight_decay=cfg.wd)
     else:
         # Two groups so Stage 1 can hold the U-Net at lr=0 while the projector trains.
