@@ -29,20 +29,32 @@ and datasets are not part of Git or the image; use persistent volumes.
 |---|---|---|
 | FuncBind `fb_unified/checkpoint.pth.tar` (61.68 GB) | [Pinned official download](https://huggingface.co/mkirchmeyer/funcbind/resolve/f42d3daeb6e7c1fa2b20096f9a147aa3b1f8814f/fb_unified/checkpoint.pth.tar) | Density-free pretrained starting model; `FB_MODEL_URL` |
 | NF `nf_unified/model.pt` (1.45 GB) | [Pinned official download](https://huggingface.co/mkirchmeyer/funcbind/resolve/f42d3daeb6e7c1fa2b20096f9a147aa3b1f8814f/nf_unified/model.pt) | Neural-field encoder/decoder; `NF_MODEL_URL` |
-| CDG v2 `checkpoint_e0025.pth.tar` (1.19 GB) | Dropbox: `/박성현/VoxBind/results/task1-affinity/CDG-v2/checkpoint_e0025.pth.tar`; file link delivered separately | Frozen density encoder; `CDG_MODEL_URL` |
+| CDG v2 `checkpoint_e0025.pth.tar` (1.19 GB) | Dropbox: `/박성현/VoxBind/model_zoo/CDG_v2/checkpoint_e0025.pth.tar`; approved download URL in the template below | Frozen density encoder; `CDG_MODEL_URL` |
 | MCP splits + original structures | [Public dataset](https://huggingface.co/datasets/Willete3/mcpp-dataset/tree/main) | Automatically downloaded by step 1; original archive alone is ~32.7 GB compressed |
 | X-ray coordinates + 2Fo-Fc maps | RCSB + PDBe, per target | Automatically downloaded and processed by step 1 |
 
-The CDG upload was confirmed on 2026-09-15 (server modified 2026-09-14).
-It is the actual checkpoint, not the task1-affinity representation files.
-The shared file link is intentionally kept out of public Git repositories.
+The CDG model-zoo file and its public view/download access were confirmed on
+2026-09-15. It is the actual checkpoint, not the task1-affinity representation
+files. The approved folder link in the template uses `preview=checkpoint_e0025.pth.tar`
+and `dl=1` to download only that file; do not drop the file-selection parameter.
 
-Copy [the URL/checksum template](../FuncBind/scripts/mcp_assets.env.example)
-to `FuncBind/scripts/mcp_assets.env`, fill the CDG file URL supplied with this
-handoff, and source it on the host. Use the Docker invocation in the MCP
+Source [the URL/checksum template](../FuncBind/scripts/mcp_assets.env.example)
+on the host; all three download URLs are filled in. For private local overrides,
+use `FuncBind/scripts/mcp_assets.env` (ignored by Git). Use the Docker invocation in the MCP
 instructions above so URL **and checksum** variables reach the container.
 The three weights total ~64.3 GB; this excludes datasets, caches, and training
 outputs. No Dropbox configuration is needed for publicly downloadable links.
+
+To verify links without downloading full checkpoints or preparing data, run from
+the repository root after sourcing the template:
+
+```bash
+CHECK_LINKS_ONLY=1 PY=python3 bash FuncBind/scripts/1_data_process.sh
+```
+
+It reads 32 bytes per model, checks HTTP range support, filename, size, and the
+PyTorch ZIP header, then exits. It writes no files and does not verify the full
+checksum. Checkpoints remain outside Git.
 
 Do **not** use an old density-conditioned MCP checkpoint as `FB_MODEL_URL`:
 this experiment starts a fresh fine-tune from the density-free FuncBind model.
