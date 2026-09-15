@@ -198,10 +198,11 @@ STEMS = {
     # fig-posecheck, interaction fingerprints (ProLIF, via PoseCheck)
     "interaction_contacts_all": "interaction-contacts-all",
     "interaction_contacts_core": "interaction-contacts-core",
-    "interaction_contacts_pair_core": "interaction-contacts-pair-core",
+    "interaction_contacts_pair_all": "interaction-contacts-pair-all",
     "interaction_hbonds_all": "interaction-hbonds-all",
     "interaction_hbonds_core": "interaction-hbonds-core",
-    "interaction_hbonds_pair_core": "interaction-hbonds-pair-core",
+    "interaction_hbonds_pair_all": "interaction-hbonds-pair-all",
+    "interaction_pair_all": "interaction-pair-all",
     "interaction_legend": "interaction-legend",
     "interactions": "interactions",
     "interactions_pair": "interactions-pair",
@@ -522,6 +523,78 @@ def fit(fig, **kw):
 def plot_width(fig, ax):
     """Width of one axes' plot area, in inches -- what has to match across figures."""
     return ax.get_window_extent().transformed(fig.dpi_scale_trans.inverted()).width
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+# the heat ramp and its colourbar — shared by every figure keyed to a continuous scale
+# ════════════════════════════════════════════════════════════════════════════════
+# HERE, NOT IN A PART (2026-09-15, on request). The ramp was born in posecheck_rotbond and
+# fig-posebusters-valid-heatmap reached across for it by name at call time, which worked
+# only because parts are pasted into one module: it read as one family borrowing another's
+# private constant, and the borrow was easy to miss when either end changed. A colour scale
+# used by two families is house furniture, so it sits beside INK, legend() and furniture()
+# under the same rule the palette follows -- decided in ONE place, read everywhere else.
+# THE HOUSE HEAT RAMP: one hue, light to dark (2026-09-15, on request; it was matplotlib's
+# diverging coolwarm, then a purple). "Darker is more of the quantity the bar is named
+# after" -- more strain in the rotbond grid, a higher pass rate in the PoseBusters map.
+# Diverging was the wrong family for either: its white middle marked 400 kcal/mol, a number
+# nothing in the data means.
+#
+# TWO STOPS, AND THE ENDS ARE CHOSEN SO THE BLEND PASSES THROUGH THE TWO GIVEN COLOURS
+# #B4BEF0 AND #8291E8 (2026-09-15, on request, after a five-stop version). matplotlib blends
+# in sRGB along a straight line, so both ends lie on the line through those two, extended
+# 1.4x their spacing each way (d = #8291E8 - #B4BEF0; head = #B4BEF0 - 1.4d, tail =
+# #8291E8 + 1.4d). The given colours then fall at 37% and 63% of the bar, symmetric about its
+# middle. 1.44 is as far as the head can go before its green channel leaves the cube; the
+# tail could go to 2.6 (#001CD3), but symmetry is the point, so it stops at #3C52DD.
+# WHAT THE FIVE-STOP VERSION WAS FOR, and why two is better: hand-placed stops (#F5F8FE,
+# #B4BEF0, #8291E8, #4D65E0, then a tail that went #192D90 -> #1E36AC when it read too dark)
+# let each end be tuned by eye, but the spacing between them is then a design choice made
+# five times, and the ramp's rate of change jumps at every stop. Two ends on one line through
+# the given pair gives constant rate and a single decision, and it costs only the deepest
+# end: luminance now bottoms out at 0.12 rather than 0.06, so the very top of a bar separates
+# a little less. Hex literals outside the palette tables, which the palette rule otherwise
+# forbids: that rule is about the colour of a METHOD, and a continuous ramp keyed by its own
+# colourbar carries no method identity. Neither end is #4363D8 (CoDE) or #2B3A8C (Ours v2).
+HEAT_STOPS = ("#FAFDFB", "#3C52DD")
+HEAT_CMAP = matplotlib.colors.LinearSegmentedColormap.from_list("voxbind_heat", HEAT_STOPS)
+# The bar's SHAPE, which is the same in both figures and is what a reader recognises before
+# reading either: vertical on the right, a little short of the block it keys (0.92) and thin
+# (aspect 38), so it reads as a key rather than as a tenth panel.
+HEAT_CBAR_SHRINK, HEAT_CBAR_ASPECT = 0.92, 38
+# Gap from the panel block to the bar, doubled from 0.012 (2026-09-13) -- a share of the
+# figure width, which is what colorbar(pad=) takes.
+HEAT_CBAR_PAD = 0.024
+# The caption's gap off the bar's numbers, DOUBLED (2026-09-14): measured off the PNG it was
+# 19 px at 220 dpi, i.e. 6.2 pt on matplotlib's default labelpad of 4, so 10.5 buys about 12.4.
+HEAT_CBAR_LABELPAD = 10.5
+
+
+def heat_colorbar(fig, ax, norm, label, *, label_fs, tick_fs, extend="neither", ticks=None,
+                  pad=HEAT_CBAR_PAD, labelpad=HEAT_CBAR_LABELPAD, cmap=None):
+    """The house heat colourbar: HEAT_CMAP under `norm`, drawn the same way every time.
+
+    `ax` is whatever the bar should steal its space from -- one axes or an array of them.
+    What is NOT shared is point size: the rotbond grid is nine panels on a 14.45 in canvas
+    and carries 27/18 pt, the PoseBusters map is one 8.4 x 6.2 in block at 13/11.5, and a bar
+    that copied one into the other would tower over or vanish beside the figure it keys. So
+    the sizes are arguments and everything else -- ramp, shape, pad, the quarter-turned
+    numbers, the missing outline -- is fixed here, which is the point of having the helper.
+
+    The numbers are turned a quarter turn anticlockwise (2026-09-14) so they read along the
+    bar like its name; anchored left and centred on the tick, which is where they sat upright.
+    No frame round the bar (2026-09-14), as the boxes it keys lost theirs -- the extend arrow
+    is part of that same outline path, so it loses its edge with it and reads as pure fill."""
+    kw = {} if ticks is None else {"ticks": ticks}
+    # `cmap` is for trying a ramp on one figure without moving the house one under the other.
+    cb = fig.colorbar(plt.cm.ScalarMappable(norm=norm, cmap=cmap or HEAT_CMAP), ax=ax,
+                      extend=extend, shrink=HEAT_CBAR_SHRINK, aspect=HEAT_CBAR_ASPECT,
+                      pad=pad, **kw)
+    cb.set_label(label, fontsize=label_fs, color=INK, labelpad=labelpad)
+    cb.ax.tick_params(labelsize=tick_fs, colors=AXIS, width=AXIS_LW)
+    plt.setp(cb.ax.get_yticklabels(), rotation=90, va="center", ha="left")
+    cb.outline.set_visible(False)
+    return cb
 
 
 # ════════════════════════════════════════════════════════════════════════════════

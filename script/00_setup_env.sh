@@ -105,10 +105,14 @@ build_voxdock() {
 build_moleval() {
     _maybe_drop moleval
     if _env_exists moleval; then log "env 'moleval' already present — skipping"; return; fi
-    banner "building 'moleval' (PoseCheck 1.3.1 + PoseBusters + ProLIF, python 3.10)"
+    banner "building 'moleval' (PoseCheck 1.3.1 + PoseBusters 0.6.5 + ProLIF, python 3.10)"
     "$CONDA_LAUNCHER" create -y -n moleval python=3.10 || die "moleval conda create failed"
+    # PIN posebusters: `valid` is all-must-pass over WHATEVER columns the release returns,
+    # so a version that adds, renames or retunes a check changes every validity number
+    # without erroring. 0.6.5 is what every reported number was scored with: 20 graded
+    # columns from the `dock` config, and the release line where `gen`/`regen` exist.
     conda_run moleval pip install --no-cache-dir \
-        posebusters 'pandas>=2.2.3' prolif datamol hydride biopython rdkit \
+        'posebusters==0.6.5' 'pandas>=2.2.3' prolif datamol hydride biopython rdkit \
         || die "moleval pose stack pip install failed"
     # PIN posecheck: upstream silently redefined strain energy; 1.3.1 is the
     # definition all reported numbers use.

@@ -14,11 +14,20 @@ CLI (offline batch docking):
 Docking parallelism: a target's samples are docked across a process pool
 (`workers` procs x `cpu` Vina threads each). Every dock is the identical
 computation — only the scheduling changes — so metrics.json is unaffected.
+
+Docked conformers: `target_*/vina_poses/{score_only,minimize,dock}.sdf`, written
+whenever a dock actually runs. Vina computes a pose for every stage and this
+module used to drop it on the floor, keeping only the three affinities — so any
+figure needing a docked pose had to re-dock the whole set to recover what the
+run had already produced. Each molecule is tagged with `row` (its index into
+metrics.json's `samples`, or -1 for the reference ligand), so the stages are one
+row-aligned set. metrics.json itself is UNCHANGED: it still carries only floats.
 """
 
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import os
 import shutil
@@ -35,6 +44,7 @@ from pathlib import Path
 
 import numpy as np
 from rdkit import Chem, DataStructs, RDLogger
+from rdkit.Geometry import Point3D
 
 # data.py also injects VoxBind + TargetDiff onto sys.path on import.
 from data import find_pocket_pdb, load_gt_mols, parse_pocket_pdb
@@ -363,6 +373,102 @@ def docking_available() -> bool:
     return True
 
 
+def _vina_pdbqt_atoms(text: str) -> list[tuple[str, tuple[float, float, float]]]:
+    """(element, xyz) per ATOM/HETATM record, in file order."""
+    out = []
+    for ln in text.splitlines():
+        if not (ln.startswith("ATOM") or ln.startswith("HETATM")):
+            continue
+        out.append((ln[76:79].strip() or ln[12:16].strip(),
+                    (float(ln[30:38]), float(ln[38:46]), float(ln[46:54]))))
+    return out
+
+
+def _vina_moved(template: Chem.Mol, lig_pdbqt: str, pose: str) -> Chem.Mol | None:
+    """`template` carrying the pose's coordinates, or None if they cannot be matched.
+
+    ONLY COORDINATES CROSS. Vina returns its pose as PDBQT, and round-tripping that
+    through a chemistry perceiver (openbabel -> SDF -> AssignBondOrdersFromTemplate)
+    changes the molecule: it fails to kekulise aromatic rings, and what comes out has a
+    different SMILES from what went in. Scoring that would be measuring a different
+    compound. Instead the prepared .pdbqt carries the input's own heavy-atom positions --
+    preparation adds hydrogens with addCoords and moves no heavy atom -- so matching its
+    ATOM records onto template atoms by position is exact, and Vina preserves atom order
+    into the output pose, so the same permutation reads the moved coordinates.
+
+    This is the transfer dock_core_poses.py validated (three molecules of target_02
+    round-tripped with identical SMILES, every heavy atom mapped). It is duplicated here
+    rather than imported because that script is not on an importable path from this module.
+
+    RETURNS None RATHER THAN RAISING. This runs inside a docking worker whose result is
+    the sample's whole `vina` block; raising would turn a successful dock into an error
+    row and lose the affinity, which is the thing callers actually depend on."""
+    src, dst = _vina_pdbqt_atoms(lig_pdbqt), _vina_pdbqt_atoms(pose)
+    if len(src) != len(dst):
+        return None
+    pos = template.GetConformer().GetPositions()
+    used: set[int] = set()
+    moves: dict[int, tuple[float, float, float]] = {}
+    for i, (_, xyz) in enumerate(src):
+        d = np.linalg.norm(pos - np.asarray(xyz), axis=1)
+        j = int(np.argmin(d))
+        if d[j] > 1e-2:            # a hydrogen preparation added; no heavy atom for it
+            continue
+        if j in used:
+            return None
+        used.add(j)
+        moves[j] = dst[i][1]
+    if len(moves) != template.GetNumHeavyAtoms():
+        return None
+    out = Chem.Mol(template)
+    conf = out.GetConformer()
+    for j, xyz in moves.items():
+        conf.SetAtomPosition(j, Point3D(*xyz))
+    return out
+
+
+def _vina_pose_sdf(template: Chem.Mol, lig_pdbqt: str | None, pose: str | None,
+                   affinity: float, stage: str, row: int) -> str | None:
+    """One stage's conformer as an SDF block, tagged so it can be realigned later.
+
+    `pose` None means the stage produced no new conformer -- score_only, where Vina scores
+    the ligand where it already sits, so the scored pose IS the input.
+
+    HYDROGENS COME OFF FIRST, and this is a guard rather than a fix for a live bug.
+    _vina_moved requires every mapped atom to be a heavy atom, so a template carrying
+    explicit Hs overshoots its count check and returns None -- which drops the conformer
+    SILENTLY while still recording the affinity, so nothing downstream looks wrong. Both of
+    this module's callers load through SDMolSupplier(sanitize=True), whose removeHs default
+    strips them, so it cannot happen today; stripping here means it cannot START happening
+    if some caller ever passes removeHs=False. Measured 2026-09-15: the same molecule at 27
+    heavy atoms saves a pose, and at 40 atoms with Hs added saves none."""
+    try:
+        base = Chem.RemoveHs(template)
+    except Exception:  # noqa: BLE001 — a template that will not re-sanitise is still usable
+        base = template
+    mol = base if pose is None else _vina_moved(base, lig_pdbqt or "", pose)
+    if mol is None:
+        return None
+    m = Chem.Mol(mol)
+    m.SetProp("row", str(row))
+    m.SetProp("vina_stage", stage)
+    m.SetProp(f"vina_{stage}", f"{affinity:.3f}")
+    buf = io.StringIO()
+    w = Chem.SDWriter(buf)
+    w.write(m)
+    w.close()
+    return buf.getvalue()
+
+
+def _vina_sdf_row(block: str) -> str:
+    """The `row` tag of one SDF block, for merging a partial run into an existing file."""
+    lines = block.splitlines()
+    for i, ln in enumerate(lines):
+        if ln.startswith(">") and "<row>" in ln and i + 1 < len(lines):
+            return lines[i + 1].strip()
+    return "?"
+
+
 def run_vina_docking(
     mol: Chem.Mol,
     receptor_pdb: Path | str,
@@ -370,6 +476,7 @@ def run_vina_docking(
     exhaustiveness: int = 8,
     tmp_dir: Path | str = "./tmp",
     cpu: int = 8,
+    row: int = -1,
 ) -> dict:
     """Dock one molecule against `receptor_pdb` with AutoDock Vina.
 
@@ -390,22 +497,44 @@ def run_vina_docking(
         return {"error": f"toolchain unavailable: {type(e).__name__}: {e}"}
     try:
         task = VinaDockingTask(str(receptor_pdb), deepcopy(mol), tmp_dir=str(tmp_dir))
-        result = {
-            "score_only": float(
-                task.run(mode="score_only", exhaustiveness=exhaustiveness,
-                         cpu=cpu)[0]["affinity"]
-            ),
-        }
+        poses: dict[str, str] = {}
+
+        def _stage(name: str) -> float:
+            """One Vina stage, keeping the conformer it computed as well as the score.
+
+            The pose has to be converted HERE, inside the worker, because the mapping needs
+            `task.ligand_path`'s prepared .pdbqt and the task does not outlive this call."""
+            r = task.run(mode=name, exhaustiveness=exhaustiveness, cpu=cpu)[0]
+            affinity = float(r["affinity"])
+            raw = r.get("pose")
+            # score_only returns no pose BY DESIGN (docking_vina sets it to None): the
+            # ligand is scored where it sits. Recorded anyway, so the stages form one
+            # uniform row-aligned set instead of two files plus a dangling reference to
+            # samples.sdf.
+            text = None
+            lig = None
+            if raw is not None:
+                text = raw[0] if isinstance(raw, (list, tuple)) else raw
+                try:
+                    with open(task.ligand_path[:-4] + ".pdbqt") as fh:
+                        lig = fh.read()
+                except OSError:
+                    text = None
+            block = _vina_pose_sdf(mol, lig, text, affinity, name, row)
+            if block:
+                poses[name] = block
+            return affinity
+
+        result: dict = {"score_only": _stage("score_only")}
         if mode in ("vina_min", "vina_dock"):
-            result["minimize"] = float(
-                task.run(mode="minimize", exhaustiveness=exhaustiveness,
-                         cpu=cpu)[0]["affinity"]
-            )
+            result["minimize"] = _stage("minimize")
         if mode == "vina_dock":
-            result["dock"] = float(
-                task.run(mode="dock", exhaustiveness=exhaustiveness,
-                         cpu=cpu)[0]["affinity"]
-            )
+            result["dock"] = _stage("dock")
+        # OUT OF BAND, and the caller MUST strip it before the row is stored. metrics.json's
+        # format is promised unchanged (see the module header) and these blocks are orders
+        # of magnitude larger than the three floats beside them.
+        if poses:
+            result["_poses"] = poses
         return result
     except Exception as e:  # noqa: BLE001
         return {"error": f"{type(e).__name__}: {e}"}
@@ -971,11 +1100,18 @@ def compute_target_metrics(
             if progress_cb is not None:
                 progress_cb(0, n_dock, "Docking molecules")
 
+            pose_blocks: dict[str, list[str]] = {}
+
             def _place(slot: int, result: dict) -> None:
+                # THE POSES COME OUT BEFORE THE ROW IS STORED, so metrics.json keeps only
+                # the floats it has always kept and its format stays version 2.
+                blocks = result.pop("_poses", None)
                 if slot == -1:
                     reference["vina"] = result
                 else:
                     sample_rows[slot]["vina"] = result
+                for stage, sdf in (blocks or {}).items():
+                    pose_blocks.setdefault(stage, []).append(sdf)
 
             # run_vina_docking already catches its own exceptions and returns
             # {"error": ...}, but a worker process that dies hard (segfault,
@@ -987,7 +1123,7 @@ def compute_target_metrics(
             if n_workers <= 1:
                 for i, (slot, m) in enumerate(needed):
                     try:
-                        result = dock_one(m)
+                        result = dock_one(m, row=slot)
                     except Exception as e:  # noqa: BLE001 — defensive; run_vina_docking should already catch
                         result = {"error": f"dock raised: {type(e).__name__}: {e}"}
                     _place(slot, result)
@@ -998,7 +1134,7 @@ def compute_target_metrics(
                 # advances as each dock finishes; futs maps each future back
                 # to its slot so results land in the right row.
                 with ProcessPoolExecutor(max_workers=n_workers) as pool:
-                    futs = {pool.submit(dock_one, m): slot
+                    futs = {pool.submit(dock_one, m, row=slot): slot
                             for slot, m in needed}
                     for done, fut in enumerate(as_completed(futs), 1):
                         slot = futs[fut]
@@ -1009,6 +1145,29 @@ def compute_target_metrics(
                         _place(slot, result)
                         if progress_cb is not None:
                             progress_cb(done, n_dock, "Docking molecules")
+
+            # ── the conformers Vina just computed ────────────────────────────────
+            # MERGE, NEVER CLOBBER. Smart-dock only re-docks molecules whose cached floats
+            # do not satisfy the requested mode, so a later run can produce poses for three
+            # molecules out of a hundred; writing just those would delete the other
+            # ninety-seven. Keyed by `row`, this run's poses replace their own rows and
+            # leave every other one alone.
+            if pose_blocks:
+                pose_dir = Path(target_dir) / "vina_poses"
+                pose_dir.mkdir(parents=True, exist_ok=True)
+                for stage, blocks in sorted(pose_blocks.items()):
+                    path = pose_dir / f"{stage}.sdf"
+                    keep: dict[str, str] = {}
+                    if path.exists():
+                        for blk in path.read_text().split("$$$$\n"):
+                            if blk.strip():
+                                keep[_vina_sdf_row(blk)] = blk + "$$$$\n"
+                    for blk in blocks:
+                        keep[_vina_sdf_row(blk)] = blk
+                    path.write_text("".join(
+                        v for _, v in sorted(
+                            keep.items(),
+                            key=lambda kv: (kv[0] == "?", int(kv[0]) if kv[0].lstrip("-").isdigit() else 0))))
 
     # ── PoseCheck + PoseBusters — one moleval subprocess over the needed mols ─
     # Runs after chem/vina so reused (SMILES-keyed) rows already carry any prior

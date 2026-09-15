@@ -41,6 +41,13 @@ DIST_FILL WIDE TALL FIG_W PANEL_H STACK_H HEIGHT_RATIOS H_PAD XTICK_STEP X_LABEL
 use_style() furniture(ax,...) legend(target,handles,...) arm_handles(arms,...) fit(fig,...)
 plot_width(fig,ax)`.
 
+Heat scale: `HEAT_STOPS HEAT_CMAP HEAT_CBAR_SHRINK HEAT_CBAR_ASPECT HEAT_CBAR_PAD
+HEAT_CBAR_LABELPAD heat_colorbar(fig,ax,norm,label,*,label_fs,tick_fs,extend=,ticks=)` — the
+single-hue light-to-dark ramp and the one way a continuous scale is keyed. Any figure with a
+colourbar calls `heat_colorbar`; only the point sizes are the figure's own. Like the palette,
+the ramp is decided in exactly one place, so do not build a `LinearSegmentedColormap` or hand
+`fig.colorbar` its own styling in a part.
+
 Pose data: `ARMS CORE REF_LABEL REF_COLOR REF_ROOT P79 EDGES BIN_LABELS MIN_N REF_WIN
 MIN_REF rows_of(dir,reference=) pose_data() arms_for(field,data,arms=) variants(field,data)
 by_size(rows,field,key=) bin_of(n) model_curve(per,xs,f,win=) reference_curve(per,xs,f)

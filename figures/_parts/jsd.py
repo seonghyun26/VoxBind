@@ -1,13 +1,13 @@
 
 
 # ════════════════════════════════════════════════════════════════════════════════
-# fig-jsd-{bond,bond-length,pair,atom-type,summary,ring-size,n-rings,aromatic,rings}
+# fig-jsd-{bond,bond-distance,pair,atom-type,summary,ring-size,n-rings,aromatic,rings}
 # ════════════════════════════════════════════════════════════════════════════════
 # The distribution metrics of TargetDiff and VoxBind: how closely each arm's bond lengths,
 # atom-pair distances, element mix and rings follow CrossDocked ligands.
 #
 #     bond         bond-distance JSD per bond type          VoxBind Table 2
-#     bond-length  the length histograms those JSDs compare
+#     bond-distance  the distance histograms those JSDs compare (was bond-length, 2026-09-15)
 #     pair         all-atom (<12 Å) and C-C (<2 Å) pair distances   TargetDiff Fig. 2
 #     atom-type    heavy-atom element shares
 #     summary      the four headline JSDs side by side
@@ -48,6 +48,21 @@ JSD_AROM_MERGE = 2              # 20 scored aromatic-fraction bins drawn as 10
 # category by default and the reference ligand's own share where a panel passes `tier_by`.
 JSD_TIER_PCT = (50.0, 5.0)
 JSD_KEY_NCOL = 4                # method columns of the all-arms key: 8 arms = 2 rows x 4
+# AXIS WEIGHT, AS RATIOS OF THE TICK-LABEL SIZE (2026-09-15, on request). Set on the summary
+# first -- 11.5 pt ticks, 16.1 pt axis names (the strain ECDF's PCSZ_LABEL_FS = 11.5 x 1.4) and a
+# 2.2 pt axis line -- then carried to every jsd figure as the same PROPORTIONS, so a grid with
+# 9.5 pt ticks gets a lighter line and smaller names than a bar chart with 14 pt ones.
+JSD_TITLE_PER_TICK = 1.4
+JSD_AXIS_LW_PER_TICK = 2.2 / 11.5
+# ...UP TO THE SUMMARY'S OWN 16.1 pt. The single-panel bar charts carry 14 pt ticks, and 1.4x
+# that is a 19.6 pt name: the two-line "JSD to CrossDocked / ligands" and the ring-size figure's
+# then "% of rings, sizes 3-9" (now "% of rings", 2026-09-15, on request) ran past both ends of a
+# PANEL_H axis and were cut off at the figure edge.
+JSD_TITLE_MAX = 11.5 * 1.4
+# The line is capped the same way (2026-09-15, on request: similar proportions, not identical
+# weights) -- at 14 pt ticks the ratio gave 2.7 pt, which on a single 7.6 in panel read heavier
+# than the summary's 2.2 pt does across its four.
+JSD_AXIS_LW_MAX = 2.2
 # Ring-size panels, fixed (2026-09-14, on request): 6 | 3, 5, 7 | 4, 8, 9. The 5-ring shares
 # its panel with the 3- and 7-ring, which the arms push to 12-30%; 4/8/9 stay under 4% for
 # every set, so on a panel of their own they are not stubs under AR's 3-rings. Sizes run in
@@ -133,6 +148,28 @@ def _jsd_new(w, h):
     return fig
 
 
+def _jsd_axis_weight(fig):
+    """Axis names and axis lines scaled to each panel's tick labels -- JSD_TITLE_PER_TICK and
+    JSD_AXIS_LW_PER_TICK. Call once, after every panel is drawn and BEFORE fit(), since the
+    larger names change the layout. The smaller of a panel's two tick sizes sets its line:
+    the numeric axis, not a column of method names. Tick LENGTH is left alone -- the bar
+    charts set it to zero on their categorical axis. The spines go above the data: every bar
+    starts at the baseline and painted over half of the heavier line."""
+    for ax in fig.axes:
+        size = {a: a.get_major_ticks()[0].label1.get_fontsize()
+                for a in (ax.xaxis, ax.yaxis) if a.get_major_ticks()}
+        if not size:
+            continue
+        lw = min(JSD_AXIS_LW_PER_TICK * min(size.values()), JSD_AXIS_LW_MAX)
+        for side in ("left", "bottom"):
+            ax.spines[side].set_linewidth(lw)
+            ax.spines[side].set_zorder(5)
+        ax.tick_params(width=lw)
+        for a, fs in size.items():
+            if a.label.get_text():
+                a.label.set_size(min(JSD_TITLE_PER_TICK * fs, JSD_TITLE_MAX))
+
+
 def _jsd_key_above(fig, handles, ncol, fontsize=11.5):
     """A figure-level key in a strip above every panel. Laid out AFTER fit(), because
     tight_layout does not know about figure legends: the panels are fitted first, then
@@ -143,7 +180,12 @@ def _jsd_key_above(fig, handles, ncol, fontsize=11.5):
     "Reference ligand (CrossDocked train+test), 8,829 molecules" entry made the key wider
     than the figure and it was cut off at both edges (atom-type, 2026-09-14). The grid reads
     across rows, and it loses a column at a time until it fits the figure's width."""
+    _jsd_axis_weight(fig)
     fit(fig, pad=0.5)
+    # No handles, no key (2026-09-15: atom-type, bond-distance and ring-size `all` dropped
+    # theirs on request) -- the axis weights and the fit above still apply.
+    if not handles:
+        return
     ref_key = _jsd_ref_key()
     ref = [h for h in handles if h.get_label() == ref_key]
     methods = [h for h in handles if h.get_label() != ref_key]
@@ -330,7 +372,7 @@ def draw_jsd_bond(out):
     write_csv(out, "bond_jsd", ["set", "source", "n_mols"] + types + ["mean"], rows)
 
 
-def _jsd_method_grid(out, d, arms, kinds, *, xlabel, stem):
+def _jsd_method_grid(out, d, arms, kinds, *, xlabel, stem, key=True):
     """Rows are methods, columns are what is measured. Every panel is ONE method's
     distribution over the reference's dashed outline, with that panel's JSD in its corner.
 
@@ -368,13 +410,15 @@ def _jsd_method_grid(out, d, arms, kinds, *, xlabel, stem):
     # The key names the reference only: the y unit is in each column head, and a longer key
     # outran the two-column pair grid and was cut off at both edges.
     _jsd_key_above(fig, [Line2D([], [], color=REF_COLOR, lw=REF_LW, ls=DASH,
-                                label=_jsd_ref_key())], 1, fontsize=11)
+                                label=_jsd_ref_key())] if key else None, 1, fontsize=11)
     save(fig, out, stem)
 
 
-@figure("fig-jsd-bond-length", needs=JSD_NEEDS)
-def draw_jsd_bond_length(out):
-    """The bond-length histograms behind fig-jsd-bond, one panel per bond type."""
+# Renamed from fig-jsd-bond-length / bond-length-* (2026-09-15, on request), to match the
+# "bond-distance JSD" of fig-jsd-bond that these histograms feed.
+@figure("fig-jsd-bond-distance", needs=JSD_NEEDS)
+def draw_jsd_bond_distance(out):
+    """The bond-distance histograms behind fig-jsd-bond, one panel per bond type."""
     d, all_arms = _jsd_data()
     use_style()
     types = d["published"]["bond_jsd_columns"]
@@ -404,7 +448,8 @@ def draw_jsd_bond_length(out):
                 (f"{t}\n% per {step * JSD_LEN_MERGE:.2f} Å",
                  (lambda s, t=t: drawn(s["bond_counts"][t])),
                  (lambda a, t=t: a["jsd"]["bond"][t]), (bins[0], bins[-1]), 0.2) for t in types],
-                xlabel="Bond length (Å)", stem=f"bond_length_{variant}")
+                # no key (2026-09-15, on request); pair-all keeps its reference key
+                xlabel="Bond distance (Å)", stem=f"bond_distance_{variant}", key=False)
             continue
         fig = _jsd_new(FIG_W * 1.55, PANEL_H * 1.62)
         axes = fig.subplots(2, 4)
@@ -419,7 +464,7 @@ def draw_jsd_bond_length(out):
             ax.stairs(pct, edges, color=REF_COLOR, lw=REF_LW, ls=DASH, zorder=4)
             furniture(ax, xloc=0.2, xlim=(bins[0], bins[0] + step * 120),
                       ylabel=f"% of bonds\nper {step * JSD_LEN_MERGE:.2f} Å" if i % 4 == 0 else None,
-                      xlabel="Bond length (Å)" if i >= 4 else None)
+                      xlabel="Bond distance (Å)" if i >= 4 else None)
             ax.tick_params(labelsize=11.5)
             ax.xaxis.label.set_size(13)
             ax.yaxis.label.set_size(13)
@@ -427,7 +472,7 @@ def draw_jsd_bond_length(out):
             # a panel LABEL, not a title
             ax.set_title(t, loc="left", fontsize=12.5, color=INK, pad=5)
         _jsd_key_above(fig, _jsd_handles(arms), _jsd_key_cols(len(arms) + 1, True))
-        save(fig, out, f"bond_length_{variant}")
+        save(fig, out, f"bond_distance_{variant}")
 
     rows = []
     for lab, s in _jsd_ref_sets(d) + [(lab, d["arms"][lab]) for lab, _, _ in all_arms]:
@@ -438,7 +483,7 @@ def draw_jsd_bond_length(out):
             hi = bins.tolist() + [float("inf")]
             rows += [[lab, t, round(a, 3), round(b, 3), n, round(100 * n / total, 4) if total else 0]
                      for a, b, n in zip(lo, hi, c)]
-    write_csv(out, "bond_length_hist", ["set", "bond_type", "len_lo", "len_hi", "n", "pct"], rows)
+    write_csv(out, "bond_distance_hist",["set", "bond_type", "len_lo", "len_hi", "n", "pct"], rows)
 
 
 # ── pair distances ──────────────────────────────────────────────────────────────
@@ -477,7 +522,9 @@ def draw_jsd_pair(out):
             ax.stairs(_jsd_pct(d["reference"]["pair_counts"][key])[1:-1], edges,
                       color=REF_COLOR, lw=REF_LW, ls=DASH, zorder=4)
             furniture(ax, xlabel=xlabel, xloc=None, xlim=xlim or (edges[0], edges[-1]),
-                      ylabel=f"% of pairs per {edges[1] - edges[0]:.2f} Å")
+                      # two lines, as bond-distance's: at the axis-name size _jsd_axis_weight sets,
+                      # one line ran past both ends of the panel and lost its unit
+                      ylabel=f"% of pairs\nper {edges[1] - edges[0]:.2f} Å")
             ax.tick_params(labelsize=12.5)
             ax.xaxis.label.set_size(13.5)
             ax.yaxis.label.set_size(13.5)
@@ -510,7 +557,9 @@ def draw_jsd_atom_type(out):
         series += [(lab, {e: 100 * d["arms"][lab]["atom_frac"][e] for e in elems}, soft(lab))
                    for lab, _, _ in arms]
         _jsd_tiered(fig, elems, {e: e for e in elems}, series, "% of heavy atoms")
-        _jsd_key_above(fig, _jsd_handles(arms, patch=True), _jsd_key_cols(len(arms) + 1, wide))
+        # no key on `all` (2026-09-15, on request); `core` keeps its own
+        _jsd_key_above(fig, None if wide else _jsd_handles(arms, patch=True),
+                       _jsd_key_cols(len(arms) + 1, wide))
         save(fig, out, f"atom_type_{variant}")
 
     rows = [[lab, s["n_mols"]] + [round(100 * s["atom_frac"][e], 3) for e in elems]
@@ -545,12 +594,13 @@ def draw_jsd_summary(out):
                         va="center", ha="left", fontsize=11.5, color=INK, zorder=4)
             furniture(ax, xlabel=name, xloc=None, xlim=(0, top * 1.38))
             ax.xaxis.set_major_locator(MaxNLocator(3))
-            ax.xaxis.label.set_size(13)
-            ax.tick_params(labelsize=11.5)
+            ax.tick_params(labelsize=11.5, length=5)
             ax.grid(False, axis="y")
         axes[0].set_yticks(ys)
-        axes[0].set_yticklabels([display(lab) for lab, _, _ in arms], fontsize=13)
+        axes[0].set_yticklabels([display(lab) for lab, _, _ in arms], fontsize=14.5)
         axes[0].set_ylim(-0.6, len(arms) - 0.4)
+        # heavier axes, larger names (2026-09-15, on request): the figure the ratios come from
+        _jsd_axis_weight(fig)
         fit(fig, pad=0.5)
         save(fig, out, f"summary_{variant}")
     head = ["set", "n_mols", "n_disconnected_dropped"]
@@ -587,9 +637,11 @@ def draw_jsd_ring_size(out):
         # `core` and `all` now split the same way.
         # Then FIXED PANELS (2026-09-14, on request): 6 | 3, 5, 7 | 4, 8, 9 -- see
         # JSD_RING_PANELS. tier_by still decides which panel is the 0-100 one.
-        _jsd_tiered(fig, sizes, {s: f"{s}-ring" for s in sizes}, series, "% of rings, sizes 3–9",
+        _jsd_tiered(fig, sizes, {s: f"{s}-ring" for s in sizes}, series, "% of rings",
                     tier_by=d["reference"]["ring_size_pct"], panels=JSD_RING_PANELS)
-        _jsd_key_above(fig, _jsd_handles(arms, patch=True), _jsd_key_cols(len(arms) + 1, wide))
+        # no key on `all` (2026-09-15, on request); `core` keeps its own
+        _jsd_key_above(fig, None if wide else _jsd_handles(arms, patch=True),
+                       _jsd_key_cols(len(arms) + 1, wide))
         save(fig, out, f"ring_size_{variant}")
 
     head = ["set", "source"] + sizes + ["10+ of all rings"]

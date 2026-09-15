@@ -8,7 +8,8 @@ weights, no envs).
 The target model is **VoxBind + electron density**: a walk-jump voxel denoiser
 whose pocket branch is conditioned on a *frozen* electron-density encoder
 (**CDG_v2**). Evaluation reproduces the paper table — chemical/geometry metrics
-+ AutoDock **Vina 1.2.2** docking + **PoseCheck** pose quality.
++ AutoDock **Vina 1.2.2** docking + **PoseCheck 1.3.1** / **PoseBusters 0.6.5**
+(`dock` mode) pose quality.
 
 Each stage is a numbered script and runs independently:
 
@@ -98,7 +99,7 @@ Idempotent (skips what exists). `FORCE=1 … voxdock` rebuilds one env.
 - `voxbind` — GPU pipeline (`env.yaml` + `pip install -e .`)
 - `voxdock` — Vina **1.2.2** docking (python 3.8; pins reproduce the paper's
   absolute affinities — do not bump)
-- `moleval` — PoseCheck **1.3.1** + PoseBusters + ProLIF (python 3.10)
+- `moleval` — PoseCheck **1.3.1** + PoseBusters **0.6.5** + ProLIF 2.2.1 (python 3.10)
 
 ### `01_download_data.sh` — prepared copy
 Pulls weights from Dropbox and, if a `data/` folder is hosted there, the dataset
@@ -183,6 +184,14 @@ not the crop. Refuses to run unless `voxdock` has vina 1.2.2. Writes per-target
   `FORCE=1 bash script/00_setup_env.sh voxdock`.
 - **PoseCheck is pinned to 1.3.1.** Upstream silently redefined strain energy;
   1.3.1 is the definition all reported numbers use.
+- **PoseBusters is pinned to 0.6.5, and every number is its `dock` config** —
+  ligand + protein, no `mol_true`, 22 columns of which 20 are graded (the two
+  `*_loaded` columns are informational). `valid` is all-must-pass over whatever
+  columns the release returns, so a version that adds or renames a check moves
+  every validity number without erroring. `gen` mode is NOT used: its chosen
+  binary output is `sucos_within_threshold`, which would enter that same
+  all-must-pass and collapse it, so SuCOS is computed separately with gen.yml's
+  own function and 0.4 threshold and kept out of `valid`.
 - **Full receptors** must be present for meaningful Vina scores and clash counts
   (a 10 Å crop can't clash with atoms it doesn't contain). They come from
   TargetDiff's `test_set` release (folded into the prepared copy).

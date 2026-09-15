@@ -80,6 +80,30 @@ PCSZ_LOCAL = [
      dash("VoxBind σ=0.9")),
     ("CoDE",          f"{E}/frozenenc_probes/posecheck_full/ours_v1",    3.8, dash("CoDE")),
 ]
+
+
+def _pcsz_ordered(labels):
+    """`labels` in RB_ORDER — the sequence the rotbond grid and the shared legend draw in.
+
+    THE LIST ORDER IS A LOADING ORDER, NOT A DISPLAY ORDER (2026-09-15). PCSZ_BASELINES is
+    the five published baselines, which come out of one export, and PCSZ_LOCAL is the three
+    arms scored from run trees; concatenating them put DecompDiff and FuncBind AHEAD of
+    TargetDiff, which is nobody's row order. Sorting here makes this figure read in the same
+    sequence as the rotbond grid and the legend that names it.
+
+    SPELLINGS CANONICALISE FIRST. PCSZ_LOCAL calls it "VoxBind σ=0.9" and RB_ORDER calls it
+    "VoxBind", so a raw membership test would report it missing and take the arm out of the
+    figure. Anything the table does not name raises, exactly as _rb_order does: a method
+    that quietly vanishes from a figure is worse than a failed build.
+
+    RB_ORDER and ALIASES are read at CALL time -- RB_ORDER lives in a part assembled after
+    this one, so it cannot be referenced while this module is being defined."""
+    rank = {lab: i for i, lab in enumerate(RB_ORDER)}
+    canon = {l: ALIASES.get(l, l) for l in labels}
+    unknown = [l for l, c in canon.items() if c not in rank]
+    if unknown:
+        raise SystemExit(f"not in RB_ORDER: {unknown}")
+    return sorted(labels, key=lambda l: rank[canon[l]])
 # Weight per METHOD, keyed by the canonical name so the other family can read it: the two
 # figures are a pair and a series that is thicker in one of them reads as a different series
 # (2026-09-13). NOT one flat weight -- our two arms are the subject and the five published
@@ -547,25 +571,65 @@ PCSZ_CBOX_HI = 200.0
 # area effect that motivated the blend is worth living with. This stays a knob rather than
 # being deleted -- one number brings the tint back if the solid blocks prove too heavy.
 PCSZ_CBOX_TINT = 0.0
-# The frame's weight, up from this family's 1.1 to the rotatable-bond grid's (2026-09-14):
-# the panel carries the grid's boxes and now type at 14 pt, and 1.1 read thin under both.
-# The rule between the crystal ligands and the methods takes the SAME weight, because it is
-# frame and not data -- 79 poses against ~7,500 is a different population, not a ninth method.
-PCSZ_CBOX_AXIS_LW = 2.0
-# The method names, two points off the y name (2026-09-14).
-PCSZ_CBOX_NAME_FS = PCSZ_LABEL_FS - 2
+# The frame's weight. Raised from this family's 1.1 to the rotatable-bond grid's 2.0
+# (2026-09-14) because the panel carries the grid's boxes and type at 14 pt, and 1.1 read
+# thin under both. The rule between the crystal ligands and the methods takes the SAME
+# weight, because it is frame and not data -- 79 poses against ~7,500 is a different
+# population, not a ninth method.
+#
+# DOWN TO 1.0 (2026-09-15), in two steps: 2.0 read too heavy, then the target became the JSD
+# summary's proportions.
+#
+# WEIGHT IS RELATIVE TO THE CANVAS, which is the thing that makes this number look wrong on
+# its own. jsd.py already says so -- its 2.2 pt exists because that canvas is far wider and
+# gets scaled down in the document. This panel is the opposite extreme: 2.77 in wide against
+# the JSD summary's 13.32, so an identical pt reads 4.8x heavier here. At 2.0 this was
+# 0.72 pt/in against the JSD summary's 0.165; 1.0 lands at 0.36, roughly halfway, which is
+# the correction that was asked for rather than the full column-scaled one (that would have
+# meant 0.46 pt, a hairline in the raster).
+#
+# IT NO LONGER MATCHES RB_GRID_AXIS_LW, still 2.0 -- the two figures were deliberately given
+# one frame weight and now differ. If that pairing is wanted back, raise THIS, not that one.
+#
+# It carries two other things down with it, both intended: the minor ticks (x
+# PCSZ_CBOX_MINOR_LW, so 0.50) and the reference/method rule.
+PCSZ_CBOX_AXIS_LW = 1.0
+# The method names, two points off the y name (2026-09-14), then 0.9x on request
+# (2026-09-15). Kept as an offset from PCSZ_LABEL_FS with the scale applied after, so the
+# relationship to the family size still reads at a glance instead of becoming a bare number.
+PCSZ_CBOX_NAME_FS = (PCSZ_LABEL_FS - 2) * 0.9
+# The axis title, a little under the family's PCSZ_LABEL_FS (2026-09-15, on request). Scoped
+# to this figure rather than lowering PCSZ_LABEL_FS itself, which the strain ECDF, the
+# per-atom panels and the rotatable-bond figures all read -- dropping it there would retype
+# five figures nobody asked to touch. THIS PANEL HAS ONLY AN X TITLE: it is drawn sideways,
+# so the methods are the y tick labels and there is no y name to match.
+# The same 0.9x as the method names, so the two move together (2026-09-15). NOT EVERY NUMBER
+# IN THIS PANEL SCALES: the decade tick labels take their size from the shared style -- this
+# figure's tick_params sets only `width` -- so they are unaffected and would need a constant
+# of their own to follow.
+PCSZ_CBOX_TITLE_FS = (PCSZ_LABEL_FS - 1.5) * 0.9
 # AIR ON EITHER SIDE OF THE RULE (2026-09-14). Boxes are 0.66 wide on a 1.0 pitch, so two
-# neighbours are 0.34 apart; at a 2 pt frame weight the rule ate most of that, leaving less
-# air between the reference box and AR's than between the reference box and the left spine.
-# The methods slide right by this much so the rule sits in a margin of its own.
+# neighbours are 0.34 apart; at the 2 pt frame weight this was tuned against, the rule ate
+# most of that, leaving less air between the reference box and AR's than between the
+# reference box and the left spine. The methods slide right by this much so the rule sits in
+# a margin of its own.
+#
+# SIZED FOR A 2 PT RULE AND LEFT ALONE when the rule dropped to 1.0 (2026-09-15). A rule at
+# half the weight it was tuned against needs much less margin, so this is now well more
+# generous than it has to be -- not wrong, just loose. It is the knob to trim if the
+# reference box reads too far from AR's.
 PCSZ_CBOX_GAP = 0.5
 # The x padding past the outermost box centre, at each end.
 PCSZ_CBOX_PAD = 0.7
 # ONE SCALE OVER BOTH OF THE ABOVE (2026-09-14), so "tighten the whitespace" stays a single
-# number instead of two that drift apart. 0.8 puts the rule's air at 0.40 and the end padding
-# at 0.56. The box width and the 1.0 pitch are untouched: only air moves, so the boxes keep
-# their size and the panel just stops carrying as much empty space.
-PCSZ_CBOX_MARGIN = 0.8
+# number instead of two that drift apart. The box width and the 1.0 pitch are untouched: only
+# air moves, so the boxes keep their size and the panel just stops carrying as much empty
+# space.
+#
+# 0.88, UP 1.1x FROM 0.8 ON REQUEST (2026-09-15): the rule's air goes 0.40 -> 0.44 and the
+# end padding 0.56 -> 0.62. It moves in the opposite direction to the 0.9x type above, which
+# is the point -- smaller glyphs with more room around them.
+PCSZ_CBOX_MARGIN = 0.88
 
 
 def _pcsz_tint(hexv, f=PCSZ_CBOX_TINT):
@@ -707,7 +771,7 @@ def draw_posecheck_clash_box_by_method(out):
         ax.set_yticklabels([l if l == PCSZ_REF_NAME else display(l) for l in labels],
                            fontsize=PCSZ_CBOX_NAME_FS, rotation=PCSZ_CBOX_NAME_ROT,
                            ha="right", va="center", rotation_mode="anchor")
-        ax.set_xlabel("Steric clashes", fontsize=PCSZ_LABEL_FS, labelpad=PCSZ_YPAD)
+        ax.set_xlabel("Steric clashes", fontsize=PCSZ_CBOX_TITLE_FS, labelpad=PCSZ_YPAD)
         save(fig, out, "clash_box_by_method")
     write_csv(out, "clash_box_by_method",
               ["method", "n_clash", "clash_mean", "clash_median", "q25", "q75", "zero_frac"],
@@ -786,7 +850,8 @@ def draw_posecheck_clash_per_atom_all_methods(out):
         series[label] = _pcsz_atom_rows(root, keep)
     refrows = _pcsz_atom_rows(PCSZ_REF_CLASH_ROOT, keep, reference=True)
 
-    labels = [label for _, label, *_ in PCSZ_BASELINES] + [lab for lab, *_ in PCSZ_LOCAL]
+    labels = _pcsz_ordered([label for _, label, *_ in PCSZ_BASELINES]
+                           + [lab for lab, *_ in PCSZ_LOCAL])
     per = {lab: by_size(series[lab], "c") for lab in labels}
     ref_per = by_size(refrows, "c")
     xs = list(range(RB_X_LO, RB_X_HI + 1))

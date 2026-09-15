@@ -1015,10 +1015,10 @@ def draw_posecheck_strain_per_atom_all_methods(out):
 # the low end running straight to a light version of VoxBind's sand at the high end, so the
 # figure reads in the same two hues as every other 260910 figure.
 #
-# THE NORM IS A FIXED 0-800 kcal/mol, ticked every 200. Over the eight methods' 64 boxes the
-# median is 136 and the 95th percentile 694; only FuncBind at seven and six bonds (982, 5,638)
-# lie above 800, and they saturate onto the top colour with the colorbar's arrow saying so
-# (the run log names every saturated box). The price of
+# THE NORM IS A FIXED 0-1000 kcal/mol (was 0-800; see RB_GRID_NORM), ticked every 200. Over
+# the eight methods' 64 boxes the median is 136 and the 95th percentile 694; only FuncBind at
+# six bonds (5,638) lies above 1000, and it saturates onto the top colour with the colorbar's
+# arrow saying so (the run log names every saturated box). The price of
 # a linear norm is that medians under ~100 -- every crystal-ligand box, and VoxBind/CoDE at low
 # counts -- share the darkest blues; their differences are read off the y axis, as in the paper.
 #
@@ -1053,8 +1053,15 @@ RB_GRID_REF_MIN_N = 3
 # midpoint at 400, so the white band is an artefact of the map rather than a feature of the
 # data. That is the paper's choice and matching it is the point here, but a sequential map
 # would be the more honest encoding if we ever stop matching.
-RB_GRID_CMAP = "coolwarm"
-RB_GRID_NORM, RB_GRID_CTICK = (0.0, 800.0), 200.0
+# THE RAMP IS THE HOUSE ONE: HEAT_CMAP, single-hue light-to-dark, decided in 00_core
+# because fig-posebusters-valid-heatmap keys its cells with the same object. It used to
+# be built here and read across from there; it moved up on request (2026-09-15) so
+# neither figure owns the other's colours.
+# TOP AT 1000, NOT 800 (2026-09-15, on request, with the two-stop ramp #FAFDFB -> #3C52DD):
+# "1000 and over is the end colour". FuncBind at seven bonds (982) now takes its own shade just
+# under the tail instead of saturating; FuncBind at six (5,638) is the one box above, and the
+# bar's arrow still says so. Ticks stay every 200, so the bar reads 0-1000 in six numbers.
+RB_GRID_NORM, RB_GRID_CTICK = (0.0, 1000.0), 200.0
 RB_GRID_TALL = 0.9975 * 1.1  # per row, as a share of PANEL_H
 # 0.8x the width the three-arm box figures use (2026-09-13). The nine panels keep their type
 # and line weights, so pulling the canvas in is what makes the block read fuller; the boxes
@@ -1089,12 +1096,6 @@ RB_GRID_XPAD = 15
 # The colourbar's name is the block's THIRD outer name, so it carries the same size as the
 # two axis names rather than a step below them (2026-09-13).
 RB_GRID_CBAR_FS = RB_GRID_LABEL_FS
-# Gap from the panel block to the bar, doubled from 0.012 (2026-09-13) -- a share of the
-# figure width, which is what colorbar(pad=) takes.
-RB_GRID_CBAR_PAD = 0.024
-# The caption's gap off the bar's numbers, DOUBLED (2026-09-14): measured off the PNG it was
-# 19 px at 220 dpi, i.e. 6.2 pt on matplotlib's default labelpad of 4, so 10.5 buys about 12.4.
-RB_GRID_CBAR_LABELPAD = 10.5
 # Spines and MAJOR tick marks 1.2x the house weight: nine small panels read as washed out at
 # 1.35, and 1.6x was too heavy. Minor ticks (the log decades' 2-9) keep their own weight.
 RB_GRID_AXIS_LW = 2.0
@@ -1119,7 +1120,7 @@ def _rb_grid(out, series, refrows, labels, stage):
 
     all_meds = [float(np.median(v)) for lab in panels for _, v in boxes[lab]]
     norm = matplotlib.colors.Normalize(*RB_GRID_NORM)
-    cmap = matplotlib.colormaps[RB_GRID_CMAP]
+    cmap = HEAT_CMAP
     extend = {(False, False): "neither", (True, False): "min", (False, True): "max",
               (True, True): "both"}[(min(all_meds) < norm.vmin, max(all_meds) > norm.vmax)]
 
@@ -1197,19 +1198,13 @@ def _rb_grid(out, series, refrows, labels, stage):
     axes[nrow // 2, 0].set_ylabel(f"UFF strain energy (kcal mol⁻¹),\n{qualifier}",
                                   fontsize=RB_GRID_LABEL_FS, color=INK,
                                   labelpad=RB_GRID_YPAD)
-    cb = fig.colorbar(plt.cm.ScalarMappable(norm=norm, cmap=cmap), ax=axes, extend=extend,
-                      shrink=0.92, aspect=38, pad=RB_GRID_CBAR_PAD,
-                      ticks=np.arange(RB_GRID_NORM[0], RB_GRID_NORM[1] + RB_GRID_CTICK,
-                                      RB_GRID_CTICK))
-    cb.set_label("Median strain energy (kcal mol⁻¹)", fontsize=RB_GRID_CBAR_FS, color=INK,
-                 labelpad=RB_GRID_CBAR_LABELPAD)
-    cb.ax.tick_params(labelsize=RB_GRID_CBAR_TICK_FS, colors=AXIS, width=AXIS_LW)
-    # The bar's numbers turned a quarter turn anticlockwise (2026-09-14), so they read along the
-    # bar like its name. Anchored left and centred on the tick, which is where they sat upright.
-    plt.setp(cb.ax.get_yticklabels(), rotation=90, va="center", ha="left")
-    # No frame round the bar (2026-09-14), as the boxes it keys lost theirs. The extend arrow
-    # is part of that same outline path, so it loses its edge with it and reads as pure fill.
-    cb.outline.set_visible(False)
+    # The shared bar (00_core): ramp, shape, pad and the quarter-turned numbers come from
+    # there, the point sizes and the tick step are this figure's. `extend` is computed above
+    # off the data, so the arrow appears exactly when a median saturates.
+    heat_colorbar(fig, axes, norm, "Median strain energy (kcal mol⁻¹)",
+                  label_fs=RB_GRID_CBAR_FS, tick_fs=RB_GRID_CBAR_TICK_FS, extend=extend,
+                  ticks=np.arange(RB_GRID_NORM[0], RB_GRID_NORM[1] + RB_GRID_CTICK,
+                                  RB_GRID_CTICK))
     save(fig, out, f"strain_box_per_rotbond_grid_{stage}")
 
     csv_rows = []

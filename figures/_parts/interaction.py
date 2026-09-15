@@ -134,8 +134,14 @@ IX_BASELINES = ["AR", "Pocket2Mol", "DiffSBDD", "DecompDiff"]
 # method in a different order each time is a cost paid on every glance. The crystal ligands
 # lead, exactly as the table's Reference row does. FuncBind is carried even though it has no
 # fingerprint here, so adding it later moves nothing.
+# FuncBind BEFORE VoxBind (2026-09-15), which is RB_ORDER's sequence and not the drug-design
+# table's. The table puts VoxBind first and this family used to follow it, but rotbond and
+# the shared posecheck legend both run RB_ORDER, so following the table here made the
+# interaction figures the odd ones out in a document that stacks them together. Consistency
+# between the FIGURES was chosen over consistency with the table; if the table is ever the
+# thing to match, swap these two back and RB_ORDER with them, not this alone.
 IX_ORDER = ("Reference ligand", "AR", "Pocket2Mol", "DiffSBDD", "TargetDiff", "DecompDiff",
-            "VoxBind", "FuncBind", "CoDE")
+            "FuncBind", "VoxBind", "CoDE")
 
 # THE TYPE NAMES THE Y AXIS, and there are no panel titles -- which is the house style, and
 # which this family had to break while it was one 2x2 figure: all four panels plotted the
@@ -486,6 +492,38 @@ def _interaction_legend(fig, names, cols, form):
     return leg
 
 
+def _interaction_axis_weight(ax, lw=None, title_fs=None, tick_fs=None):
+    """The ecdf-by-size-all axis: spine weight, tick type and the y name's size.
+
+    SPLIT OUT OF _interaction_ecdf_furniture (2026-09-15) so the PAIR figure can take the
+    same look. That function cannot simply be called there: it also rebuilds the x axis at
+    1..n with the names rotated 30 degrees, and the pair figure deliberately keeps its
+    names UPRIGHT on each split body's own spine -- calling it would undo the widening that
+    was chosen to make upright names fit.
+
+    ONLY THE SPINES, TICKS AND AXIS NAME MOVE. Not _pcsz_style() wholesale: that turns the
+    major y grid back on, and the H-bond panels run a deliberate minor-grid arrangement
+    (_interaction_cell_axis) that would lose to it.
+
+    PCSZ_* are read at CALL time: they live in a part assembled after this one."""
+    # DEFAULTS ARE THE ECDF'S OWN NUMBERS -- _pcsz_style sets spine and tick 1.1, tick labels
+    # at 11 and the y name at PCSZ_LABEL_FS, and contacts/hbonds must keep exactly those,
+    # since being indistinguishable from ecdf-by-size-all is what this function is for. The
+    # three overrides let ONE caller ask for more; only the pair panel does.
+    #
+    # `tick_fs` REACHES THE Y AXIS ONLY IN PRACTICE, even though tick_params sets both: the
+    # pair panel rebuilds its x axis afterwards with set_xticklabels(fontsize=...), so the
+    # method names keep IX_PAIR_NAME_FS and this number lands on the y numbers alone.
+    lw = 1.1 if lw is None else lw
+    for side in ("left", "bottom"):
+        ax.spines[side].set_color(PCSZ_AXIS)
+        ax.spines[side].set_linewidth(lw)
+    ax.tick_params(labelsize=11 if tick_fs is None else tick_fs,
+                   direction="out", length=3.5, width=lw, pad=4, colors=PCSZ_AXIS)
+    ax.yaxis.label.set_fontsize(PCSZ_LABEL_FS if title_fs is None else title_fs)
+    ax.yaxis.label.set_color(PCSZ_AXIS)
+
+
 def _interaction_ecdf_furniture(ax, names, show_names=True):
     """The strain ECDF's axis weight and type, plus the method names back on the x axis.
 
@@ -498,13 +536,7 @@ def _interaction_ecdf_furniture(ax, names, show_names=True):
     170 and a crop to the ink, and this family draws at 220 to its own frame.
 
     PCSZ_* are read at CALL time: they live in a part assembled after this one."""
-    for side in ("left", "bottom"):
-        ax.spines[side].set_color(PCSZ_AXIS)
-        ax.spines[side].set_linewidth(1.1)
-    ax.tick_params(labelsize=11, direction="out", length=3.5, width=1.1, pad=4,
-                   colors=PCSZ_AXIS)
-    ax.yaxis.label.set_fontsize(PCSZ_LABEL_FS)
-    ax.yaxis.label.set_color(PCSZ_AXIS)
+    _interaction_axis_weight(ax)
     # The violins sit at 1..n, which is where _interaction_frame's xlim is built from.
     ax.set_xticks(range(1, len(names) + 1))
     labels = ax.set_xticklabels([_interaction_display(n) for n in names],
@@ -660,8 +692,11 @@ def draw_interaction_hbonds(out):
 # gains a lot. The gap between a method's two columns is that quantity, and it is only
 # readable because THE TWO COLUMNS ARE THE SAME MOLECULES: dock_core_poses.py drops a
 # molecule from both series when its dock fails, so nothing separates the columns except the
-# docking. 2,105 molecules over 78 pockets — see the original folder's README for the 28
-# that did not pair.
+# docking. 8,180 molecules over 78 pockets, from 8,286 docked. The 106 that did not pair
+# were the two failures dock_core_poses.py's docstring predicts and nothing else: 105 are
+# target_71, whose pocket crop pdb2pqr30 refuses for a chain gap at GLU 866, so it loses
+# every arm; the last is VoxBind's `CNNO` at target_96, four heavy atoms whose extent gives
+# Vina a box with a zero dimension.
 #
 # COLOUR STAYS THE METHOD'S, which is where this figure departs from Fig. 14 on purpose.
 # Fig. 14 gives each series its own colour ramp (green #72b6a1 -> #eaf4f1 for generated,
@@ -669,42 +704,271 @@ def draw_interaction_hbonds(out):
 # that because the series is the only other thing in the panel. Here colour means the method
 # in every figure of this section, and a reader who has learned that palette should not have
 # to unlearn it for one panel. So the pair takes the two channels Fig. 14 leaves free:
-# ADJACENCY, which puts the comparison inside one eyeful, and a HATCH on the redocked column.
+# THE TWO HALVES OF ONE BODY, which puts the comparison inside a single shape, and a HATCH
+# on the redocked half.
+#
+# SPLIT, NOT ADJACENT (2026-09-15). This drew two whole bodies side by side until the split
+# violin replaced them. Two bodies made the reader compare across a gap and cost twice the
+# ink per method; one body cut down the middle puts the two distributions against a shared
+# spine, which is the comparison this figure exists to make. It also doubles the width each
+# method's ink gets, because nine slots now hold one body instead of two.
 #
 # AND THE METHOD NAMES COME BACK TO THE X AXIS. The two figures above drop them because
-# eight of them, rotated to fit, cost a third of the height; three pairs on a 4:1 frame have
-# room for them upright, and spending the legend on the method as well would leave the pose
-# condition — the whole point of this figure — as a footnote in a five-entry key. Each
-# channel gets its own place: the method on the axis, the condition in the legend.
+# eight of them, rotated to fit, cost a third of the height; here they stay upright and the
+# FRAME widens to make room, rather than the names tilting to fit the frame. Spending the
+# legend on the method as well would leave the pose condition — the whole point of this
+# figure — as a footnote in a five-entry key. Each channel gets its own place: the method
+# on the axis, the condition in the legend.
+#
+# Upright names were free when this was three pairs on the siblings' 4:1 frame; at nine they
+# cost the width IX_PAIR_ASPECT carries, and that was chosen deliberately over tilting them.
+# See the note on IX_PAIR_ASPECT for what the alternative would have been.
 
 # The arms dock_core_poses.py staged, in the drug-design table's row order. These are the
 # labels interactions_<Arm>-{gen,docked}.json is written under — the export spelling, not
 # the figure's; _interaction_display() maps them at draw time exactly as the siblings do.
-IX_PAIR_ARMS = ["Reference", "VoxBind", "CoDE"]
+# ALL NINE (2026-09-15). This was the core three until the redocking was extended to every
+# published baseline: 8,286 docks over 79 pockets, 8,180 of which paired. The five staged
+# baselines reach dock_core_poses.py through --staged and TargetDiff through
+# --with-targetdiff, so every arm in IX_ORDER now has both a -gen and a -docked scoring.
+IX_PAIR_ARMS = ["Reference", "AR", "Pocket2Mol", "DiffSBDD", "TargetDiff",
+                "DecompDiff", "FuncBind", "VoxBind", "CoDE"]
 IX_SERIES = [("gen", "Generated"), ("docked", "Redocked")]
 
 # The reference's colour is keyed under the canonical label, not under the "Reference" the
 # staged JSON is named with.
 IX_COLOR_KEY = {"Reference": REF_LABEL}
 
-# GEOMETRY. The sibling figures' frame exactly — same aspect, same panel height, same
-# legend strip — so the three figures of this family stack in a document without a size
-# change between them. Only the x spacing is this figure's own.
-IX_PAIR_GAP = 0.30               # between the two columns of one method
-IX_GROUP_GAP = 1.15              # between one method and the next
+# GEOMETRY. The panel height and the legend strip are the siblings' exactly, so the figures
+# of this family still stack without a vertical size change. THE WIDTH IS NO LONGER THEIRS
+# (2026-09-15): nine pairs of upright names do not fit a 4:1 frame.
+#
+# WHY THIS NUMBER, AND WHY THE NAME FONT MOVES WITH IT. The binding constraint is that one
+# method's slot must
+# hold its own name AND a gap to its neighbour's, and the slot is the group pitch — so the
+# requirement is essentially `n_arms x (widest_label + margin)` and TIGHTENING IX_GROUP_GAP
+# BUYS NOTHING, because the span and the pitch shrink together. Measured under this style at
+# IX_LEGEND_SIZE, the widest label is VoxBind$_{\sigma=0.9}$ at 1.139 in.
+#
+# THE MARGIN IS NOT OPTIONAL, which is what a first pass at 5.85 got wrong: sizing the slot
+# to the widest label ALONE leaves zero room between neighbours, and the two widest that
+# happen to be adjacent -- DecompDiff and VoxBind -- came out 0.034 in apart while every
+# other pair had 0.15-0.56 in.
+#
+# AND THE PITCH DOES NOT GET THE WHOLE WIDENING, which is what the SECOND pass got wrong.
+# fit() spends part of every added inch on the margins and the y names, so only about 86 %
+# of it reaches the panel: 6.12 was computed to land exactly on a 0.10 in floor and measured
+# 0.090. Do not predict this from one render -- sweep the aspect and read the gap back. On
+# this frame the worst gap moves ~0.21 in per unit of aspect, and the measured ladder is
+# 5.85 -> 0.034, 6.12 -> 0.090, 6.20 -> 0.107, 6.30 -> 0.128. 6.20 is the smallest that
+# clears the floor, which is why the figure is no wider than it is.
+#
+# Measure with the tick labels' own bounding boxes after fit(), never by eye: at this size
+# 0.034 in reads as a collision and is not one.
+#
+# NARROWED TO 0.8x ON REQUEST (2026-09-15): 6.20 -> 4.96, 23.88 in -> 19.10 in. At the font
+# of the time that OVERLAPPED -- measured -0.068 in, the labels actually colliding, because
+# width is the only lever once the font is fixed and the names are upright. So the font took
+# the same 0.8x: 12.5 x 0.8 = 10.0, and the worst gap came back to 0.127 in.
+#
+# THAT WHOLE CONSTRAINT IS GONE NOW, and the paragraph above is kept only as the record of
+# how this number was arrived at. The names were rotated 30 degrees shortly afterwards and
+# IX_PAIR_NAME_FS went to 14.0: rotated labels run off their own tick instead of competing
+# for a method's pitch, so width no longer gates the font, and widening only ever helps.
+#
+# THEN 1.03x ON REQUEST: 4.96 -> 5.11, 19.10 in -> 19.68 in. THEN 0.98x: 5.11 -> 5.01,
+# 19.68 in -> 19.30 in. That narrowing alone costs the stacked axes 9.009 -> 8.816 in of
+# width, before the type sitting on it is counted.
+#
+# THE COST, recorded so nobody re-derives it: each half violin goes 0.438 in -> 0.342 in,
+# under the 0.411 in of the single violin the old adjacent layout drew. That is inherent to
+# narrowing the frame, not a sizing mistake like the IX_GROUP_GAP one below it.
+# THEN 1.2x ON REQUEST: 5.01 -> 6.01, 19.30 in -> 23.15 in. Widening is the safe direction --
+# the names are rotated, so it only ever adds room between them, and it leaves the vertical
+# dimension (where the y title's clipping lives) alone.
+# THEN 1.03x ON REQUEST (2026-09-15): 6.01 -> 6.1903, 23.15 in -> 23.84 in. Height is
+# deliberately NOT touched -- IX_PAIR_TALL stays 1.20 -- so this is width alone.
+IX_PAIR_ASPECT = 6.1903
+# HEIGHT ONLY, ON TOP OF THE WIDTH ABOVE (2026-09-15). The pair figures are taller than the
+# siblings by this much; the WIDTH stays IX_PAIR_ASPECT * IX_FIG_H so the 0.98x narrowing is
+# untouched. IX_FIG_H itself must not move: IX_FIG_W is derived from it, so raising it would
+# silently widen contacts-all, hbonds-all, both core variants and the legend as well.
+#
+# WHY 1.20 AND NOT "SLIGHTLY". The y name is rotated, so its LENGTH runs up the figure --
+# "van der Waals contacts" is 3.16 in at 19.5 pt against a 2.44 in axes, and it was running
+# off the canvas. Growing the frame grows the axes at roughly HALF the rate, so the fix is
+# expensive: measured contacts margin at 19.5 pt is 1.00 -> -0.257 in (clipped), 1.10 ->
+# -0.064 (still clipped), 1.15 -> +0.032 (seven pixels, breaks on any rounding), 1.20 ->
+# +0.128, 1.25 -> +0.224. 1.20 is the smallest that holds.
+#
+# THE CHEAPER TRADE, if this frame is ever too tall: lower the title with it. At 17.5 pt a
+# 1.10 multiplier already gives +0.155 in, and a two-line title clears +0.364 in at no extra
+# height at all.
+# 1.20 -> 1.35 -> BACK TO 1.20 (2026-09-15). The 1.35 was bought for ONE REASON ONLY: a
+# one-line "van der Waals contacts" at 22 pt ran off the canvas at 1.20, measured -0.145 in.
+# Wrapping the pair titles to two lines (IX_PAIR_YLABEL) halves the length that runs up the
+# figure and repays that debt outright, so the extra height is no longer owed and the frame
+# returns to the height it had before.
+#
+# MEASURED WITH THE WRAP IN PLACE, vertical margin on the contacts standalone -- the panel
+# that gates this, since it carries the longest y name: 1.00 -> +0.170, 1.10 -> +0.362,
+# 1.20 -> +0.555, 1.35 -> +0.844. Even 1.00 clears now. 1.20 is kept because it is the
+# height that was settled on earlier, not because anything below it fails.
+#
+# WIDTH CANNOT SUBSTITUTE FOR THIS. The title is rotated 90 degrees, so its length runs UP
+# the figure; a wider frame buys the y name nothing at all.
+IX_PAIR_TALL = 1.20
+# The method names' size, PAIR-ONLY and deliberately not IX_LEGEND_SIZE: that constant is
+# shared with fig-interaction-legend and _interaction_pair_legend, and retyping it for this
+# figure's geometry would silently retype the standalone key as well.
+#
+# THE SAME SIZE AS THE Y AXIS TITLE, on request (2026-09-15): this must equal
+# IX_PAIR_TITLE_FS. It is written as a literal rather than as that name because TITLE_FS is
+# defined BELOW this line, and referring to it here would raise at import. CHANGE THE TWO
+# TOGETHER -- a title moved on its own silently leaves the method names behind.
+#
+# The road here: 10.0 while the names were upright, because upright names had to fit side by
+# side inside one method's pitch and the frame had been narrowed to 0.8x. Rotating them 30
+# degrees removed that constraint entirely -- a diagonal label runs off its own tick instead
+# of competing for its neighbour's space -- so the size became free to follow the title.
+#
+# IT COSTS AXES HEIGHT, and the standalone pays about twice as much because one band of
+# names sits on half the height: at the 19.30 in frame, 18.5 gives stacked 8.816 x 3.169 and
+# standalone 8.697 x 2.498, 21.0 gives 8.784 x 3.098 and 8.587 x 2.357.
+#
+# BUT THE CEILING IS THE Y TITLE, NOT THE AXES. The y name is rotated 90 degrees, so its
+# LENGTH runs up the figure: "van der Waals contacts" is 3.4 in at 21 pt against a 3.1 in
+# axes, and matplotlib centres it on the axes and lets the overflow run off the canvas.
+# Measured top margin on the stacked frame: 18.5 -> +0.146 in, 19.5 -> +0.049, 20.0 ->
+# +0.004, 20.5 -> -0.043 CLIPPED, 21.0 -> -0.092 CLIPPED. 19.5 is the largest size with a
+# margin that survives rounding; 20.0's four thousandths of an inch is one pixel.
+#
+# CHECK THIS ON THE RENDERED PIXELS. fig.get_tightbbox() reported "no clipping" at 21.0 AND
+# at 23.0, both of which cut the title off at row 0 of the raster. Measure the y label's own
+# window extent against the figure height, or read the PNG.
+#
+# DO NOT check these for collisions with get_window_extent: it returns the AXIS-ALIGNED box
+# of a rotated label, and neighbouring diagonal labels overlap those boxes while their ink
+# passes cleanly between. It reports collisions at sizes that are demonstrably fine.
+# 19.5 -> 22.0 (2026-09-15). IT MOVES WITH THE TITLE, per the rule above: the two were
+# already EQUAL at 19.5 -- measured on the rendered canvas, not merely equal in the source --
+# so raising the title on its own would have left the names behind and broken that rule.
+IX_PAIR_NAME_FS = 22.0
+# THE PAIR FIGURES' OWN AXIS WEIGHT AND Y NAME SIZE (2026-09-15), heavier than the ecdf's.
+# _interaction_axis_weight defaults to the ecdf's exact numbers -- spine and tick 1.1, y name
+# PCSZ_LABEL_FS -- and contacts/hbonds MUST keep them, since being indistinguishable from
+# ecdf-by-size-all is the whole point of that function. These are passed by the pair panel
+# alone so the siblings are untouched.
+#
+# 2.2 IS THE JSD SUMMARY'S, TAKEN DELIBERATELY (2026-09-15). Weight has to be read against
+# the canvas it sits on: this figure is 19.10 in wide, the widest in the set, so at 1.6 it
+# was the THINNEST of the three by the measure that matters -- 0.084 pt/in against the JSD
+# summary's 0.165 and the clash box's. Matching JSD's absolute 2.2 brings it to 0.115 pt/in,
+# most of the way there without going to the full column-scaled 3.15.
+#
+# The ladder this repo has, for whoever tunes it next: ecdf 1.1, the house default AXIS_LW
+# 1.35, the clash box's PCSZ_CBOX_AXIS_LW 1.0 (a narrow canvas, so a small number), the JSD
+# summary's 2.2 and the rotatable-bond grid's 2.0. Compare pt/in, not pt.
+#
+# 18.5 IS SAFE, MEASURED. Raising this family's y name from 13 to 16.1 once truncated the
+# H-bond titles to "...by the liga" on the fixed dpi-220 frame, so it was swept before being
+# changed: at 16.1/17.5/18.5/19.5/21.0 nothing leaves the frame in either the standalone or
+# the stacked figure, and the axes lose 0.06 in of width across that whole range.
+IX_PAIR_AXIS_LW = 2.2
+# 19.5 -> 22.0 (2026-09-15), ON REQUEST, AND IX_PAIR_NAME_FS MOVES WITH IT. The ceiling is
+# the rotated y name's clearance, which is bought either with IX_PAIR_TALL or by wrapping the
+# name -- see IX_PAIR_YLABEL, which is what actually paid for this size.
+#
+# THE OLD WARNING HERE SAID "22.0 clips at the 1.20 frame by 0.145 in". That was measured on
+# a ONE-LINE title and is no longer what this figure draws: with the two-line names the same
+# frame clears by +0.555 in. Re-run the height sweep before raising this again, and do not
+# trust fig.get_tightbbox() for it -- it reported no clipping at sizes that were visibly cut.
+IX_PAIR_TITLE_FS = 22.0
+# The y numbers. 14.0 is the house default -- furniture()'s labelsize -- rather than a number
+# picked by eye, and it replaces the ecdf's 11, which read small once the names and the title
+# both went to 18.5. Swept before changing: 11 -> 15 costs the axes 0.6 % of their width and
+# nothing at all in height or row gap, so this size is essentially free and can go further.
+# 14.0 -> 16.5 (2026-09-15), on request. The sweep recorded above still holds -- the y
+# numbers cost axes WIDTH and nothing in height -- so this one does not touch the title's
+# vertical clearance, which is the only thing that clips in this figure.
+IX_PAIR_TICK_FS = 16.5
+# THE GAP BETWEEN THE Y NAME AND ITS AXIS, DOUBLED ON REQUEST (2026-09-15): 10 -> 20 points.
+# PAIR-ONLY, and it has to be. _interaction_frame sets labelpad=10 and is called by BOTH
+# sibling panel forms as well as this one, so doubling it there would push the y name out on
+# contacts-all, hbonds-all and both cores -- six figures that were not asked to move.
+#
+# IT COSTS AXES WIDTH, NOT CLEARANCE. tight_layout measures the label with its pad, so the
+# extra 10 points (0.139 in) is taken out of the panel rather than pushing the title off the
+# left edge; the title's own horizontal margin is unchanged. Measure both after changing it.
+IX_PAIR_LABELPAD = 20
+# A FIXED Y RANGE FOR ONE PANEL, PAIR-ONLY (2026-09-15): kind -> (top, tick step).
+# _interaction_frame sizes every panel to its own data (reach * IX_HEAD_BARE), which lets the
+# van der Waals violins run to 32 on the strength of a few tails while the mass sits under
+# 15. Cutting that panel at 25 spends the height on the part of the distribution a reader is
+# comparing. THE TAILS ARE CLIPPED, NOT DROPPED -- the bodies are drawn before this runs, so
+# the data is unchanged and only the view is cropped.
+#
+# ONLY VdWContact IS LISTED, DELIBERATELY. Hydrophobic tops out near 13, so the same 25 would
+# leave its upper half empty and squeeze a median of 1-2 into a sliver; it keeps its own
+# scale. A kind absent from this map is sized by the frame exactly as before.
+# kind -> (ylim top, topmost tick, tick step). THE LIMIT AND THE TOP TICK ARE SEPARATE
+# (2026-09-15) and both exist to fix the same thing. Cutting at exactly 25 put the last tick
+# ON the top spine, so half of the "25" label sat outside the axes, tight_layout reserved the
+# overhang, and the contacts panel came out 0.086 in SHORTER than the H-bond panel it is
+# placed next to -- a size difference created purely by a tick label. Raising the limit to 26
+# pulls the label inside, and THAT is what fixed it -- the two panels measure the same
+# 3.0671 in again. The label is kept; only the limit does the work. If the top tick is ever
+# moved back onto the limit, expect the panel to lose height to the overhang again.
+IX_PAIR_YCUT = {"VdWContact": (26, 25, 5)}
+IX_SPLIT_W = 1.60                # the full split body: left half generated, right redocked
+# 0.50, NOT THE 1.15 THE ADJACENT LAYOUT USED (2026-09-15). The split is only worth having
+# if the body gets the room the two old columns had between them, and a gap sized for
+# separating two whole violins wastes it: at 1.15 each half measured 0.347 in, THINNER than
+# the 0.411 in single violin it replaced, because 1.60 of ink in a 2.75 pitch is 58 % of the
+# slot where the old pair filled 83 %. At 0.50 each half is 0.437 in and the worst label gap
+# is still 0.181 in, comfortably over the 0.10 floor.
+#
+# THE SLACK GOES INTO THE BODY, NOT INTO A NARROWER FIGURE. Pulling IX_PAIR_ASPECT down
+# instead spends it on nothing a reader can see and collapses the labels quickly -- 5.60
+# measures a 0.064 in gap, already under the floor.
+IX_GROUP_GAP = 0.50              # between one method and the next
+# Where each half's median dot and IQR bar sit, as a share of IX_SPLIT_W off the centre
+# spine. Far enough in to read as belonging to its own half, not so far that it leaves the
+# body at a method whose distribution is narrow.
+IX_SPLIT_STAT_OFF = 0.18
 IX_HATCH = "////"
 # Neutral grey for the two condition swatches: the legend here names the POSE, not the
 # method, and giving it one of the method colours would say the opposite.
 IX_SWATCH = "#9aa0a8"
 
 
+# THE PAIR FIGURES' Y NAMES, WRAPPED TO TWO LINES (2026-09-15), AND PAIR-ONLY.
+# IX_TYPE is read by _interaction_panels as well -- the sibling contacts-all and hbonds-all
+# figures and both of their cores -- so wrapping the strings where they are DEFINED would
+# re-break the titles on six figures that were never asked to change. This maps the same
+# keys to a two-line spelling and is consulted only by _interaction_pair_panel. A kind
+# missing here falls back to IX_TYPE's own name, so IX_TYPES stays the single source of
+# which kinds exist and adding one cannot raise here.
+#
+# ALL FOUR BREAK, AND EACH BREAKS BEFORE ITS LAST WORD. The stacked figure puts contacts
+# above H-bonds, so titles with unequal line counts would hang at different heights against
+# axes aligned to 0.0000 in -- exactly the ragged edge fig.align_ylabels was added to remove.
+# Keeping every title two lines is what preserves that alignment.
+IX_PAIR_YLABEL = {
+    "VdWContact":  "van der Waals\ncontacts",
+    "Hydrophobic": "Hydrophobic\ncontacts",
+    "HBAcceptor":  "H-bonds\nacceptor",
+    "HBDonor":     "H-bonds\ndonor",
+}
+
+
 def _interaction_pair_positions():
-    """x for each (arm, series), pairs tight and methods apart."""
-    xs, x = [], 1.0
-    for _ in IX_PAIR_ARMS:
-        xs += [x, x + IX_PAIR_GAP + IX_VIOLIN_W]
-        x = xs[-1] + IX_GROUP_GAP
-    return xs
+    """x for each ARM -- one slot per method, the two conditions split inside it.
+
+    One position per arm, not two (2026-09-15): the conditions are halves of a single body
+    now, so they share a centre rather than sitting at their own x."""
+    pitch = IX_SPLIT_W + IX_GROUP_GAP
+    return [1.0 + i * pitch for i in range(len(IX_PAIR_ARMS))]
 
 
 def _interaction_pair_load():
@@ -733,50 +997,91 @@ def _interaction_pair_check(rows):
 
 
 def _interaction_pair_bodies(ax, vals, cols, xs):
-    """Violins at `xs` rather than at 1..n, hatched on the redocked column."""
-    parts = ax.violinplot(vals, positions=xs, showextrema=False, widths=IX_VIOLIN_W,
-                          bw_method=lambda k: IX_KDE_BW / np.std(k.dataset))
-    for i, (body, col) in enumerate(zip(parts["bodies"], cols)):
-        body.set(facecolor=col, alpha=IX_BODY_ALPHA, edgecolor=col, linewidth=1.2)
-        if i % 2:
-            body.set_hatch(IX_HATCH)
-    for x, v in zip(xs, vals):
-        q1, med, q3 = np.percentile(v, [25, 50, 75])
-        ax.vlines(x, q1, q3, color=INK, lw=IX_IQR_LW, zorder=3)
-        ax.plot(x, med, "o", color="white", ms=IX_MED_MS, zorder=4)
+    """One SPLIT violin per method: left half the generated pose, right half the redocked.
+
+    `vals` is still flat and interleaved -- gen then docked for each arm -- so vals[2i] and
+    vals[2i+1] are the two halves of the body at xs[i]. `cols` is one colour per ARM.
+
+    HOW THE HALF IS MADE. violinplot has no split, so each half is drawn as a whole violin
+    at the same x and then its path is CLIPPED to one side of that x. Clipping the vertices
+    rather than re-deriving the KDE keeps both halves on exactly the shared spine, and keeps
+    the bandwidth rule identical to the one every other violin in this family uses."""
+    for i, (x, col) in enumerate(zip(xs, cols)):
+        for half, v in enumerate((vals[2 * i], vals[2 * i + 1])):
+            part = ax.violinplot([v], positions=[x], showextrema=False, widths=IX_SPLIT_W,
+                                 bw_method=lambda k: IX_KDE_BW / np.std(k.dataset))
+            body = part["bodies"][0]
+            vtx = body.get_paths()[0].vertices
+            lo, hi = (-np.inf, x) if half == 0 else (x, np.inf)
+            vtx[:, 0] = np.clip(vtx[:, 0], lo, hi)
+            # THE ALPHA IS BAKED INTO THE FACE, NOT SET ON THE ARTIST (2026-09-15). An
+            # artist-level alpha applies to the EDGE too, and matplotlib draws a hatch in the
+            # EDGE colour -- so the redocked half's slashes were being drawn in the body's own
+            # colour at the body's own 0.55 opacity, on top of the fill they sat on, and were
+            # effectively invisible. Measured before the fix: face and edge were the identical
+            # RGBA (0.604, 0.627, 0.651, 0.55).
+            #
+            # _interaction_pair_blocks NEVER HAD THIS BUG and is the pattern copied here: it
+            # passes an RGBA face and an opaque edgecolor, which is exactly why the H-bond
+            # panels showed their slashes while the violins beside them did not.
+            body.set(facecolor=IX_TO_RGB(col) + (IX_BODY_ALPHA,), edgecolor=col,
+                     linewidth=1.2)
+            if half:
+                body.set_hatch(IX_HATCH)
+            # The stats go INSIDE their own half, offset off the spine -- drawn on the
+            # centre they would be one mark for two distributions.
+            off = (-1 if half == 0 else 1) * IX_SPLIT_STAT_OFF * IX_SPLIT_W
+            q1, med, q3 = np.percentile(v, [25, 50, 75])
+            ax.vlines(x + off, q1, q3, color=INK, lw=IX_IQR_LW, zorder=3)
+            ax.plot(x + off, med, "o", color="white", ms=IX_MED_MS, zorder=4)
 
 
 def _interaction_pair_blocks(ax, vals, cols, xs):
-    """The boxen panel's letter-value stack at `xs`, hatched on the redocked column."""
+    """The boxen panel's letter-value stack, SPLIT the way the violins are: each band is
+    half its full width, generated on the left of the spine and redocked on the right.
+
+    `vals` is flat and interleaved as in _interaction_pair_bodies; `cols` is one per ARM."""
     reach = 0.0
-    for i, (x, v, col) in enumerate(zip(xs, vals, cols)):
-        for lo, hi, d in _interaction_letter_bands(v):
-            w = IX_VIOLIN_W / 2 ** d
-            face = _interaction_tint(col, IX_BOXEN_LIGHT * d / (IX_BOXEN_K - 1)) \
-                + (IX_BODY_ALPHA,)
-            # THE METHOD'S OWN COLOUR, as the violins beside it already use (2026-09-14):
-            # _interaction_pair_bodies strokes each body in `col`, so the blocks stroking in
-            # the neutral AXIS grey made the two panels of one figure look like two
-            # conventions. The face is a tint of the same hue, so the stroke reads as the
-            # saturated edge of its own block rather than as a foreign rule.
-            # IT ALSO FIXES THE HATCH. matplotlib draws a hatch in the patch's EDGE colour,
-            # so the redocked column's bars were grey here and method-coloured in the violin
-            # panel -- the same encoding drawn two ways in one figure.
-            ax.add_patch(IX_RECTANGLE((x - w / 2, lo), w, hi - lo, zorder=3 + d,
-                                      facecolor=face, edgecolor=col,
-                                      linewidth=IX_BOXEN_EDGE_LW,
-                                      hatch=IX_HATCH if i % 2 else None))
-            reach = max(reach, hi)
-        ax.plot(x, np.median(v), "o", color="white", ms=IX_MED_MS,
-                zorder=3 + IX_BOXEN_K)
+    for i, (x, col) in enumerate(zip(xs, cols)):
+        for half, v in enumerate((vals[2 * i], vals[2 * i + 1])):
+            for lo, hi, d in _interaction_letter_bands(v):
+                # Half of the full band width, so the two conditions together occupy the
+                # same envelope one undivided block used to.
+                hw = IX_SPLIT_W / 2 ** d / 2
+                x0 = x - hw if half == 0 else x
+                face = _interaction_tint(col, IX_BOXEN_LIGHT * d / (IX_BOXEN_K - 1)) \
+                    + (IX_BODY_ALPHA,)
+                # THE METHOD'S OWN COLOUR, as the violins beside it already use (2026-09-14):
+                # _interaction_pair_bodies strokes each body in `col`, so the blocks stroking
+                # in the neutral AXIS grey made the two panels of one figure look like two
+                # conventions. The face is a tint of the same hue, so the stroke reads as the
+                # saturated edge of its own block rather than as a foreign rule.
+                # IT ALSO FIXES THE HATCH. matplotlib draws a hatch in the patch's EDGE
+                # colour, so the redocked bars were grey here and method-coloured in the
+                # violin panel -- the same encoding drawn two ways in one figure.
+                ax.add_patch(IX_RECTANGLE((x0, lo), hw, hi - lo, zorder=3 + d,
+                                          facecolor=face, edgecolor=col,
+                                          linewidth=IX_BOXEN_EDGE_LW,
+                                          hatch=IX_HATCH if half else None))
+                reach = max(reach, hi)
+            off = (-1 if half == 0 else 1) * IX_SPLIT_STAT_OFF * IX_SPLIT_W
+            ax.plot(x + off, np.median(v), "o", color="white", ms=IX_MED_MS,
+                    zorder=3 + IX_BOXEN_K)
     return reach
 
 
-def _interaction_pair_panel(ax, kind, rows, xs):
+def _interaction_pair_panel(ax, kind, rows, xs, part=None):
+    # The form and the fallback name come from the shared map; the WRAPPED name is this
+    # figure's own, because IX_TYPE is the siblings' too. See IX_PAIR_YLABEL.
     ylabel, form = IX_TYPE[kind]
+    ylabel = IX_PAIR_YLABEL.get(kind, ylabel)
+    # Flat and interleaved: gen then docked for each arm, so the drawing helpers read
+    # vals[2i] and vals[2i+1] as the two halves of the body at xs[i]. ONE colour per arm --
+    # the halves of a split body are the same method and so the same hue; what tells them
+    # apart is the side and the hatch.
     vals = [_interaction_counts(rows[arm, key], kind)
             for arm in IX_PAIR_ARMS for key, _ in IX_SERIES]
-    cols = [color(IX_COLOR_KEY.get(arm, arm)) for arm in IX_PAIR_ARMS for _ in IX_SERIES]
+    cols = [color(IX_COLOR_KEY.get(arm, arm)) for arm in IX_PAIR_ARMS]
     ax.set_facecolor("white")
 
     if form == "violin":
@@ -789,13 +1094,46 @@ def _interaction_pair_panel(ax, kind, rows, xs):
 
     # _interaction_frame lays out the shared furniture, then the x is rebuilt: its limits
     # come from these positions rather than from a count of columns, and the category labels
-    # go back on -- one per PAIR, centred between the two columns. See the banner above.
+    # go back on -- one per METHOD, on the split body's own spine. See the banner above.
     _interaction_frame(ax, vals, ylabel, reach * IX_HEAD_BARE, caption=False, cells=cells)
-    ax.set_xlim(xs[0] - IX_VIOLIN_W, xs[-1] + IX_VIOLIN_W)
-    ax.set_xticks([(xs[i] + xs[i + 1]) / 2 for i in range(0, len(xs), 2)])
-    ax.set_xticklabels([_interaction_display(IX_COLOR_KEY.get(a, a))
-                        for a in IX_PAIR_ARMS],
-                       fontsize=IX_LEGEND_SIZE, color=INK)
+    # The siblings' axis weight and type (2026-09-15), so the three interaction figures
+    # carry one look. Applied BEFORE the x axis is rebuilt: it sets a tick labelsize and
+    # colour for both axes, and the method names below want their own size and INK.
+    _interaction_axis_weight(ax, IX_PAIR_AXIS_LW, IX_PAIR_TITLE_FS, IX_PAIR_TICK_FS)
+    # BOTH LINES CENTRED (2026-09-15). The y name is rotated 90 degrees, so a two-line
+    # title's lines stack ACROSS the axis rather than along it; on the default the shorter
+    # line hangs off one end and the block reads as leaning away from the spine.
+    ax.yaxis.label.set_multialignment("center")
+    # Set AFTER _interaction_frame, which applies the shared labelpad=10. See IX_PAIR_LABELPAD.
+    ax.yaxis.labelpad = IX_PAIR_LABELPAD
+    # The fixed range, for the kinds that ask for one. AFTER _interaction_frame, which has
+    # already set a data-derived ylim, and keeping that function's -0.02 * top baseline so the
+    # zero line sits where it does on every other panel. See IX_PAIR_YCUT.
+    cut = IX_PAIR_YCUT.get(kind)
+    if cut is not None:
+        cut_top, tick_top, cut_step = cut
+        ax.set_ylim(-0.02 * cut_top, cut_top)
+        # EVERY TICK KEEPS ITS LABEL, 25 INCLUDED. It was blanked briefly to stop it
+        # overhanging the top spine; the 26 limit already pulls it inside, so the blanking
+        # was redundant and the number is back. See IX_PAIR_YCUT.
+        ax.set_yticks(list(range(0, tick_top + 1, cut_step)))
+    ax.set_xlim(xs[0] - IX_SPLIT_W, xs[-1] + IX_SPLIT_W)
+    ax.set_xticks(xs)
+    # ROTATED, AND ONLY ONE PART NAMES THEM (2026-09-15) -- the siblings' rule, IX_NAMED_PARTS,
+    # brought over here so the two pair figures can stack. `part` None keeps the names, for a
+    # caller drawing one panel on its own.
+    labels = ax.set_xticklabels([_interaction_display(IX_COLOR_KEY.get(a, a))
+                                 for a in IX_PAIR_ARMS],
+                                fontsize=IX_PAIR_NAME_FS, color=INK,
+                                rotation=30, ha="right", rotation_mode="anchor")
+    if part is not None and part not in IX_NAMED_PARTS:
+        # DRAWN BUT INVISIBLE, not absent. tight_layout measures a text's extent whatever its
+        # colour, so colouring them "none" reserves the exact band of height they would have
+        # taken -- which is what keeps this panel's axes the same height as the named one it
+        # sits above. Dropping the labels instead hands that band to the axes and the two
+        # rows come out carrying different vertical scales for the same categories.
+        for t in labels:
+            t.set_color("none")
     ax.tick_params(axis="x", length=0, pad=6)
     return form
 
@@ -824,24 +1162,26 @@ def _interaction_pair_legend(fig, form):
 
 def _interaction_pair_panels(out, part, kinds, rows):
     xs = _interaction_pair_positions()
-    fig, axes = plt.subplots(1, 2, figsize=(IX_FIG_W, IX_FIG_H), dpi=220)
+    fig, axes = plt.subplots(1, 2, dpi=220,
+                             figsize=(IX_PAIR_ASPECT * IX_FIG_H,
+                                      IX_FIG_H * IX_PAIR_TALL))
     fig.patch.set_facecolor("white")
     form = None
     for ax, kind in zip(axes, kinds):
-        form = _interaction_pair_panel(ax, kind, rows, xs)
+        form = _interaction_pair_panel(ax, kind, rows, xs, part)
     # NO LEGEND, and so no reserved strip (2026-09-14): the condition key moved out to
     # fig-interaction-legend, which names the whole family in one image rather than each
     # figure naming a part of it. The rect that used to hold the key back would leave an
     # empty band under the panels.
     fit(fig, pad=0.5, w_pad=2.2)
-    # `core` is in the filename because it is the only variant this figure has and the
-    # family's rule is that the variant is never only in the content: the redocking covers
-    # the core three arms, since the published baselines' poses would each need their own
-    # ~700 docks and the comparison this section is making is between ours and VoxBind's.
-    # interaction_<part>_pair_core, not interaction_pair_<part>_core (2026-09-14): the part
+    # `all`, not `core` (2026-09-15): the redocking now covers every arm, and the family's
+    # rule is that the variant is never only in the content. It was `core` while the
+    # published baselines' poses would each have needed their own ~1,000 docks; they have
+    # since been docked, so the name would otherwise be a lie about what is in the figure.
+    # interaction_<part>_pair_all, not interaction_pair_<part>_all (2026-09-14): the part
     # is what the figure draws and the pair is how it draws it, so the files of one part sort
-    # together -- contacts-all, contacts-core, contacts-pair-core, then the hbonds three.
-    save(fig, out, f"interaction_{part}_pair_core")
+    # together -- contacts-all, contacts-core, contacts-pair-all, then the hbonds three.
+    save(fig, out, f"interaction_{part}_pair_all")
 
 
 # ══════════════════════════════════════════════════════════════════════════════════
@@ -923,7 +1263,7 @@ def _interaction_pair_row(arm, kind, rows):
 @figure("fig-interaction-pair", folder="fig-posecheck/interaction",
         needs=("interactions_<Arm>-gen.json", "interactions_<Arm>-docked.json"))
 def draw_interaction_pair(out):
-    """Generated vs redocked, paired, for the core three arms — contacts and H-bonds."""
+    """Generated vs redocked, paired, for every arm — contacts and H-bonds."""
     use_style()
     rows = _interaction_pair_load()
     _interaction_pair_check(rows)
@@ -952,3 +1292,97 @@ def draw_interaction_pair(out):
     print("\n  mean per molecule, generated -> redocked and the change. The crystal ligands "
           "are\n  the control: they are already in a measured pose, so redocking should "
           "move them\n  least.")
+
+
+# ══════════════════════════════════════════════════════════════════════════════════
+# fig-interaction-pair-stacked — both parts of the pair figure in one frame
+# ══════════════════════════════════════════════════════════════════════════════════
+# The two pair figures were always meant to stack: contacts draws its method names in
+# colour "none" and H-bonds draws them for both, which is only worth doing if something
+# puts one above the other. This is that something -- the same four panels, in one image,
+# so the whole comparison is a single figure rather than two that a document has to be
+# trusted to keep together and in order.
+#
+# NOTHING ABOUT THE PANELS CHANGES. It reuses _interaction_pair_panel, so the split bodies,
+# the colours, the hatch and the axis weight are the ones the standalone figures draw; only
+# the frame is this figure's own. A panel that looked different here would be a second
+# convention for the same measurement.
+IX_STACK_PAD = 0.06              # inches of air outside the ink, all four sides
+IX_STACK_ROW_GAP = 0.10          # inches between the two rows -- "almost none", as asked
+
+
+def _interaction_stack_layout(fig, axes):
+    """Place the stacked grid BY HAND rather than by tight_layout.
+
+    WHY NOT fit(). tight_layout sizes a row to its own content, so the row carrying the
+    method names would come out shorter than the one that does not -- and h_pad barely
+    touches it: measured 1.18 in of row gap at h_pad 1.4 and still 0.89 in at h_pad 0.0,
+    because the gap IS the name band and not padding. Setting the margins directly gives
+    both rows exactly the gridspec's height and puts the gap where it was asked for.
+
+    THE INSETS ARE MEASURED, NOT ASSUMED. `left` is the widest y name plus its tick labels
+    over all four panels (they differ: the contacts row needed 0.657 in and the H-bond row
+    0.559 in, and using the smaller would clip the wider one). `bottom` is what the rotated
+    names of the named row need. An inset is how far a panel's decorations overhang its own
+    box, so it does not depend on where that panel currently sits -- which is what makes it
+    safe to measure before the final placement.
+
+    wspace and hspace are fractions of the AXES size, and the axes size is the thing they
+    change, so the fraction that yields a wanted absolute gap has to be solved for:
+    gap = s*plot/(n + s)  =>  s = n*gap/(plot - gap)."""
+    fig.canvas.draw()
+    r = fig.canvas.get_renderer()
+    W, H = fig.get_size_inches()
+    flat = [ax for row in axes for ax in row]
+    left_in = max(ax.get_position().x0 * W - ax.get_tightbbox(r).x0 / fig.dpi
+                  for ax in flat)
+    bot_in = max(ax.get_position().y0 * H - ax.get_tightbbox(r).y0 / fig.dpi
+                 for ax in axes[-1])
+    left, bottom = (left_in + IX_STACK_PAD) / W, (bot_in + IX_STACK_PAD) / H
+    right, top = 1.0 - IX_STACK_PAD / W, 1.0 - IX_STACK_PAD / H
+    plot_w, plot_h = (right - left) * W, (top - bottom) * H
+    # The columns are separated by exactly the room the right column's own y name needs.
+    col_gap = left_in + IX_STACK_PAD
+    fig.subplots_adjust(
+        left=left, right=right, top=top, bottom=bottom,
+        wspace=len(axes[0]) * col_gap / (plot_w - col_gap),
+        hspace=len(axes) * IX_STACK_ROW_GAP / (plot_h - IX_STACK_ROW_GAP),
+    )
+
+
+@figure("fig-interaction-pair-stacked", folder="fig-posecheck/interaction",
+        needs=("interactions_<Arm>-gen.json", "interactions_<Arm>-docked.json"))
+def draw_interaction_pair_stacked(out):
+    """Generated vs redocked, paired, every arm — contacts above H-bonds in one frame."""
+    use_style()
+    rows = _interaction_pair_load()
+    _interaction_pair_check(rows)
+    xs = _interaction_pair_positions()
+    # Two rows of the single figure's frame. The height doubles and the width does not: the
+    # rows share one x axis of methods, which is the point of stacking them.
+    fig, axes = plt.subplots(len(IX_PARTS), 2,
+                             figsize=(IX_PAIR_ASPECT * IX_FIG_H,
+                                      len(IX_PARTS) * IX_FIG_H * IX_PAIR_TALL),
+                             dpi=220)
+    fig.patch.set_facecolor("white")
+    for row, (part, kinds) in enumerate(IX_PARTS):
+        for ax, kind in zip(axes[row], kinds):
+            _interaction_pair_panel(ax, kind, rows, xs, part)
+    # THE UNNAMED ROW DROPS ITS LABELS OUTRIGHT, which the STANDALONE figures must never do.
+    # There the names are drawn in colour "none" so tight_layout still measures them and the
+    # two separate figures keep the same axes height. Inside ONE figure the row heights come
+    # from the gridspec instead, so that reservation buys nothing and costs the entire band
+    # -- 0.889 in of empty space between the rows, measured.
+    for ax in axes[0]:
+        ax.set_xticklabels([])
+    # THE Y NAMES LINE UP ACROSS THE ROWS (2026-09-15). Each one is placed off its own tick
+    # labels, and the rows carry different numbers -- two digits on the contacts row, one on
+    # the H-bond row -- so left to itself the upper title sits further out than the lower and
+    # the two read as a ragged edge even though the AXES are aligned to 0.0000 in. This pins
+    # them to a common x. It runs BEFORE the layout because _interaction_stack_layout sizes
+    # the left margin from the measured label overhang, which this changes.
+    fig.align_ylabels([ax for row in axes for ax in row])
+    _interaction_stack_layout(fig, axes)
+    save(fig, out, "interaction_pair_all")
+    print(f"  {len(IX_PARTS)} x 2 panels · {len(IX_PAIR_ARMS)} arms · "
+          f"names on {', '.join(IX_NAMED_PARTS)} only")

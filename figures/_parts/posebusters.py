@@ -1,7 +1,8 @@
 
 
 # ════════════════════════════════════════════════════════════════════════════════
-# fig-posebusters-{valid-per-atom,valid-heatmap,check-failures,sucos-ecdf,sucos-per-atom}
+# fig-posebusters-{valid-per-atom,valid-heatmap,group-bars,check-failures,sucos-ecdf,
+#                  sucos-per-atom}
 # ════════════════════════════════════════════════════════════════════════════════
 # SIZE IS THE CONFOUND, SO SIZE IS THE X AXIS. Every PoseBusters check gets harder as the
 # molecule grows -- more rings to pucker, more angles to strain, more atoms to reach the
@@ -60,13 +61,22 @@ PB_FAIL_PANELS = (
 # group because the group is a partition of `valid` and dropping them would make the
 # columns stop multiplying out to it -- not because they carry information.
 #
-# `Ring pucker & internal strain` is not one of the four groups this was asked for, and it
-# exists because the partition has to be complete: `non-aromatic_ring_non-flatness` is the
-# single worst check for the voxel arms (21-23%), and a breakdown that left it out would
-# show CoDE passing every column it draws while failing 33% of molecules.
+# `Planarity`, `Ring pucker` and `Self-clash & energy` are not among the four groups this was
+# first asked for; they exist because the partition has to be complete, and they are cut this
+# way BY WHAT THE CHECK WANTS rather than by where PoseBusters lists it (2026-09-15, on
+# request). `aromatic_ring_flatness` and `double_bond_flatness` both fail when something that
+# should be FLAT is not, so they are one column; `non-aromatic_ring_non-flatness` is the exact
+# opposite test -- `check_nonflat: True` flips the comparison, and it fails when a saturated
+# 6-ring comes out PLANAR -- so it stands alone. It is the single worst check for the voxel
+# arms (21-23% fail), and it was previously buried in a four-check column called `Strain.`,
+# where its 78.9 read as 74.5 and collided in name with the PoseCheck strain-energy figures,
+# which measure something else entirely. What is left, `internal_steric_clash` and
+# `internal_energy`, is the ligand against ITSELF rather than against the protein -- hence
+# `Self-clash & energy`, beside `Protein clash & overlap`.
 PB_GROUPS = (
     ("Bond geometry", ("bond_lengths", "bond_angles")),
-    ("Aromatic ring flatness", ("aromatic_ring_flatness",)),
+    ("Planarity", ("aromatic_ring_flatness", "double_bond_flatness")),
+    ("Ring pucker", ("non-aromatic_ring_non-flatness",)),
     ("Valence & connectivity", ("sanitization", "all_atoms_connected", "inchi_convertible",
                                 "no_radicals")),
     ("Protein clash & overlap", ("minimum_distance_to_protein", "volume_overlap_with_protein",
@@ -77,9 +87,7 @@ PB_GROUPS = (
                                  "volume_overlap_with_organic_cofactors",
                                  "volume_overlap_with_inorganic_cofactors",
                                  "volume_overlap_with_waters")),
-    ("Ring pucker & internal strain", ("non-aromatic_ring_non-flatness",
-                                       "internal_steric_clash", "internal_energy",
-                                       "double_bond_flatness")),
+    ("Self-clash & energy", ("internal_steric_clash", "internal_energy")),
 )
 PB_HEAT_COL0 = "PoseBusters valid"
 # THE RAMP IS THE DATA'S OWN RANGE: it ends at 100, a rate's ceiling, and starts at the
@@ -91,22 +99,133 @@ PB_HEAT_COL0 = "PoseBusters valid"
 # as in `all`. Scaling `core` to its own worst cell (CoDE's 67.5) would make our two arms
 # look as far apart as the eight are.
 PB_HEAT_VMAX = 100.0
-# THE COLOURBAR IS THE PER-ROTBOND GRID'S (2026-09-14, on request): vertical on the right,
-# shrink 0.92, aspect 38, RB_GRID_CBAR_PAD off the panel, numbers turned a quarter turn so
-# they read along the bar, no outline. Those constants are READ FROM THE ROTBOND FAMILY at
-# call time rather than copied here -- a part is pasted into draw.py above posecheck_rotbond,
-# so the names do not exist while this module executes, but they do by the time a figure is
-# drawn, and reading them is what keeps the two bars from drifting apart.
-# The colourmap is that grid's coolwarm REVERSED. In the strain grid warm means more strain,
-# i.e. worse; this cell is a PASS rate, so without the reversal the same red would mean good
-# here and bad there in two heat maps of the same eight methods.
-PB_HEAT_CMAP = "coolwarm_r"
-# Point sizes are NOT copied from the rotbond grid: that figure is three rows of nine panels
-# and carries 18 pt numbers, which on this 8.4 x 6.2 in map would tower over the 12.5 pt in
-# the cells. Same bar, this figure's scale.
-PB_HEAT_CBAR_FS, PB_HEAT_CBAR_TICK_FS = 13, 11.5
-PB_HEAT_ROW_H = 0.44             # inches per method row
+# THE COLOURBAR AND THE RAMP ARE THE HOUSE ONES (2026-09-14/15, on request): heat_colorbar()
+# and HEAT_CMAP from 00_core, the same pair the per-rotbond strain grid draws. Both used to
+# live in the rotbond family and be read across from here at call time; they moved up to the
+# shared section so neither figure owns the other's colours. One hue means the ramp needs no
+# reversal between the two -- darker is simply more of whatever the bar is named after, more
+# strain there and a higher pass rate here.
+# Luminance below which a cell's number is set in white instead of ink, so the text follows
+# the background (2026-09-15, on request) rather than being one colour throughout. 0.55 is
+# where the two swap places on this ramp: on #5F75E2 white is 4.1:1 against ink's 2.1:1,
+# while on #B4BEF0 it is ink 4.5:1 against white's 1.2:1. Around #8291E8 they are equal, and
+# that is where the threshold sits. It reads the FILL, never the value, so changing the ramp
+# moves the flip point with it.
+PB_HEAT_WHITE_TEXT_BELOW = 0.55
+# Point sizes are NOT copied from the rotbond grid, which is three rows of nine panels on a
+# 14.45 in canvas: same bar, this figure's scale. 13/11.5 x 1.3 with everything else.
+PB_HEAT_CBAR_FS, PB_HEAT_CBAR_TICK_FS = 20.5, 18
+# THE CELL SHAPE, 3 WIDE TO 2 TALL (2026-09-15, on request: square, then "2:3 정도"). It was
+# neither before -- at a fixed 8.83 in width a cell came out 1.07 x 0.92 on `core` and
+# 1.07 x 0.49 on `all`, so the same number sat in a near-square box in one variant and a
+# 2.2:1 letterbox in the other. Now the figure is built FROM the cell, so both variants draw
+# the same shape and `all` is simply the taller figure.
+# THE WIDTH IS THE HEADING'S (2026-09-15, on request), not a round number, and what sets it
+# is the widest ADJACENT PAIR rather than the widest heading: two neighbours each spend half
+# their width towards the gutter between them, so "Bond len." (1.116 in at 17 pt) beside
+# "Bond ang." (1.201) needs 1.159 plus a gutter, where "Bond ang." alone would only ask for
+# 1.20. 1.29 leaves that worst pair 0.13 in of white and every other pair more -- the
+# smallest column that still holds all eight headings on ONE line, which is what the short
+# forms were for. EVERY MEASUREMENT HERE MOVED WITH THE TYPE when the map's text went up 30%
+# (2026-09-15, on request): the column was 0.99 at 13 pt headings, and the gutter scaled with
+# it, 0.10 -> 0.13, so the map keeps the same proportions at the larger size rather than
+# getting tighter. The height follows from the ratio; "100.0" at 18 pt is 0.715 in, so a
+# number still keeps a clear margin in its cell.
+PB_HEAT_CELL_W = 1.29
+PB_HEAT_CELL_ASPECT = 2 / 3      # cell height / cell width -- what set_aspect() takes
+PB_HEAT_CELL_H = PB_HEAT_CELL_W * PB_HEAT_CELL_ASPECT
+# The numbers in the cells. 12.5 -> 14 when the cell came in (the number is what the figure is
+# read for, so it went the other way), then 14 -> 18 -> 21.5 with the 30% and 20% raises.
+PB_HEAT_NUM_FS = 21.5
+# The row names, which are not a tick label size any more: they match the headings, and both
+# are 13 x 1.3 x 1.2. Held in a constant rather than written at the call because the two have to
+# move together -- a map whose columns are named larger than its rows reads as two figures.
+PB_HEAT_LABEL_FS = 20.5
+# A tick per row and per column (2026-09-15, on request), where the block had none: the
+# spines are hidden and the cells are separated by white, so a long row had nothing tying its
+# name to it. They sit at the CELL CENTRES, with the labels, not on the cell edges. 4.5 x 1.3
+# with the type, so a tick stays the same fraction of the name it points at.
+PB_HEAT_TICK_LEN = 7.1
+# What the axes does NOT cover, in inches: the row names to its left plus the colourbar and
+# its name to the right, and the column headings above it. They size the canvas; set_aspect()
+# is what actually holds the cell shape, so an allowance being off costs a margin, never the
+# shape. Both moved with the type: 2.50 -> 3.75 over two raises, and the heading strip
+# 0.35 -> 0.75 while the headings were stacked, back to 0.55 now they are one line again.
+# THE SIDE ALLOWANCE IS DELIBERATELY OVER-GENEROUS: constrained layout under-reserves next to
+# a FIXED-ASPECT axes, and the symptom is the longest row name, VoxBind(sigma=0.9), starting
+# OFF the left edge of the canvas and losing its V. It has done that twice -- at 2.16 with
+# 13 pt names, and again at 2.50 once the map went to eight columns. The spare width cannot
+# change the cells: the block's width is what binds, so it becomes margin on the left, which
+# is where the names are. Checked by reading the tick labels' own bboxes back off the drawn
+# canvas rather than by eye: a clipped label is the one failure that survives a glance at the
+# PNG, because the eye reads "VoxBind" from the letters that are left.
+PB_HEAT_SIDE, PB_HEAT_HEAD = 3.75, 0.55
+# A little air under the bottom row (2026-09-15). The WIDTH is what binds under a fixed
+# aspect -- the side allowance above is deliberately generous -- so this does not change the
+# cells at all: it lengthens the canvas, and constrained layout centres the block in what is
+# left, which puts half of it under the last row. 0.24 buys about 26 px at 220 dpi. The top
+# margin looks bigger in the numbers only because the column headings are reserved inside it;
+# the white above the headings is the same 12 px the block has below it.
+PB_HEAT_FOOT = 0.24
+# The blank strip after the first column and the first row, in cell widths (2026-09-15, on
+# request: the ink rule alone did not read as a division). A rule marks a boundary; a gap
+# makes the block on either side of it a separate object, which is what the first column and
+# the first row are.
+PB_HEAT_GAP = 0.22
 PB_HEAT_WRAP = 12                # characters per line of a column heading
+# The headings sit at the row names' size, and the column width above is solved FOR this
+# number -- raise one and the other has to move. 13 x 1.3.
+PB_HEAT_HEAD_FS = PB_HEAT_LABEL_FS
+# Every heading now fits on one line at this width, which is the point of the short forms;
+# the wrap is the backstop that keeps a longer one from running into its neighbour instead of
+# silently overlapping it.
+# What a column is CALLED on the heat map (2026-09-15, on request). The keys are the group
+# names, which stay in full everywhere a number is read back -- the CSV headers, the bar
+# charts' axis labels, the README table. A heading here only has to say which column you are
+# in, and at full length six of them took three lines each and half the figure's height.
+PB_HEAT_SHORT = {
+    "PoseBusters valid": "Valid.",
+    "Bond geometry": "Bond.",
+    # The split pair. `Bond` IS DROPPED RATHER THAN THE HEADING STACKED (2026-09-15, on
+    # request: one line each). At 20.5 pt "Bond len." and "Bond ang." are 1.35 and 1.45 in,
+    # and side by side they ask for a 1.58 in column -- the cell would have to grow right back
+    # to the size the type raise was meant to shrink it against. Two lines fixed that and were
+    # asked to go; what is left is to drop the word both share. These are the only two columns
+    # on the map that could be a length or an angle OF anything else, they sit next to each
+    # other, and both are named in full in the CSV and in the bar chart. A newline in a short
+    # form would still be taken literally; everything without one goes through PB_HEAT_WRAP.
+    "Bond lengths": "Length.",
+    "Bond angles": "Angle.",
+    # The two ring columns are the pair a reader can mix up, and they are kept apart by the
+    # word that distinguishes them: `Planarity.` is what must be flat, `Pucker.` what must
+    # not, and they sit side by side so the opposition is visible. `Ring pucker.` in full is
+    # 1.118 in -- the widest heading on the map by a quarter inch, and next to `Planarity.`
+    # it alone would have pushed every column from 0.99 to 1.08. Named in full in the CSV and
+    # in the bar chart that draws the same group.
+    "Planarity": "Planarity.",
+    "Ring pucker": "Pucker.",
+    "Valence & connectivity": "Valence.",
+    "Protein clash & overlap": "Clash.",
+    # 1.451 in, wider than the 1.29 cell -- deliberately. What has to clear is the GAP to the
+    # heading beside it, and `Clash.` is 0.871, so the pair leaves 0.129 in of white, the same
+    # gutter every other pair gets. It overhangs its own column by 0.08 in each side, which is
+    # empty on the right (the colourbar's own margin) and is the narrow `Clash.` on the left.
+    "Self-clash & energy": "Self-clash.",
+}
+# The groups that get a bar chart of their own (2026-09-15, on request), one file each. The
+# others are left out because a bar chart of them says nothing a reader cannot already see:
+# `Valence & connectivity` is 100.0 for every set, `Planarity` is 99.5+ for everything except
+# AR, and `Self-clash & energy` moves over eight points across the whole field. `Ring pucker`
+# takes the slot the four-check `Ring pucker & internal strain` used to hold, and is the same
+# bar with the three passengers removed -- it was always the check that moved it. Order is
+# the heat map's, so a reader moving between them meets the groups in the same order.
+PB_GROUP_BARS = ("Bond geometry", "Protein clash & overlap", "Ring pucker")
+PB_GROUP_BAR_H = 0.42            # inches per method row
+# The axis runs the full 0-100 even though nothing is below 68. A bar's LENGTH is its value,
+# so it has to start at a true zero -- floored at 60 the same numbers would read as a
+# fourfold spread. At this range the differences are legible anyway: 70.4 against 100 is a
+# third of the axis.
+PB_GROUP_BAR_XLIM = (0, 109)
 PB_SUCOS_THRESHOLD = 0.4         # gen.yml's own value
 PB_BIN_COLS = ["n_molecules", "atoms_mean", "n_posebusters", "pb_valid_rate",
                "pb_valid_rate_size_standardized"]
@@ -361,13 +480,17 @@ def draw_posebusters_check_failures(out):
 
 
 # ── validity heat map ───────────────────────────────────────────────────────────
-def _posebusters_group_rates(rows, checked):
+def _posebusters_group_rates(rows, checked, columns=()):
     """(% passing each group, % valid, n scored) for one set of molecules.
 
     A GROUP IS PASSED WHEN THE MOLECULE FAILS NOTHING IN IT, which is per-molecule and not
     recoverable from the per-check rates: two checks each failing 5% of molecules are one
     column at 90% if they fail different molecules and at 95% if they fail the same ones.
-    That is also why the group columns do not multiply out to the `valid` column."""
+    That is also why the group columns do not multiply out to the `valid` column.
+
+    `columns` adds further (name, checks) pairs to rate the same way -- the heat map passes
+    its split of Bond geometry, which is a narrower cut of the same partition and not a group
+    in its own right."""
     scored = [r for r in rows if r["v"] is not None]
     n = len(scored)
     if not n:
@@ -377,79 +500,203 @@ def _posebusters_group_rates(rows, checked):
         raise KeyError(f"PoseBusters check outside PB_GROUPS: {sorted(seen - checked)} -- "
                        "add it to a group, or the heat map stops being a partition of `valid`")
     out = {}
-    for name, checks in PB_GROUPS:
+    for name, checks in tuple(PB_GROUPS) + tuple(columns or ()):
         want = set(checks)
         out[name] = 100 * sum(not (want & set(r["f"])) for r in scored) / n
     return out, 100 * sum(bool(r["v"]) for r in scored) / n, n
+
+
+# BOND GEOMETRY IS TWO COLUMNS ON THE MAP (2026-09-15, on request), one per check, because
+# the two come apart: TargetDiff passes 98.9% on lengths and 77.5% on angles, Pocket2Mol is
+# the other way round (89.6 / 98.0), and the single column averaged that away. PB_GROUPS is
+# left alone -- it is the partition `valid` is graded on and what the bar charts and the CSV's
+# `group` field mean -- so this is a cut WITHIN one group, listed here and nowhere else.
+PB_HEAT_SPLIT = {"Bond geometry": (("Bond lengths", ("bond_lengths",)),
+                                   ("Bond angles", ("bond_angles",)))}
+PB_HEAT_COLS = tuple(c for name, checks in PB_GROUPS
+                     for c in PB_HEAT_SPLIT.get(name, ((name, checks),)))
+
+
+def _posebusters_heat_norm(grid):
+    """One ramp for every PoseBusters figure: floored at the worst cell of the ALL-arms map.
+
+    Both map variants and all three bar charts take it, so a value is the same colour
+    wherever it is drawn -- which is the whole reason the bars gave up the method palette."""
+    return matplotlib.colors.Normalize(float(grid.min()), PB_HEAT_VMAX)
 
 
 def _posebusters_heatmap_grid(arms, p79_rows, refrows):
     """(column names, row labels, the rates, n per row) -- the map, before it is drawn."""
     series = [(REF_LABEL, refrows)] + [(lab, p79_rows[key]) for lab, key, _ in arms]
     checked = {c for _, checks in PB_GROUPS for c in checks}
-    cols = [PB_HEAT_COL0] + [name for name, _ in PB_GROUPS]
-    grid, ns = [], []
+    cols = [PB_HEAT_COL0] + [name for name, _ in PB_HEAT_COLS]
+    grid, ns, bars = [], [], {name: [] for name, _ in PB_GROUPS}
     for lab, rows in series:
-        groups, valid, n = _posebusters_group_rates(rows, checked)
-        grid.append([valid] + [groups[name] for name, _ in PB_GROUPS])
+        groups, valid, n = _posebusters_group_rates(rows, checked, PB_HEAT_COLS)
+        grid.append([valid] + [groups[name] for name, _ in PB_HEAT_COLS])
         ns.append(n)
-    return cols, [lab for lab, _ in series], np.array(grid, float), ns
+        # The GROUP rates travel alongside the map's columns: Bond geometry is two cells here
+        # but stays one bar, and a group's rate is per-molecule, so it cannot be recovered
+        # from the two halves after the fact.
+        for name, _ in PB_GROUPS:
+            bars[name].append(groups[name])
+    return (cols, [lab for lab, _ in series], np.array(grid, float), ns,
+            {k: np.array(v, float) for k, v in bars.items()})
 
 
 def _posebusters_heatmap_panel(out, variant, built, norm):
-    cols, labels, grid, ns = built
+    cols, labels, grid, ns, bars = built
     series = list(zip(labels, ns))
 
-    # The constant was 2.25 while the bar lay along the bottom; with it now on the right it
-    # only has to buy the three-line column headings. The floor is for `core`: three rows
-    # leave a vertical bar at aspect 38 too short for its own name and tick numbers.
+    # The canvas is the CELL BLOCK plus its margins, so both variants draw the same square
+    # cell and `all` is simply the taller figure. The block is measured in cell widths, the
+    # spacer strip included, exactly as the mesh edges below are built.
     # CONSTRAINED LAYOUT, as the rotbond grid uses -- tight_layout does not see a colourbar's
     # label, and fit()'s overrun correction moves the main axes, not the bar's, so the name
     # came out sliced off the right edge of the core map.
-    fig, ax = plt.subplots(figsize=(FIG_W * 1.16,
-                                    max(PB_HEAT_ROW_H * len(series) + 1.3, 3.3)),
-                           dpi=220, layout="constrained")
+    nrow, ncol = grid.shape
+    gap = PB_HEAT_GAP
+    fig, ax = plt.subplots(
+        figsize=(PB_HEAT_CELL_W * (ncol + gap) + PB_HEAT_SIDE,
+                 PB_HEAT_CELL_H * (nrow + gap) + PB_HEAT_HEAD + PB_HEAT_FOOT),
+        dpi=220, layout="constrained")
+    # Constrained layout's own padding, 3 pt by default, which is what the canvas edge leaves
+    # round the whole figure. At 3 pt the longest row name ended 9 px off the edge -- drawn in
+    # full, but reading as if it had been cut -- and NO amount of extra canvas fixes it: the
+    # layout reserves exactly the label's width plus this pad, so the slack lands somewhere
+    # else. 0.10 in is the same 3 pt grown with the type.
+    fig.get_layout_engine().set(w_pad=0.10, h_pad=0.10)
     fig.patch.set_facecolor("white")
-    cmap = matplotlib.colormaps[PB_HEAT_CMAP]
-    ax.imshow(grid, cmap=cmap, norm=norm, aspect="auto")
-    for i in range(len(series)):
-        for j in range(len(cols)):
+    cmap = HEAT_CMAP
+    # A MESH, NOT AN IMAGE, so the gap can be a fraction of a cell. imshow lays cells on one
+    # uniform grid, where the only available spacer is a whole empty column; pcolormesh takes
+    # the edge coordinates, so PB_HEAT_GAP is inserted into them and the blank strip is
+    # exactly as wide as it should be. The spacer cells are NaN and masked, which leaves the
+    # figure's own white showing through rather than a painted rectangle.
+    xe = np.array([0.0, 1.0] + [1.0 + gap + k for k in range(ncol)])
+    ye = np.array([0.0, 1.0] + [1.0 + gap + k for k in range(nrow)])
+    xc = [0.5] + [1.5 + gap + k for k in range(ncol - 1)]
+    yc = [0.5] + [1.5 + gap + k for k in range(nrow - 1)]
+    mesh = np.insert(np.insert(grid, 1, np.nan, axis=0), 1, np.nan, axis=1)
+    ax.pcolormesh(xe, ye, np.ma.masked_invalid(mesh), cmap=cmap, norm=norm,
+                  edgecolors="white", linewidth=1.4)
+    ax.set_xlim(xe[0], xe[-1])
+    ax.set_ylim(ye[-1], ye[0])              # first row at the top, as imshow had it
+    # A cell is 1 x 1 in DATA units, so the axes aspect is the cell's shape -- and it holds
+    # even if the canvas arithmetic above is ever off, which a hand-set figure height would not.
+    ax.set_aspect(PB_HEAT_CELL_ASPECT)
+    for i in range(nrow):
+        for j in range(ncol):
             v = grid[i, j]
-            # White on a dark cell, ink on a light one, off the fill's own luminance: a
-            # diverging map is dark at BOTH ends, so a single threshold on the value would
-            # put ink on the dark red of a 50% cell and white on the pale middle.
+            # Ink or white off the FILL's own luminance, never off the value: which cells
+            # are dark is a property of the ramp, and the ramp is shared with another figure.
             r, g, b, _ = cmap(norm(v))
-            dark = 0.2126 * r + 0.7152 * g + 0.0722 * b < 0.55
-            ax.text(j, i, f"{v:.1f}", ha="center", va="center", fontsize=12.5,
-                    color="white" if dark else INK, zorder=3)
-    # The first column is the aggregate, not a sixth category, and the groups do not multiply
-    # out to it (see _posebusters_group_rates) -- a rule wide enough to read as a break says so.
-    ax.axvline(0.5, color="white", lw=5, zorder=4)
-    ax.set_xticks(np.arange(len(cols)))
+            dark = 0.2126 * r + 0.7152 * g + 0.0722 * b < PB_HEAT_WHITE_TEXT_BELOW
+            ax.text(xc[j], yc[i], f"{v:.1f}", ha="center", va="center",
+                    fontsize=PB_HEAT_NUM_FS, color="white" if dark else INK, zorder=3)
+    # A rule after the first column and after the first row (2026-09-15, on request). Both
+    # mark a change of KIND, not of degree: column 0 is the aggregate rather than a sixth
+    # category -- and the groups do not multiply out to it, see _posebusters_group_rates --
+    # while row 0 is the crystal ligands, the benchmark the arms are read against. The rule
+    # runs down the middle of the gap, so the two together read as one division.
+    ax.axvline(1.0 + gap / 2, color=INK, lw=2.0, zorder=5)
+    ax.axhline(1.0 + gap / 2, color=INK, lw=2.0, zorder=5)
+    ax.set_xticks(xc)
     # Wrapped at PB_HEAT_WRAP, not at the 18 the check-failure tick labels use: a column here
     # is ~1.2 in wide, and at 18 the group names ran into each other across the header.
-    ax.set_xticklabels(["\n".join(__import__("textwrap").wrap(c, PB_HEAT_WRAP))
-                        for c in cols], fontsize=12.5)
+    # A short form that already carries a newline is used as written -- textwrap would treat
+    # it as whitespace and put the heading back on one line, which is the opposite of the
+    # point. The wrap stays as the backstop for everything else.
+    heads = [PB_HEAT_SHORT.get(c, c) for c in cols]
+    ax.set_xticklabels([h if "\n" in h else "\n".join(__import__("textwrap").wrap(h, PB_HEAT_WRAP))
+                        for h in heads], fontsize=PB_HEAT_HEAD_FS)
     ax.xaxis.set_ticks_position("top")
-    ax.set_yticks(np.arange(len(series)))
-    ax.set_yticklabels([f"{display(lab)}  ({n:,})" for lab, n in series], fontsize=13)
-    ax.tick_params(length=0, colors=INK, pad=6)
+    ax.set_yticks(yc)
+    # The method name alone (2026-09-15, on request). Every cell is a RATE, so a reader does
+    # not need the denominator to compare two of them, and the counts crowded nine already
+    # long labels. They are still in posebusters-valid-heatmap.csv, one column per row.
+    # "Reference", not the shared REF_LABEL, exactly as the rotbond grid titles its own first
+    # panel: with the units gone from the row there is nothing left for "ligand" to
+    # disambiguate, and it is the longest label in the column.
+    ax.set_yticklabels(["Reference" if lab == REF_LABEL else display(lab)
+                        for lab, _ in series], fontsize=PB_HEAT_LABEL_FS)
+    ax.tick_params(length=PB_HEAT_TICK_LEN, width=AXIS_LW, colors=INK, pad=8)
     for sp in ax.spines.values():
         sp.set_visible(False)
-    # White rules on the cell boundaries rather than a frame: the cells are the figure.
-    ax.set_xticks(np.arange(-0.5, len(cols), 1), minor=True)
-    ax.set_yticks(np.arange(-0.5, len(series), 1), minor=True)
-    ax.grid(which="minor", color="white", lw=1.6)
-    ax.grid(which="major", visible=False)
-    ax.tick_params(which="minor", length=0)
-    cb = fig.colorbar(plt.cm.ScalarMappable(norm=norm, cmap=cmap), ax=ax,
-                      shrink=0.92, aspect=38, pad=RB_GRID_CBAR_PAD)
-    cb.set_label("% of molecules passing", fontsize=PB_HEAT_CBAR_FS, color=INK,
-                 labelpad=RB_GRID_CBAR_LABELPAD)
-    cb.ax.tick_params(labelsize=PB_HEAT_CBAR_TICK_FS, colors=AXIS, width=AXIS_LW)
-    plt.setp(cb.ax.get_yticklabels(), rotation=90, va="center", ha="left")
-    cb.outline.set_visible(False)
+    ax.grid(False)
+    # The bar's name wraps when the bar is shorter than the name. One line measures 2.13 in
+    # at 13 pt and the bar is HEAT_CBAR_SHRINK of the block, so `core`'s three rows give it
+    # 1.84 in and `all`'s nine give 5.6: the short map takes two lines ("% of molecules" is
+    # 1.38 in), the tall one stays on one. Scaling the type down instead would have put the
+    # bar's name below its own tick numbers.
+    bar_in = HEAT_CBAR_SHRINK * PB_HEAT_CELL_H * (nrow + gap)
+    label = ("% of molecules passing" if bar_in >= 2.13 * PB_HEAT_CBAR_FS / 13
+             else "% of molecules\npassing")
+    heat_colorbar(fig, ax, norm, label,
+                  label_fs=PB_HEAT_CBAR_FS, tick_fs=PB_HEAT_CBAR_TICK_FS)
     save(fig, out, f"pb_valid_heatmap_{variant}")
+
+
+def _posebusters_group_bar(out, variant, built, name, norm):
+    """One group, one bar per method, as the share of its molecules that pass the group.
+
+    PASS, not fail, so a bar reads the same way round as the heat map cell it comes from --
+    both come out of one call to _posebusters_heatmap_grid, so a bar and a cell cannot
+    disagree. A bar is always the whole GROUP, which for Bond geometry is now two cells. The crystal ligands are the first bar rather than a rule: this is
+    a like-for-like quantity here, measured on the same 79 pockets by the same code."""
+    cols, labels, grid, ns, bars = built
+    vals = bars[name]
+    fig, ax = plt.subplots(figsize=(FIG_W * 0.86, PB_GROUP_BAR_H * len(labels) + 1.35),
+                           dpi=220)
+    fig.patch.set_facecolor("white")
+    ax.set_facecolor("white")
+    ys = np.arange(len(labels))[::-1]
+    # THE HOUSE HEAT RAMP, NOT THE METHOD PALETTE (2026-09-15, on request). A bar and the heat
+    # map cell it comes from are now the same colour as well as the same number, because both
+    # go through HEAT_CMAP under the SAME norm -- the one floored at the worst cell of the
+    # whole map, passed in rather than recomputed here so a bar cannot key itself to a
+    # different scale than the map does. The method's own colour is given up for that: on a
+    # chart with one bar per method the name at the end of every bar already says which method
+    # it is, so identity colour was spending the figure's only free channel on a label it
+    # already has, while LENGTH and colour now say the same thing twice.
+    ax.barh(ys, vals, height=0.66, color=[HEAT_CMAP(norm(v)) for v in vals], zorder=3)
+    for y, v in zip(ys, vals):
+        ax.text(v + 1.4, y, f"{v:.1f}", va="center", ha="left", fontsize=11.5, color=INK,
+                zorder=4)
+    # The group's name and the quantity on two lines. On one, "Protein clash & overlap - % of
+    # molecules passing" is wider than the figure, and a centred x label that overruns cannot
+    # be rescued by fit(): it just loses its right-hand end off the canvas.
+    furniture(ax, ylabel=None, xlabel=f"{name}\n% of molecules passing", xloc=None,
+              xlim=PB_GROUP_BAR_XLIM)
+    ax.xaxis.set_major_locator(MultipleLocator(25))
+    ax.grid(False, axis="y")
+    ax.set_yticks(ys)
+    ax.set_yticklabels([f"{display(lab)}  ({n:,})" for lab, n in zip(labels, ns)], fontsize=13)
+    ax.set_ylim(-0.6, len(labels) - 0.4)
+    fit(fig, pad=0.5)
+    slug = "".join(c if c.isalnum() else "_" for c in name.lower()).strip("_")
+    while "__" in slug:
+        slug = slug.replace("__", "_")
+    save(fig, out, f"pb_group_bar_{slug}_{variant}")
+
+
+@figure("fig-posebusters-group-bars", needs=("metrics.json (posebusters block)",))
+def draw_posebusters_group_bars(out):
+    """Each check group on its own, one bar per method -- the heat map's columns, unrolled."""
+    data, p79_rows, refrows = pose_data()
+    use_style()
+    drawn = {variant: _posebusters_heatmap_grid(arms, p79_rows, refrows)
+             for variant, arms in variants("v", data)}
+    norm = _posebusters_heat_norm(drawn["all"][2])
+    for variant, built in drawn.items():
+        for name in PB_GROUP_BARS:
+            _posebusters_group_bar(out, variant, built, name, norm)
+    _, labels, _, _, bars = _posebusters_heatmap_grid(arms_for("v", data), p79_rows, refrows)
+    for name in PB_GROUP_BARS:
+        vals = bars[name]
+        order = np.argsort(vals)[::-1]
+        print(f"  {name}: " + ", ".join(f"{labels[i]} {vals[i]:.1f}" for i in order[:3])
+              + f"  ...  worst {labels[order[-1]]} {vals[order[-1]]:.1f}")
 
 
 @figure("fig-posebusters-valid-heatmap", needs=("metrics.json (posebusters block)",))
@@ -459,16 +706,18 @@ def draw_posebusters_valid_heatmap(out):
     use_style()
     drawn = {variant: _posebusters_heatmap_grid(arms, p79_rows, refrows)
              for variant, arms in variants("v", data)}
-    # One ramp for both maps, floored at the worst cell of the widest one.
-    norm = matplotlib.colors.Normalize(float(drawn["all"][2].min()), PB_HEAT_VMAX)
+    norm = _posebusters_heat_norm(drawn["all"][2])
     for variant, built in drawn.items():
         _posebusters_heatmap_panel(out, variant, built, norm)
 
-    cols, labels, grid, ns = drawn["all"]
+    cols, labels, grid, ns, _ = drawn["all"]
     worst = np.unravel_index(np.argmin(grid), grid.shape)
     print(f"  colour ramp {norm.vmin:.1f}-{norm.vmax:.0f}%, floored at the worst cell: "
           f"{labels[worst[0]]} / {cols[worst[1]]}")
-    print(f"  {'method':16s} {'n':>7s} " + " ".join(f"{c.split(' ')[0][:9]:>9s}" for c in cols))
+    # The console table heads its columns with the MAP's short names: cut to nine characters
+    # the two halves of Bond geometry both came out "Bond".
+    print(f"  {'method':16s} {'n':>7s} "
+          + " ".join(f"{PB_HEAT_SHORT.get(c, c).replace(chr(10), ' ')[:9]:>9s}" for c in cols))
     for lab, row, n in zip(labels, grid, ns):
         print(f"  {lab:16s} {n:7,d} " + " ".join(f"{v:8.1f}%" for v in row))
     write_csv(out, "posebusters_valid_heatmap",

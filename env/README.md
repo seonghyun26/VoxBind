@@ -14,8 +14,10 @@ The two pipeline envs are locked separately, because the paper's docking build
 Each `*.conda-lock.yml` is a hash-pinned, solver-free YAML lock covering **both
 conda and pip** deps (torch/cuda, vina, meeko, pdb2pqr, AutoDockTools, …),
 rendered for **linux-64**. The `*.environment.yml` is the human-editable source
-spec you re-lock from. PoseCheck/PoseBusters *pose* eval lives in a third
-`moleval` env (build with `bash script/00_setup_env.sh moleval`).
+spec you re-lock from. *Pose* eval lives in a third `moleval` env (python 3.10,
+build with `bash script/00_setup_env.sh moleval`): **PoseCheck 1.3.1** and
+**PoseBusters 0.6.5** in its `dock` config, both pinned there — see the root
+README's Evaluation section for why each pin is load-bearing.
 
 ## Rebuild (needs conda-lock: `pip install conda-lock` or `conda install -c conda-forge conda-lock`)
 

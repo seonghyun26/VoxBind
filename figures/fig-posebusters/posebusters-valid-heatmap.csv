@@ -1,10 +1,10 @@
-method,n_molecules,pct_pass_PoseBusters valid,pct_pass_Bond geometry,pct_pass_Aromatic ring flatness,pct_pass_Valence & connectivity,pct_pass_Protein clash & overlap,pct_pass_Ring pucker & internal strain
-Reference ligand,79,96.2,100.0,100.0,100.0,97.47,98.73
-AR,7615,69.86,86.04,91.53,100.0,96.1,87.37
-Pocket2Mol,7772,73.62,89.27,99.54,100.0,83.2,96.85
-DiffSBDD,7700,56.27,70.38,99.9,100.0,78.99,91.39
-DecompDiff,6427,81.08,95.22,100.0,99.98,90.03,92.86
-FuncBind,7895,50.06,71.35,100.0,100.0,95.82,68.26
-TargetDiff,7287,60.78,77.19,99.97,100.0,89.9,84.99
-VoxBind,7888,69.3,93.57,99.99,100.0,98.71,74.48
-CoDE,7873,67.47,92.82,100.0,100.0,98.32,72.92
+method,n_molecules,pct_pass_PoseBusters valid,pct_pass_Bond lengths,pct_pass_Bond angles,pct_pass_Planarity,pct_pass_Ring pucker,pct_pass_Valence & connectivity,pct_pass_Protein clash & overlap,pct_pass_Self-clash & energy
+Reference ligand,79,96.2,100.0,100.0,100.0,98.73,100.0,97.47,100.0
+AR,7615,69.86,98.0,86.58,88.65,99.95,100.0,96.1,89.27
+Pocket2Mol,7772,73.62,89.64,97.97,98.15,99.1,100.0,83.2,99.07
+DiffSBDD,7700,56.27,81.03,78.78,99.39,98.84,100.0,78.99,92.95
+DecompDiff,6427,81.08,97.84,96.14,98.16,98.12,99.98,90.03,96.47
+FuncBind,7895,50.06,76.92,85.47,100.0,77.54,100.0,95.82,88.73
+TargetDiff,7287,60.78,98.86,77.45,99.96,91.05,100.0,89.9,93.03
+VoxBind,7888,69.3,97.1,94.49,99.99,78.88,100.0,98.71,94.62
+CoDE,7873,67.47,96.43,94.08,100.0,77.53,100.0,98.32,93.85

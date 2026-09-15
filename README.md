@@ -99,6 +99,45 @@ python sample_from_file.py pretrained_path=exps/exp_sig0.9/ n_samples=20
 See `configs/config_sample*.yaml` for all sampling options and `examples/` for the
 8UWP / 6AU3 demo pockets.
 
+## Evaluation
+
+Every reported number comes from one of three tools, each pinned, each in its own env —
+they disagree on `pandas` and on python itself, so they cannot share one.
+
+| Tool | Version | Env (python) | What it produces |
+|---|---|---|---|
+| **AutoDock Vina** | **1.2.2** | `voxdock` (3.8) | `score_only`, `minimize`, `dock` affinities (kcal/mol) |
+| **PoseCheck** | **1.3.1** | `moleval` (3.10) | steric clashes, UFF strain energy, ProLIF interaction profile |
+| **PoseBusters** | **0.6.5** | `moleval` (3.10) | validity in **`dock` mode** — 20 graded checks — plus SuCOS, computed separately |
+
+Supporting versions in `moleval`: RDKit 2026.3.5, ProLIF 2.2.1, `reduce` 4.15.250408
+(the protonation binary PoseCheck shells out to), hydride 1.2.3.
+Build both with `bash script/00_setup_env.sh moleval` / `voxdock`.
+
+Three pins that are load-bearing, not housekeeping:
+
+- **Vina must be 1.2.2.** The `voxel-bind` env carries 1.2.7 so that FuncBind's import chain
+  resolves, and it is IMPORT-ONLY — python 3.12 cannot have 1.2.2 by any route. Docking
+  scripts call the `voxdock` interpreter by absolute path for this reason.
+- **PoseCheck must be 1.3.1.** Upstream silently redefined strain energy after publication;
+  1.3.1's definition (position-constrained UFF relax minus the best of 50 re-embedded
+  conformers) returns values about an order of magnitude smaller than the pre-2024 one the
+  published tables use. Our crystal-ligand median is 34.3 where the PoseCheck paper's
+  baseline is 102.5 — the same quantity, a different definition. Compare only against
+  baselines re-scored here.
+- **PoseBusters must be 0.6.5, and the mode is `dock`.** `dock` is ligand + protein with no
+  `mol_true`: 22 columns, 20 of them graded (the two `*_loaded` columns report "the file
+  read", not geometry). `valid` is all-must-pass over whatever columns the release returns,
+  so a version that adds or renames a check moves every validity number without erroring.
+  `gen` is deliberately not used — its chosen binary output is `sucos_within_threshold`,
+  which would enter that same all-must-pass and collapse it; SuCOS is computed on its own
+  with gen.yml's function and 0.4 threshold, and kept out of `valid`. `redock`/`regen` need
+  `mol_true` and do not apply to de novo generation.
+
+Pose metrics are scored on the **generated pose as written**, with no relaxation or
+minimisation, against the pocket10 receptor crop. `minimize` and `dock` exist on the Vina
+side only.
+
 ## Upstream & citation
 
 The generative core (walk-jump sampling, voxel denoiser) is from VoxBind:

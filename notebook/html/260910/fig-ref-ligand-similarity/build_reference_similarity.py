@@ -113,6 +113,11 @@ METHODS = {
     # Same run the de novo Vina table calls "Ours · v1"; the label matches so the two
     # paper tables name the same model the same way.
     "Ours\\textsubscript{\\scriptsize v1}": f"{E}/voxbind_frozenenc_atomblob7_v2p1_sig0.9/samples/full_eval_ep350",
+    # The coords-only arm the de novo Vina table calls "+ C" (CoE): the same fusion=default
+    # pathway as Ours v1, but conditioned on the frozen C_v2 encoder instead of C+D+G.
+    # Resampled at 100/pocket on 2026-09-14; its 79 pockets are the same set as Ours v1's,
+    # so the two rows sit on one pocket set and the macro averages stay comparable.
+    "Ours\\textsubscript{\\scriptsize C}": f"{E}/260908_fusion_default_cv2_scratch_8gpu/samples/samples_ep350_test79_n100",
     # Our other two arms, measured 2026-09-03 on the same 79 pockets and then dropped
     # from the paper table (ECFP4 mean / median, scaffold match):
     #   sigma=1.0  0.107 / 0.102 / 1.23%   f"{E}/voxbind_frozenenc_atomblob7_v2p1_sig1.0/samples/full_eval_ep349"
@@ -125,6 +130,7 @@ PLAIN = {
     "VoxBind\\textsubscript{\\scriptsize $\\sigma$=0.9}": "VoxBind σ=0.9",
     "VoxBind\\textsubscript{\\scriptsize $\\sigma$=1.0}": "VoxBind σ=1.0",
     "Ours\\textsubscript{\\scriptsize v1}": "Ours v1",
+    "Ours\\textsubscript{\\scriptsize C}": "Ours C",
 }
 # AR / Pocket2Mol / DiffSBDD / DecompDiff arrive in a different shape. Their molecules are
 # not target_*/samples.sdf trees but TargetDiff-style meta bundles -- one list per test
