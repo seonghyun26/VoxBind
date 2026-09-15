@@ -19,10 +19,11 @@ host `.repro-env` is not required; the Docker image creates its own environment.
 
 See
 [`FuncBind/scripts/README_mcp_density.md`](../../../FuncBind/scripts/README_mcp_density.md)
-for the Docker mounts and Dropbox shared-link variables.
+for the Docker mounts and model-link variables, and
+[`script/README_mcp.md`](../../../script/README_mcp.md) for the SB handoff links.
 
-`2_train.sh` preserves `bf16-mixed`, with batch 1, accumulation 95, eager
-execution, and non-foreach AdamW. **H100 80GB remains blocked under plain DDP:**
-FP32 weights, gradients, Adam moments, and EMA need about 95.8 GiB per GPU before
-activations. FSDP/ZeRO sharding or CPU offload must be implemented to run this
-mixed-precision configuration on H100; the current preflight rejects it.
+`2_train.sh` targets H100 80GB x 8 with `bf16-mixed`, batch 1, accumulation 95,
+eager execution, non-foreach AdamW with ZeRO-1 state sharding, CPU EMA, and
+activation checkpointing. Trainable static state is estimated at ~43.1 GiB/GPU,
+excluding activations and temporary buffers. Reduced-model distributed tests
+pass; full-model H100 capacity still needs a smoke test on the SB node.
