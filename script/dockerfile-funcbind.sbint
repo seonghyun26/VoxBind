@@ -107,4 +107,17 @@ ENV FUNCBIND_ROOT=/workspace/FuncBind \
 RUN micromamba run -n funcbind python -c \
     "from voxbind.models.density_vit import DensityViT; from voxbind.voxelizer import Voxelizer; from funcbind.models.density_condition import DensityCondition"
 
+# Test the shipped H100 recipe during the source-only rebuild, not a host venv.
+RUN OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 \
+    micromamba run -n funcbind python -m pytest -q -p no:cacheprovider \
+      tests/test_h100_bf16_training_mode.py tests/test_h100_memory.py
+
+# The cluster/container UID may differ from MAMBA_USER. Source is read-only to
+# other users; data, checkpoints, and outputs remain separate runtime mounts.
+RUN chmod -R a+rX /workspace/FuncBind /workspace/VoxBind/voxbind/models \
+ && chmod a+rx /workspace/VoxBind /workspace/VoxBind/voxbind \
+ && chmod a+r /workspace/VoxBind/voxbind/__init__.py \
+              /workspace/VoxBind/voxbind/constants.py \
+              /workspace/VoxBind/voxbind/voxelizer.py
+
 CMD ["bash"]
