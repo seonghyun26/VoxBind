@@ -20,9 +20,11 @@
 # at runtime, for example:
 #
 #   docker run --rm -it --gpus all --shm-size=32g \
+#     -e MCP_MODEL_URL='https://www.dropbox.com/.../checkpoint.pth.tar?dl=0' \
 #     -v /path/to/funcbind-data:/workspace/FuncBind/funcbind/dataset/data \
 #     -v /path/to/funcbind-exps:/workspace/FuncBind/exps \
-#     -v /path/to/voxbind-model-zoo:/workspace/VoxBind/voxbind/model_zoo \
+#     -v /path/to/funcbind-artifacts:/workspace/FuncBind/artifacts \
+#     -v /path/to/voxbind-exps:/workspace/VoxBind/voxbind/exps \
 #     voxbind-funcbind:sb
 #
 # The exps mount is /workspace/FuncBind/exps, NOT .../funcbind/exps: `exp_dir` in the
@@ -47,11 +49,10 @@ ENV ENV_NAME=funcbind
 # (performance.compile_backend: inductor), and without a C++ compiler inductor raises
 # InvalidCxxCompiler and the run DIES -- it does not fall back to eager. The team measured
 # compiled at 1.20x eager on the 5.14B denoiser (16.42 vs 13.66 samples/s), so this is both
-# a correctness and a throughput fix. FuncBind's scripts/lib/dynamo_env.sh only exports
-# CC/CXX when it finds a .repro-env checkout, which does not exist in this image, so the
-# ENV below is what points inductor at the toolchain.
+# a correctness and a throughput fix. The ENV below points inductor at this named env's
+# compiler; a compatibility .repro-env symlink is created after the source installation.
 RUN micromamba create -y -n funcbind -c conda-forge -c bioconda \
-        python=3.12.9 anarci pip cxx-compiler \
+        python=3.12.9 anarci pip cxx-compiler curl \
  && micromamba clean --all --yes
 
 # Install the large, stable dependency layer before copying source. The first
@@ -67,13 +68,22 @@ RUN sed '/^-e[[:space:]]\+\.$/d' /tmp/funcbind.requirements.txt > /tmp/funcbind.
 # /workspace was created by the parent image and is root-owned. Prepare a
 # writable project directory before COPY and editable installation.
 USER root
-RUN mkdir -p /workspace/FuncBind \
- && chown -R $MAMBA_USER:$MAMBA_USER /workspace/FuncBind
+RUN mkdir -p /workspace/FuncBind /workspace/VoxBind \
+ && chown $MAMBA_USER:$MAMBA_USER /workspace/FuncBind /workspace/VoxBind
 USER $MAMBA_USER
 
+# Ship the current CDG/voxelizer implementation even when the base image has an
+# older VoxBind checkout or uses a different source path. Copy only the runtime
+# modules: the broader VoxBind tree can also contain large local test artifacts.
+COPY --chown=$MAMBA_USER:$MAMBA_USER voxbind/__init__.py voxbind/constants.py voxbind/voxelizer.py /workspace/VoxBind/voxbind/
+COPY --chown=$MAMBA_USER:$MAMBA_USER voxbind/models/ /workspace/VoxBind/voxbind/models/
 COPY --chown=$MAMBA_USER:$MAMBA_USER FuncBind/ /workspace/FuncBind/
 WORKDIR /workspace/FuncBind
-RUN micromamba run -n funcbind python -m pip install --no-cache-dir --no-deps -e .
+RUN micromamba run -n funcbind python -m pip install --no-cache-dir --no-deps -e . \
+ && micromamba run -n funcbind python -m pip check
+# Repository launchers consistently use .repro-env/bin/python. Keep that interface in
+# the image while the actual environment remains the named micromamba env.
+RUN ln -s /opt/conda/envs/funcbind /workspace/FuncBind/.repro-env
 
 # FUNCBIND_ROOT / VOXBIND_PYTHON_ROOT / FUNCBIND_EXP_DIR are read by FuncBind's configs
 # themselves (`${oc.env:VAR,<host default>}`), so the absolute /home1/irteam paths the
@@ -82,13 +92,19 @@ RUN micromamba run -n funcbind python -m pip install --no-cache-dir --no-deps -e
 ENV FUNCBIND_ROOT=/workspace/FuncBind \
     VOXBIND_ROOT=/workspace/VoxBind \
     VOXBIND_PYTHON_ROOT=/workspace/VoxBind \
+    FUNCBIND_DENSITY_ENCODER=/workspace/VoxBind/voxbind/exps/260806_cdg_100m_v2_ep100/checkpoint_e0025.pth.tar \
     FUNCBIND_EXP_DIR=/workspace/FuncBind/exps/funcbind \
     CC=/opt/conda/envs/funcbind/bin/x86_64-conda-linux-gnu-gcc \
     CXX=/opt/conda/envs/funcbind/bin/x86_64-conda-linux-gnu-g++ \
     PY=/opt/conda/envs/funcbind/bin/python \
     PYTHON_BIN=/opt/conda/envs/funcbind/bin/python \
-    PYTHONPATH=/workspace/FuncBind \
+    PYTHONPATH=/workspace/FuncBind:/workspace/VoxBind \
     PYTHONUNBUFFERED=1 \
     MPLBACKEND=Agg
+
+# Verify the cross-repository imports without a GPU, host source mount, or model
+# checkpoint. This also catches a stale/missing VoxBind module during SB builds.
+RUN micromamba run -n funcbind python -c \
+    "from voxbind.models.density_vit import DensityViT; from voxbind.voxelizer import Voxelizer; from funcbind.models.density_condition import DensityCondition"
 
 CMD ["bash"]

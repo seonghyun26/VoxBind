@@ -50,7 +50,8 @@ usage() {
     '  RESULTS_DEST=/data/results bash results/dropbox_pull.sh VoxBind-Ours' \
     '' \
     'Model names are case-insensitive; quote names containing spaces.' \
-    'All model artifacts are included, unlike the narrower dropbox_pull_baselines.sh.' \
+    'All model artifacts are included, including task1 checkpoints. The narrower' \
+    'dropbox_pull_baselines.sh also includes checkpoints but skips representations.' \
     'Place selectors before extra rclone flags. Unknown options and everything' \
     'after them are forwarded to rclone for compatibility with the old script.'
 }

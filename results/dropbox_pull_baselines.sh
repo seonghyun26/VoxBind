@@ -3,7 +3,8 @@
 # Dropbox bundle (박성현/VoxBind/results). The cheap slice of `dropbox_pull.sh`,
 # which pulls the whole 3.8 GiB bundle.
 #
-# Per method it takes:   samples/**  +  metrics.json  +  SOURCE.txt
+# Per method it takes:   samples/**  +  checkpoint*.pth.tar
+#                        +  metrics.json  +  SOURCE.txt
 #                        +  eval/index.json, eval/*/results.json, eval/*/per_*.csv
 #   -- the consolidated evaluation: the aggregate per (method, evaluation) and one row
 #   per generated ligand carrying its pocket, SMILES, Vina, PoseCheck and PoseBusters.
@@ -145,7 +146,9 @@ fi
 # (--include/--exclude are parsed in an indeterminate order and would let the
 #  outputs_*/ exclusion lose to the samples/** inclusion -- rclone warns about
 #  exactly this. --filter rules are applied strictly in the order given.)
-FILTERS=( --filter "+ /metrics.json" --filter "+ /SOURCE.txt" )
+FILTERS=( --filter "+ /metrics.json"
+          --filter "+ /SOURCE.txt"
+          --filter "+ /checkpoint*.pth.tar" )
 # The CONSOLIDATED eval results are always taken. They are the smallest thing in the
 # bundle (a few MB per method: results.json + per_molecule.csv, one row per generated
 # ligand with its pocket, SMILES, Vina, PoseCheck and PoseBusters) and they are the reason
@@ -164,7 +167,7 @@ human() { awk -v b="$1" 'BEGIN{ split("B KiB MiB GiB TiB",u," "); i=1;
 
 echo ">> source  : $BASE"
 echo ">> dest    : $DEST"
-echo ">> filter  : samples/** + metrics.json + SOURCE.txt + eval/{index.json,*/results.json,*/per_*.csv}$([[ "$WITH_EVAL" -eq 1 ]] && echo " + raw eval/** (per-pocket .pt caches)")$([[ "$WITH_RAW" -eq 1 ]] && echo "  (INCLUDING raw samples/outputs_*/)" || echo "  (raw samples/outputs_*/ skipped)")"
+echo ">> filter  : samples/** + checkpoint*.pth.tar + metrics.json + SOURCE.txt + eval/{index.json,*/results.json,*/per_*.csv}$([[ "$WITH_EVAL" -eq 1 ]] && echo " + raw eval/** (per-pocket .pt caches)")$([[ "$WITH_RAW" -eq 1 ]] && echo "  (INCLUDING raw samples/outputs_*/)" || echo "  (raw samples/outputs_*/ skipped)")"
 echo ">> methods : ${#TARGETS[@]}"
 echo
 
@@ -196,6 +199,6 @@ fi
 echo
 echo ">> done. verify integrity (hash compare) with:"
 for e in "${TARGETS[@]}"; do
-  echo "   rclone check \"$DEST/$e/\" \"$BASE/$e/\" --filter '+ /metrics.json' --filter '+ /SOURCE.txt' \\"
+  echo "   rclone check \"$DEST/$e/\" \"$BASE/$e/\" --filter '+ /metrics.json' --filter '+ /SOURCE.txt' --filter '+ /checkpoint*.pth.tar' \\"
   echo "     $([[ "$WITH_RAW" -eq 1 ]] || echo "--filter '- /samples/outputs_*/**' ")$([[ "$WITH_EVAL" -eq 1 ]] && echo "--filter '+ /eval/**' ")--filter '+ /samples/**' --filter '- **' --one-way"
 done

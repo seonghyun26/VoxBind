@@ -1,0 +1,982 @@
+"""Data loading and fig1-style interactive panels for fig-qual.ipynb."""
+
+import ast
+from copy import deepcopy
+from functools import lru_cache
+import csv
+import html
+import hashlib
+import tempfile
+import json
+from pathlib import Path
+import re
+
+import ipywidgets as widgets
+import numpy as np
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+from IPython.display import display
+from rdkit import Chem, rdBase
+
+
+POCKET_OCCUPANCY_COLOR = "#B4BEF0"
+DATA_CUBE_BORDER_COLOR = "#514F52"
+POCKET_OCCUPANCY_OPACITY = 0.15
+MOLECULE_RADIUS_SCALE = 0.8
+OCCUPANCY_RESOLUTION_A = 0.25
+OCCUPANCY_ISO = 0.45
+
+
+def natural_key(path):
+    return [int(s) if s.isdigit() else s for s in re.split(r"(\d+)", str(path))]
+
+
+def fig1_style(path):
+    """Reuse only fig1's molecular meshes/constants; never execute its data/UI cells."""
+    names = {
+        "LIGAND_COLOR", "POCKET_COLOR", "BALL_RADIUS_A", "STICK_RADIUS_A",
+        "SPHERE_LATITUDES", "SPHERE_LONGITUDES", "CYLINDER_SIDES", "DEFAULT_CAMERA",
+        "mesh_trace", "atom_color", "append_uv_sphere", "atom_trace",
+        "append_cylinder", "bond_trace",
+    }
+    nodes = []
+    notebook = json.loads(Path(path).read_text())
+    for cell in notebook["cells"]:
+        if cell["cell_type"] != "code":
+            continue
+        for node in ast.parse("".join(cell["source"])).body:
+            if isinstance(node, ast.FunctionDef) and node.name in names:
+                nodes.append(node)
+            elif isinstance(node, ast.Assign) and all(
+                isinstance(t, ast.Name) and t.id in names for t in node.targets
+            ):
+                nodes.append(node)
+    namespace = {"np": np, "go": go}
+    exec(compile(ast.Module(body=nodes, type_ignores=[]), str(path), "exec"), namespace)
+    missing = names - namespace.keys()
+    if missing:
+        raise ValueError(f"fig1 style definitions missing: {sorted(missing)}")
+    original_mesh_trace = namespace["mesh_trace"]
+    original_atom_trace = namespace["atom_trace"]
+    original_bond_trace = namespace["bond_trace"]
+
+    def uniform_mesh_trace(vertices, faces, vertex_colors, *args, **kwargs):
+        # fig1 uses one color per role. A scalar color avoids repeating it at every vertex.
+        if vertex_colors and len(set(vertex_colors)) == 1:
+            trace = original_mesh_trace(vertices, faces, [], *args, **kwargs)
+            trace.vertexcolor = None
+            trace.color = vertex_colors[0]
+            return trace
+        return original_mesh_trace(vertices, faces, vertex_colors, *args, **kwargs)
+
+    def scaled_atom_trace(*args, **kwargs):
+        kwargs.setdefault("radius", namespace["BALL_RADIUS_A"] * MOLECULE_RADIUS_SCALE)
+        return original_atom_trace(*args, **kwargs)
+
+    def scaled_bond_trace(*args, **kwargs):
+        kwargs.setdefault("radius", namespace["STICK_RADIUS_A"] * MOLECULE_RADIUS_SCALE)
+        return original_bond_trace(*args, **kwargs)
+
+    namespace["mesh_trace"] = uniform_mesh_trace
+    namespace["atom_trace"] = scaled_atom_trace
+    namespace["bond_trace"] = scaled_bond_trace
+    return namespace
+
+
+def method_specs(repo, baseline):
+    exps = repo / "voxbind/exps"
+    vanilla_extra = {}
+    vanilla = exps / "_vanilla_ep923/samples/full_eval_ep923"
+    if not vanilla.is_dir():
+        bundled_vanilla = repo / "results/task2-drugdesign/VoxBind-base-ep350/samples"
+        if bundled_vanilla.is_dir():
+            vanilla = bundled_vanilla
+    bundled_n100 = repo / "results/task2-drugdesign/VoxBind-base-ep350-n100/samples"
+    n100_scores = bundled_n100 / "eval_docking_results_full79.json"
+    if n100_scores.is_file() and any(bundled_n100.glob("target_*/samples.sdf")):
+        vanilla = bundled_n100
+        vanilla_extra["energy_file"] = n100_scores
+        consolidated = bundled_n100.parent / "eval/vina_docking/per_molecule.csv"
+        if consolidated.is_file():
+            metadata = json.loads(consolidated.with_name("results.json").read_text())
+            if metadata.get("protocol", {}).get("dock_receptor_scope") != "full":
+                raise ValueError("VoxBind n100 docking scores must use the full receptor.")
+            vanilla_extra["energy_file"] = consolidated
+    ours = exps / "voxbind_frozenenc_atomblob7_v2p1_sig0.9/samples/full_eval_ep350"
+    ours_layout = "eval"
+    ours_extra = {}
+    if not ours.is_dir():
+        ours = repo / "voxbind/model_zoo/generated_samples/ours_v1_frozenenc_atomblob7_v2p1_sig0.9_ep350/samples"
+    if not ours.is_dir():
+        bundled_ours = repo / "results/task2-drugdesign/VoxBind-Ours/samples"
+        if bundled_ours.is_dir():
+            ours = bundled_ours
+            ours_extra["energy_file"] = ours / "eval_docking_results_full79.json"
+    if not ours.is_dir():
+        mcp_results = repo / "results/task3-mcp/Ours-receptorED/samples"
+        if mcp_results.is_dir():
+            ours = mcp_results
+            ours_layout = "mcp_results"
+            ours_extra["reference_root"] = (
+                repo / "voxbind/dataset/data/pdbbind/structures/pbpp-2020"
+            )
+    targetdiff = baseline / "eval/targetdiff"
+    bundled_targetdiff = repo / "results/task2-drugdesign/TargetDiff/samples"
+    if bundled_targetdiff.is_dir():
+        targetdiff = bundled_targetdiff
+    targetdiff_extra = {}
+    if any(targetdiff.glob("target_*/samples.sdf")):
+        scores = targetdiff / "eval_docking_results_full79.json"
+        document = json.loads(scores.read_text())
+        if (document.get("summary", {}).get("receptor_scope") != "full"
+                or any(row.get("receptor_scope") != "full" for row in document.get("per_target", []))):
+            raise ValueError("TargetDiff docking scores must use the full receptor.")
+        targetdiff_extra["energy_file"] = scores
+    specs = {
+        "VoxBind": dict(root=vanilla, layout="eval", **vanilla_extra),
+        "VoxBind + Ours": dict(root=ours, layout=ours_layout, **ours_extra),
+        "TargetDiff": dict(root=targetdiff, layout="eval", **targetdiff_extra),
+        "FuncBind": dict(root=repo.parent / "funcbind/artifacts/reproduction/crossdocked/paper_run", layout="eval_shards"),
+        "AR": dict(root=baseline / "samples/ar", layout="sweep"),
+        "Pocket2Mol": dict(root=baseline / "samples/pocket2mol", layout="sweep"),
+        "VoxBind + Ours v2": dict(root=exps / "samples_reference_receptor_ed_ep350", layout="eval"),
+        "VoxBind σ=1.0": dict(root=exps / "exp_sig1.0_350ep/samples/full_eval_ep349", layout="eval"),
+        "DecompDiff": dict(root=baseline / "samples/decompdiff", layout="sweep"),
+        "DiffSBDD": dict(root=baseline / "samples/diffsbdd", layout="sweep"),
+    }
+    for method in ("AR", "Pocket2Mol", "DiffSBDD", "DecompDiff", "FuncBind"):
+        staged = repo / ".cache/fig-qual/baselines" / method
+        if (staged / "source.json").is_file():
+            specs[method] = dict(root=staged, layout="eval")
+            specs[method]["pb_file"] = (repo / "results/task2-drugdesign" / method
+                                        / "eval/posebusters/per_molecule.csv")
+    for method in ("VoxBind", "TargetDiff"):
+        specs[method]["pb_file"] = (Path(specs[method]["root"]).parent
+                                    / "eval/posebusters/per_molecule.csv")
+    return specs
+
+
+class Catalog:
+    def __init__(self, specs):
+        self.specs = specs
+        self.files = {}
+        for method, spec in specs.items():
+            found = {}
+            root = Path(spec["root"])
+            if spec["layout"] in ("eval", "eval_shards"):
+                pattern = "gpu*/samples/target_*/samples.sdf" if spec["layout"] == "eval_shards" else "target_*/samples.sdf"
+                for p in sorted(root.glob(pattern)):
+                    if p.stat().st_size:
+                        if p.parent.name in found:
+                            raise ValueError(f"Duplicate target across shards: {method}, {p.parent.name}")
+                        found[p.parent.name] = [p]
+            elif spec["layout"] == "sweep":
+                # id_N == target_N in the server's common CrossDocked split;
+                # see base_drug/export_targetdiff_sdf.py. Do not pool reruns.
+                for p in sorted(root.glob("id_*"), key=natural_key):
+                    if not re.fullmatch(r"id_\d+", p.name):
+                        continue
+                    runs = [r for r in sorted(p.glob("*/SDF")) if any(r.glob("*.sdf"))]
+                    if runs:
+                        files = [f for f in sorted(runs[-1].glob("*.sdf"), key=natural_key)
+                                 if f.stat().st_size]
+                        if files:
+                            found[f"target_{int(p.name[3:]):02d}"] = files
+            elif spec["layout"] == "mcp_results":
+                # Exported MCP bundles use mcpp_<pdb>_<run>/pooled_<n>.sdf.
+                for run in sorted(root.glob("mcpp_*"), key=natural_key):
+                    match = re.match(r"mcpp_([A-Za-z0-9]{4})(?:_|$)", run.name)
+                    files = [p for p in sorted(run.glob("pooled_*.sdf"), key=natural_key)
+                             if p.stat().st_size]
+                    if not match or not files:
+                        continue
+                    target = match.group(1).lower()
+                    if target in found:
+                        raise ValueError(f"Duplicate MCP result target: {method}, {target}")
+                    found[target] = [files[-1]]
+            else:
+                raise ValueError(f"Unknown layout: {spec['layout']}")
+            self.files[method] = found
+
+    def common_targets(self, methods):
+        return sorted(set.intersection(*(set(self.files[m]) for m in methods)), key=natural_key)
+
+    def coverage(self):
+        return [dict(method=m, pockets_with_sdf=len(v), root=str(self.specs[m]["root"]))
+                for m, v in self.files.items()]
+
+    @lru_cache(maxsize=128)
+    def records(self, method, target):
+        records, invalid = [], []
+        with rdBase.BlockLogs():
+            for path in self.files[method][target]:
+                for index, mol in enumerate(Chem.SDMolSupplier(str(path), removeHs=False)):
+                    if mol is None or not mol.GetNumConformers() or not mol.GetNumHeavyAtoms():
+                        invalid.append(f"{path.name} [{index}]")
+                        continue
+                    if not np.isfinite(mol.GetConformer().GetPositions()).all():
+                        invalid.append(f"{path.name} [{index}] (nonfinite coordinates)")
+                        continue
+                    records.append(dict(path=path, index=index, mol=mol,
+                                        label=f"{path.name} [{index}] · {mol.GetNumHeavyAtoms()} atoms"))
+        if not records:
+            raise ValueError(f"No readable 3D ligands: {method}, {target}")
+        return records, invalid
+
+
+    @lru_cache(maxsize=128)
+    def ranked_records(self, method, target, energy_key="vina_dock"):
+        """Match scores by molecular identity and verified source indices when available."""
+        if energy_key not in ("vina_score", "vina_min", "vina_dock"):
+            raise ValueError(f"Unsupported energy field: {energy_key}")
+        raw, invalid = self.records(method, target)
+        records = [dict(r, energy=None, energy_key=energy_key, energy_source=None) for r in raw]
+        score_file = Path(self.specs[method].get(
+            "energy_file", Path(self.specs[method]["root"]) / "eval_docking_results.json"))
+        if not score_file.is_file():
+            return records, invalid
+        results = self._energy_results(score_file)
+        row = results.get(target)
+        if row is None:
+            return records, invalid
+
+        def identity(mol):
+            return Chem.MolToSmiles(Chem.RemoveHs(mol), isomericSmiles=False)
+
+        by_identity = {}
+        for record in records:
+            by_identity.setdefault(identity(record["mol"]), []).append(record)
+        scored = {}
+        for item in row.get("per_mol", []):
+            value = item.get(energy_key)
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not np.isfinite(value):
+                continue
+            mol = Chem.MolFromSmiles(item.get("smiles", ""))
+            if mol is not None and mol.GetNumAtoms():
+                scored.setdefault(identity(mol), []).append(item)
+        for key, items in scored.items():
+            matches = by_identity.get(key, [])
+            if len(items) == 1 and len(matches) == 1:
+                pairs = [(matches[0], items[0])]
+            else:
+                # Staged meta bundles carry an audited original index, so even
+                # duplicate structures with different poses can be matched exactly.
+                # Without that provenance, retain the conservative identity-only rule.
+                indexed = {}
+                for record in matches:
+                    if record["mol"].HasProp("source_mol_idx"):
+                        index = record["mol"].GetIntProp("source_mol_idx")
+                        indexed.setdefault(index, []).append(record)
+                pairs = [(indexed[item.get("idx")][0], item) for item in items
+                         if len(indexed.get(item.get("idx"), [])) == 1
+                         and sum(other.get("idx") == item.get("idx") for other in items) == 1]
+            for record, item in pairs:
+                record.update(energy=float(item[energy_key]), energy_source=str(score_file),
+                              energy_eval_index=item.get("idx"),
+                              energy_receptor=row.get("receptor"))
+                record["label"] += f" · {record['energy']:.3f} kcal/mol"
+        records.sort(key=lambda r: (r["energy"] is None, r["energy"] if r["energy"] is not None else 0))
+        return records, invalid
+
+
+    def _score_file(self, method):
+        return Path(self.specs[method].get(
+            "energy_file", Path(self.specs[method]["root"]) / "eval_docking_results.json"))
+
+    def _pb_file(self, method, target):
+        configured = self.specs[method].get("pb_file")
+        if configured and Path(configured).is_file():
+            return Path(configured)
+        return Path(self.specs[method]["root"]) / target / "metrics.json"
+
+    @staticmethod
+    @lru_cache(maxsize=128)
+    def _pb_results(path, size, modified_ns, metadata_signature):
+        """Read native PB evaluations; CSV and metrics indices need identity checks."""
+        path = Path(path)
+        if path.suffix == ".csv":
+            metadata = path.with_name("results.json")
+            protocol = json.loads(metadata.read_text()).get("protocol", {}) if metadata.is_file() else {}
+            rows = {}
+            with path.open() as handle:
+                for item in csv.DictReader(handle):
+                    value = item.get("pb_valid", "").lower()
+                    rows.setdefault(item["target"], []).append(dict(
+                        index=int(item["mol_idx"]), smiles=item["smiles"],
+                        valid=True if value in ("1", "true") else False if value in ("0", "false") else None,
+                        n_pass=int(item["n_pass"]) if item.get("n_pass") else None,
+                        n_checks=int(item["n_checks"]) if item.get("n_checks") else None,
+                    ))
+            return rows, protocol
+        document = json.loads(path.read_text())
+        rows = [dict(index=i, smiles=item.get("smiles", ""),
+                     **{k: (item.get("posebusters") or {}).get(k) for k in ("valid", "n_pass", "n_checks")})
+                for i, item in enumerate(document.get("samples", []))]
+        return {path.parent.name: rows}, {
+            "mode": "dock", "pose_receptor_scope": document.get("pose_receptor_scope", "crop"),
+            "computed_at": document.get("computed_at"),
+        }
+
+    def pb_records(self, method, target, energy_key="vina_dock"):
+        """Keep only verified PB passes. Missing/ambiguous evaluations stay excluded.
+
+        PB checks concern the source SDF pose. A docking-table index is never
+        used to join them: native tables can omit invalid SDF records.
+        """
+        records, invalid = self.ranked_records(method, target, energy_key)
+        path = self._pb_file(method, target)
+        rows, protocol = {}, {}
+        if path.is_file():
+            stat = path.stat()
+            metadata = path.with_name("results.json")
+            signature = metadata.stat().st_mtime_ns if metadata.is_file() else None
+            rows, protocol = self._pb_results(str(path), stat.st_size, stat.st_mtime_ns, signature)
+        def identity(mol):
+            return Chem.MolToSmiles(Chem.RemoveHs(mol), isomericSmiles=False)
+        source, generated = {}, {}
+        with rdBase.BlockLogs():
+            for item in rows.get(target, []):
+                mol = Chem.MolFromSmiles(item["smiles"])
+                if mol is not None and mol.GetNumAtoms():
+                    source.setdefault(identity(mol), []).append(item)
+        for record in records:
+            generated.setdefault(identity(record["mol"]), []).append(record)
+        eligible = []
+        counts = dict(total_count=len(records), pb_valid_count=0, pb_failed_count=0,
+                      pb_unknown_count=0, scored_count=0)
+        for key, matches in generated.items():
+            items = source.get(key, [])
+            for record in matches:
+                item = items[0] if len(items) == len(matches) == 1 else None
+                match_kind = "unique_molecular_identity"
+                # Only staged meta bundles have an audited source index for
+                # distinguishing duplicate molecules with different poses.
+                if item is None and record["mol"].HasProp("source_mol_idx"):
+                    index = record["mol"].GetIntProp("source_mol_idx")
+                    indexed = [r for r in items if r["index"] == index]
+                    if len(indexed) == 1:
+                        item, match_kind = indexed[0], "source_index_and_molecular_identity"
+                value = item.get("valid") if item else None
+                if value is not True:
+                    counts["pb_failed_count" if value is False else "pb_unknown_count"] += 1
+                    continue
+                counts["pb_valid_count"] += 1
+                counts["scored_count"] += record["energy"] is not None
+                eligible.append(dict(record, pb_valid=True, pb_source=str(path),
+                                     pb_eval_index=item["index"], pb_match=match_kind,
+                                     pb_n_pass=item.get("n_pass"), pb_n_checks=item.get("n_checks"),
+                                     pb_receptor_scope=protocol.get("pose_receptor_scope", "unspecified"),
+                                     pb_protocol=protocol))
+        eligible.sort(key=lambda r: (r["energy"] is None, r["energy"] or 0))
+        return eligible, invalid, counts
+
+    def selection_index(self, method, target, energy_key="vina_dock", pb_only=False):
+        """Persist score-to-SDF mappings once; subsequent loads do not sanitize all molecules."""
+        score_file = self._score_file(method)
+        if not score_file.is_file() and not pb_only:
+            return None
+        paths = [*self.files[method][target]]
+        if score_file.is_file():
+            paths.append(score_file)
+        if pb_only:
+            pb_file = self._pb_file(method, target)
+            paths.extend(p for p in (pb_file, pb_file.with_name("results.json")) if p.is_file())
+        signature = [(str(p.resolve()), p.stat().st_size, p.stat().st_mtime_ns) for p in paths]
+        payload = json.dumps([4, rdBase.rdkitVersion, energy_key, pb_only, signature], sort_keys=True)
+        digest = hashlib.sha256(payload.encode()).hexdigest()
+        cache_dir = Path(__file__).resolve().parents[2] / ".cache/fig-qual/selection-index"
+        cache_file = cache_dir / f"{digest}.json"
+        if cache_file.is_file():
+            return json.loads(cache_file.read_text())
+        print(f"Indexing {method} / {target} scores once...", flush=True)
+        # A new fingerprint must not reuse stale in-memory source data.
+        self.records.cache_clear()
+        self.ranked_records.cache_clear()
+        self._energy_results.cache_clear()
+        counts = None
+        if pb_only:
+            records, invalid, counts = self.pb_records(method, target, energy_key)
+        else:
+            records, invalid = self.ranked_records(method, target, energy_key)
+        entries = []
+        for r in records:
+            entry = {k: v for k, v in r.items() if k != "mol"}
+            entry["path"] = str(r["path"])
+            entries.append(entry)
+        index = dict(records=entries, invalid=invalid, counts=counts)
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(mode="w", dir=cache_dir, suffix=".tmp",
+                                         delete=False) as handle:
+            json.dump(index, handle)
+            temp_path = Path(handle.name)
+        temp_path.replace(cache_file)
+        return index
+
+    @staticmethod
+    @lru_cache(maxsize=256)
+    def _read_one(path, record_index, size, modified_ns):
+        # size/mtime are cache keys so edited source SDFs cannot return stale molecules.
+        with rdBase.BlockLogs():
+            supplier = Chem.SDMolSupplier(str(path), removeHs=False)
+            try:
+                mol = supplier[record_index]
+            except IndexError:
+                return None
+        if (mol is None or not mol.GetNumConformers() or not mol.GetNumHeavyAtoms()
+                or not np.isfinite(mol.GetConformer().GetPositions()).all()):
+            return None
+        return mol
+
+    def initial_record(self, method, target, energy_key="vina_dock", saved=None, pb_only=False):
+        """Read only the selected molecule; unscored methods stop at the first readable record."""
+        index = self.selection_index(method, target, energy_key, pb_only=pb_only)
+        if index is not None:
+            entries = index["records"]
+            if saved is not None:
+                entries = [r for r in entries if Path(r["path"]).resolve() == Path(saved["path"]).resolve()
+                           and r["index"] == saved["record_index"]]
+            for entry in entries:
+                path = Path(entry["path"])
+                stat = path.stat()
+                mol = self._read_one(str(path), entry["index"], stat.st_size, stat.st_mtime_ns)
+                if mol is not None:
+                    return dict(entry, path=path, mol=mol), index["invalid"]
+            raise ValueError(f"No readable indexed selection: {method}, {target}")
+        invalid = []
+        for path in self.files[method][target]:
+            if saved is not None and path.resolve() != Path(saved["path"]).resolve():
+                continue
+            with rdBase.BlockLogs():
+                supplier = Chem.SDMolSupplier(str(path), removeHs=False)
+                indices = [saved["record_index"]] if saved else range(len(supplier))
+                for i in indices:
+                    stat = path.stat()
+                    mol = self._read_one(str(path), i, stat.st_size, stat.st_mtime_ns)
+                    if mol is None:
+                        invalid.append(f"{path.name} [{i}]")
+                        continue
+                    return dict(path=path, index=i, mol=mol, energy=None,
+                                energy_key=energy_key, energy_source=None,
+                                label=f"{path.name} [{i}] · {mol.GetNumHeavyAtoms()} atoms"), invalid
+        raise ValueError(f"No readable 3D selection: {method}, {target}")
+
+    @staticmethod
+    @lru_cache(maxsize=16)
+    def _energy_results(path):
+        if Path(path).suffix == ".csv":
+            results = {}
+            with Path(path).open() as handle:
+                for item in csv.DictReader(handle):
+                    row = results.setdefault(item["target"], {"per_mol": []})
+                    values = {key: float(item[key]) if item.get(key) else None
+                              for key in ("vina_score", "vina_min", "vina_dock")}
+                    row["per_mol"].append(dict(idx=int(item["mol_idx"]), smiles=item["smiles"], **values))
+            return results
+        document = json.loads(Path(path).read_text())
+        return {r["target"]: r for r in document.get("per_target", [])}
+
+    REF_ENERGY_KEYS = {"vina_score": "ref_vina_score", "vina_min": "ref_vina_min",
+                       "vina_dock": "ref_vina_dock"}
+
+    @lru_cache(maxsize=256)
+    def reference_energy(self, target, energy_key="vina_dock"):
+        """Cached docking score of the crystal reference ligand for this pocket.
+
+        The displayed reference comes from 'VoxBind + Ours' (see reference()), whose
+        score file carries ref_vina_* per target; fall back to any other method whose
+        score file exposes those fields. Returns None when no source has it.
+        """
+        ref_key = self.REF_ENERGY_KEYS.get(energy_key)
+        if ref_key is None:
+            return None
+        ordered = ["VoxBind + Ours", *[m for m in self.specs if m != "VoxBind + Ours"]]
+        for method in ordered:
+            if method not in self.specs:
+                continue
+            score_file = self._score_file(method)
+            if not score_file.is_file():
+                continue
+            row = self._energy_results(str(score_file)).get(target)
+            if row and isinstance(row.get(ref_key), (int, float)):
+                return float(row[ref_key])
+        return None
+
+    def reference_paths(self, method, target):
+        spec = self.specs[method]
+        if spec["layout"] == "mcp_results":
+            folder = Path(spec["reference_root"]) / target.lower()
+            ligand = folder / f"{target.lower()}_ligand.sdf"
+            pocket = folder / f"{target.lower()}_pocket.pdb"
+            if not ligand.is_file() or not pocket.is_file():
+                raise ValueError(f"Missing MCP reference ligand or pocket in {folder}")
+            return ligand, pocket
+        folder = self.files[method][target][0].parent
+        ligands = [p for p in sorted(folder.glob("*.sdf")) if p.name != "samples.sdf"]
+        pockets = sorted(folder.glob("*_pocket10.pdb"))
+        if len(ligands) != 1 or len(pockets) != 1:
+            raise ValueError(f"Expected one reference SDF and pocket10 PDB in {folder}")
+        return ligands[0], pockets[0]
+
+    @lru_cache(maxsize=64)
+    def reference(self, target):
+        ligand_path, pocket_path = self.reference_paths("VoxBind + Ours", target)
+        mol = next(iter(Chem.SDMolSupplier(str(ligand_path), removeHs=False)), None)
+        pocket = Chem.MolFromPDBFile(str(pocket_path), sanitize=False, removeHs=False,
+                                     proximityBonding=True)
+        if mol is None or pocket is None:
+            raise ValueError(f"Cannot parse reference for {target}")
+        center = geometry(mol)[0].mean(axis=0)
+        return dict(mol=mol, pocket=pocket, center=center,
+                    ligand_path=ligand_path, pocket_path=pocket_path,
+                    label=target + " · " + ligand_path.stem.split("__")[-1][:4].upper())
+
+    def validate_target(self, target, methods):
+        """Fail on mismatched references, rather than silently aligning unrelated pockets."""
+        ref = self.reference(target)
+        canonical = ref["ligand_path"].stem.split("__")[-1].removesuffix("_ref")
+        for method in methods:
+            if self.specs[method]["layout"] in ("eval", "eval_shards"):
+                ligand_path, pocket_path = self.reference_paths(method, target)
+                identity = ligand_path.stem.split("__")[-1].removesuffix("_ref")
+                if identity != canonical:
+                    raise ValueError(f"Reference identity mismatch: {target}, {method}")
+                other = next(iter(Chem.SDMolSupplier(str(ligand_path), removeHs=False)), None)
+                other_pocket = Chem.MolFromPDBFile(str(pocket_path), sanitize=False,
+                                                  removeHs=False, proximityBonding=True)
+                for expected, actual in ((ref["mol"], other), (ref["pocket"], other_pocket)):
+                    if actual is None:
+                        raise ValueError(f"Unreadable reference: {target}, {method}")
+                    xyz, elements, _ = geometry(expected)
+                    other_xyz, other_elements, _ = geometry(actual)
+                    if (xyz.shape != other_xyz.shape or not np.array_equal(elements, other_elements)
+                            or not np.allclose(xyz, other_xyz, atol=0.02)):
+                        raise ValueError(f"Reference coordinate mismatch: {target}, {method}")
+            elif self.specs[method]["layout"] == "sweep":
+                info = self.files[method][target][0].parent.parent / "pocket_info.txt"
+                if info.exists() and canonical not in info.read_text():
+                    raise ValueError(f"Pocket identity mismatch: {info}")
+
+
+def geometry(mol, center=None, extent=None):
+    coords = np.asarray(mol.GetConformer().GetPositions(), dtype=float)
+    if center is not None:
+        coords = coords - center
+    elements = np.array([a.GetSymbol() for a in mol.GetAtoms()])
+    heavy = np.array([a.GetAtomicNum() > 1 for a in mol.GetAtoms()])
+    keep = heavy.copy()
+    if extent is not None:
+        keep &= np.all(np.abs(coords) <= extent + 0.15, axis=1)
+    bonds = np.array([[b.GetBeginAtomIdx(), b.GetEndAtomIdx()] for b in mol.GetBonds()],
+                     dtype=int).reshape(-1, 2)
+    if extent is not None and len(bonds):
+        # Atom-wise cube cropping can leave the first atom beyond a cut bond as a
+        # floating ball. Remove only those crop-created singletons; preserve ions
+        # and other atoms that were already unbonded in the source pocket.
+        full_degree = np.zeros(len(coords), dtype=int)
+        heavy_bonds = bonds[np.all(heavy[bonds], axis=1)]
+        if len(heavy_bonds):
+            np.add.at(full_degree, heavy_bonds[:, 0], 1)
+            np.add.at(full_degree, heavy_bonds[:, 1], 1)
+        cropped_degree = np.zeros(len(coords), dtype=int)
+        cropped_bonds = bonds[np.all(keep[bonds], axis=1)]
+        if len(cropped_bonds):
+            np.add.at(cropped_degree, cropped_bonds[:, 0], 1)
+            np.add.at(cropped_degree, cropped_bonds[:, 1], 1)
+        keep &= ~((full_degree > 0) & (cropped_degree == 0))
+    indices = np.flatnonzero(keep)
+    remap = np.full(len(coords), -1, dtype=int)
+    remap[indices] = np.arange(len(indices))
+    bonds = remap[bonds[np.all(keep[bonds], axis=1)]]
+    return coords[keep], elements[keep], bonds
+
+
+def scene_name(index):
+    return "scene" if index == 0 else f"scene{index + 1}"
+
+
+def atom_occupancy_mesh(coords, elements, extent, resolution=OCCUPANCY_RESOLUTION_A,
+                        threshold=OCCUPANCY_ISO):
+    """Mesh the summed Gaussian atom occupancy used by VoxBind.
+
+    The grid and threshold match fig-overview: a 0.25 A grid centered on the
+    reference ligand and an iso value of 0.45. Each heavy atom uses its RDKit
+    van-der-Waals radius as the Gaussian sigma, matching VoxBind's pocket input.
+    """
+    from skimage.measure import marching_cubes
+
+    grid_dim = int(round(2 * extent / resolution))
+    if grid_dim < 2 or not np.isclose(grid_dim * resolution, 2 * extent):
+        raise ValueError("Occupancy extent must be an integer multiple of the resolution.")
+    volume = np.zeros((grid_dim, grid_dim, grid_dim), dtype=np.float32)
+    periodic_table = Chem.GetPeriodicTable()
+    neighborhood = 8  # VoxBind Voxelizer.cubes_around default.
+    for coord, element in zip(np.asarray(coords, dtype=float), elements):
+        atomic_number = periodic_table.GetAtomicNumber(str(element))
+        radius = periodic_table.GetRvdw(atomic_number) if atomic_number else 1.8
+        grid_coord = coord / resolution + grid_dim * 0.5
+        anchor = np.rint(grid_coord).astype(int)
+        lo = np.maximum(anchor - neighborhood, 0)
+        hi = np.minimum(anchor + neighborhood + 1, grid_dim)
+        if np.any(lo >= hi):
+            continue
+        gx = np.arange(lo[0], hi[0], dtype=np.float32)[:, None, None]
+        gy = np.arange(lo[1], hi[1], dtype=np.float32)[None, :, None]
+        gz = np.arange(lo[2], hi[2], dtype=np.float32)[None, None, :]
+        dist_sq = ((gx - grid_coord[0]) ** 2 + (gy - grid_coord[1]) ** 2
+                   + (gz - grid_coord[2]) ** 2)
+        sigma_vox = max(float(radius) / resolution, 1e-3)
+        volume[lo[0]:hi[0], lo[1]:hi[1], lo[2]:hi[2]] += np.exp(
+            -dist_sq / (2.0 * sigma_vox ** 2)
+        ).astype(np.float32)
+    if not np.any(volume >= threshold):
+        raise ValueError("Pocket occupancy is empty at the requested iso threshold.")
+    vertices, faces, _, _ = marching_cubes(
+        volume, level=threshold, spacing=(resolution,) * 3,
+        allow_degenerate=False,
+    )
+    vertices -= extent
+    return vertices, faces
+
+
+def data_cube_trace(extent, color=DATA_CUBE_BORDER_COLOR, width=1.5, opacity=0.7):
+    """Draw the 12 edges of the fixed reference-centered data cube."""
+    corners = np.array([
+        [x, y, z]
+        for x in (-extent, extent)
+        for y in (-extent, extent)
+        for z in (-extent, extent)
+    ], dtype=float)
+    edges = [
+        (i, j) for i in range(len(corners)) for j in range(i + 1, len(corners))
+        if np.count_nonzero(corners[i] != corners[j]) == 1
+    ]
+    x, y, z = [], [], []
+    for start, end in edges:
+        x.extend((corners[start, 0], corners[end, 0], None))
+        y.extend((corners[start, 1], corners[end, 1], None))
+        z.extend((corners[start, 2], corners[end, 2], None))
+    return go.Scatter3d(
+        x=x, y=y, z=z, mode="lines", name="Data cube", legendgroup="data-cube",
+        line=dict(color=color, width=width), opacity=opacity,
+        showlegend=False, hoverinfo="skip",
+    )
+
+
+def make_table(rows):
+    if not rows:
+        return widgets.HTML("No entries")
+    keys = list(rows[0])
+    esc = lambda value: html.escape(str(value))
+    table = '<table style="border-collapse:collapse;text-align:left;font-size:12px">'
+    table += "<tr>" + "".join(f"<th style='padding:5px'>{esc(k)}</th>" for k in keys) + "</tr>"
+    for row in rows:
+        table += "<tr>" + "".join(f"<td style='padding:5px;vertical-align:top'>{esc(row[k])}</td>"
+                                  for k in keys) + "</tr>"
+    return widgets.HTML(table + "</table>")
+
+
+class QualitativeGrid:
+    def __init__(self, catalog, style, methods, targets, panel_px=310, pocket_extent=8.0,
+                 selections=None, cameras=None, energy_key="vina_dock"):
+        self.catalog, self.style, self.methods = catalog, style, list(methods)
+        self.energy_key = energy_key
+        self.targets = list(targets)
+        self.panel_px, self.pocket_extent = panel_px, pocket_extent
+        self.selections = deepcopy(selections or {})
+        self.cameras = deepcopy(cameras or {})
+        self.columns = ["Reference", *self.methods]
+        self.rows = []
+        common = catalog.common_targets(methods)
+        if len(set(targets)) != len(targets):
+            raise ValueError("Choose distinct pockets for the rows.")
+        for target in targets:
+            if target not in common:
+                raise ValueError(f"{target} is not available for all selected methods")
+        for row_index, target in enumerate(targets):
+            state = dict(target=target, syncing=False)
+            target_menu = widgets.Dropdown(options=[(t, t) for t in common],
+                                          value=target, description=f"Pocket {row_index + 1}",
+                                          layout=widgets.Layout(width="320px"))
+            controls, output, error = widgets.HBox(), widgets.Output(), widgets.HTML()
+            state.update(menu=target_menu, controls=controls, output=output, error=error)
+            self.rows.append(state)
+            self._load_row(row_index)
+
+            def change_target(change, row=row_index):
+                old = self.rows[row]["target"]
+                if change["new"] == old:
+                    return
+                try:
+                    if change["new"] in [s["target"] for i, s in enumerate(self.rows) if i != row]:
+                        raise ValueError("Select a different pocket for each row.")
+                    self.rows[row]["target"] = change["new"]
+                    self._load_row(row)
+                    self.rows[row]["error"].value = ""
+                except Exception as exc:
+                    self.rows[row]["target"] = old
+                    self.rows[row]["menu"].value = old
+                    self.rows[row]["error"].value = html.escape(str(exc))
+
+            target_menu.observe(change_target, names="value")
+        self.widget = widgets.VBox([
+            widgets.VBox([s["menu"], s["controls"], s["error"], s["output"]],
+                         layout=widgets.Layout(overflow="auto", width="100%")) for s in self.rows
+        ])
+
+    def close(self):
+        """Release old widgets before rebuilding the comparison cell."""
+        seen = set()
+
+        def close_widget(widget):
+            if id(widget) in seen:
+                return
+            seen.add(id(widget))
+            for child in getattr(widget, "children", ()):
+                close_widget(child)
+            widget.close()
+
+        for state in self.rows:
+            close_widget(state["figure"])
+        close_widget(self.widget)
+
+    def _model_traces(self, geom, role):
+        coords, elements, bonds = geom
+        color = self.style["LIGAND_COLOR" if role == "Ligand" else "POCKET_COLOR"]
+        return [self.style["bond_trace"](coords, elements, bonds, role, role, color),
+                self.style["atom_trace"](coords, elements, role, role, color)]
+
+    def _load_row(self, row_index):
+        state = self.rows[row_index]
+        target = state["target"]
+        self.catalog.validate_target(target, self.methods)
+        ref = self.catalog.reference(target)
+        state["ref"] = ref
+        pocket_geom = geometry(ref["pocket"], ref["center"], self.pocket_extent)
+        state["pocket_traces"] = self._model_traces(pocket_geom, "Pocket")
+        occupancy_vertices, occupancy_faces = atom_occupancy_mesh(
+            pocket_geom[0], pocket_geom[1], self.pocket_extent)
+        state["pocket_occupancy_trace"] = self.style["mesh_trace"](
+            occupancy_vertices, occupancy_faces,
+            [POCKET_OCCUPANCY_COLOR] * len(occupancy_vertices),
+            "Pocket atom occupancy", "pocket-occupancy",
+            opacity=POCKET_OCCUPANCY_OPACITY,
+        )
+        state["panel_prefix_traces"] = [
+            state["pocket_occupancy_trace"], data_cube_trace(self.pocket_extent),
+            *state["pocket_traces"],
+        ]
+        state["records"], state["menus"] = {}, {}
+        controls = []
+        for method in self.methods:
+            saved = self.selections.get(target, {}).get(method)
+            record, invalid = self.catalog.initial_record(method, target, self.energy_key, saved)
+            records = [record]
+            state["records"][method] = records
+            menu = widgets.Dropdown(options=[(record["label"], 0)], value=0,
+                                    layout=widgets.Layout(width=f"{self.panel_px - 12}px"))
+            state["menus"][method] = menu
+            score_note = (f"{self.energy_key} = {record['energy']:.3f} kcal/mol"
+                          if record.get("energy") is not None else "No verified energy score")
+            summary = widgets.HTML(f"<small>{html.escape(score_note)} · 1 ligand loaded</small>")
+            load_all = widgets.Button(description="Load all ligands", icon="list",
+                                      layout=widgets.Layout(width="150px"))
+            controls.append(widgets.VBox([
+                widgets.HTML(f"<b>{html.escape(method)}</b>"), menu, summary, load_all,
+            ]))
+
+            def select_ligand(change, row=row_index, method=method):
+                if change["new"] is not None:
+                    self._refresh(row, method)
+
+            menu.observe(select_ligand, names="value")
+
+            def load_remaining(button, method=method, menu=menu, summary=summary,
+                               callback=select_ligand, row=row_index):
+                button.disabled = True
+                button.description = "Loading..."
+                current = self.rows[row]
+                selected = self.selections[current["target"]][method]
+                try:
+                    all_records, skipped = self.catalog.ranked_records(method, current["target"], self.energy_key)
+                    chosen = next(i for i, r in enumerate(all_records)
+                                  if str(r["path"]) == selected["path"] and r["index"] == selected["record_index"])
+                    menu.unobserve(callback, names="value")
+                    try:
+                        current["records"][method] = all_records
+                        menu.options = [(r["label"], i) for i, r in enumerate(all_records)]
+                        menu.value = chosen
+                    finally:
+                        menu.observe(callback, names="value")
+                    summary.value = f"<small>{len(all_records)} ligands · {len(skipped)} skipped</small>"
+                    button.description = "All ligands loaded"
+                except Exception as exc:
+                    current["error"].value = html.escape(str(exc))
+                    button.description = "Retry loading"
+                    button.disabled = False
+
+            load_all.on_click(load_remaining)
+        inspect_button = widgets.Button(description="Inspect selected ligands", icon="search")
+        inspect_button.on_click(lambda _: self.inspect(row_index))
+        state["controls"].children = [widgets.VBox([inspect_button], layout=widgets.Layout(
+            width=f"{self.panel_px - 12}px", min_width=f"{self.panel_px - 12}px")), *controls]
+        self._refresh(row_index)
+
+    def _refresh(self, row_index, changed_method=None):
+        state = self.rows[row_index]
+        ref, target = state["ref"], state["target"]
+        molecules = [ref["mol"]]
+        self.selections.setdefault(target, {})
+        for method, menu in state["menus"].items():
+            record = state["records"][method][menu.value]
+            molecules.append(record["mol"])
+            self.selections[target][method] = dict(path=str(record["path"]), record_index=record["index"])
+        geometries = [geometry(m, ref["center"]) for m in molecules]
+        # Every column shares a center, camera and scale. Never recenter a generated ligand.
+        # Keep the reference-centered pocket crop fixed; expand the view for large ligands.
+        extent = max(self.pocket_extent + 0.5,
+                     max(float(np.abs(g[0]).max()) for g in geometries) + 0.8)
+        state["extent"] = extent
+        axis = dict(range=[-extent, extent], visible=False, showgrid=False,
+                    zeroline=False, showbackground=False)
+        if changed_method is not None and "figure" in state:
+            # A ligand change updates only that column's two meshes; pocket geometry stays put.
+            figure = state["figure"]
+            column = self.columns.index(changed_method)
+            traces = self._model_traces(geometries[column], "Ligand")
+            traces_per_panel = len(state["panel_prefix_traces"]) + len(traces)
+            ligand_offset = len(state["panel_prefix_traces"])
+            with figure.batch_update():
+                for offset, trace in enumerate(traces):
+                    payload = trace.to_plotly_json()
+                    payload.pop("type", None)
+                    figure.data[column * traces_per_panel + ligand_offset + offset].update(payload)
+                for i in range(len(self.columns)):
+                    scene = figure.layout[scene_name(i)]
+                    scene.xaxis.range = [-extent, extent]
+                    scene.yaxis.range = [-extent, extent]
+                    scene.zaxis.range = [-extent, extent]
+            return
+
+        fig = make_subplots(rows=1, cols=len(self.columns),
+                            specs=[[{"type": "scene"}] * len(self.columns)],
+                            horizontal_spacing=0.006)
+        camera = self.cameras.get(target, self.style["DEFAULT_CAMERA"])
+        for column, geom in enumerate(geometries):
+            for trace in [*state["panel_prefix_traces"], *self._model_traces(geom, "Ligand")]:
+                fig.add_trace(trace, row=1, col=column + 1)
+            fig.update_layout({scene_name(column): dict(
+                xaxis=axis, yaxis=axis, zaxis=axis, aspectmode="cube", camera=deepcopy(camera),
+                dragmode="orbit", bgcolor="white")})
+        fig.update_layout(width=self.panel_px * len(self.columns), height=self.panel_px,
+                          margin=dict(l=0, r=0, t=0, b=0), showlegend=False, hovermode=False,
+                          paper_bgcolor="white", plot_bgcolor="white",
+                          font=dict(family="Arial", size=15, color="#514F52"))
+        old = state.get("figure")
+        figure = go.FigureWidget(fig)
+        state["figure"] = figure
+
+        def sync_camera(scene, camera):
+            if state["syncing"]:
+                return
+            state["syncing"] = True
+            try:
+                saved = camera.to_plotly_json()
+                self.cameras[target] = saved
+                with figure.batch_update():
+                    for column in range(len(self.columns)):
+                        other = figure.layout[scene_name(column)]
+                        if other is not scene:
+                            other.camera = deepcopy(saved)
+            finally:
+                state["syncing"] = False
+
+        for column in range(len(self.columns)):
+            figure.layout[scene_name(column)].on_change(sync_camera, "camera")
+        with state["output"]:
+            state["output"].clear_output(wait=True)
+            display(figure)
+        if old is not None:
+            old.close()
+
+    def inspect(self, row_index):
+        """Show 2D structures and exact source records without modifying 3D coordinates."""
+        from rdkit.Chem import Draw, rdDepictor
+        state = self.rows[row_index]
+        molecules = [state["ref"]["mol"]] + [state["records"][m][menu.value]["mol"]
+                                              for m, menu in state["menus"].items()]
+        copies = [Chem.Mol(m) for m in molecules]
+        for mol in copies:
+            rdDepictor.Compute2DCoords(mol)
+        with state["output"]:
+            state["output"].clear_output(wait=True)
+            display(state["figure"])
+            display(Draw.MolsToGridImage(copies, legends=self.columns, molsPerRow=3,
+                                        subImgSize=(280, 210), useSVG=True))
+            display(make_table([r for r in self.selection_report() if r["target"] == state["target"]]))
+
+    def selection_report(self):
+        rows = []
+        for state in self.rows:
+            ref = state["ref"]
+            for method, menu in state["menus"].items():
+                record = state["records"][method][menu.value]
+                xyz = geometry(record["mol"], ref["center"])[0]
+                offset = float(np.linalg.norm(xyz.mean(axis=0)))
+                rows.append(dict(target=state["target"], method=method,
+                                 source=str(record["path"]), record_index=record["index"],
+                                 heavy_atoms=len(xyz), energy=record.get("energy"),
+                                 energy_key=self.energy_key, energy_source=record.get("energy_source"),
+                                 energy_eval_index=record.get("energy_eval_index"),
+                                 centroid_offset_A=round(offset, 2),
+                                 note=("CHECK coordinate frame / displaced pose" if offset > 10 else
+                                       ("No verified energy score" if record.get("energy") is None else "")),
+                                 smiles=Chem.MolToSmiles(Chem.RemoveHs(record["mol"]))))
+        return rows
+
+    def figure(self):
+        """Snapshot the live widgets, including the cameras currently shown."""
+        nrows, ncols = len(self.rows), len(self.columns)
+        fig = make_subplots(rows=nrows, cols=ncols,
+                            specs=[[{"type": "scene"}] * ncols for _ in self.rows],
+                            horizontal_spacing=0.005, vertical_spacing=0.075)
+        for row, state in enumerate(self.rows):
+            live = state["figure"]
+            for col in range(ncols):
+                src_name = scene_name(col)
+                for trace in live.data:
+                    if trace.scene == src_name:
+                        fig.add_trace(trace, row=row + 1, col=col + 1)
+                scene = live.layout[src_name].to_plotly_json()
+                scene.pop("domain", None)
+                dest_name = scene_name(row * ncols + col)
+                fig.update_layout({dest_name: scene})
+            first = fig.layout[scene_name(row * ncols)].domain
+            ref_energy = self.catalog.reference_energy(state["target"], self.energy_key)
+            row_label = state["ref"]["label"]
+            if ref_energy is not None:
+                row_label += f" · ref {ref_energy:.1f}"
+            fig.add_annotation(text=row_label, x=-0.018, y=sum(first.y) / 2,
+                               xref="paper", yref="paper", textangle=-90, showarrow=False,
+                               font=dict(size=16))
+        fig.update_layout(width=ncols * self.panel_px + 65, height=nrows * self.panel_px + 85,
+                          margin=dict(l=65, r=5, t=55, b=20), showlegend=False,
+                          paper_bgcolor="white", plot_bgcolor="white",
+                          font=dict(family="Arial", color="#514F52"))
+        return fig
+
+    def manifest(self):
+        return dict(methods=self.methods, energy_key=self.energy_key, targets=[s["target"] for s in self.rows],
+                    selections={s["target"]: self.selections[s["target"]] for s in self.rows},
+                    cameras={s["target"]: s["figure"].layout.scene.camera.to_plotly_json()
+                             for s in self.rows},
+                    pocket_half_extent_A=self.pocket_extent, panel_px=self.panel_px,
+                    pose="original SDF coordinates; reference-heavy-atom centroid subtracted from all models",
+                    style_source=self.style.get("_source_name", "fig1.ipynb"), ligand_color=self.style["LIGAND_COLOR"],
+                    pocket_color=self.style["POCKET_COLOR"],
+                    pocket_occupancy_color=POCKET_OCCUPANCY_COLOR,
+                    pocket_occupancy_opacity=POCKET_OCCUPANCY_OPACITY,
+                    data_cube_border_color=DATA_CUBE_BORDER_COLOR,
+                    references=[dict(target=s["target"], ligand=str(s["ref"]["ligand_path"]),
+                                     pocket=str(s["ref"]["pocket_path"]),
+                                     shared_view_half_extent_A=s["extent"]) for s in self.rows],
+                    selected_ligands=self.selection_report())

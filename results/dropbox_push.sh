@@ -4,7 +4,9 @@
 # The whole results/ folder is git-ignored EXCEPT the three bootstrap files
 # (dropbox_push.sh, dropbox_pull.sh, README.md) which travel via git -- so those
 # are excluded here to let git own them and Dropbox own the heavy content
-# (reports/, samples/, metrics/, docker/).
+# (reports/, samples/, metrics/, docker/). The paper-facing task1 CDG-v2
+# checkpoint is mirrored from voxbind/model_zoo/CDG_v2 explicitly below; it is
+# not duplicated in the local results tree.
 #
 # `rclone copy` is INCREMENTAL & RESUMABLE: files already on Dropbox (same size +
 # content) are SKIPPED, and `copy` never deletes anything there.
@@ -18,6 +20,8 @@ export PATH="$HOME/.local/bin:$PATH"
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"   # .../VoxBind/results
 DEST="dropbox:/박성현/VoxBind/results"
+CDG_V2_CKPT_SOURCE="${CDG_V2_CKPT_SOURCE:-$HERE/../voxbind/model_zoo/CDG_v2/checkpoint_e0025.pth.tar}"
+CDG_V2_CKPT_DEST="$DEST/task1-affinity/CDG-v2/checkpoint_e0025.pth.tar"
 EXCLUDES=(
   --exclude "/dropbox_push.sh"
   --exclude "/dropbox_pull.sh"
@@ -70,6 +74,12 @@ fi
 echo
 echo ">> dry-run preview (what would actually transfer vs. what's already on Dropbox):"
 rclone copy "$HERE/" "$DEST/" "${EXCLUDES[@]}" --dry-run "${ARGS[@]}"
+if [ -f "$CDG_V2_CKPT_SOURCE" ]; then
+  echo ">> task1 CDG-v2 checkpoint mirror:"
+  rclone copyto "$CDG_V2_CKPT_SOURCE" "$CDG_V2_CKPT_DEST" --dry-run "${ARGS[@]}"
+else
+  echo ">> NOTE: CDG-v2 checkpoint not found; mirror skipped: $CDG_V2_CKPT_SOURCE"
+fi
 echo
 
 if [[ "$ASSUME_YES" -ne 1 ]]; then
@@ -78,9 +88,17 @@ if [[ "$ASSUME_YES" -ne 1 ]]; then
 fi
 
 rclone copy "$HERE/" "$DEST/" "${EXCLUDES[@]}" --transfers 4 --checkers 8 --progress "${ARGS[@]}"
+if [ -f "$CDG_V2_CKPT_SOURCE" ]; then
+  rclone copyto "$CDG_V2_CKPT_SOURCE" "$CDG_V2_CKPT_DEST" --progress "${ARGS[@]}"
+fi
 
 echo
 echo ">> done. verify integrity (hash compare) with:"
 echo "   rclone check \"$HERE/\" \"$DEST/\" \\"
 echo "     --exclude /dropbox_push.sh --exclude /dropbox_pull.sh --exclude /dropbox_pull_baselines.sh \\"
 echo "     --exclude /README.md --exclude .gitignore --exclude '.omc/**'"
+if [ -f "$CDG_V2_CKPT_SOURCE" ]; then
+  printf '   rclone check "%s/" "%s/task1-affinity/CDG-v2/" \\\n' \
+    "$(dirname "$CDG_V2_CKPT_SOURCE")" "$DEST"
+  echo "     --include /checkpoint_e0025.pth.tar --one-way"
+fi

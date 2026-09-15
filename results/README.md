@@ -13,6 +13,7 @@ checkout can bootstrap the pull.
 ```
 results/
 ├── task1-affinity/     <method>/  representations/  metrics.json   (+ SOURCE.txt)
+│                       CDG-v2 also carries checkpoint_e0025.pth.tar
 ├── task2-drugdesign/   <method>/  samples/  eval/  metrics.json   (+ SOURCE.txt)
 │                       EVAL_STATUS.md · EVAL_STATUS.json  = the coverage matrix
 ├── task3-mcp/          <method>/  samples/          metrics.json
@@ -45,6 +46,12 @@ IPNet-scratch, C, C-D-G, C-D-G-corr, CDG-v2 (= Ours), CDG-v3.
 `representations/` present for: CDG-v2, C-D-G, C-D-G-corr (voxbind features),
 GeoSSL (schnet), IPNet-frozen (IPDiff feats), DeepDTA/MolTrans (DeepPurpose
 logits). Others carry a `SOURCE.txt` (re-extract from `base/<method>/`).
+
+`CDG-v2/checkpoint_e0025.pth.tar` is the exact encoder used to produce the
+paper-facing CDG-v2 representation. `dropbox_push.sh` mirrors it from
+`voxbind/model_zoo/CDG_v2/`; both `dropbox_pull.sh` and the lightweight
+`dropbox_pull_baselines.sh` retrieve it. Size: 1,193,976,342 bytes; SHA-256:
+`9dbce36f33b1d3e9ba99e554979fc96331066ca24e1cda285f82117306a3d5f2`.
 
 ## task2-drugdesign  (CrossDocked)
 
@@ -147,11 +154,13 @@ FuncBind-vanilla, Ours-receptorED, Reference. FuncBind `.sdf/.pdb` samples are
 split by run-name heuristic (vanilla eval runs → FuncBind-vanilla; curated
 paper-100 → Ours-receptorED; one ambiguous paper run in `_shared/`).
 
-## Excluded on purpose — checkpoints & configs
+## Checkpoints & configs
 
-Model weights/configs are **not** duplicated here — they live in
-`voxbind/model_zoo/` (+ per-run `voxbind/exps/`), backed up to Dropbox separately
-at `박성현/VoxBind/model_zoo`. Also not copied: multi-GB raw per-sample eval
+Model weights/configs generally live in `voxbind/model_zoo/` (+ per-run
+`voxbind/exps/`), backed up separately at `박성현/VoxBind/model_zoo`. The one
+intentional exception is the task1 `CDG-v2` encoder checkpoint above: it travels
+with the representation so the reported affinity feature is reproducible from
+one method pull. Multi-GB raw per-sample eval remains excluded
 (`base/_casf/*.csv`, `base/decompdiff/eval_results_refprior25/*.pt`).
 
 ## docker/

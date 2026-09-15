@@ -9,6 +9,10 @@ The top-level scripts are the stable public entry points:
 - `04_probe.sh` — evaluate a frozen encoder.
 - `99_chain.sh` — wait for GPU resources and launch an arbitrary command.
 
+MCP density-conditioned generation is maintained in the FuncBind submodule.
+See [`mcp/README.md`](mcp/README.md) for the SB Docker workflow, Dropbox model
+download, smoke test, and 8×H100 launch.
+
 ## Pretraining
 
 Experiment settings belong in `configs/experiment/*.yaml`; temporary changes can
