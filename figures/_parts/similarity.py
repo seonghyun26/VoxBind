@@ -42,18 +42,26 @@
 # "Ours v1" is the key the CSV and every other table use; CoDE is what the paper calls
 # the model, so the rename lives here, at the display edge, and no data key moves.
 SIM_PRETTY = {"Ours v1": "CoDE",
+              "Ours C": "CoE",
               "VoxBind σ=0.9": r"VoxBind$_{\sigma=0.9}$",
               "VoxBind σ=1.0": r"VoxBind$_{\sigma=1.0}$"}
 SIM_OURS = "Ours v1"
+# The coords-only ablation. "Ours C" is the key build_reference_similarity.py's PLAIN map
+# writes into the CSV; CoE is what the paper calls it, so the rename lives here with CoDE's.
+SIM_COE = "Ours C"
 SIM_VOXBIND = ("VoxBind σ=0.9", "VoxBind σ=1.0")
 
 # The order of results_drug_design.html, not the ranking: this figure sits beside that
 # table and a reader moving between them should not have to re-find the rows. σ=1.0 is not
-# in that table, so it follows σ=0.9; ours stays last, where the table puts it.
+# in that table, so it follows σ=0.9; ours stays last, where the table puts it -- and the
+# table writes `+ \oursC` above `+ \ours`, so CoE precedes CoDE inside that pair.
 SIM_ORDER = ("AR", "Pocket2Mol", "DiffSBDD", "DecompDiff", "FuncBind", "TargetDiff",
-             "VoxBind σ=0.9", "VoxBind σ=1.0", "Ours v1")
+             "VoxBind σ=0.9", "VoxBind σ=1.0", "Ours C", "Ours v1")
 
 SIM_OUR_COLOR, SIM_VOX_COLOR, SIM_BASE_COLOR = soft("CoDE"), color("VoxBind"), "#9aa0a6"
+# CoE takes its palette colour rather than a tint: it is a tier of its own here, not a
+# lighter CoDE, and the whole point of the row is that it does NOT behave like CoDE.
+SIM_COE_COLOR = color("CoE")
 # The two VoxBind rows are one family at two noise levels, so they share a hue and
 # separate by tint rather than by taking a third colour: sigma=0.9 is the run ours is
 # built on and keeps the full-strength sand, sigma=1.0 the lighter one.
@@ -124,6 +132,12 @@ def _similarity_rows():
 def _similarity_colour(row):
     if row["method"] == SIM_OURS:
         return SIM_OUR_COLOR
+    # Before this branch existed CoE fell through to SIM_BASE_COLOR and drew grey -- the
+    # tier reserved for the published baselines. That is not a shade being off: it would
+    # have put our own ablation in another group's colour, on the one row whose point is
+    # that it sits far from the rest of the field.
+    if row["method"] == SIM_COE:
+        return SIM_COE_COLOR
     if row["method"] in SIM_VOXBIND:
         return SIM_VOX_TINTS.get(row["method"], SIM_VOX_COLOR)
     return SIM_BASE_COLOR
@@ -167,6 +181,10 @@ def _similarity_tier_handles(marker="o", size=5.0):
                    markeredgewidth=0, label=lab)
             for c, lab in ((SIM_BASE_COLOR, SIM_BASE_LABEL),
                            (SIM_VOX_COLOR, SIM_VOX_LABEL),
+                           # CoE sits beside CoDE in the key because it sits beside it in
+                           # the rows. Its label comes from SIM_PRETTY so the legend and the
+                           # y axis can never drift apart.
+                           (SIM_COE_COLOR, SIM_PRETTY[SIM_COE]),
                            (SIM_OUR_COLOR, SIM_OUR_LABEL))]
 
 
@@ -341,8 +359,14 @@ def draw_similarity_dumbbell(out):
         # stated once in the axis name instead of five times along the ticks; at 0.5% steps
         # the row of "0.5% 1% 1.5%" was more punctuation than number.
         bare_pct = plt.FuncFormatter(lambda v, _: f"{100 * v:.0f}")
+        # The ECFP4 tick step has to follow the span the way the limits now do. 0.02 was
+        # right for the 0.08-wide panel this was written for; across the 0.20 that CoE
+        # opens up it lays down eleven two-decimal labels that run into each other and the
+        # axis reads as a smear. The step is chosen from the data, not from the old width.
+        ecfp_span = max(r["mean"] for r in rows) - min(r["median"] for r in rows)
+        ecfp_step = 0.02 if ecfp_span <= 0.10 else 0.05
         for axis, name, step, fmt in (
-                (ax, "ECFP4 Tanimoto similarity", 0.02, plt.FormatStrFormatter("%.2f")),
+                (ax, "ECFP4 Tanimoto similarity", ecfp_step, plt.FormatStrFormatter("%.2f")),
                 (ax2, "Scaffold match (%)", 0.01, bare_pct)):
             _similarity_spines_and_ticks(axis)
             axis.set_xlabel(name, fontsize=15, labelpad=9)
@@ -357,8 +381,16 @@ def draw_similarity_dumbbell(out):
 
         _similarity_method_axis(ax, rows)
         ax.invert_yaxis()              # SIM_ORDER[0] at the top, as the table reads
-        ax.set_xlim(0.079, 0.161)
-        ax2.set_xlim(0, 0.0315)
+        # FOLLOWS THE DATA, and must: the hand-set (0.079, 0.161) / (0, 0.0315) were sized
+        # to the nine methods that existed when this was written, and CoE at 0.263 / 4.24%
+        # fell off BOTH panels -- its row kept its label and drew nothing at all, which a
+        # reader takes for a missing measurement rather than an off-scale one. A fixed span
+        # cannot fail loudly, so it does not get to decide who is visible.
+        lo = min(min(r["mean"], r["median"]) for r in rows)
+        hi = max(max(r["mean"], r["median"]) for r in rows)
+        pad = 0.05 * (hi - lo)
+        ax.set_xlim(lo - pad, hi + pad)
+        ax2.set_xlim(0, max(r["scaffold"] for r in rows) * 1.08)
         ax2.tick_params(axis="y", length=0)
         ax2.spines["left"].set_visible(False)
 
@@ -369,7 +401,11 @@ def draw_similarity_dumbbell(out):
                  Line2D([], [], ls="none", marker="o", markersize=5.2, color=INK,
                         mfc="white", markeredgewidth=2.2, markeredgecolor=INK,
                         label="median")]
-        _similarity_panel_key(ax, shape, loc="lower right")
+        # UPPER right, not lower. The lower-right corner was empty while every arm sat under
+        # 0.16; CoE is the second row from the bottom at 0.248-0.263, so the key landed
+        # exactly on its barbell and hid the one value the row exists to show. The top rows
+        # (AR, Pocket2Mol, DiffSBDD) are all near 0.09, which leaves the top right clear.
+        _similarity_panel_key(ax, shape, loc="upper right")
         _similarity_fit(fig, pad=0.5, w_pad=1.3)
         _similarity_save(fig, out, "similarity_a_dumbbell",
                          "methods down, metric across; ECFP4 barbell beside scaffold stems")
@@ -433,8 +469,16 @@ def draw_similarity_scatter(out):
         ax.grid(True, axis="y", color=GRID, lw=SIM_GRID_LW, ls=DOT)
         ax.yaxis.set_major_formatter(SIM_PCT)
         ax.yaxis.set_major_locator(MaxNLocator(5))
-        ax.set_xlim(0.082, 0.163)
-        ax.set_ylim(0.0, 0.0245)
+        # FOLLOWS THE DATA, for the reason the dumbbell's limits do. The hand-set
+        # (0.082, 0.163) x (0, 0.0245) held the nine methods this was written for; CoE at
+        # (0.263, 4.24%) landed outside BOTH, so the point was never drawn -- while the key
+        # above the panel still carried a CoE swatch. A figure that advertises a method it
+        # does not plot is worse than a cramped one. The pad is wider than a plain margin
+        # because every point here is labelled and the label needs the room.
+        xs = [r["mean"] for r in rows]
+        pad = 0.08 * (max(xs) - min(xs))
+        ax.set_xlim(min(xs) - pad, max(xs) + pad)
+        ax.set_ylim(0.0, max(r["scaffold"] for r in rows) * 1.13)
         top = _similarity_header(fig, _similarity_tier_handles(size=4.6),
                                  "lower-left = less like the crystal ligand on both axes")
         _similarity_fit(fig, pad=0.5, rect=(0, 0, 1, top))

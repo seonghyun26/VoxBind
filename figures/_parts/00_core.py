@@ -261,6 +261,14 @@ COLORS = {
     "VoxBind":          "#F5B27E",   # sand
     "CoDE":             "#4363D8",   # blue — ours (LaTeX: \textsc{CoDE})
     "Ours v2":          "#2B3A8C",   # deep indigo — same family as CoDE
+    # CoE (LaTeX: \oursC) is our coords-only ablation of CoDE, so the blue ladder is where
+    # it belongs by family -- and is exactly where it cannot go. The Vina per-atom family
+    # draws CoDE through soft() as periwinkle #8291E8 and CoE is a FOCUS arm beside it
+    # there, both solid at model weight: two steps of one blue would read as one curve.
+    # Deep teal is the nearest family no method holds at full saturation -- AR's #17A2B8 is
+    # lighter and only ever drawn as thin dashed context, so weight and lightness separate
+    # them wherever both appear.
+    "CoE":              "#0F766E",   # deep teal — ours, coords-only
 }
 
 # The MCP fine-tune arms are not four independent methods -- they are one model at four
@@ -292,6 +300,11 @@ ALIASES = {
     "ours_v1": "CoDE", "Ours": "CoDE", "Ours · v1": "CoDE", "Ours &middot; v1": "CoDE",
     "Ours v1": "CoDE", "VoxBind + Ours": "CoDE", "\\textsc{CoDE}": "CoDE", "CODE": "CoDE",
     "ours_v2": "Ours v2", "Ours · v2": "Ours v2", "Ours &middot; v2": "Ours v2",
+    # The coords-only ablation, which every table spells differently: "Ours C" is the
+    # similarity CSV's key (build_reference_similarity.py's PLAIN map), "Ours · coords" the
+    # drug-design table's row name, "VoxBind+CoE" the results-bundle folder.
+    "ours_c": "CoE", "Ours C": "CoE", "Ours · coords": "CoE", "Ours &middot; coords": "CoE",
+    "VoxBind+CoE": "CoE", "VoxBind + CoE": "CoE", "\\oursC": "CoE", "COE": "CoE",
     "vanilla_mcp": "FuncBind vanilla", "fb_unified": "FuncBind vanilla",
     "ft_3.17M": "FuncBind ft 3.17M", "ft_8.21M": "FuncBind ft 8.21M",
     "ft_26.1M": "FuncBind ft 26.1M",

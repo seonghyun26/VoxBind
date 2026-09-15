@@ -263,14 +263,21 @@ VPA_ARMS = [
     ("DecompDiff",  f"{E}/baselines_pose/decompdiff", VPA_BASE_LW, VPA_BASE_DASH),
     ("FuncBind",    f"{E}/baselines_pose/funcbind",   VPA_BASE_LW, VPA_BASE_DASH),
     ("TargetDiff",  str(BASEDRUG / "eval" / "targetdiff"), VPA_BASE_LW, VPA_BASE_DASH),
+    # CoE keeps its own run tree like the other two model arms: it carries
+    # eval_docking_results_full79.json (same 79 pockets, full-receptor scope, exhaustiveness
+    # 32), so it never needs the bundle fallback the staged baselines take.
+    ("CoE",         f"{E}/260908_fusion_default_cv2_scratch_8gpu/samples/samples_ep350_test79_n100",
+     VPA_MODEL_LW, "-"),
     (VPA_VOX_LABEL, f"{E}/_vanilla_ep923/samples/full_eval_ep923", VPA_MODEL_LW, "-"),
     (VPA_OUR_LABEL, f"{E}/voxbind_frozenenc_atomblob7_v2p1_sig0.9/samples/full_eval_ep350",
      VPA_MODEL_LW, "-"),
 ]
-# The two arms this figure exists to compare: the only ones drawn solid, and the only ones
+# The arms this figure exists to compare: the only ones drawn solid, and the only ones
 # given an area under their distribution. Everything else on the panel is context -- and
-# `core` is exactly this pair with the context removed, which is why one tuple names both.
-VPA_FOCUS = (VPA_VOX_LABEL, VPA_OUR_LABEL)
+# `core` is exactly this set with the context removed, which is why one tuple names them.
+# CoE joined 2026-09-15: the ablation is the comparison now, so it is a focus arm, not
+# context. CoDE stays last in VPA_ARMS above and so still lands on top where they cross.
+VPA_FOCUS = (VPA_VOX_LABEL, VPA_OUR_LABEL, "CoE")
 # Every arm takes its colour from the shared palette, so a method is the same colour here
 # as in the PoseBusters and PoseCheck figures. CoDE is the one override: this Vina family
 # carries the lighter tint of our blue.
